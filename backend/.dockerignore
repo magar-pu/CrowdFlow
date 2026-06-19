@@ -1,0 +1,33 @@
+# Compiled Binaries (Prevent copying host-compiled files)
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+main
+bin/
+
+# Local Vendor/Dependency Storage (Let Go download them inside Docker)
+vendor/
+
+# IDE / Editor Configurations
+.idea/
+.vscode/
+*.sw?
+*.bak
+
+# Testing & Coverage Reports
+*.test
+c.out
+coverage.txt
+
+# Local Environment Configurations
+.env
+config.local.yaml
+
+# Operating System Files
+.DS_Store
+
+# Version Control
+.git
+.gitignore

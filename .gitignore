@@ -1,0 +1,56 @@
+#system / os files
+.DS_Store
+.DS_Store?
+$_OUTDIR
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+#IDEs and text editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*~
+
+# Compiled binaries (Go)
+backend/main
+backend/main.exe
+backend/backend
+backend/backend.exe
+backend/bin/
+*.test
+*.prof
+
+# Frontend (Node.js/Next.js)
+# Dependency directory
+frontend/node_modules/
+node_modules/
+
+# Next.js build output
+frontend/.next/
+frontend/out/
+
+# Production build and caches
+frontend/build/
+frontend/dist/
+frontend/.eslintcache
+
+# Logs
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+*.log
+
+#env's
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+frontend/.env*.local
+backend/.env

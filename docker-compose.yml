@@ -1,0 +1,38 @@
+services:
+  frontend:
+    build: ./frontend
+    container_name: crowdflow-frontend
+    ports:
+      - "3000:3000"
+    restart: always
+    networks:
+      - crowdflow-net
+    environment:
+      - NODE_ENV=production
+
+  backend:
+    build: ./backend
+    container_name: crowdflow-backend
+    ports:
+      - "8080:8080"
+    restart: always
+    networks:
+      - crowdflow-net
+
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    container_name: crowdflow-nginx
+    ports:
+      - "80:80"
+    restart: always
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - crowdflow-net
+
+networks:
+  crowdflow-net:
+    driver: bridge
