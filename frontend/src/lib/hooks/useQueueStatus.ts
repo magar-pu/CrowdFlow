@@ -15,7 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import type { QueueStatus } from "@/types/ticket";
 
 const TICK_INTERVAL_MS = 1000;
-const SECONDS_PER_POSITION = 3; // mock pacing: one person clears every 3s
+const SECONDS_PER_POSITION = 1; // mock pacing: one person clears every 1s (was 3s — too slow for testing)
 
 export function useQueueStatus(initial_status: QueueStatus) {
   const [status, set_status] = useState<QueueStatus>(initial_status);

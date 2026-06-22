@@ -1,15 +1,24 @@
 "use client";
+
 /**
  * app/(user)/checkout/[event_id]/page.tsx
  *
  * Example wiring: turns mock TicketCategory selections into CartItem[],
  * then hands them to <CheckoutSummary>. This is what an organizer/user
  * checkout page would look like end-to-end during the mock phase.
+ *
+ * on_confirm currently simulates a brief "processing" delay then redirects
+ * to the Your Ticket page using mockOrder.order_id — there's no real
+ * payment or order creation yet. Once the Go backend exists, replace the
+ * setTimeout below with `await fetch('/api/v1/orders', { method: 'POST', ... })`
+ * and redirect using the real order_id from that response instead.
  */
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/Navbar";
 import { CheckoutSummary } from "@/components/checkout/CheckoutSummary";
-import { mockEvent, mockTicketCategoryById } from "@/mock/eventData";
+import { mockEvent, mockOrder, mockTicketCategoryById } from "@/mock/eventData";
 import type { CartItem } from "@/types/ticket";
 
 // In the real app this comes from useCartStore() (Zustand). Hardcoded here
@@ -41,21 +50,32 @@ const demo_cart_items: CartItem[] = [
 ];
 
 export default function CheckoutPage() {
+  const router = useRouter();
+  const [is_submitting, set_is_submitting] = useState(false);
+
+  function handle_confirm(payment_method: string) {
+    // TODO: replace with a real POST /api/v1/orders call once the Go
+    // backend exists. The 1.2s delay here just simulates network latency
+    // so the "Processing..." button state is visible during testing.
+    set_is_submitting(true);
+    console.log("Confirmed with payment method:", payment_method);
+    setTimeout(() => {
+      router.push(`/orders/${mockOrder.order_id}`);
+    }, 1200);
+  }
+
   return (
     <div className="min-h-screen bg-surface">
       <Navbar is_authenticated active_href="" />
       <CheckoutSummary
         event={mockEvent}
         cart_items={demo_cart_items}
+        is_submitting={is_submitting}
         on_apply_promo_code={(code) => {
           // Next step: POST /api/v1/promo-codes/validate with { code, event_id }
           console.log("Applying promo code:", code);
         }}
-        on_confirm={(payment_method) => {
-          // Next step: POST /api/v1/orders with { cart_items, payment_method }
-          // Server validates totals server-side — never trust the client total.
-          console.log("Confirmed with payment method:", payment_method);
-        }}
+        on_confirm={handle_confirm}
       />
     </div>
   );

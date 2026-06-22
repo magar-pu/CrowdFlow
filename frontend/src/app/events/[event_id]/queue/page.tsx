@@ -30,10 +30,10 @@ import type { QueueStatus } from "@/types/ticket";
 const MOCK_INITIAL_STATUS: QueueStatus = {
   queue_id: "queue_evt_001_demo",
   event_id: "evt_001_soundscape_festival_2026",
-  position: 47,
-  total_ahead: 46,
+  position: 3,
+  total_ahead: 2,
   total_in_queue: 3200,
-  estimated_wait_seconds: 141,
+  estimated_wait_seconds: 3,
   phase: "waiting",
   session_token: "mock_session_token",
 };
