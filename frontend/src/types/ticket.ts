@@ -303,3 +303,28 @@ export interface QueueStatus {
   phase: QueuePhase;
   session_token: string; // opaque token to redeem for seat-selection access once phase === "ready"
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Resale Marketplace
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * A single resale listing card on the Verified Resale Marketplace. This is
+ * a browsing-surface summary, distinct from TicketCategory (which models
+ * an event's own sale categories) — a ResaleListing aggregates one or
+ * more individual resold tickets for the same event under one card.
+ */
+export interface ResaleListing {
+  listing_id: string;
+  event_id: string;
+  event_title: string;
+  event_category: string; // e.g. "Concert", "Conference", "Sports" — shown as the small uppercase label
+  cover_image_url: string;
+  ticket_count: number;
+  is_vip: boolean; // shown as "(VIP)" suffix next to the ticket count
+  event_date_label: string; // e.g. "Oct 24, 2026 • 8:00 PM"
+  venue_label: string; // e.g. "Starlight Arena, NY"
+  original_face_value: number; // the "Orig:" struck-through price
+  resale_price_per_ticket: number; // current asking price
+  is_verified: boolean; // drives the "Verified Resale" badge
+}
