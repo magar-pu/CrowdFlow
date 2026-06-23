@@ -67,7 +67,7 @@ export function TicketSelectionCard({
                 key={category.ticket_category_id}
                 className="relative cursor-not-allowed rounded-xl border-2 border-border-subtle bg-surface-container-low p-4 opacity-60"
               >
-                <div className="mb-2 flex items-start justify-between">
+                <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
                   <div>
                     <h4 className="font-label-md text-label-md font-bold text-on-surface-variant">
                       {category.name}
@@ -110,9 +110,9 @@ export function TicketSelectionCard({
                     : "border-border-subtle bg-surface-white hover:border-secondary hover:shadow-md"
                 )}
               >
-                <div className="mb-2 flex items-start justify-between">
+                <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
                   <div>
-                    <h4 className="flex items-center gap-2 font-label-md text-label-md font-bold text-primary">
+                    <h4 className="flex flex-wrap items-center gap-2 font-label-md text-label-md font-bold text-primary">
                       {category.name}
                       {is_premium && (
                         <span className="inline-flex items-center rounded bg-secondary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-secondary">
