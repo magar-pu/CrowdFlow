@@ -1,0 +1,71 @@
+package event
+
+import (
+	"errors"
+	"sync"
+	"time"
+)
+
+type InMemoryRepository struct {
+	mu     sync.RWMutex
+	events map[string]*Event
+}
+
+func NewInMemoryRepository() *InMemoryRepository {
+	repo := &InMemoryRepository{
+		events: make(map[string]*Event),
+	}
+
+	// Seed some initial event data
+	_ = repo.Create(&Event{
+		ID:          "1",
+		Title:       "Grand Symphony Orchestra",
+		Description: "A beautiful classical orchestra concert under the stars.",
+		VenueName:   "Metropolitan Opera House",
+		TotalSeats:  500,
+		EventDate:   time.Now().AddDate(0, 1, 0),
+	})
+	_ = repo.Create(&Event{
+		ID:          "2",
+		Title:       "Rock & Roll Arena Tour",
+		Description: "Experience live rock and roll performance with cutting-edge visual effects.",
+		VenueName:   "Madison Square Garden",
+		TotalSeats:  15000,
+		EventDate:   time.Now().AddDate(0, 2, 15),
+	})
+
+	return repo
+}
+
+func (r *InMemoryRepository) GetAll() ([]*Event, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	list := make([]*Event, 0, len(r.events))
+	for _, val := range r.events {
+		list = append(list, val)
+	}
+	return list, nil
+}
+
+func (r *InMemoryRepository) GetByID(id string) (*Event, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	evt, exists := r.events[id]
+	if !exists {
+		return nil, errors.New("event not found")
+	}
+	return evt, nil
+}
+
+func (r *InMemoryRepository) Create(event *Event) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if event.ID == "" {
+		return errors.New("event must have a valid ID")
+	}
+	r.events[event.ID] = event
+	return nil
+}
