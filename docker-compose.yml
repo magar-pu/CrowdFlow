@@ -18,6 +18,8 @@ services:
     restart: always
     networks:
       - crowdflow-net
+    environment:
+      - DB_DSN=postgres://postgres:postgres@host.docker.internal:5432/crowdflow?sslmode=disable
 
   nginx:
     image: nginx:alpine
