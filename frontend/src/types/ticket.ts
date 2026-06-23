@@ -328,3 +328,61 @@ export interface ResaleListing {
   resale_price_per_ticket: number; // current asking price
   is_verified: boolean; // drives the "Verified Resale" badge
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Event Discovery
+// ─────────────────────────────────────────────────────────────────────────
+
+export type EventListingBadge =
+  | "on_sale"
+  | "selling_fast"
+  | "newly_added"
+  | "sold_out";
+
+export type EventListingTrustSignal =
+  | "verified"
+  | "identity_required"
+  | "protection_enabled"
+  | "sell_out_warning"
+  | "none";
+
+/**
+ * A single card on the Event Discovery grid. Distinct from the full Event
+ * type (used on the Event Detail page) since this is a lighter browsing-
+ * surface summary — mirrors a dedicated Go list endpoint that wouldn't
+ * return full ticket_categories/venue payloads for a grid view.
+ */
+export interface EventListingCard {
+  event_id: string;
+  title: string;
+  category_label: string; // e.g. "Music • Konser"
+  cover_image_url: string;
+  badge: EventListingBadge;
+  trust_signal: EventListingTrustSignal;
+  date_label: string; // e.g. "30 September 2024 • 19:00 WIB"
+  venue_label: string;
+  starting_price: number;
+  city: string; // used by the sidebar city filter
+}
+
+/** A card inside the "Direkomendasikan Untukmu (AI)" glassmorphism panel. */
+export interface AIRecommendedEvent {
+  event_id: string;
+  cover_image_url: string;
+  tag_label: string; // e.g. "Top Match", "Trending"
+  match_pct: number;
+  title: string;
+  date_venue_label: string; // e.g. "20 Sep • Salihara Arts Center"
+  price: number;
+}
+
+/** One slide in the "Editor's Choice" hero carousel. */
+export interface FeaturedCarouselEvent {
+  event_id: string;
+  cover_image_url: string;
+  tag_label: string; // e.g. "World Tour 2024"
+  tag_color: "secondary" | "success";
+  title: string;
+  date_venue_label: string;
+  starting_price: number;
+}
