@@ -25,15 +25,66 @@ export default function SignUpPage() {
   const router = useRouter();
 
   async function handle_submit(values: SignUpFormValues) {
-    // TODO: replace with `await fetch('/api/v1/auth/register', { method: 'POST', body: JSON.stringify(values) })`
-    console.log("Registration attempt:", values);
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    router.push("/login");
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: values.email,
+          password: values.password,
+          full_name: values.full_name,
+        }),
+      });
+
+      const result = await res.json();
+
+      if (result.success) {
+        router.push("/login");
+      } else {
+        alert(`Registration failed: ${result.error.message}`);
+      }
+    } catch (error) {
+      console.error("Network error during registration:", error);
+      alert("A network error occurred. Please check if the backend is running.");
+    }
+  }
+
+  async function handle_google_success(token: string) {
+    try {
+      const res = await fetch("/api/auth/google", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token }),
+      });
+
+      const result = await res.json();
+
+      if (result.success) {
+        router.push("/");
+      } else {
+        alert(`Google authentication failed: ${result.error.message}`);
+      }
+    } catch (error) {
+      console.error("Network error during Google sign-in:", error);
+      alert("A network error occurred connecting to the backend.");
+    }
+  }
+
+  function handle_google_error() {
+    alert("Google Sign-In was closed or failed.");
   }
 
   return (
     <AuthShell>
-      <SignUpForm on_submit={handle_submit} />
+      <SignUpForm 
+        on_submit={handle_submit} 
+        on_google_success={handle_google_success}
+        on_google_error={handle_google_error}
+      />
       <AuthFooterLink
         prompt="Already have an account?"
         link_label="Sign In"

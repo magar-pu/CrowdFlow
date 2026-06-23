@@ -1,6 +1,7 @@
 package auth
 
 import(
+	"context"
 	"time"
 )
 
@@ -34,12 +35,12 @@ type GoogleLoginRequest struct {
 
 type Repository interface{
 	GetByEmail(email string) (*User, error)
-	GetByID(id string) (*User, error)
+	GetByID(id int) (*User, error)
 	Create(user *User, fullName string) error
 }
 
 type Service interface{
-	Register(req RegisterRequest) (*User, error)
+	Register(req RegisterRequest) error
 	Login(req LoginRequest) (string, error)
-	LoginGoogle(req GoogleLoginRequest) (string, error)
+	LoginWithGoogle(ctx context.Context, tokenString string) (string, error)
 }

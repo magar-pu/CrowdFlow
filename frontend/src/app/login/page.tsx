@@ -26,15 +26,62 @@ export default function SignInPage() {
     password: string,
     stay_signed_in: boolean
   ) {
-    // TODO: replace with `await fetch('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ email, password, stay_signed_in }) })`
-    console.log("Sign in attempt:", { email, stay_signed_in });
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    router.push("/");
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const result = await res.json();
+
+      if (result.success) {
+        router.push("/");
+      } else {
+        alert(`Login failed: ${result.error.message}`);
+      }
+    } catch (error) {
+      console.error("Network error during login:", error);
+      alert("A network error occurred. Please check if the backend is running.");
+    }
+  }
+
+  async function handle_google_success(token: string) {
+    try {
+      const res = await fetch("/api/auth/google", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token }),
+      });
+
+      const result = await res.json();
+
+      if (result.success) {
+        router.push("/");
+      } else {
+        alert(`Google authentication failed: ${result.error.message}`);
+      }
+    } catch (error) {
+      console.error("Network error during Google sign-in:", error);
+      alert("A network error occurred connecting to the backend.");
+    }
+  }
+
+  function handle_google_error() {
+    alert("Google Sign-In was closed or failed.");
   }
 
   return (
     <AuthShell>
-      <SignInForm on_submit={handle_submit} />
+      <SignInForm 
+        on_submit={handle_submit} 
+        on_google_success={handle_google_success}
+        on_google_error={handle_google_error}
+      />
       <AuthFooterLink
         prompt="Don't have an account?"
         link_label="Create an account"

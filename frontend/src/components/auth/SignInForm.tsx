@@ -15,14 +15,17 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Mail, Eye, EyeOff, ArrowRight, CircleCheck, Loader2 } from "lucide-react";
+import GoogleLogin from "./GoogleLogin";
 
 type SubmitState = "idle" | "loading" | "success";
 
 interface SignInFormProps {
   on_submit: (email: string, password: string, stay_signed_in: boolean) => Promise<void> | void;
+  on_google_success: (token: string) => void;
+  on_google_error: () => void;
 }
 
-export function SignInForm({ on_submit }: SignInFormProps) {
+export function SignInForm({ on_submit, on_google_success, on_google_error }: SignInFormProps) {
   const [email, set_email] = useState("");
   const [password, set_password] = useState("");
   const [show_password, set_show_password] = useState(false);
@@ -180,47 +183,8 @@ export function SignInForm({ on_submit }: SignInFormProps) {
       </div>
 
       {/* Social logins */}
-      <div className="grid grid-cols-2 gap-4">
-        <button
-          type="button"
-          className="flex items-center justify-center gap-3 rounded-lg border border-border-subtle px-4 py-3 transition-colors duration-200 hover:bg-surface-container-low"
-        >
-          <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
-            <path
-              fill="#FFC107"
-              d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"
-            />
-            <path
-              fill="#FF3D00"
-              d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"
-            />
-            <path
-              fill="#4CAF50"
-              d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"
-            />
-            <path
-              fill="#1976D2"
-              d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571l0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"
-            />
-          </svg>
-          <span className="font-label-md text-label-md text-text-primary">
-            Google
-          </span>
-        </button>
-        <button
-          type="button"
-          className="flex items-center justify-center gap-3 rounded-lg border border-border-subtle px-4 py-3 transition-colors duration-200 hover:bg-surface-container-low"
-        >
-          <svg width="18" height="20" viewBox="0 0 814 1000" aria-hidden="true">
-            <path
-              fill="#000000"
-              d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-163.9-39.5c-76.7 0-103.9 40.8-166.2 40.8s-105.5-57-150.4-126.4C46.5 769.5 0 627.6 0 493.4c0-216.6 140.8-331.6 279.2-331.6 65.9 0 130.5 41.3 175.9 41.3 44.1 0 113.7-44.1 195.2-44.1 31.6 0 145.5 2.8 207.2 122.3-2.7 1.6-86.6 51.1-86.6 144.6zM561.5 220.8c44-52.4 76-126.4 76-208.4 0-12.6-1-25.4-3.3-35.6-71.4 2.6-156.5 47.6-208.4 109.4-39.2 47.4-79.5 121.4-79.5 197.4 0 13.4 2 26.8 3.3 31.5 5.5 1.2 14.3 2.6 23.1 2.6 64.1 0 145.1-43.4 188.8-96.9z"
-            />
-          </svg>
-          <span className="font-label-md text-label-md text-text-primary">
-            Apple
-          </span>
-        </button>
+      <div className="w-full flex justify-center mt-2">
+        <GoogleLogin onSuccess={on_google_success} onError={on_google_error} />
       </div>
     </div>
   );
