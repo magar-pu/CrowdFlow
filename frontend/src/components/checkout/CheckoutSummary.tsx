@@ -75,9 +75,9 @@ export function CheckoutSummary({
   );
 
   return (
-    <main className="mx-auto max-w-container-max px-margin-desktop py-section-gap">
+    <main className="mx-auto max-w-container-max px-margin-mobile py-stack-lg md:px-margin-desktop md:py-section-gap">
       {/* Breadcrumb */}
-      <div className="mb-stack-lg flex items-center gap-2 font-label-sm text-label-sm text-text-secondary">
+      <div className="mb-stack-md flex flex-wrap items-center gap-2 font-label-sm text-label-sm text-text-secondary md:mb-stack-lg">
         {breadcrumb_steps.map((step, index) => {
           const is_last = index === breadcrumb_steps.length - 1;
           return (
@@ -98,18 +98,18 @@ export function CheckoutSummary({
             Checkout
           </h1>
 
-          <div className="rounded-xl border border-border-subtle bg-surface-white p-stack-lg shadow-sm">
+          <div className="overflow-hidden rounded-xl border border-border-subtle bg-surface-white p-stack-lg shadow-sm">
             <h2 className="mb-stack-md font-headline-sm text-headline-sm text-primary">
               Order Summary
             </h2>
 
             {/* Event details */}
-            <div className="mb-stack-lg flex gap-stack-md border-b border-border-subtle pb-stack-md">
+            <div className="mb-stack-lg flex flex-col gap-stack-sm border-b border-border-subtle pb-stack-md sm:flex-row sm:gap-stack-md">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={event.cover_image_url}
                 alt={event.title}
-                className="h-24 w-24 rounded-lg object-cover"
+                className="h-24 w-24 shrink-0 rounded-lg object-cover"
               />
               <div>
                 <h3 className="font-headline-sm text-headline-sm text-primary">
@@ -129,7 +129,7 @@ export function CheckoutSummary({
               {breakdown.lines.map((line) => (
                 <div
                   key={line.cart_item_id}
-                  className="flex items-center justify-between font-body-md text-body-md text-primary"
+                  className="flex flex-wrap items-baseline justify-between gap-x-2 font-body-md text-body-md text-primary"
                 >
                   <span>
                     {line.quantity}x {line.ticket_category_name}
@@ -170,12 +170,12 @@ export function CheckoutSummary({
                   placeholder="Enter code"
                   value={promo_code}
                   onChange={(e) => set_promo_code(e.target.value)}
-                  className="flex-1 rounded-lg border border-border-subtle bg-surface-white px-3 py-2 font-body-md text-body-md transition-all focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/20"
+                  className="min-w-0 flex-1 rounded-lg border border-border-subtle bg-surface-white px-3 py-2 font-body-md text-body-md transition-all focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/20"
                 />
                 <button
                   type="button"
                   onClick={() => on_apply_promo_code?.(promo_code)}
-                  className="rounded-lg bg-surface-container-high px-6 py-2 font-label-md text-label-md text-primary transition-colors hover:bg-surface-dim"
+                  className="shrink-0 rounded-lg bg-surface-container-high px-4 py-2 font-label-md text-label-md text-primary transition-colors hover:bg-surface-dim sm:px-6"
                 >
                   Apply
                 </button>
