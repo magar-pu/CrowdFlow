@@ -386,3 +386,31 @@ export interface FeaturedCarouselEvent {
   date_venue_label: string;
   starting_price: number;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Home Page (v2 — Indonesian redesign)
+// ─────────────────────────────────────────────────────────────────────────
+
+/** One tile in the "Koleksi Event Pilihan" bento grid. */
+export interface BentoCollectionTile {
+  tile_id: string;
+  title: string;
+  subtitle?: string; // omitted on the two smaller tiles in the original design
+  cover_image_url: string;
+  /** CSS grid span — matches the bento-grid's col-span-{n} row-span-{n} classes. */
+  col_span: 1 | 2;
+  row_span: 1 | 2;
+  href: string;
+}
+
+/** One card in the "Event Paling Dinanti" trending grid, with a star rating. */
+export interface TrendingEventCard {
+  event_id: string;
+  title: string;
+  cover_image_url: string;
+  city: string;
+  rating: number; // e.g. 4.9
+  review_count: number; // e.g. 1200, displayed as "1.2k"
+  starting_price: number;
+  country: string; // drives the country filter pills ("Indonesia", "Japan", ...)
+}

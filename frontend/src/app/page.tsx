@@ -1,32 +1,47 @@
 /**
  * app/page.tsx
  *
- * CrowdFlow landing page — assembles Navbar, HeroSection, FeaturedEvents,
- * ResaleTrustSection, CategoryGrid, AppPromoSection, Footer.
- * Matches the crowdflow_home Stitch screen end-to-end.
+ * CrowdFlow landing page — REDESIGNED per the team's request, replacing
+ * the previous English-language version. Assembles Navbar,
+ * HeroSearchSection, CategoryIconRow, BentoCollectionGrid,
+ * TrendingEventsSection, NewsletterBanner, HomeFooterV2. Matches the new
+ * Indonesian-language Stitch home screen end-to-end.
  *
- * This REPLACES the default create-next-app boilerplate page.tsx.
+ * The old components/home/* (HeroSection, FeaturedEvents,
+ * ResaleTrustSection, CategoryGrid, AppPromoSection) and
+ * components/layout/Footer.tsx are no longer used by this page — left in
+ * place in case the team wants to repurpose them elsewhere, but nothing
+ * here references them anymore.
  */
 
 import { Navbar } from "@/components/layout/Navbar";
-import { Footer } from "@/components/layout/Footer";
-import { HeroSection } from "@/components/home/HeroSection";
-import { FeaturedEvents } from "@/components/home/FeaturedEvents";
-import { ResaleTrustSection } from "@/components/home/ResaleTrustSection";
-import { CategoryGrid } from "@/components/home/CategoryGrid";
-import { AppPromoSection } from "@/components/home/AppPromoSection";
-import { mockEventList } from "@/mock/eventData";
+import { HeroSearchSection } from "@/components/home-v2/HeroSearchSection";
+import { CategoryIconRow } from "@/components/home-v2/CategoryIconRow";
+import { BentoCollectionGrid } from "@/components/home-v2/BentoCollectionGrid";
+import { TrendingEventsSection } from "@/components/home-v2/TrendingEventsSection";
+import { NewsletterBanner } from "@/components/home-v2/NewsletterBanner";
+import { HomeFooterV2 } from "@/components/home-v2/HomeFooterV2";
+import {
+  mockBentoTiles,
+  mockTrendingEvents,
+  COUNTRY_FILTERS,
+} from "@/mock/homeV2Data";
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen bg-surface">
+    <div className="min-h-screen bg-background">
       <Navbar active_href="/" />
-      <HeroSection />
-      <FeaturedEvents events={mockEventList} />
-      <ResaleTrustSection />
-      <CategoryGrid />
-      <AppPromoSection />
-      <Footer />
+      <main className="w-full">
+        <HeroSearchSection />
+        <CategoryIconRow />
+        <BentoCollectionGrid tiles={mockBentoTiles} />
+        <TrendingEventsSection
+          events={mockTrendingEvents}
+          countries={COUNTRY_FILTERS}
+        />
+        <NewsletterBanner />
+      </main>
+      <HomeFooterV2 />
     </div>
   );
 }
