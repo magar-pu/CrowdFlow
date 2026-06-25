@@ -20,34 +20,22 @@ import { useRouter } from "next/navigation";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { SignUpForm, type SignUpFormValues } from "@/components/auth/SignUpForm";
 import { AuthFooterLink } from "@/components/auth/AuthFooterLink";
+import { registerUser } from "@/lib/api/auth";
 
 export default function SignUpPage() {
   const router = useRouter();
 
   async function handle_submit(values: SignUpFormValues) {
-    try {
-      const res = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: values.email,
-          password: values.password,
-          full_name: values.full_name,
-        }),
-      });
+    const result = await registerUser({
+      email: values.email,
+      password: values.password,
+      full_name: values.full_name,
+    });
 
-      const result = await res.json();
-
-      if (result.success) {
-        router.push("/login");
-      } else {
-        alert(`Registration failed: ${result.error.message}`);
-      }
-    } catch (error) {
-      console.error("Network error during registration:", error);
-      alert("A network error occurred. Please check if the backend is running.");
+    if (result.success) {
+      router.push("/login");
+    } else {
+      alert(`Registration failed: ${result.error?.message ?? "Unknown error occurred"}`);
     }
   }
 

@@ -83,5 +83,39 @@ func (r *PostgresRepository) Create(user *User, fullName string) error {
 	return tx.Commit()
 }
 
+func (r *PostgresRepository) GetUserRolesAndPermissions(userID int) ([]UserRoleMapping, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
+	query := `
+		SELECT ur.event_id, r.role_name, COALESCE(p.permission_name, '')
+		FROM user_roles ur
+		JOIN roles r ON ur.role_id = r.id
+		LEFT JOIN role_permissions rp ON r.id = rp.role_id
+		LEFT JOIN permissions p ON rp.permission_id = p.id
+		WHERE ur.user_id = $1`
 
+	rows, err := r.db.QueryContext(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var mappings []UserRoleMapping
+	for rows.Next() {
+		var mapping UserRoleMapping
+		var eventID sql.NullInt64
+		if err := rows.Scan(&eventID, &mapping.RoleName, &mapping.PermissionName); err != nil {
+			return nil, err
+		}
+		if eventID.Valid {
+			val := int(eventID.Int64)
+			mapping.EventID = &val
+		}
+		mappings = append(mappings, mapping)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return mappings, nil
+}

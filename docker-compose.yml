@@ -18,6 +18,8 @@ services:
     restart: always
     networks:
       - crowdflow-net
+    env_file:
+      - ./backend/.env
     environment:
       - DB_DSN=postgres://postgres:postgres@host.docker.internal:5432/crowdflow?sslmode=disable
       - GOOGLE_CLIENT_ID=91716845059-1l96nahbcu7nb39k1sa9r4ev8p2nitdu.apps.googleusercontent.com

@@ -33,14 +33,33 @@ type GoogleLoginRequest struct {
 	FullName string `json:"full_name,omitempty"`
 }
 
+type Role struct {
+	ID       int    `json:"id"`
+	RoleName string `json:"role_name"`
+}
+
+type Permission struct {
+	ID             int    `json:"id"`
+	PermissionName string `json:"permission_name"`
+}
+
+type UserRoleMapping struct {
+	EventID        *int   `json:"event_id,omitempty"`
+	RoleName       string `json:"role_name"`
+	PermissionName string `json:"permission_name"`
+}
+
 type Repository interface{
 	GetByEmail(email string) (*User, error)
 	GetByID(id int) (*User, error)
 	Create(user *User, fullName string) error
+	GetUserRolesAndPermissions(userID int) ([]UserRoleMapping, error)
 }
 
 type Service interface{
 	Register(req RegisterRequest) error
 	Login(req LoginRequest) (string, error)
-	LoginWithGoogle(ctx context.Context, tokenString string) (string, error)
+	GetGoogleAuthURL(state string) string
+	HandleGoogleCallback(ctx context.Context, code string) (string, error)
 }
+

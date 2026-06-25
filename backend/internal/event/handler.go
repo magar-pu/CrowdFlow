@@ -15,10 +15,35 @@ func NewHandler(service Service) *Handler {
 	return &Handler{service: service}
 }
 
-func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+func (h *Handler) RegisterRoutes(
+	mux *http.ServeMux,
+	authenticate func(http.Handler) http.Handler,
+	requirePlatformRole func(allowedRoles ...string) func(http.Handler) http.Handler,
+	requireEventRole func(roleName string) func(http.Handler) http.Handler,
+) {
 	mux.HandleFunc("GET /api/events", h.handleListEvents)
 	mux.HandleFunc("GET /api/events/{id}", h.handleGetEvent)
-	mux.HandleFunc("POST /api/events", h.handleCreateEvent)
+
+	mux.Handle("POST /api/events", authenticate(requirePlatformRole("Organizer")(http.HandlerFunc(h.handleCreateEvent))))
+	mux.Handle("PATCH /api/events/{id}/publish", authenticate(requireEventRole("Organizer")(http.HandlerFunc(h.handlePublishEvent))))
+}
+
+func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID path parameter is required")
+		return
+	}
+
+	if err := h.service.PublishEvent(id); err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{
+		"message":  "Event published successfully",
+		"event_id": id,
+	})
 }
 
 func (h *Handler) handleListEvents(w http.ResponseWriter, r *http.Request) {

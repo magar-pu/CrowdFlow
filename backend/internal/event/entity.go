@@ -21,4 +21,6 @@ type Service interface {
 	ListEvents() ([]*Event, error)
 	GetEventDetails(id string) (*Event, error)
 	CreateEvent(event *Event) error
+	PublishEvent(id string) error
 }
+

@@ -8,6 +8,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { logoutUser } from "@/lib/api/auth";
 
 export interface AuthUser {
   user_id: string;
@@ -25,7 +26,7 @@ interface AuthState {
   set_user_from_api: (user: AuthUser) => void;
   /** Mock login — dipakai saat backend belum ready */
   login: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const MOCK_USERS: (AuthUser & { password: string })[] = [
@@ -81,7 +82,12 @@ export const useAuthStore = create<AuthState>()(
         return { success: true, message: "Login berhasil!" };
       },
 
-      logout: () => {
+      logout: async () => {
+        try {
+          await logoutUser();
+        } catch (e) {
+          // ignore session cleanup failure
+        }
         set({ user: null, is_authenticated: false });
       },
     }),

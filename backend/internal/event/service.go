@@ -35,3 +35,9 @@ func (s *EventService) CreateEvent(event *Event) error {
 	}
 	return s.repo.Create(event)
 }
+
+func (s *EventService) PublishEvent(id string) error {
+	// Stub implementation for authorization middleware testing
+	return nil
+}
+
