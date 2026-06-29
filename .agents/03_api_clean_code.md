@@ -157,3 +157,21 @@ All HTTP handlers in Go must return the unified JSON format.
    ```
 
 4. **Verify Double-Submit CSRF on state changes**: Handlers/middleware must verify that the `csrf_token` cookie matches the incoming `X-CSRF-Token` header.
+
+---
+
+## 🚦 Frontend Page Routing & Authentication Protection
+
+To enforce defense-in-depth security, all private/logged-in pages must be guarded at both the server/routing layer and the client/render layer.
+
+### 1. Server-Side Routing Guards (Next.js Middleware)
+All changes regarding protected paths, routing states, or unauthenticated route redirection **MUST** be managed through the Next.js edge middleware:
+* **Location**: [frontend/src/middleware.ts](file:///c:/Users/geral/Documents/code/Projects/webdev/CrowdFlow/frontend/src/middleware.ts)
+* **Rule**: Do not write client-side layout `window.location` redirects or state hook redirects for basic authentication checks. Unauthenticated users must be intercepted on the server level using the secure `access_token` cookie before private page JavaScript bundles download.
+* **Match Configuration**: Update the middleware config's `matcher` array when adding new private routes.
+
+### 2. Client-Side Rendering Guards (AuthGuard Component)
+To enforce role authorization or display premium state loading indicators during transitions:
+* **Location**: [AuthGuard.tsx](file:///c:/Users/geral/Documents/code/Projects/webdev/CrowdFlow/frontend/src/components/auth/AuthGuard.tsx)
+* **Rule**: Use the `AuthGuard` component at the layout level of route groups (e.g. `(organizer)/layout.tsx` and `(user)/layout.tsx`) to guard pages based on roles (such as `"verified_organizer"` or `"user"`).
+
