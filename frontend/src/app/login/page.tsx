@@ -18,6 +18,7 @@ import { AuthShell } from "@/components/auth/AuthShell";
 import { SignInForm } from "@/components/auth/SignInForm";
 import { AuthFooterLink } from "@/components/auth/AuthFooterLink";
 import { useAuthStore } from "@/lib/store/authStore";
+import { loginUser } from "@/lib/api/auth";
 
 const BACKEND_READY = false; // Flip ke true setelah Go backend live
 
@@ -35,30 +36,15 @@ export default function SignInPage() {
 
     if (BACKEND_READY) {
       // ── Path A: Real backend ──────────────────────────────────────
-      try {
-        const res = await fetch("/api/auth/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
+      const result = await loginUser({ email, password });
 
-        const result = await res.json();
-
-        if (result.success) {
-          // Sync user dari API response ke Zustand
-          // Pastikan backend return shape: { success, data: { user_id, full_name, email, role, tier, avatar_url } }
-          set_user_from_api(result.data);
-          router.push("/");
-        } else {
-          set_error_message(result.error?.message ?? "Login gagal.");
-          throw new Error(result.error?.message);
-        }
-      } catch (err: unknown) {
-        const is_network_err = err instanceof TypeError;
-        if (is_network_err) {
-          set_error_message("Tidak dapat terhubung ke server. Coba lagi.");
-        }
-        throw err;
+      if (result.success && result.data) {
+        // Sync user dari API response ke Zustand
+        set_user_from_api(result.data);
+        router.push("/");
+      } else {
+        set_error_message(result.error?.message ?? "Login gagal.");
+        throw new Error(result.error?.message);
       }
     } else {
       // ── Path B: Mock login (backend belum ready) ──────────────────

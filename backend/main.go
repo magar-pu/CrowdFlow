@@ -13,6 +13,8 @@ import (
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/platform/database"
 	"crowdflow-backend/internal/response"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
 func healthCheck(db *sql.DB) http.HandlerFunc {
@@ -54,15 +56,6 @@ func main() {
 
 	// Register global system health route
 	mux.HandleFunc("GET /api/health", healthCheck(db))
-
-	// Initialize domain packages dependencies
-	eventRepo := event.NewInMemoryRepository()
-	eventService := event.NewEventService(eventRepo)
-	eventHandler := event.NewHandler(eventService)
-
-	// Register feature routes
-	eventHandler.RegisterRoutes(mux)
-
 	// Initialize Configuration for JWT & Google Client ID
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
@@ -72,10 +65,34 @@ func main() {
 	if googleClientID == "" {
 		googleClientID = "91716845059-1l96nahbcu7nb39k1sa9r4ev8p2nitdu.apps.googleusercontent.com"
 	}
+	googleClientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
+	googleRedirectURI := os.Getenv("GOOGLE_REDIRECT_URI")
+	if googleRedirectURI == "" {
+		googleRedirectURI = "http://localhost/api/auth/google/callback"
+	}
+
+	oauthConfig := &oauth2.Config{
+		ClientID:     googleClientID,
+		ClientSecret: googleClientSecret,
+		RedirectURL:  googleRedirectURI,
+		Scopes:       []string{"openid", "email", "profile"},
+		Endpoint:     google.Endpoint,
+	}
+
+	// Initialize Auth Middleware
+	authMounter := middleware.NewAuthMiddleware(jwtSecret, db)
+
+	// Initialize domain packages dependencies
+	eventRepo := event.NewInMemoryRepository()
+	eventService := event.NewEventService(eventRepo)
+	eventHandler := event.NewHandler(eventService)
+
+	// Register feature routes
+	eventHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole, authMounter.RequireEventRole)
 
 	// Initialize Authentication dependencies
 	authRepo := auth.NewPostgresRepository(db)
-	authService := auth.NewAuthService(authRepo, jwtSecret, googleClientID)
+	authService := auth.NewAuthService(authRepo, jwtSecret, oauthConfig)
 	isSecure := os.Getenv("DEV_MODE") != "true"
 	authHandler := auth.NewHandler(authService, isSecure)
 

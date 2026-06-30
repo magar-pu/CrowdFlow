@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * components/organizer-dashboard/OrganizerSidebar.tsx
  *
@@ -8,6 +10,8 @@
  */
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuthStore } from "@/lib/store/authStore";
 import {
   Plus,
   LayoutDashboard,
@@ -32,6 +36,14 @@ interface OrganizerSidebarProps {
 }
 
 export function OrganizerSidebar({ active_href }: OrganizerSidebarProps) {
+  const router = useRouter();
+  const { logout } = useAuthStore();
+
+  const handle_logout = async () => {
+    await logout();
+    router.push("/");
+  };
+
   return (
     <nav className="hidden h-full w-64 shrink-0 flex-col justify-between border-r border-border-subtle bg-surface-container-low p-stack-md md:flex">
       <div>
@@ -95,13 +107,14 @@ export function OrganizerSidebar({ active_href }: OrganizerSidebarProps) {
           </Link>
         </li>
         <li>
-          <Link
-            href="/logout"
-            className="flex items-center gap-3 rounded-lg px-3 py-2 font-label-md text-label-md text-danger transition-colors hover:bg-surface-container-high"
+          <button
+            type="button"
+            onClick={handle_logout}
+            className="w-full flex items-center gap-3 rounded-lg px-3 py-2 font-label-md text-label-md text-danger transition-colors hover:bg-surface-container-high cursor-pointer text-left border-none bg-transparent"
           >
             <LogOut size={20} />
             Log Out
-          </Link>
+          </button>
         </li>
       </ul>
     </nav>

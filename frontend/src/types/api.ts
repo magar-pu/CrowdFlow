@@ -8,21 +8,14 @@
  *   Error:   { "error": "Unauthorized", "message": "..." }
  */
 
-export interface ApiSuccessResponse<T> {
-    status: "success";
-    data: T;
-  }
-  
-  export interface ApiErrorResponse {
-    error: string; // short machine-readable code/title, e.g. "Unauthorized"
-    message: string; // human-readable detail for display
-  }
-  
-  export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
-  
-  /** Narrowing helper — checks the discriminant without relying on a `status` field on the error shape. */
-  export function isApiError<T>(
-    response: ApiResponse<T>
-  ): response is ApiErrorResponse {
-    return "error" in response;
-  }
+export interface APIError {
+  code: string;       // short machine-readable code, e.g. "UNAUTHORIZED", "VALIDATION_FAILED"
+  message: string;    // human-readable detail for display
+  details?: any;      // optional structured validation error details
+}
+
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: APIError;
+}

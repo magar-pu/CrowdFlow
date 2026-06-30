@@ -9,10 +9,16 @@
  * that calls usePathname() so the sidebar highlights correctly everywhere.
  */
 
+import { AuthGuard } from "@/components/auth/AuthGuard";
+
 export default function OrganizerLayout({
     children,
   }: {
     children: React.ReactNode;
   }) {
-    return <div className="flex h-screen overflow-hidden">{children}</div>;
-  }
+    return (
+      <AuthGuard requiredRole="verified_organizer">
+        <div className="flex h-screen overflow-hidden">{children}</div>
+      </AuthGuard>
+    );
+  }
