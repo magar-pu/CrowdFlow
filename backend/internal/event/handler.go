@@ -23,9 +23,8 @@ func (h *Handler) RegisterRoutes(
 ) {
 	mux.HandleFunc("GET /api/events", h.handleListEvents)
 	mux.HandleFunc("GET /api/events/{id}", h.handleGetEvent)
-
-	mux.Handle("POST /api/events", authenticate(requirePlatformRole("Organizer")(http.HandlerFunc(h.handleCreateEvent))))
-	mux.Handle("PATCH /api/events/{id}/publish", authenticate(requireEventRole("Organizer")(http.HandlerFunc(h.handlePublishEvent))))
+	mux.Handle("POST /api/events", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleCreateEvent))))
+	mux.Handle("PATCH /api/events/{id}/publish", authenticate(requireEventRole("Event Organizer")(http.HandlerFunc(h.handlePublishEvent))))
 }
 
 func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {

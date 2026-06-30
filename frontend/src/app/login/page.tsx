@@ -20,7 +20,7 @@ import { AuthFooterLink } from "@/components/auth/AuthFooterLink";
 import { useAuthStore } from "@/lib/store/authStore";
 import { loginUser } from "@/lib/api/auth";
 
-const BACKEND_READY = false; // Flip ke true setelah Go backend live
+const BACKEND_READY = true; // Flip ke true setelah Go backend live
 
 export default function SignInPage() {
   const router = useRouter();

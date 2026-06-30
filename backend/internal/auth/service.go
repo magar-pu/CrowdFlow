@@ -89,22 +89,27 @@ func (s *AuthService) Register(req RegisterRequest) error {
 	return s.repo.Create(user, req.FullName)
 }
 
-func (s *AuthService) Login(req LoginRequest) (string, error) {
+func (s *AuthService) Login(req LoginRequest) (string, *User, error) {
 	user, err := s.repo.GetByEmail(req.Email)
 	if err != nil {
-		return "", errors.New("invalid email or password")
+		return "", nil, errors.New("invalid email or password")
 	}
 
 	if user.AuthProvider != "native" || user.PasswordHash == nil {
-		return "", errors.New("this account uses Google authentication. Please sign in with Google")
+		return "", nil, errors.New("this account uses Google authentication. Please sign in with Google")
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(req.Password))
 	if err != nil {
-		return "", errors.New("invalid email or password")
+		return "", nil, errors.New("invalid email or password")
 	}
 
-	return s.GenerateJWT(user)
+	token, err := s.GenerateJWT(user)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return token, user, nil
 }
 
 func (s *AuthService) GetGoogleAuthURL(state string) string {

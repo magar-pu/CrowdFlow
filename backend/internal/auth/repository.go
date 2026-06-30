@@ -79,7 +79,15 @@ func (r *PostgresRepository) Create(user *User, fullName string) error {
 	if err != nil {
 		return err
 	}
-	// 4. Commit transaction
+	// 4. Assign default user role (role_id = 5) in user_roles table
+	roleQuery := `
+		INSERT INTO user_roles (user_id, role_id, event_id)
+		VALUES ($1, 5, NULL)`
+	_, err = tx.ExecContext(ctx, roleQuery, user.ID)
+	if err != nil {
+		return err
+	}
+	// 5. Commit transaction
 	return tx.Commit()
 }
 

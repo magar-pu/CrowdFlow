@@ -265,7 +265,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
     post:
       summary: Create Event
-      description: Creates a new event tier. Requires Organizer role.
+      description: Creates a new event tier. Requires Event Organizer role.
       security:
         - CookieAuth: []
         - CSRFToken: []
@@ -300,7 +300,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: Platform role check failed (Organizer required) or CSRF mismatch.
+          description: Platform role check failed (Event Organizer required) or CSRF mismatch.
           content:
             application/json:
               schema:
@@ -345,7 +345,7 @@ paths:
   /api/events/{id}/publish:
     patch:
       summary: Publish Event
-      description: Publishes an event. Requires specific Event-level Organizer role authorization.
+      description: Publishes an event. Requires specific Event-level Event Organizer role authorization.
       security:
         - CookieAuth: []
         - CSRFToken: []
@@ -388,7 +388,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: Event role authorization failed (User is not an organizer of this event) or CSRF mismatch.
+          description: Event role authorization failed (User is not an event organizer of this event) or CSRF mismatch.
           content:
             application/json:
               schema:

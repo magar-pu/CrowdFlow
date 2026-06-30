@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"crowdflow-backend/internal/response"
 )
@@ -86,7 +87,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.service.Login(req)
+	token, user, err := h.service.Login(req)
 	if err != nil {
 		response.Error(w, http.StatusUnauthorized, "AUTHENTICATION_FAILED", err.Error())
 		return
@@ -95,8 +96,24 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// Set secure auth cookies instead of returning token in JSON body
 	h.setAuthCookies(w, token)
 
-	response.JSON(w, http.StatusOK, map[string]string{
-		"message": "Logged in successfully",
+	// Fetch platform role for the user
+	var roleName string = "User" // Default fallback
+	if userID, err := strconv.Atoi(user.ID); err == nil {
+		if mappings, err := h.service.repo.GetUserRolesAndPermissions(userID); err == nil {
+			for _, m := range mappings {
+				if m.EventID == nil {
+					roleName = m.RoleName
+					break
+				}
+			}
+		}
+	}
+
+	response.JSON(w, http.StatusOK, map[string]interface{}{
+		"user_id":   user.ID,
+		"email":     user.Email,
+		"full_name": user.FullName,
+		"role":      roleName,
 	})
 }
 

@@ -137,6 +137,7 @@ export async function loginUser(body: any): Promise<ApiResponse<AuthUser>> {
 Keep React state and local storage stores (e.g. Zustand `authStore.ts`) decoupled from backend endpoints.
 * Event handlers trigger service methods (e.g., `loginUser`).
 * Upon success, the response data is fed into store-sync actions (e.g., `set_user_from_api(user)`).
+* **Dynamic Role Normalization**: Database role strings (e.g. `"Event Organizer"`, `"User"`) do not always match the frontend's string enums (`"verified_organizer"`, `"user"`). The store action `set_user_from_api` must run the incoming role through the normalization helper `normalizeUserRole()` inside [authStore.ts](file:///c:/Users/geral/Documents/code/Projects/webdev/CrowdFlow/frontend/src/lib/store/authStore.ts) to map legacy constraints and dynamically format new database roles to snake_case at runtime.
 
 ---
 
@@ -157,6 +158,7 @@ All HTTP handlers in Go must return the unified JSON format.
    ```
 
 4. **Verify Double-Submit CSRF on state changes**: Handlers/middleware must verify that the `csrf_token` cookie matches the incoming `X-CSRF-Token` header.
+5. **Login Response Contract**: The endpoint `POST /api/auth/login` **must** return the authenticated user's profile details (`user_id`, `email`, `full_name`, and `role`) inside the success `data` payload. Returning a simple text message like `"Logged in successfully"` will cause frontend state desynchronization and crash components.
 
 ---
 

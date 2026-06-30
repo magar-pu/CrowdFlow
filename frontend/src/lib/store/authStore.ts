@@ -14,7 +14,7 @@ export interface AuthUser {
   user_id: string;
   full_name: string;
   email: string;
-  role: "user" | "verified_organizer" | "auditor" | "super_admin";
+  role: "user" | "verified_organizer" | "auditor" | "super_admin" | "gate_scanner";
   tier: "Free" | "Pro Tier" | "Enterprise";
   avatar_url: string;
 }
@@ -23,7 +23,7 @@ interface AuthState {
   user: AuthUser | null;
   is_authenticated: boolean;
   /** Dipanggil setelah backend login sukses — sync user dari API response */
-  set_user_from_api: (user: AuthUser) => void;
+  set_user_from_api: (user: any) => void;
   /** Mock login — dipakai saat backend belum ready */
   login: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
   logout: () => Promise<void>;
@@ -59,13 +59,41 @@ const MOCK_USERS: (AuthUser & { password: string })[] = [
   },
 ];
 
+// Map backend/database custom legacy role names to client-side expected roles
+const DATABASE_ROLE_MAPPING: Record<string, string> = {
+  "Event Organizer": "verified_organizer",
+};
+
+/**
+ * Automatically translates database role strings to client-friendly formats.
+ * e.g., "Event Organizer" -> "verified_organizer", "Gate Scanner" -> "gate_scanner".
+ */
+
+export function normalizeUserRole(apiRole: string): string {
+  if (DATABASE_ROLE_MAPPING[apiRole]) {
+    return DATABASE_ROLE_MAPPING[apiRole];
+  }
+  return apiRole.toLowerCase().replace(/\s+/g, "_");
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       user: null,
       is_authenticated: false,
 
-      set_user_from_api: (user: AuthUser) => {
+      set_user_from_api: (apiUser: any) => {
+        if (!apiUser) return;
+
+        const user: AuthUser = {
+          user_id: apiUser.user_id || apiUser.id || "",
+          full_name: apiUser.full_name || "",
+          email: apiUser.email || "",
+          role: normalizeUserRole(apiUser.role || "User") as AuthUser["role"],
+          tier: apiUser.tier || "Free",
+          avatar_url: apiUser.avatar_url || "",
+        };
+
         set({ user, is_authenticated: true });
       },
 
