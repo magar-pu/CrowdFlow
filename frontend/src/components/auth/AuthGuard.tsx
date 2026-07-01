@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store/authStore";
+import { getMe } from "@/lib/api/auth";
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -34,8 +35,7 @@ export function AuthGuard({
     async function verifySession() {
       if (!is_authenticated) {
         try {
-          const res = await fetch("/api/auth/me");
-          const result = await res.json();
+          const result = await getMe();
           if (result.success && result.data) {
             set_user_from_api(result.data);
           }

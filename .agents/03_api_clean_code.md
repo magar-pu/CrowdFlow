@@ -117,7 +117,8 @@ export async function apiRequest<T>(
 ```
 
 ### 2. Decoupled Service Methods
-Never call `apiRequest` directly inside a component event handler. Instead, define API actions inside dedicated files under `frontend/src/lib/api/` (e.g., `lib/api/auth.ts`, `lib/api/events.ts`).
+> [!WARNING]
+> **NO INLINE FETCH CALLS**: Never perform direct `fetch` calls or direct `apiRequest` calls inside React components. All HTTP/API calls **MUST** be defined as service functions inside dedicated files under [frontend/src/lib/api/](file:///c:/Users/geral/Documents/code/Projects/webdev/CrowdFlow/frontend/src/lib/api/) (e.g., `lib/api/auth.ts`, `lib/api/events.ts`) and imported into components.
 
 **Good Practice (auth.ts)**:
 ```typescript

@@ -21,3 +21,10 @@ export async function logoutUser(): Promise<ApiResponse<void>> {
     method: "POST",
   });
 }
+
+export async function getMe(): Promise<ApiResponse<AuthUser>> {
+  return apiRequest<AuthUser>("/api/auth/me", {
+    method: "GET",
+  });
+}
+

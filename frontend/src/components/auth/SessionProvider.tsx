@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/lib/store/authStore";
+import { getMe } from "@/lib/api/auth";
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const { is_authenticated, set_user_from_api } = useAuthStore();
@@ -17,8 +18,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     async function restoreSession() {
       if (!is_authenticated) {
         try {
-          const res = await fetch("/api/auth/me");
-          const result = await res.json();
+          const result = await getMe();
           if (result.success && result.data) {
             set_user_from_api(result.data);
           }
