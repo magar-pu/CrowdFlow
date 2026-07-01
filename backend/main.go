@@ -97,7 +97,7 @@ func main() {
 	authHandler := auth.NewHandler(authService, isSecure)
 
 	// Register Authentication routes
-	authHandler.RegisterRoutes(mux)
+	authHandler.RegisterRoutes(mux, authMounter.Authenticate)
 
 	fmt.Println("Starting server on :8080 with CSRF protection enabled")
 	if err := http.ListenAndServe(":8080", middleware.CSRF(mux)); err != nil {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/response"
 )
 
@@ -19,12 +20,13 @@ func NewHandler(service *AuthService, secure bool) *Handler {
 	return &Handler{service: service, secure: secure}
 }
 
-func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+func (h *Handler) RegisterRoutes(mux *http.ServeMux, authenticate func(http.Handler) http.Handler) {
 	mux.HandleFunc("POST /api/auth/register", h.handleRegister)
 	mux.HandleFunc("POST /api/auth/login", h.handleLogin)
 	mux.HandleFunc("GET /api/auth/google/login", h.handleGoogleRedirect)
 	mux.HandleFunc("GET /api/auth/google/callback", h.handleGoogleCallback)
 	mux.HandleFunc("POST /api/auth/logout", h.handleLogout)
+	mux.Handle("GET /api/auth/me", authenticate(http.HandlerFunc(h.handleMe)))
 }
 
 func generateCSRFToken() string {
@@ -71,6 +73,10 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.Register(req); err != nil {
+		if err.Error() == "email is already registered" {
+			response.Error(w, http.StatusConflict, "EMAIL_ALREADY_REGISTERED", "This email address is already registered.")
+			return
+		}
 		response.Error(w, http.StatusConflict, "REGISTRATION_FAILED", err.Error())
 		return
 	}
@@ -168,8 +174,12 @@ func (h *Handler) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Exchange code for JWT session token
-	token, err := h.service.HandleGoogleCallback(r.Context(), code)
+	token, user, err := h.service.HandleGoogleCallback(r.Context(), code)
 	if err != nil {
+		if err.Error() == "PROVIDER_MISMATCH: native" {
+			http.Redirect(w, r, "/login?error=PROVIDER_MISMATCH&provider=native", http.StatusTemporaryRedirect)
+			return
+		}
 		response.Error(w, http.StatusUnauthorized, "AUTHENTICATION_FAILED", err.Error())
 		return
 	}
@@ -177,8 +187,24 @@ func (h *Handler) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	// 4. Set authentication and CSRF session cookies
 	h.setAuthCookies(w, token)
 
-	// 5. Redirect browser back to frontend dashboard
-	http.Redirect(w, r, "/dashboard", http.StatusTemporaryRedirect)
+	// 5. Redirect browser based on user platform role
+	var roleName string = "User" // Default fallback
+	if userID, err := strconv.Atoi(user.ID); err == nil {
+		if mappings, err := h.service.repo.GetUserRolesAndPermissions(userID); err == nil {
+			for _, m := range mappings {
+				if m.EventID == nil {
+					roleName = m.RoleName
+					break
+				}
+			}
+		}
+	}
+
+	if roleName == "Event Organizer" || roleName == "Super Admin" {
+		http.Redirect(w, r, "/dashboard", http.StatusTemporaryRedirect)
+	} else {
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+	}
 }
 
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -206,5 +232,42 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "Logged out successfully",
+	})
+}
+
+func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User is not authenticated")
+		return
+	}
+
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user ID in token claims")
+		return
+	}
+
+	user, err := h.service.repo.GetByID(userID)
+	if err != nil {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "User not found")
+		return
+	}
+
+	var roleName string = "User" // Default fallback
+	if mappings, err := h.service.repo.GetUserRolesAndPermissions(userID); err == nil {
+		for _, m := range mappings {
+			if m.EventID == nil {
+				roleName = m.RoleName
+				break
+			}
+		}
+	}
+
+	response.JSON(w, http.StatusOK, map[string]interface{}{
+		"user_id":   user.ID,
+		"email":     user.Email,
+		"full_name": user.FullName,
+		"role":      roleName,
 	})
 }

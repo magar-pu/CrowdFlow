@@ -37,13 +37,16 @@ export function SignInForm({ on_submit, on_google_success, on_google_error }: Si
     if (submit_state !== "idle") return;
 
     set_submit_state("loading");
-    await on_submit(email, password, stay_signed_in);
-    set_submit_state("success");
-
-    // Matches the Stitch screen's 1.5s success pause before resetting —
-    // here it instead stays on "success" since the real flow will have
-    // already navigated away via on_submit's redirect by this point.
-    setTimeout(() => set_submit_state("idle"), 1500);
+    try {
+      await on_submit(email, password, stay_signed_in);
+      set_submit_state("success");
+      // Matches the Stitch screen's 1.5s success pause before resetting —
+      // here it instead stays on "success" since the real flow will have
+      // already navigated away via on_submit's redirect by this point.
+      setTimeout(() => set_submit_state("idle"), 1500);
+    } catch (err) {
+      set_submit_state("idle");
+    }
   }
 
   return (

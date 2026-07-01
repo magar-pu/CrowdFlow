@@ -16,6 +16,7 @@
  * POST /api/v1/auth/register call.
  */
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { SignUpForm, type SignUpFormValues } from "@/components/auth/SignUpForm";
@@ -24,8 +25,10 @@ import { registerUser } from "@/lib/api/auth";
 
 export default function SignUpPage() {
   const router = useRouter();
+  const [error_message, set_error_message] = useState("");
 
   async function handle_submit(values: SignUpFormValues) {
+    set_error_message("");
     const result = await registerUser({
       email: values.email,
       password: values.password,
@@ -33,13 +36,14 @@ export default function SignUpPage() {
     });
 
     if (result.success) {
-      router.push("/login");
+      router.push("/login?registered=true");
     } else {
-      alert(`Registration failed: ${result.error?.message ?? "Unknown error occurred"}`);
+      set_error_message(result.error?.message ?? "Registration failed.");
     }
   }
 
   async function handle_google_success(token: string) {
+    set_error_message("");
     try {
       const res = await fetch("/api/auth/google", {
         method: "POST",
@@ -54,20 +58,24 @@ export default function SignUpPage() {
       if (result.success) {
         router.push("/");
       } else {
-        alert(`Google authentication failed: ${result.error.message}`);
+        set_error_message(result.error?.message ?? "Google Sign-In failed.");
       }
     } catch (error) {
-      console.error("Network error during Google sign-in:", error);
-      alert("A network error occurred connecting to the backend.");
+      set_error_message("Cannot connect to server during Google Sign-In.");
     }
   }
 
   function handle_google_error() {
-    alert("Google Sign-In was closed or failed.");
+    set_error_message("Google Sign-In was cancelled or failed.");
   }
 
   return (
     <AuthShell>
+      {error_message && (
+        <div className="mx-8 mt-6 rounded-lg border border-danger/20 bg-danger/5 px-4 py-3 font-body-sm text-body-sm text-danger">
+          {error_message}
+        </div>
+      )}
       <SignUpForm 
         on_submit={handle_submit} 
         on_google_success={handle_google_success}

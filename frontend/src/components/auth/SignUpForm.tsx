@@ -81,10 +81,13 @@ export function SignUpForm({ on_submit, on_google_success, on_google_error }: Si
     set_confirm_error("");
 
     set_submit_state("loading");
-    await on_submit({ full_name, email, country_code, phone_number, password });
-    set_submit_state("success");
-
-    setTimeout(() => set_submit_state("idle"), 1500);
+    try {
+      await on_submit({ full_name, email, country_code, phone_number, password });
+      set_submit_state("success");
+      setTimeout(() => set_submit_state("idle"), 1500);
+    } catch (err) {
+      set_submit_state("idle");
+    }
   }
 
   return (

@@ -95,8 +95,8 @@ func (s *AuthService) Login(req LoginRequest) (string, *User, error) {
 		return "", nil, errors.New("invalid email or password")
 	}
 
-	if user.AuthProvider != "native" || user.PasswordHash == nil {
-		return "", nil, errors.New("this account uses Google authentication. Please sign in with Google")
+	if user.AuthProvider != "native" {
+		return "", nil, errors.New("invalid email or password")
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(req.Password))
@@ -116,23 +116,23 @@ func (s *AuthService) GetGoogleAuthURL(state string) string {
 	return s.oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
 }
 
-func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (string, error) {
+func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (string, *User, error) {
 	// Exchange authorization code for token
 	token, err := s.oauthConfig.Exchange(ctx, code)
 	if err != nil {
-		return "", errors.New("failed to exchange authorization code: " + err.Error())
+		return "", nil, errors.New("failed to exchange authorization code: " + err.Error())
 	}
 
 	// Extract the ID Token (JWT) from OAuth2 token response
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok {
-		return "", errors.New("google token response did not contain id_token")
+		return "", nil, errors.New("google token response did not contain id_token")
 	}
 
 	// Validate the ID Token
 	payload, err := idtoken.Validate(ctx, rawIDToken, s.oauthConfig.ClientID)
 	if err != nil {
-		return "", errors.New("invalid Google ID token: " + err.Error())
+		return "", nil, errors.New("invalid Google ID token: " + err.Error())
 	}
 
 	email, _ := payload.Claims["email"].(string)
@@ -150,12 +150,22 @@ func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (st
 			}
 			err = s.repo.Create(user, name)
 			if err != nil {
-				return "", err
+				return "", nil, err
 			}
 		} else {
-			return "", err
+			return "", nil, err
+		}
+	} else {
+		// Verify that this user account was registered with Google
+		if user.AuthProvider != "google" {
+			return "", nil, errors.New("PROVIDER_MISMATCH: native")
 		}
 	}
 
-	return s.GenerateJWT(user)
+	jwtStr, err := s.GenerateJWT(user)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return jwtStr, user, nil
 }

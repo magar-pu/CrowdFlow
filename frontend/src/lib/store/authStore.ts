@@ -22,9 +22,9 @@ export interface AuthUser {
 interface AuthState {
   user: AuthUser | null;
   is_authenticated: boolean;
-  /** Dipanggil setelah backend login sukses — sync user dari API response */
+  /** Called after successful backend login — syncs user from API response */
   set_user_from_api: (user: any) => void;
-  /** Mock login — dipakai saat backend belum ready */
+  /** Mock login — used when backend is not ready */
   login: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
   logout: () => Promise<void>;
 }
@@ -103,11 +103,11 @@ export const useAuthStore = create<AuthState>()(
           (u) => u.email === email && u.password === password
         );
         if (!found) {
-          return { success: false, message: "Email atau password salah." };
+          return { success: false, message: "Incorrect email or password." };
         }
         const { password: _, ...user } = found;
         set({ user, is_authenticated: true });
-        return { success: true, message: "Login berhasil!" };
+        return { success: true, message: "Login successful!" };
       },
 
       logout: async () => {
