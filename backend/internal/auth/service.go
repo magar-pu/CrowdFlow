@@ -89,45 +89,46 @@ func (s *AuthService) Register(req RegisterRequest) error {
 	return s.repo.Create(user, req.FullName)
 }
 
-func (s *AuthService) Login(req LoginRequest) (string, error) {
+func (s *AuthService) Login(req LoginRequest) (string, *User, error) {
 	user, err := s.repo.GetByEmail(req.Email)
 	if err != nil {
-		return "", errors.New("invalid email or password")
+		return "", nil, errors.New("invalid email or password")
 	}
 
 	if user.AuthProvider != "native" || user.PasswordHash == nil {
-		return "", errors.New("this account uses Google authentication. Please sign in with Google")
+		return "", nil, errors.New("this account uses Google authentication. Please sign in with Google")
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(req.Password))
 	if err != nil {
-		return "", errors.New("invalid email or password")
+		return "", nil, errors.New("invalid email or password")
 	}
 
-	return s.GenerateJWT(user)
+	token, err := s.GenerateJWT(user)
+	return token, user, err
 }
 
 func (s *AuthService) GetGoogleAuthURL(state string) string {
 	return s.oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
 }
 
-func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (string, error) {
+func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (string, *User, error) {
 	// Exchange authorization code for token
 	token, err := s.oauthConfig.Exchange(ctx, code)
 	if err != nil {
-		return "", errors.New("failed to exchange authorization code: " + err.Error())
+		return "", nil, errors.New("failed to exchange authorization code: " + err.Error())
 	}
 
 	// Extract the ID Token (JWT) from OAuth2 token response
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok {
-		return "", errors.New("google token response did not contain id_token")
+		return "", nil, errors.New("google token response did not contain id_token")
 	}
 
 	// Validate the ID Token
 	payload, err := idtoken.Validate(ctx, rawIDToken, s.oauthConfig.ClientID)
 	if err != nil {
-		return "", errors.New("invalid Google ID token: " + err.Error())
+		return "", nil, errors.New("invalid Google ID token: " + err.Error())
 	}
 
 	email, _ := payload.Claims["email"].(string)
@@ -145,12 +146,13 @@ func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (st
 			}
 			err = s.repo.Create(user, name)
 			if err != nil {
-				return "", err
+				return "", nil, err
 			}
 		} else {
-			return "", err
+			return "", nil, err
 		}
 	}
 
-	return s.GenerateJWT(user)
+	jwtToken, err := s.GenerateJWT(user)
+	return jwtToken, user, err
 }

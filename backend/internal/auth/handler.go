@@ -86,7 +86,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.service.Login(req)
+	token, user, err := h.service.Login(req)
 	if err != nil {
 		response.Error(w, http.StatusUnauthorized, "AUTHENTICATION_FAILED", err.Error())
 		return
@@ -95,8 +95,13 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// Set secure auth cookies instead of returning token in JSON body
 	h.setAuthCookies(w, token)
 
-	response.JSON(w, http.StatusOK, map[string]string{
-		"message": "Logged in successfully",
+	response.JSON(w, http.StatusOK, map[string]interface{}{
+		"user_id":    user.ID,
+		"full_name":  user.FullName,
+		"email":      user.Email,
+		"role":       "user",
+		"tier":       "Free",
+		"avatar_url": "",
 	})
 }
 
@@ -151,7 +156,7 @@ func (h *Handler) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Exchange code for JWT session token
-	token, err := h.service.HandleGoogleCallback(r.Context(), code)
+	token, _, err := h.service.HandleGoogleCallback(r.Context(), code)
 	if err != nil {
 		response.Error(w, http.StatusUnauthorized, "AUTHENTICATION_FAILED", err.Error())
 		return

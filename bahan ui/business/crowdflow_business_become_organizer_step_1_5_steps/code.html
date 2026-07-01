@@ -1,0 +1,284 @@
+<!DOCTYPE html><html class="light" lang="en" style=""><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0" name="viewport"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet"><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">try{
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "text-primary": "#0F172A",
+                        "text-secondary": "#64748B",
+                        "secondary-fixed": "#dce1ff",
+                        "on-surface-variant": "#45464d",
+                        "tertiary-fixed-dim": "#4fdbc8",
+                        "inverse-primary": "#bec6e0",
+                        "on-secondary-fixed-variant": "#0039b5",
+                        "on-primary-container": "#7c839b",
+                        "background": "#f7f9fb",
+                        "error-container": "#ffdad6",
+                        "secondary": "#1d4ed8",
+                        "surface-variant": "#e0e3e5",
+                        "on-secondary-fixed": "#001551",
+                        "on-primary": "#ffffff",
+                        "surface-container-high": "#e6e8ea",
+                        "tertiary-fixed": "#71f8e4",
+                        "on-background": "#191c1e",
+                        "on-secondary": "#ffffff",
+                        "surface-tint": "#565e74",
+                        "secondary-container": "#4069f2",
+                        "surface-container-highest": "#e0e3e5",
+                        "surface-bright": "#f7f9fb",
+                        "tertiary-container": "#00201c",
+                        "on-secondary-container": "#fffbff",
+                        "surface-container-low": "#f2f4f6",
+                        "error": "#ba1a1a",
+                        "on-error-container": "#93000a",
+                        "on-primary-fixed-variant": "#3f465c",
+                        "success": "#22C55E",
+                        "inverse-on-surface": "#eff1f3",
+                        "surface": "#f7f9fb",
+                        "primary-container": "#131b2e",
+                        "on-error": "#ffffff",
+                        "on-tertiary-fixed-variant": "#005048",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-lowest": "#ffffff",
+                        "on-surface": "#191c1e",
+                        "primary": "#000000",
+                        "primary-fixed": "#dae2fd",
+                        "surface-dim": "#d8dadc",
+                        "surface-white": "#FFFFFF",
+                        "on-tertiary-fixed": "#00201c",
+                        "on-primary-fixed": "#131b2e",
+                        "tertiary": "#000000",
+                        "on-tertiary-container": "#009485",
+                        "outline": "#76777d",
+                        "border-subtle": "#E2E8F0",
+                        "surface-container": "#eceef0",
+                        "secondary-fixed-dim": "#b7c4ff",
+                        "danger": "#EF4444",
+                        "warning": "#F59E0B",
+                        "primary-fixed-dim": "#bec6e0",
+                        "inverse-surface": "#2d3133",
+                        "outline-variant": "#c6c6cd"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-sm": "0.5rem",
+                        "stack-md": "1rem",
+                        "margin-mobile": "1rem",
+                        "container-max": "1280px",
+                        "stack-lg": "2rem",
+                        "section-gap": "5rem",
+                        "margin-desktop": "2.5rem",
+                        "gutter": "1.5rem"
+                    },
+                    "fontFamily": {
+                        "headline-sm": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "label-md": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "headline-lg-mobile": ["Inter"],
+                        "headline-xl": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                        "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                        "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                        "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "700"}],
+                        "headline-xl": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    }catch(_e){}</script></head><body class="flex min-h-screen">
+<!-- SideNavBar (The Anchor) -->
+
+<!-- Main Content Canvas -->
+<main class="flex-1 flex flex-col min-w-0 overflow-y-auto">
+    <!-- Top Navigation (Mobile and Shell Identity) -->
+    <header class="sticky top-0 z-50 bg-surface/80 backdrop-blur-xl border-b border-border-subtle w-full px-4 lg:px-margin-desktop py-4 shadow-sm flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <button class="lg:hidden p-2 hover:bg-surface-container-high rounded-full">
+                <span class="material-symbols-outlined">menu</span>
+            </button>
+            <h2 class="font-headline-md text-headline-md font-bold text-primary tracking-tight">Onboarding Wizard</h2>
+        </div>
+        <div class="flex items-center gap-4">
+            <button class="p-2 text-text-secondary hover:text-primary relative">
+                <span class="material-symbols-outlined">notifications</span>
+                <span class="absolute top-2 right-2 w-2 h-2 bg-secondary rounded-full"></span>
+            </button>
+            <div class="h-8 w-[1px] bg-border-subtle hidden sm:block"></div>
+            <div class="hidden sm:flex items-center gap-2">
+                <span class="text-label-md font-label-md text-text-secondary">Enterprise Admin</span>
+            </div>
+        </div>
+    </header>
+    <!-- Onboarding Canvas -->
+    <div class="max-w-[800px] w-full mx-auto px-4 py-12 lg:py-16">
+        <!-- Step Progress Indicator -->
+        
+        <!-- Form Card -->
+        <div class="bg-surface-white rounded-xl border border-border-subtle shadow-sm overflow-hidden mt-8"><div class="p-8 lg:p-10 border-b border-border-subtle bg-surface-container-low/30">
+            <div class="relative flex items-center justify-between max-w-2xl mx-auto stepper-line">
+                <!-- Step 1: Active -->
+                <div class="relative z-10 flex flex-col items-center">
+                    <div class="w-10 h-10 rounded-full bg-secondary text-on-secondary flex items-center justify-center font-bold shadow-md ring-4 ring-surface-white">
+                        1
+                    </div>
+                    <span class="absolute top-12 text-label-sm md:text-label-md font-bold text-primary whitespace-nowrap">Personal</span>
+                </div>
+                <!-- Step 2: Inactive -->
+                <div class="relative z-10 flex flex-col items-center">
+                    <div class="w-10 h-10 rounded-full bg-surface-white border-2 border-border-subtle text-text-secondary flex items-center justify-center font-bold ring-4 ring-surface-white">
+                        2
+                    </div>
+                    <span class="absolute top-12 text-label-sm md:text-label-md font-medium text-text-secondary whitespace-nowrap">Organization</span>
+                </div>
+                <!-- Step 3: Inactive -->
+                <div class="relative z-10 flex flex-col items-center">
+                    <div class="w-10 h-10 rounded-full bg-surface-white border-2 border-border-subtle text-text-secondary flex items-center justify-center font-bold ring-4 ring-surface-white">
+                        3
+                    </div>
+                    <span class="absolute top-12 text-label-sm md:text-label-md font-medium text-text-secondary whitespace-nowrap">Documents</span>
+                </div>
+                <!-- Step 4: Inactive -->
+                <div class="relative z-10 flex flex-col items-center">
+                    <div class="w-10 h-10 rounded-full bg-surface-white border-2 border-border-subtle text-text-secondary flex items-center justify-center font-bold ring-4 ring-surface-white">
+                        4
+                    </div>
+                    <span class="absolute top-12 text-label-sm md:text-label-md font-medium text-text-secondary whitespace-nowrap">Bank</span>
+                </div>
+                <!-- Step 5: Inactive -->
+                <div class="relative z-10 flex flex-col items-center">
+                    <div class="w-10 h-10 rounded-full bg-surface-white border-2 border-border-subtle text-text-secondary flex items-center justify-center font-bold ring-4 ring-surface-white">
+                        5
+                    </div>
+                    <span class="absolute top-12 text-label-sm md:text-label-md font-medium text-text-secondary whitespace-nowrap">Review</span>
+                </div>
+            </div>
+        </div>
+            <div class="p-8 lg:p-10 border-b border-border-subtle">
+                <h3 class="font-headline-md text-headline-md text-text-primary mb-2">Step 1: Personal Information</h3>
+                <p class="font-body-md text-body-md text-text-secondary">Please provide your official contact information. This will be used for administrative communication and account security.</p>
+            </div>
+            <form class="p-8 lg:p-10 space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Full Name -->
+                    <div class="space-y-2">
+                        <label class="block font-label-md text-label-md text-text-primary" for="full_name">Full Name</label>
+                        <input class="w-full px-4 py-3 rounded-lg border border-border-subtle focus:ring-2 focus:ring-secondary/20 focus:border-secondary transition-all outline-none bg-surface-bright text-body-md font-body-md" id="full_name" placeholder="e.g. Alexander Hamilton" type="text">
+                    </div>
+                    <!-- Position -->
+                    <div class="space-y-2">
+                        <label class="block font-label-md text-label-md text-text-primary" for="position">Position / Title</label>
+                        <select class="w-full px-4 py-3 rounded-lg border border-border-subtle focus:ring-2 focus:ring-secondary/20 focus:border-secondary transition-all outline-none bg-surface-bright text-body-md font-body-md" id="position">
+                            <option disabled="" selected="" value="">Select your role</option>
+                            <option value="ceo">CEO / Founder</option>
+                            <option value="event_manager">Event Manager</option>
+                            <option value="ops">Operations Director</option>
+                            <option value="marketing">Marketing Lead</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <!-- Email -->
+                    <div class="space-y-2">
+                        <label class="block font-label-md text-label-md text-text-primary" for="email">Business Email</label>
+                        <div class="relative">
+                            <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary">mail</span>
+                            <input class="w-full pl-10 pr-4 py-3 rounded-lg border border-border-subtle focus:ring-2 focus:ring-secondary/20 focus:border-secondary transition-all outline-none bg-surface-bright text-body-md font-body-md" id="email" placeholder="alex@company.com" type="email">
+                        </div>
+                    </div>
+                    <!-- Phone -->
+                    <div class="space-y-2">
+                        <label class="block font-label-md text-label-md text-text-primary" for="phone">Phone Number</label>
+                        <div class="relative">
+                            <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary">phone</span>
+                            <input class="w-full pl-10 pr-4 py-3 rounded-lg border border-border-subtle focus:ring-2 focus:ring-secondary/20 focus:border-secondary transition-all outline-none bg-surface-bright text-body-md font-body-md" id="phone" placeholder="+1 (555) 000-0000" type="tel">
+                        </div>
+                    </div>
+                </div>
+                <div class="pt-8 border-t border-border-subtle flex items-center justify-between">
+                    <button class="px-6 py-3 font-label-md text-label-md text-text-secondary hover:text-text-primary transition-colors flex items-center gap-2 group" type="button">
+                        <span class="material-symbols-outlined group-active:-translate-x-1 transition-transform">arrow_back</span>
+                        Back to dashboard
+                    </button><button type="button" class="px-6 py-3 font-label-md text-label-md text-text-secondary hover:text-text-primary border border-border-subtle rounded-lg hover:bg-surface-container-high transition-all flex items-center gap-2">
+    <span class="material-symbols-outlined">save</span>
+    Save Draft
+</button>
+                    <button class="px-8 py-3 bg-text-primary text-on-primary font-label-md text-label-md rounded-lg shadow-md hover:bg-secondary active:scale-95 transition-all duration-200 flex items-center gap-2" type="submit">
+                        Next: Organization Details
+                        <span class="material-symbols-outlined">arrow_forward</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+        <!-- Contextual Info Cards (Bento-lite) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-12">
+            
+            
+        </div>
+    </div>
+    <!-- Footer Shell -->
+    <footer class="w-full py-stack-lg px-margin-desktop bg-surface-container-highest mt-auto border-t border-border-subtle">
+        <div class="max-w-container-max mx-auto grid grid-cols-1 md:grid-cols-4 gap-gutter">
+            <div class="col-span-1 md:col-span-2">
+                <h4 class="font-headline-md text-headline-md font-bold text-primary mb-4">CrowdFlow</h4>
+                <p class="text-body-sm text-text-secondary max-w-xs">Building the future of live entertainment infrastructure for global enterprise organizers.</p>
+            </div>
+            <div>
+                <h5 class="font-label-md text-label-md text-text-primary mb-4">Resources</h5>
+                <ul class="space-y-2">
+                    <li class=""><a class="font-body-sm text-body-sm text-on-surface-variant hover:text-primary transition-all" href="#">Support</a></li>
+                    <li class=""><a class="font-body-sm text-body-sm text-on-surface-variant hover:text-primary transition-all" href="#">Contact Us</a></li>
+                </ul>
+            </div>
+            <div class="">
+                <h5 class="font-label-md text-label-md text-text-primary mb-4">Legal</h5>
+                <ul class="space-y-2">
+                    <li class=""><a class="font-body-sm text-body-sm text-on-surface-variant hover:text-primary transition-all" href="#">Privacy Policy</a></li>
+                    <li class=""><a class="font-body-sm text-body-sm text-on-surface-variant hover:text-primary transition-all" href="#">Legal</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="max-w-container-max mx-auto mt-12 pt-8 border-t border-border-subtle flex flex-col md:flex-row justify-between items-center gap-4">
+            <p class="font-body-sm text-body-sm text-text-secondary">© 2024 CrowdFlow Ticketing Ecosystem. All rights reserved.</p>
+            <div class="flex gap-6">
+                <a class="text-text-secondary hover:text-primary" href="#"><span class="material-symbols-outlined">language</span></a>
+                <a class="text-text-secondary hover:text-primary" href="#"><span class="material-symbols-outlined">share</span></a>
+            </div>
+        </div>
+    </footer>
+</main>
+<script class="">
+    // Micro-interactions for form focus states and stepper animation
+    document.querySelectorAll('input, select').forEach(input => {
+        input.addEventListener('focus', () => {
+            const label = input.closest('.space-y-2')?.querySelector('label');
+            if (label) label.classList.add('text-secondary');
+        });
+        input.addEventListener('blur', () => {
+            const label = input.closest('.space-y-2')?.querySelector('label');
+            if (label) label.classList.remove('text-secondary');
+        });
+    });
+
+    // Simple form validation visual cue
+    const form = document.querySelector('form');
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const btn = e.</script>
+
+</body></html>
