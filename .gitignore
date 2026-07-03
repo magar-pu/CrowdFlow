@@ -21,8 +21,10 @@ backend/main
 backend/main.exe
 backend/backend
 backend/backend.exe
+backend/crowdflow-backend.exe
 backend/bin/
 *.test
+*.exe
 *.prof
 
 # Frontend (Node.js/Next.js)

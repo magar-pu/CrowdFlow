@@ -20,13 +20,13 @@ type Event struct {
 }
 
 type Repository interface {
-	GetAll() ([]*Event, error)
+	GetAll(limit, offset int) ([]*Event, error)
 	GetByID(id int) (*Event, error)
 	Create(event *Event) error
 }
 
 type Service interface {
-	ListEvents() ([]*Event, error)
+	ListEvents(limit, offset int) ([]*Event, error)
 	GetEventDetails(id int) (*Event, error)
 	CreateEvent(event *Event) error
 	PublishEvent(id int) error

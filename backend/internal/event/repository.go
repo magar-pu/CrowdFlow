@@ -1,74 +1,113 @@
 package event
 
 import (
+	"database/sql"
 	"errors"
-	"sync"
-	"time"
 )
 
-type InMemoryRepository struct {
-	mu     sync.RWMutex
-	events map[int]*Event
+type PostgresRepository struct {
+	db *sql.DB
 }
 
-func NewInMemoryRepository() *InMemoryRepository {
-	repo := &InMemoryRepository{
-		events: make(map[int]*Event),
+func NewPostgresRepository(db *sql.DB) *PostgresRepository {
+	return &PostgresRepository{db: db}
+}
+
+func (r *PostgresRepository) GetAll(limit, offset int) ([]*Event, error) {
+	rows, err := r.db.Query(`
+		SELECT id, venue_id, organizer_id, event_name, COALESCE(description, ''), event_start, event_end, 
+		       entertainment_tax_rate, entertainment_tax_passed_to_buyer, status, created_at, updated_at, 
+		       event_type_id, COALESCE(cover_image_url, '') 
+		FROM events
+		WHERE status = 'approved'
+		LIMIT $1 OFFSET $2
+	`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []*Event
+	for rows.Next() {
+		var e Event
+		var eventTypeID sql.NullInt64
+		var coverImageURL sql.NullString
+		err := rows.Scan(
+			&e.ID, &e.VenueID, &e.OrganizerID, &e.EventName, &e.Description, &e.EventStart, &e.EventEnd,
+			&e.EntertainmentTaxRate, &e.EntertainmentTaxPassedToBuyer, &e.Status, &e.CreatedAt, &e.UpdatedAt,
+			&eventTypeID, &coverImageURL,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if eventTypeID.Valid {
+			e.EventTypeID = int(eventTypeID.Int64)
+		}
+		if coverImageURL.Valid {
+			e.CoverImageURL = coverImageURL.String
+		}
+		events = append(events, &e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return events, nil
+}
+
+func (r *PostgresRepository) GetByID(id int) (*Event, error) {
+	var e Event
+	var eventTypeID sql.NullInt64
+	var coverImageURL sql.NullString
+	err := r.db.QueryRow(`
+		SELECT id, venue_id, organizer_id, event_name, COALESCE(description, ''), event_start, event_end, 
+		       entertainment_tax_rate, entertainment_tax_passed_to_buyer, status, created_at, updated_at, 
+		       event_type_id, COALESCE(cover_image_url, '') 
+		FROM events 
+		WHERE id = $1
+	`, id).Scan(
+		&e.ID, &e.VenueID, &e.OrganizerID, &e.EventName, &e.Description, &e.EventStart, &e.EventEnd,
+		&e.EntertainmentTaxRate, &e.EntertainmentTaxPassedToBuyer, &e.Status, &e.CreatedAt, &e.UpdatedAt,
+		&eventTypeID, &coverImageURL,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.New("event not found")
+		}
+		return nil, err
+	}
+	if eventTypeID.Valid {
+		e.EventTypeID = int(eventTypeID.Int64)
+	}
+	if coverImageURL.Valid {
+		e.CoverImageURL = coverImageURL.String
+	}
+	return &e, nil
+}
+
+func (r *PostgresRepository) Create(event *Event) error {
+	var eventTypeID *int
+	if event.EventTypeID > 0 {
+		eventTypeID = &event.EventTypeID
+	}
+	if event.Status == "" {
+		event.Status = "draft"
 	}
 
-	// Seed some initial event data
-	_ = repo.Create(&Event{
-		ID:          1,
-		EventName:   "Grand Symphony Orchestra",
-		Description: "A beautiful classical orchestra concert under the stars.",
-		VenueID:     1,
-		EventStart:  time.Now().AddDate(0, 1, 0),
-		EventEnd:    time.Now().AddDate(0, 1, 1),
-		Status:      "approved",
-	})
-	_ = repo.Create(&Event{
-		ID:          2,
-		EventName:   "Rock & Roll Arena Tour",
-		Description: "Experience live rock and roll performance with cutting-edge visual effects.",
-		VenueID:     2,
-		EventStart:  time.Now().AddDate(0, 2, 15),
-		EventEnd:    time.Now().AddDate(0, 2, 16),
-		Status:      "approved",
-	})
-
-	return repo
+	err := r.db.QueryRow(`
+		INSERT INTO events (
+			venue_id, organizer_id, event_name, description, event_start, event_end, 
+			entertainment_tax_rate, entertainment_tax_passed_to_buyer, status, 
+			event_type_id, cover_image_url
+		) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
+		RETURNING id, created_at, updated_at
+	`, 
+		event.VenueID, event.OrganizerID, event.EventName, event.Description, event.EventStart, event.EventEnd,
+		event.EntertainmentTaxRate, event.EntertainmentTaxPassedToBuyer, event.Status,
+		eventTypeID, event.CoverImageURL,
+	).Scan(&event.ID, &event.CreatedAt, &event.UpdatedAt)
+	
+	return err
 }
 
-func (r *InMemoryRepository) GetAll() ([]*Event, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	list := make([]*Event, 0, len(r.events))
-	for _, val := range r.events {
-		list = append(list, val)
-	}
-	return list, nil
-}
-
-func (r *InMemoryRepository) GetByID(id int) (*Event, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	evt, exists := r.events[id]
-	if !exists {
-		return nil, errors.New("event not found")
-	}
-	return evt, nil
-}
-
-func (r *InMemoryRepository) Create(event *Event) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if event.ID == 0 {
-		return errors.New("event must have a valid ID")
-	}
-	r.events[event.ID] = event
-	return nil
-}
 

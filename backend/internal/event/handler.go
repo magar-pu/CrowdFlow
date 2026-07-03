@@ -2,18 +2,23 @@ package event
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
+	"time"
 
 	"crowdflow-backend/internal/response"
+	"crowdflow-backend/internal/storage"
 )
 
 type Handler struct {
 	service Service
+	storage *storage.S3Storage
 }
 
-func NewHandler(service Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service Service, storage *storage.S3Storage) *Handler {
+	return &Handler{service: service, storage: storage}
 }
 
 func (h *Handler) RegisterRoutes(
@@ -53,7 +58,24 @@ func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleListEvents(w http.ResponseWriter, r *http.Request) {
-	events, err := h.service.ListEvents()
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+
+	limit := 20
+	offset := 0
+
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+	if offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+			offset = o
+		}
+	}
+
+	events, err := h.service.ListEvents(limit, offset)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
@@ -83,12 +105,60 @@ func (h *Handler) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
-	var req Event
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON body")
+	// 1. Enforce strict request body size limit to prevent DoS attacks
+	r.Body = http.MaxBytesReader(w, r.Body, 10 << 20) // 10MB limit
+
+	// 2. Parse Multipart Form
+	err := r.ParseMultipartForm(10 << 20)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse multipart form: Payload too large or malformed")
 		return
 	}
 
+	// 3. Decode Event Metadata JSON string from form field
+	eventDataJSON := r.FormValue("event_data")
+	if eventDataJSON == "" {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Missing event_data form field")
+		return
+	}
+
+	var req Event
+	if err := json.Unmarshal([]byte(eventDataJSON), &req); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid event_data JSON: "+err.Error())
+		return
+	}
+
+	// 4. Process Cover Image file upload if present
+	file, header, err := r.FormFile("cover_image")
+	if err == nil {
+		defer file.Close()
+
+		// Validate file type via secure mime signature sniffing and enforce size limit
+		contentType, err := storage.ValidateImage(file, 10 << 20)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, "INVALID_FILE", "Cover image validation failed: "+err.Error())
+			return
+		}
+
+		// Generate unique storage key
+		ext := filepath.Ext(header.Filename)
+		objectKey := fmt.Sprintf("events/covers/%d%s", time.Now().UnixNano(), ext)
+
+		// Upload file to storage
+		if err := h.storage.UploadFile(r.Context(), objectKey, file, contentType); err != nil {
+			response.Error(w, http.StatusInternalServerError, "UPLOAD_FAILED", "Failed to upload cover image: "+err.Error())
+			return
+		}
+
+		// Assign resolved URL to event model
+		req.CoverImageURL = h.storage.GetPublicURL(objectKey)
+	} else if err != http.ErrMissingFile {
+		// FormFile returned a non-nil error other than "missing file"
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Error reading cover_image field: "+err.Error())
+		return
+	}
+
+	// 5. Save Event details to database
 	if err := h.service.CreateEvent(&req); err != nil {
 		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
 		return
@@ -96,4 +166,5 @@ func (h *Handler) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 
 	response.JSON(w, http.StatusCreated, req)
 }
+
 

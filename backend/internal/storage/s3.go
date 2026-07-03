@@ -2,7 +2,9 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 
@@ -59,13 +61,52 @@ func NewS3Storage() (*S3Storage, error) {
 	}, nil
 }
 
-// UploadFile uploads a file stream to S3/R2 bucket
+// ValidateImage reads the first 512 bytes of a file to check the mime type and sniffs size
+func ValidateImage(file io.ReadSeeker, maxBytes int64) (string, error) {
+	// Check size by seeking to the end of the file
+	size, err := file.Seek(0, io.SeekEnd)
+	if err != nil {
+		return "", fmt.Errorf("failed to determine file size: %w", err)
+	}
+	if size > maxBytes {
+		return "", fmt.Errorf("file size %d exceeds limit of %d bytes", size, maxBytes)
+	}
+
+	// Seek back to start
+	_, err = file.Seek(0, io.SeekStart)
+	if err != nil {
+		return "", fmt.Errorf("failed to reset file reader pointer: %w", err)
+	}
+
+	// Sniff content type using first 512 bytes
+	buff := make([]byte, 512)
+	n, err := file.Read(buff)
+	if err != nil && err != io.EOF {
+		return "", fmt.Errorf("failed to read file header: %w", err)
+	}
+
+	// Reset read pointer again so subsequent uploads can read the full stream
+	_, err = file.Seek(0, io.SeekStart)
+	if err != nil {
+		return "", fmt.Errorf("failed to reset file reader pointer after sniffing: %w", err)
+	}
+
+	contentType := http.DetectContentType(buff[:n])
+	if !strings.HasPrefix(contentType, "image/") {
+		return "", fmt.Errorf("invalid file type: detected %s", contentType)
+	}
+
+	return contentType, nil
+}
+
+// UploadFile uploads a file stream to S3/R2 bucket with cache controls
 func (s *S3Storage) UploadFile(ctx context.Context, key string, file io.Reader, contentType string) error {
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(s.bucketName),
-		Key:         aws.String(key),
-		Body:        file,
-		ContentType: aws.String(contentType),
+		Bucket:       aws.String(s.bucketName),
+		Key:          aws.String(key),
+		Body:         file,
+		ContentType:  aws.String(contentType),
+		CacheControl: aws.String("public, max-age=31536000"), // Cache aggressively for 1 year
 	})
 	return err
 }
@@ -80,3 +121,4 @@ func (s *S3Storage) GetPublicURL(key string) string {
 	endpoint := strings.TrimSuffix(os.Getenv("S3_ENDPOINT"), "/")
 	return endpoint + "/" + s.bucketName + "/" + strings.TrimPrefix(key, "/")
 }
+

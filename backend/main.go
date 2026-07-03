@@ -13,6 +13,7 @@ import (
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/platform/database"
 	"crowdflow-backend/internal/response"
+	"crowdflow-backend/internal/storage"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -82,10 +83,15 @@ func main() {
 	// Initialize Auth Middleware
 	authMounter := middleware.NewAuthMiddleware(jwtSecret, db)
 
+	// Initialize Storage Client
+	s3Storage, err := storage.NewS3Storage()
+	if err != nil {
+		log.Fatalf("Failed to initialize S3 storage: %s", err)
+	}
 	// Initialize domain packages dependencies
-	eventRepo := event.NewInMemoryRepository()
+	eventRepo := event.NewPostgresRepository(db)
 	eventService := event.NewEventService(eventRepo)
-	eventHandler := event.NewHandler(eventService)
+	eventHandler := event.NewHandler(eventService, s3Storage)
 
 	// Register feature routes
 	eventHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole, authMounter.RequireEventRole)
