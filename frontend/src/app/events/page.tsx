@@ -15,7 +15,7 @@
  * params.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { EventSearchHero } from "@/components/event-discovery/EventSearchHero";
 import { FeaturedCarousel } from "@/components/event-discovery/FeaturedCarousel";
@@ -31,6 +31,8 @@ import {
   mockAIRecommendedEvents,
   mockEventListingCards,
 } from "@/mock/eventDiscoveryData";
+import { listEvents } from "@/lib/api/events";
+import { EventListingCard as EventCardType } from "@/types/ticket";
 
 const DEFAULT_MAX_PRICE = 5_000_000;
 
@@ -42,6 +44,44 @@ export default function EventsDiscoveryPage() {
   const [availability, set_availability] = useState<"tersedia" | "terbatas">(
     "tersedia"
   );
+  const [dbEvents, setDbEvents] = useState<EventCardType[]>([]);
+
+  useEffect(() => {
+    listEvents()
+      .then((res) => {
+        if (res.success && res.data && res.data.length > 0) {
+          const mapped: EventCardType[] = res.data.map((evt) => {
+            const startsAtDate = new Date(evt.starts_at);
+            const formattedDate = startsAtDate.toLocaleDateString("id-ID", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            });
+            return {
+              event_id: String(evt.event_id),
+              title: evt.title,
+              category_label: "Music • Konser",
+              cover_image_url: evt.cover_image_url || "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=800&auto=format&fit=crop",
+              badge: "on_sale",
+              trust_signal: "verified",
+              date_label: `${formattedDate} • ${startsAtDate.toLocaleTimeString("id-ID", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })} WIB`,
+              venue_label: evt.venue ? `${evt.venue.name}, ${evt.venue.city}` : "Lokasi Belum Ditentukan",
+              starting_price: 150_000,
+              city: evt.venue ? evt.venue.city : "Jakarta",
+            };
+          });
+          setDbEvents(mapped);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch events from API:", err);
+      });
+  }, []);
+
+  const displayEvents = dbEvents.length > 0 ? dbEvents : mockEventListingCards;
 
   function handle_toggle_city(city: string) {
     set_selected_cities((cities) =>
@@ -59,7 +99,7 @@ export default function EventsDiscoveryPage() {
   }
 
   const filtered_events = useMemo(() => {
-    let events = mockEventListingCards.filter(
+    let events = displayEvents.filter(
       (event) => event.starting_price <= max_price
     );
 
@@ -82,7 +122,7 @@ export default function EventsDiscoveryPage() {
     }
 
     return events;
-  }, [selected_cities, max_price, availability, sort_by]);
+  }, [displayEvents, selected_cities, max_price, availability, sort_by]);
 
   return (
     <div className="min-h-screen bg-background">

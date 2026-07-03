@@ -14,7 +14,8 @@
  * Component wrapper, or `use(params)` here if this stays a Client Component.
  */
 
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { EventHero } from "@/components/event-detail/EventHero";
@@ -24,12 +25,52 @@ import { TicketSelectionCard } from "@/components/event-detail/TicketSelectionCa
 import { OrganizerInfoCard } from "@/components/event-detail/OrganizerInfoCard";
 import { formatIDR } from "@/lib/pricing";
 import { mockEvent } from "@/mock/eventData";
+import { getEvent } from "@/lib/api/events";
+import { Event } from "@/types/ticket";
 
 export default function EventDetailPage() {
   const router = useRouter();
-  const event = mockEvent; // TODO: replace with getEvent(event_id) once the Go API exists
+  const params = useParams();
+  const event_id = params?.event_id;
+  const [event, setEvent] = useState<Event | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const active_categories = event.ticket_categories.filter((c) => c.is_active);
+  useEffect(() => {
+    if (!event_id) return;
+    const id = parseInt(event_id as string, 10);
+    if (isNaN(id)) {
+      setEvent(mockEvent);
+      setLoading(false);
+      return;
+    }
+
+    getEvent(id)
+      .then((res) => {
+        if (res.success && res.data) {
+          setEvent(res.data);
+        } else {
+          setEvent(mockEvent);
+        }
+      })
+      .catch(() => {
+        setEvent(mockEvent);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [event_id]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-surface text-muted-foreground">
+        <div className="animate-pulse text-lg">Memuat rincian event...</div>
+      </div>
+    );
+  }
+
+  const currentEvent = event || mockEvent;
+  const categories = currentEvent.ticket_categories || mockEvent.ticket_categories;
+  const active_categories = categories.filter((c) => c.is_active);
   const cheapest_price = Math.min(
     ...active_categories.map((c) => c.face_value)
   );
@@ -37,14 +78,11 @@ export default function EventDetailPage() {
     active_categories.length > 0 ? formatIDR(cheapest_price) : "—";
 
   function handle_continue(ticket_category_id: string) {
-    // High-demand events route through the virtual waiting room first
-    // (anti-bot/high-traffic queueing per the BRD); other events skip
-    // straight to seat selection.
     const query = `?ticket_category_id=${ticket_category_id}`;
-    if (event.is_high_demand) {
-      router.push(`/events/${event.event_id}/queue${query}`);
+    if (currentEvent.is_high_demand) {
+      router.push(`/events/${currentEvent.event_id}/queue${query}`);
     } else {
-      router.push(`/events/${event.event_id}/seats${query}`);
+      router.push(`/events/${currentEvent.event_id}/seats${query}`);
     }
   }
 
@@ -53,25 +91,25 @@ export default function EventDetailPage() {
       <Navbar active_href="/events" />
 
       <main className="flex-grow">
-        <EventHero event={event} starting_price_label={starting_price_label} />
+        <EventHero event={currentEvent} starting_price_label={starting_price_label} />
 
         <div className="mx-auto grid w-full max-w-container-max grid-cols-1 items-start gap-gutter px-margin-mobile py-section-gap md:px-margin-desktop lg:grid-cols-12">
           {/* Left column */}
           <div className="flex flex-col gap-12 lg:col-span-8">
             <AboutEventSection
-              description={event.description}
-              important_info={event.important_info}
+              description={currentEvent.description}
+              important_info={currentEvent.important_info || mockEvent.important_info}
             />
-            <VenueInfoSection venue={event.venue} />
+            <VenueInfoSection venue={currentEvent.venue || mockEvent.venue} />
           </div>
 
           {/* Right column — sticky */}
           <div className="flex flex-col gap-6 lg:sticky lg:top-28 lg:col-span-4">
             <TicketSelectionCard
-              ticket_categories={event.ticket_categories}
+              ticket_categories={categories}
               on_continue={handle_continue}
             />
-            <OrganizerInfoCard organizer={event.organizer} />
+            <OrganizerInfoCard organizer={currentEvent.organizer || mockEvent.organizer} />
           </div>
         </div>
       </main>
