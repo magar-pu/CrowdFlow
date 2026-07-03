@@ -29,7 +29,7 @@ export function HeroSearchSection() {
       {/* Headline */}
       <div className="relative z-10 mb-6 max-w-3xl px-2 text-center md:mb-stack-lg">
         <h1 className="mb-3 text-3xl font-bold leading-tight tracking-tight text-white md:font-headline-xl md:text-headline-xl">
-          Temukan Event Seru di Sekitar Anda
+          Temukan Event Seru Di Sekitar Kamu
         </h1>
         <p className="text-sm text-white/80 md:font-body-lg md:text-body-lg">
           Pesan tiket konser, festival, olahraga, dan seminar terbaik

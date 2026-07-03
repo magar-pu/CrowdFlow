@@ -3,6 +3,7 @@ package event
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"crowdflow-backend/internal/response"
 )
@@ -28,9 +29,15 @@ func (h *Handler) RegisterRoutes(
 }
 
 func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if id == "" {
+	idStr := r.PathValue("id")
+	if idStr == "" {
 		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID path parameter is required")
+		return
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
 		return
 	}
 
@@ -39,7 +46,7 @@ func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.JSON(w, http.StatusOK, map[string]string{
+	response.JSON(w, http.StatusOK, map[string]interface{}{
 		"message":  "Event published successfully",
 		"event_id": id,
 	})
@@ -55,9 +62,15 @@ func (h *Handler) handleListEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleGetEvent(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if id == "" {
+	idStr := r.PathValue("id")
+	if idStr == "" {
 		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID path parameter is required")
+		return
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
 		return
 	}
 
@@ -83,3 +96,4 @@ func (h *Handler) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 
 	response.JSON(w, http.StatusCreated, req)
 }
+
