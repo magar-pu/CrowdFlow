@@ -1,0 +1,52 @@
+{
+  "sorted_middleware": [],
+  "middleware": {
+    "/": {
+      "files": [
+        "server/edge/chunks/1snw_next_dist_esm_build_templates_edge-wrapper_1va9xvc.js",
+        "server/edge/chunks/[root-of-the-server]__02_y9xw._.js",
+        "server/edge/chunks/0p3v_next_dist_esm_build_templates_edge-wrapper_14mks_h.js"
+      ],
+      "name": "middleware",
+      "page": "/",
+      "entrypoint": "server/edge/chunks/0p3v_next_dist_esm_build_templates_edge-wrapper_14mks_h.js",
+      "matchers": [
+        {
+          "regexp": "/admin/:nextData(_next/data/[^/]{1,})?/dashboard/:path*{(\\.json|\\.rsc|\\.segments/.+\\.segment\\.rsc)}?",
+          "originalSource": "/dashboard/:path*"
+        },
+        {
+          "regexp": "/admin/:nextData(_next/data/[^/]{1,})?/profile/:path*{(\\.json|\\.rsc|\\.segments/.+\\.segment\\.rsc)}?",
+          "originalSource": "/profile/:path*"
+        },
+        {
+          "regexp": "/admin/:nextData(_next/data/[^/]{1,})?/orders/:path*{(\\.json|\\.rsc|\\.segments/.+\\.segment\\.rsc)}?",
+          "originalSource": "/orders/:path*"
+        },
+        {
+          "regexp": "/admin/:nextData(_next/data/[^/]{1,})?/checkout/:path*{(\\.json|\\.rsc|\\.segments/.+\\.segment\\.rsc)}?",
+          "originalSource": "/checkout/:path*"
+        },
+        {
+          "regexp": "/admin/:nextData(_next/data/[^/]{1,})?/login{(\\.json|\\.rsc|\\.segments/.+\\.segment\\.rsc)}?",
+          "originalSource": "/login"
+        },
+        {
+          "regexp": "/admin/:nextData(_next/data/[^/]{1,})?/register{(\\.json|\\.rsc|\\.segments/.+\\.segment\\.rsc)}?",
+          "originalSource": "/register"
+        }
+      ],
+      "wasm": [],
+      "assets": [],
+      "env": {
+        "__NEXT_BUILD_ID": "BiUPf0jCiZeod7pI9MMW3",
+        "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "4KOpsKAjW0a/mD4SZL/gZUx8XmyffuXtpXxqWOnYX3E=",
+        "__NEXT_PREVIEW_MODE_ID": "2d7233fa6e718fb8501c24085538c682",
+        "__NEXT_PREVIEW_MODE_ENCRYPTION_KEY": "e447561ddddfca64cadfb44103d1faa076bbda4223a85ced5fdbf205f6930e1d",
+        "__NEXT_PREVIEW_MODE_SIGNING_KEY": "82f22eca6173173a339c8afbb93c5ae60a780b9c4fe676c83b09676485bf4204"
+      }
+    }
+  },
+  "instrumentation": null,
+  "functions": {}
+}

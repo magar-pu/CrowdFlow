@@ -1,0 +1,54 @@
+{
+  "version": 3,
+  "middleware": {
+    "/": {
+      "files": [
+        "server/edge/chunks/1snw_next_dist_13fpb69._.js",
+        "server/edge/chunks/[root-of-the-server]__13jvavz._.js",
+        "server/edge/chunks/0p3v_next_dist_esm_build_templates_edge-wrapper_0vmend1.js"
+      ],
+      "name": "middleware",
+      "page": "/",
+      "entrypoint": "server/edge/chunks/0p3v_next_dist_esm_build_templates_edge-wrapper_0vmend1.js",
+      "matchers": [
+        {
+          "regexp": "^\\/admin(?:\\/(_next\\/data\\/[^/]{1,}))?\\/dashboard(?:\\/((?:[^\\/#\\?]+?)(?:\\/(?:[^\\/#\\?]+?))*))?(\\.json|\\.rsc|\\.segments\\/.+\\.segment\\.rsc)?[\\/#\\?]?$",
+          "originalSource": "/dashboard/:path*"
+        },
+        {
+          "regexp": "^\\/admin(?:\\/(_next\\/data\\/[^/]{1,}))?\\/profile(?:\\/((?:[^\\/#\\?]+?)(?:\\/(?:[^\\/#\\?]+?))*))?(\\.json|\\.rsc|\\.segments\\/.+\\.segment\\.rsc)?[\\/#\\?]?$",
+          "originalSource": "/profile/:path*"
+        },
+        {
+          "regexp": "^\\/admin(?:\\/(_next\\/data\\/[^/]{1,}))?\\/orders(?:\\/((?:[^\\/#\\?]+?)(?:\\/(?:[^\\/#\\?]+?))*))?(\\.json|\\.rsc|\\.segments\\/.+\\.segment\\.rsc)?[\\/#\\?]?$",
+          "originalSource": "/orders/:path*"
+        },
+        {
+          "regexp": "^\\/admin(?:\\/(_next\\/data\\/[^/]{1,}))?\\/checkout(?:\\/((?:[^\\/#\\?]+?)(?:\\/(?:[^\\/#\\?]+?))*))?(\\.json|\\.rsc|\\.segments\\/.+\\.segment\\.rsc)?[\\/#\\?]?$",
+          "originalSource": "/checkout/:path*"
+        },
+        {
+          "regexp": "^\\/admin(?:\\/(_next\\/data\\/[^/]{1,}))?\\/login(\\.json|\\.rsc|\\.segments\\/.+\\.segment\\.rsc)?[\\/#\\?]?$",
+          "originalSource": "/login"
+        },
+        {
+          "regexp": "^\\/admin(?:\\/(_next\\/data\\/[^/]{1,}))?\\/register(\\.json|\\.rsc|\\.segments\\/.+\\.segment\\.rsc)?[\\/#\\?]?$",
+          "originalSource": "/register"
+        }
+      ],
+      "wasm": [],
+      "assets": [],
+      "env": {
+        "__NEXT_BUILD_ID": "development",
+        "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": "YPG6W3NqJ9tR8mfecFOSTlGL3jrJUV7SoSUipyGi16g=",
+        "__NEXT_PREVIEW_MODE_ID": "4069662fadc3f3891a63a45dfaa23d6c",
+        "__NEXT_PREVIEW_MODE_ENCRYPTION_KEY": "f55bfabf83662f44e4e197e8af015fff0405779aef20e70f8d4791684716fb26",
+        "__NEXT_PREVIEW_MODE_SIGNING_KEY": "d3861037a98b7719d99d58dc7011aef26f5ad840fc257cbea8e899cdecc523e5"
+      }
+    }
+  },
+  "sortedMiddleware": [
+    "/"
+  ],
+  "functions": {}
+}

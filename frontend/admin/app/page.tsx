@@ -1,0 +1,281 @@
+"use client";
+
+import React, { useState } from 'react';
+import { 
+  initialEvents, 
+  initialUsers, 
+  initialScanners, 
+  initialTransactions, 
+  initialPayouts, 
+  initialVerificationApplications, 
+  initialSecurityAlerts, 
+  initialActivities,
+  initialTicketTiers,
+  initialVenueSections
+} from '../data';
+import { Event, User, Scanner, Transaction, Payout, VerificationApplication, SecurityAlert, Activity, TicketTier, VenueSection } from '../types';
+
+import Sidebar from '../components/Sidebar';
+import Header from '../components/Header';
+import DashboardView from '../components/DashboardView';
+import AnalyticsView from '../components/AnalyticsView';
+import EventManagementView from '../components/EventManagementView';
+import EventWorkspaceView from '../components/EventWorkspaceView';
+import UserManagementView from '../components/UserManagementView';
+import FinanceView from '../components/FinanceView';
+import SettingsView from '../components/SettingsView';
+
+export default function AdminPage() {
+  const [currentView, setCurrentView] = useState<'dashboard' | 'analytics' | 'events' | 'users' | 'finance' | 'settings' | 'workspace'>('dashboard');
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+
+  const [events, setEvents] = useState<Event[]>(initialEvents);
+  const [users, setUsers] = useState<User[]>(initialUsers);
+  const [scanners, setScanners] = useState<Scanner[]>(initialScanners);
+  const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions);
+  const [payouts, setPayouts] = useState<Payout[]>(initialPayouts);
+  const [verifications, setVerifications] = useState<VerificationApplication[]>(initialVerificationApplications);
+  const [securityAlerts, setSecurityAlerts] = useState<SecurityAlert[]>(initialSecurityAlerts);
+  const [activities, setActivities] = useState<Activity[]>(initialActivities);
+
+  const [ticketTiers, setTicketTiers] = useState<TicketTier[]>(initialTicketTiers);
+  const [venueSections, setVenueSections] = useState<VenueSection[]>(initialVenueSections);
+
+  const handleApproveVerification = (appId: string) => {
+    const targetApp = verifications.find(v => v.id === appId);
+    if (!targetApp) return;
+
+    setVerifications(prev => prev.map(v => v.id === appId ? { ...v, status: 'Approved' } : v));
+    setUsers(prev => prev.map(u => u.name === targetApp.name ? { ...u, status: 'Verified' } : u));
+
+    const newActivity: Activity = {
+      id: `ACT-${Math.floor(900 + Math.random() * 99)}`,
+      userName: 'Richie M.',
+      action: 'Verified Organization',
+      detail: `Approved ${targetApp.name} live operations verification.`,
+      timestamp: 'Just now'
+    };
+    setActivities(prev => [newActivity, ...prev]);
+    alert(`Successfully processed identity verification for: ${targetApp.name}. Database nodes updated.`);
+  };
+
+  const handleRejectVerification = (appId: string) => {
+    const targetApp = verifications.find(v => v.id === appId);
+    if (!targetApp) return;
+
+    setVerifications(prev => prev.map(v => v.id === appId ? { ...v, status: 'Rejected' } : v));
+
+    const newActivity: Activity = {
+      id: `ACT-${Math.floor(900 + Math.random() * 99)}`,
+      userName: 'Richie M.',
+      action: 'Verification Rejected',
+      detail: `Rejected ${targetApp.name} credentials. Requested resubmission.`,
+      timestamp: 'Just now'
+    };
+    setActivities(prev => [newActivity, ...prev]);
+    alert(`Rejected credentials application for: ${targetApp.name}. Files flagged for resubmission.`);
+  };
+
+  const handleToggleUserStatus = (userId: string, newStatus: 'Verified' | 'Suspended') => {
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, status: newStatus } : u));
+
+    const targetUser = users.find(u => u.id === userId);
+    if (!targetUser) return;
+
+    const newActivity: Activity = {
+      id: `ACT-${Math.floor(900 + Math.random() * 99)}`,
+      userName: 'Richie M.',
+      action: newStatus === 'Suspended' ? 'Issued Suspension' : 'Verified User',
+      detail: `${newStatus === 'Suspended' ? 'Revoked' : 'Re-instated'} system access nodes for ${targetUser.name}.`,
+      timestamp: 'Just now'
+    };
+    setActivities(prev => [newActivity, ...prev]);
+    alert(`User status for ${targetUser.name} modified to: ${newStatus.toUpperCase()}.`);
+  };
+
+  const handleProcessPayout = (payoutId: string) => {
+    const targetPayout = payouts.find(p => p.id === payoutId);
+    if (!targetPayout) return;
+
+    setPayouts(prev => prev.map(p => p.id === payoutId ? { ...p, status: 'Processed' } : p));
+    setEvents(prev => prev.map(e => e.name === targetPayout.eventName ? {
+      ...e,
+      totalRevenue: Math.max(0, e.totalRevenue - targetPayout.amount)
+    } : e));
+
+    const newActivity: Activity = {
+      id: `ACT-${Math.floor(900 + Math.random() * 99)}`,
+      userName: 'Finance System',
+      action: 'Settled Payout',
+      detail: `Disbursed payout balance of $${targetPayout.amount.toLocaleString()} to ${targetPayout.organizerName}.`,
+      timestamp: 'Just now'
+    };
+    setActivities(prev => [newActivity, ...prev]);
+    alert(`Payout wire dispatched successfully to: ${targetPayout.organizerName}.`);
+  };
+
+  const handleRejectPayout = (payoutId: string) => {
+    setPayouts(prev => prev.map(p => p.id === payoutId ? { ...p, status: 'Failed' } : p));
+    alert('Wire payout flagged and locked in escrow pending audit review.');
+  };
+
+  const handleUpdateTransactionStatus = (txId: string, newStatus: 'Success' | 'Refunded') => {
+    setTransactions(prev => prev.map(t => t.id === txId ? { ...t, status: newStatus } : t));
+
+    const targetTx = transactions.find(t => t.id === txId);
+    if (!targetTx) return;
+
+    if (newStatus === 'Refunded') {
+      setEvents(prev => prev.map(e => e.name === targetTx.eventName ? {
+        ...e,
+        ticketsSold: Math.max(0, e.ticketsSold - 1),
+        totalRevenue: Math.max(0, e.totalRevenue - targetTx.amount)
+      } : e));
+    }
+
+    const newActivity: Activity = {
+      id: `ACT-${Math.floor(900 + Math.random() * 99)}`,
+      userName: 'Refund Desk',
+      action: newStatus === 'Refunded' ? 'Issued Refund' : 'Re-instated Success',
+      detail: `Refund process ${newStatus === 'Refunded' ? 'completed' : 'rejected'} for transaction: ${txId}.`,
+      timestamp: 'Just now'
+    };
+    setActivities(prev => [newActivity, ...prev]);
+    alert(`Transaction status for ${txId} has been resolved: ${newStatus.toUpperCase()}.`);
+  };
+
+  const handleAddEvent = (newEvent: Event) => {
+    setEvents(prev => [newEvent, ...prev]);
+
+    const newActivity: Activity = {
+      id: `ACT-${Math.floor(900 + Math.random() * 99)}`,
+      userName: 'Richie M.',
+      action: 'Launched Event Node',
+      detail: `Initiated active ticket contract for: ${newEvent.name}.`,
+      timestamp: 'Just now'
+    };
+    setActivities(prev => [newActivity, ...prev]);
+    alert(`Successfully launched Event contract node for "${newEvent.name}".`);
+  };
+
+  const handleAddScanner = (newScanner: Scanner) => {
+    setScanners(prev => [...prev, newScanner]);
+    alert(`Laser device token [${newScanner.id}] registered successfully. Access node synchronized.`);
+  };
+
+  const handleDeleteScanner = (id: string) => {
+    setScanners(prev => prev.filter(s => s.id !== id));
+    alert(`Device token access revoked. Remote locking lockouts synchronized.`);
+  };
+
+  const selectedEvent = events.find(e => e.id === selectedEventId);
+
+  return (
+    <div id="crowdflow-admin-root" className="min-h-screen bg-slate-50 text-slate-900 flex font-sans w-full">
+      {/* 1. Global Left Navigation Sidebar */}
+      <Sidebar 
+        currentView={currentView} 
+        onViewChange={(view) => {
+          setCurrentView(view);
+          setSelectedEventId(null);
+        }} 
+        pendingVerificationsCount={verifications.filter(v => v.status === 'Pending').length}
+      />
+
+      {/* 2. Main Right Operations Container */}
+      <div className="flex-1 pl-64 min-h-screen flex flex-col bg-slate-50 w-full">
+        {/* Global Header Search & Alerts popover */}
+        <Header 
+          alerts={securityAlerts} 
+          onClearAlert={(id) => setSecurityAlerts(prev => prev.filter(a => a.id !== id))}
+        />
+
+        {/* Core dynamic content main frame */}
+        <main className="flex-1 p-6 md:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
+          {currentView === 'dashboard' && (
+            <DashboardView 
+              events={events}
+              users={users}
+              transactions={transactions}
+              verifications={verifications}
+              alerts={securityAlerts}
+              activities={activities}
+              onApproveVerification={handleApproveVerification}
+              onRejectVerification={handleRejectVerification}
+              onViewChange={(view) => {
+                setCurrentView(view);
+                setSelectedEventId(null);
+              }}
+              onSelectEvent={(id) => {
+                setSelectedEventId(id);
+                setCurrentView('workspace');
+              }}
+            />
+          )}
+
+          {currentView === 'analytics' && (
+            <AnalyticsView 
+              events={events}
+              users={users}
+              transactions={transactions}
+            />
+          )}
+
+          {currentView === 'events' && (
+            <EventManagementView 
+              events={events}
+              onAddEvent={handleAddEvent}
+              onSelectEvent={(id) => {
+                setSelectedEventId(id);
+                setCurrentView('workspace');
+              }}
+            />
+          )}
+
+          {currentView === 'workspace' && selectedEvent && (
+            <EventWorkspaceView 
+              event={selectedEvent}
+              scanners={scanners}
+              ticketTiers={ticketTiers}
+              venueSections={venueSections}
+              transactions={transactions}
+              onBack={() => {
+                setCurrentView('events');
+                setSelectedEventId(null);
+              }}
+              onAddScanner={handleAddScanner}
+              onDeleteScanner={handleDeleteScanner}
+              onUpdateSections={setVenueSections}
+              onUpdateTiers={setTicketTiers}
+              onUpdateScanners={setScanners}
+            />
+          )}
+
+          {currentView === 'users' && (
+            <UserManagementView 
+              users={users}
+              verifications={verifications}
+              onApproveVerification={handleApproveVerification}
+              onRejectVerification={handleRejectVerification}
+              onToggleUserStatus={handleToggleUserStatus}
+            />
+          )}
+
+          {currentView === 'finance' && (
+            <FinanceView 
+              transactions={transactions}
+              payouts={payouts}
+              onProcessPayout={handleProcessPayout}
+              onRejectPayout={handleRejectPayout}
+              onUpdateTransactionStatus={handleUpdateTransactionStatus}
+            />
+          )}
+
+          {currentView === 'settings' && (
+            <SettingsView />
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}

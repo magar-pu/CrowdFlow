@@ -1,0 +1,3 @@
+module.exports=[28156,a=>{"use strict";var b=a.i(61909);a.s(["default",0,function({children:a}){return(0,b.jsx)("html",{lang:"en",children:(0,b.jsx)("body",{className:"antialiased",children:a})})},"metadata",0,{title:"CrowdFlow Admin Operations Panel",description:"Enterprise administration portal for event ticketing, verifications, and compliance desk."}])},27774,a=>{a.n(a.i(28156))}];
+
+//# sourceMappingURL=admin_app_layout_tsx_1jupl-b._.js.map
