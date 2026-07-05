@@ -4,12 +4,11 @@
  * My Profile page — sesuai Stitch design crowdflow_my_profile_modern_nav.
  * Layout: sidebar kiri (avatar, stats card, quick links) + konten kanan
  * (Personal Information form + Recent Activity timeline).
- * Semua data dari mock — siap swap ke GET /api/v1/me nanti.
  */
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Ticket,
@@ -25,86 +24,11 @@ import {
   Settings,
 } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
+import { getMe, updateProfile, UserProfileResponse } from "@/lib/api/auth";
 
-// ── Mock data (ganti dengan real auth context + API call nanti) ──────────
+// ── Stat card data mapping ──────────────────────────────────────────────────
 
-interface UserProfile {
-  user_id: string;
-  full_name: string;
-  email: string;
-  phone_number: string;
-  location: string;
-  bio: string;
-  avatar_url: string;
-  role: "user" | "verified_organizer";
-  tier: "Free" | "Pro Tier" | "Enterprise";
-  member_since: string; // e.g. "October 2023"
-  stats: {
-    total_tickets: number;
-    events_attended: number;
-    saved_events: number;
-    total_orders: number;
-  };
-}
-
-interface ActivityItem {
-  activity_id: string;
-  type: "ticket_purchased" | "event_saved" | "profile_updated";
-  title: string;
-  description: string;
-  tag_label?: string;
-  tag_href?: string;
-  time_label: string;
-}
-
-const MOCK_USER: UserProfile = {
-  user_id: "usr_001",
-  full_name: "Richie Obhasa",
-  email: "richie@gmail.com",
-  phone_number: "+62 812-3456-7890",
-  location: "Jakarta, Indonesia",
-  bio: "Live music enthusiast and frequent conference attendee. Always looking for the next big tech summit or indie rock concert.",
-  avatar_url: "",
-  role: "verified_organizer",
-  tier: "Pro Tier",
-  member_since: "October 2023",
-  stats: {
-    total_tickets: 42,
-    events_attended: 18,
-    saved_events: 7,
-    total_orders: 24,
-  },
-};
-
-const MOCK_ACTIVITY: ActivityItem[] = [
-  {
-    activity_id: "act_001",
-    type: "ticket_purchased",
-    title: "Ticket Purchased",
-    description: 'Purchased 2 VIP tickets for "Global Tech Summit 2024".',
-    tag_label: "Order #ORD-89241",
-    tag_href: "/orders/ORD-89241",
-    time_label: "2 hours ago",
-  },
-  {
-    activity_id: "act_002",
-    type: "event_saved",
-    title: "Event Saved",
-    description: 'Added "Neon Lights Festival" to your saved events list.',
-    time_label: "Yesterday",
-  },
-  {
-    activity_id: "act_003",
-    type: "profile_updated",
-    title: "Profile Updated",
-    description: "Successfully updated phone number and billing address.",
-    time_label: "Oct 12, 2023",
-  },
-];
-
-// ── Stat card data ────────────────────────────────────────────────────────
-
-const STATS = (s: UserProfile["stats"]) => [
+const STATS = (s: UserProfileResponse["stats"]) => [
   { label: "Total Tickets", value: s.total_tickets, icon: Ticket, color: "text-secondary bg-secondary/10" },
   { label: "Events Attended", value: s.events_attended, icon: CalendarCheck, color: "text-secondary bg-secondary/10" },
   { label: "Saved Events", value: s.saved_events, icon: Bookmark, color: "text-text-secondary bg-surface-container" },
@@ -114,19 +38,101 @@ const STATS = (s: UserProfile["stats"]) => [
 // ── Component ─────────────────────────────────────────────────────────────
 
 export default function ProfilePage() {
-  const user = MOCK_USER;
-  const [form, set_form] = useState({
-    full_name: user.full_name,
-    email: user.email,
-    phone_number: user.phone_number,
-    location: user.location,
-    bio: user.bio,
-  });
+  const [profile, setProfile] = useState<UserProfileResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [editing, set_editing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  function handle_save() {
-    // TODO: PUT /api/v1/me
-    set_editing(false);
+  const [form, set_form] = useState({
+    full_name: "",
+    email: "",
+    phone_number: "",
+    location: "",
+    bio: "",
+  });
+
+  useEffect(() => {
+    async function loadProfile() {
+      try {
+        const response = await getMe();
+        if (response.success && response.data) {
+          setProfile(response.data);
+          set_form({
+            full_name: response.data.full_name,
+            email: response.data.email,
+            phone_number: response.data.phone_number,
+            location: response.data.location,
+            bio: response.data.bio,
+          });
+        } else {
+          setError(response.error?.message || "Failed to load profile");
+        }
+      } catch (err) {
+        setError("An unexpected error occurred while loading profile.");
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadProfile();
+  }, []);
+
+  async function handle_save() {
+    setSaving(true);
+    setSaveSuccess(null);
+    setSaveError(null);
+    try {
+      const res = await updateProfile({
+        full_name: form.full_name,
+        phone_number: form.phone_number,
+        location: form.location,
+        bio: form.bio,
+      });
+      if (res.success) {
+        setSaveSuccess("Profile updated successfully!");
+        set_editing(false);
+        // Reload profile to refresh all bindings
+        const response = await getMe();
+        if (response.success && response.data) {
+          setProfile(response.data);
+        }
+      } else {
+        setSaveError(res.error?.message || "Failed to update profile");
+      }
+    } catch (err) {
+      setSaveError("An unexpected error occurred while saving profile.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar active_href="/" is_authenticated={true} />
+        <div className="flex h-[calc(100vh-80px)] w-full items-center justify-center">
+          <div className="flex flex-col items-center space-y-4">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+            <p className="text-sm font-medium text-text-secondary">Loading profile...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !profile) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar active_href="/" is_authenticated={true} />
+        <div className="mx-auto max-w-container-max px-margin-mobile py-8 md:px-margin-desktop text-center">
+          <div className="rounded-lg border border-danger/20 bg-danger/5 px-4 py-3 text-danger inline-block">
+            {error || "Profile could not be loaded."}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -156,7 +162,11 @@ export default function ProfilePage() {
           <div className="flex shrink-0 items-center gap-3">
             <button
               type="button"
-              onClick={() => set_editing((e) => !e)}
+              onClick={() => {
+                set_editing((e) => !e);
+                setSaveSuccess(null);
+                setSaveError(null);
+              }}
               className="rounded-lg border border-border-subtle bg-white px-4 py-2 font-label-md text-label-md text-text-primary transition-all hover:bg-surface-container-high"
             >
               {editing ? "Cancel" : "Edit Profile"}
@@ -179,36 +189,33 @@ export default function ProfilePage() {
               {/* Blue-tinted banner */}
               <div className="h-20 bg-gradient-to-br from-secondary/20 to-secondary/5" />
               <div className="-mt-10 flex flex-col items-center px-6 pb-6">
-                {user.avatar_url ? (
+                {profile.avatar_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={user.avatar_url}
-                    alt={user.full_name}
+                    src={profile.avatar_url}
+                    alt={profile.full_name}
                     className="h-20 w-20 rounded-full border-4 border-white object-cover shadow-md"
                   />
                 ) : (
                   <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-secondary text-2xl font-bold text-white shadow-md">
-                    {user.full_name.split(" ").map((n) => n[0]).slice(0, 2).join("")}
+                    {profile.full_name.split(" ").map((n) => n[0]).slice(0, 2).join("")}
                   </div>
                 )}
                 <h2 className="mt-3 font-headline-sm text-headline-sm font-bold text-text-primary">
-                  {user.full_name}
+                  {profile.full_name}
                 </h2>
-                <p className="font-body-sm text-body-sm text-text-secondary">{user.email}</p>
+                <p className="font-body-sm text-body-sm text-text-secondary">{profile.email}</p>
                 <div className="mt-3 flex items-center gap-2">
-                  {user.role === "verified_organizer" && (
+                  {profile.role === "Event Organizer" && (
                     <span className="flex items-center gap-1 rounded-full bg-success/10 px-2.5 py-0.5 font-label-sm text-label-sm text-success">
                       <BadgeCheck size={12} />
                       Verified Organizer
                     </span>
                   )}
-                  <span className="rounded-full bg-secondary/10 px-2.5 py-0.5 font-label-sm text-label-sm text-secondary">
-                    {user.tier}
-                  </span>
                 </div>
                 <div className="mt-4 flex w-full items-center justify-between border-t border-border-subtle pt-4">
                   <span className="font-body-sm text-body-sm text-text-secondary">Member Since</span>
-                  <span className="font-label-md text-label-md text-text-primary">{user.member_since}</span>
+                  <span className="font-label-md text-label-md text-text-primary">{profile.member_since}</span>
                 </div>
               </div>
             </div>
@@ -251,7 +258,7 @@ export default function ProfilePage() {
           <div className="space-y-6">
             {/* Stats grid */}
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-              {STATS(user.stats).map((stat) => {
+              {STATS(profile.stats).map((stat) => {
                 const Icon = stat.icon;
                 return (
                   <div
@@ -279,7 +286,11 @@ export default function ProfilePage() {
                 {!editing && (
                   <button
                     type="button"
-                    onClick={() => set_editing(true)}
+                    onClick={() => {
+                      set_editing(true);
+                      setSaveSuccess(null);
+                      setSaveError(null);
+                    }}
                     className="flex items-center gap-1.5 font-label-md text-label-md text-secondary hover:underline"
                   >
                     <Pencil size={14} />
@@ -288,6 +299,17 @@ export default function ProfilePage() {
                 )}
               </div>
               <div className="p-6">
+                {saveError && (
+                  <div className="mb-4 rounded-lg border border-danger/20 bg-danger/5 px-4 py-3 font-body-sm text-body-sm text-danger">
+                    {saveError}
+                  </div>
+                )}
+                {saveSuccess && (
+                  <div className="mb-4 rounded-lg border border-success/20 bg-success/5 px-4 py-3 font-body-sm text-body-sm text-success">
+                    {saveSuccess}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {/* Full Name */}
                   <div className="space-y-1.5">
@@ -296,7 +318,7 @@ export default function ProfilePage() {
                     </label>
                     <input
                       type="text"
-                      disabled={!editing}
+                      disabled={!editing || saving}
                       value={form.full_name}
                       onChange={(e) => set_form((f) => ({ ...f, full_name: e.target.value }))}
                       className="w-full rounded-lg border border-border-subtle bg-white px-4 py-2.5 font-body-md text-body-md text-text-primary transition-colors focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/20 disabled:bg-surface-container-low disabled:text-text-secondary"
@@ -310,10 +332,9 @@ export default function ProfilePage() {
                     </label>
                     <input
                       type="email"
-                      disabled={!editing}
+                      disabled={true}
                       value={form.email}
-                      onChange={(e) => set_form((f) => ({ ...f, email: e.target.value }))}
-                      className="w-full rounded-lg border border-border-subtle bg-white px-4 py-2.5 font-body-md text-body-md text-text-primary transition-colors focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/20 disabled:bg-surface-container-low disabled:text-text-secondary"
+                      className="w-full rounded-lg border border-border-subtle bg-surface-container-low px-4 py-2.5 font-body-md text-body-md text-text-secondary cursor-not-allowed"
                     />
                   </div>
 
@@ -324,7 +345,7 @@ export default function ProfilePage() {
                     </label>
                     <input
                       type="tel"
-                      disabled={!editing}
+                      disabled={!editing || saving}
                       value={form.phone_number}
                       onChange={(e) => set_form((f) => ({ ...f, phone_number: e.target.value }))}
                       className="w-full rounded-lg border border-border-subtle bg-white px-4 py-2.5 font-body-md text-body-md text-text-primary transition-colors focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/20 disabled:bg-surface-container-low disabled:text-text-secondary"
@@ -338,7 +359,7 @@ export default function ProfilePage() {
                     </label>
                     <input
                       type="text"
-                      disabled={!editing}
+                      disabled={!editing || saving}
                       value={form.location}
                       onChange={(e) => set_form((f) => ({ ...f, location: e.target.value }))}
                       className="w-full rounded-lg border border-border-subtle bg-white px-4 py-2.5 font-body-md text-body-md text-text-primary transition-colors focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/20 disabled:bg-surface-container-low disabled:text-text-secondary"
@@ -352,7 +373,7 @@ export default function ProfilePage() {
                     </label>
                     <textarea
                       rows={3}
-                      disabled={!editing}
+                      disabled={!editing || saving}
                       value={form.bio}
                       onChange={(e) => set_form((f) => ({ ...f, bio: e.target.value }))}
                       className="w-full resize-none rounded-lg border border-border-subtle bg-white px-4 py-2.5 font-body-md text-body-md text-text-primary transition-colors focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/20 disabled:bg-surface-container-low disabled:text-text-secondary"
@@ -364,69 +385,88 @@ export default function ProfilePage() {
                   <div className="mt-6 flex items-center justify-end gap-3 border-t border-border-subtle pt-4">
                     <button
                       type="button"
-                      onClick={() => set_editing(false)}
-                      className="rounded-lg border border-border-subtle px-4 py-2 font-label-md text-label-md text-text-secondary transition-all hover:bg-surface-container-high"
+                      disabled={saving}
+                      onClick={() => {
+                        set_editing(false);
+                        setSaveSuccess(null);
+                        setSaveError(null);
+                      }}
+                      className="rounded-lg border border-border-subtle px-4 py-2 font-label-md text-label-md text-text-secondary transition-all hover:bg-surface-container-high disabled:opacity-50"
                     >
                       Cancel
                     </button>
                     <button
                       type="button"
+                      disabled={saving}
                       onClick={handle_save}
-                      className="rounded-lg bg-secondary px-6 py-2 font-label-md text-label-md text-white transition-all hover:brightness-110"
+                      className="rounded-lg bg-secondary px-6 py-2 font-label-md text-label-md text-white transition-all hover:brightness-110 disabled:opacity-50"
                     >
-                      Save Changes
+                      {saving ? "Saving..." : "Save Changes"}
                     </button>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Recent Activity */}
+            {/* My Events */}
             <div className="rounded-xl border border-border-subtle bg-white shadow-sm">
               <div className="flex items-center justify-between border-b border-border-subtle px-6 py-4">
                 <h3 className="font-headline-sm text-headline-sm font-bold text-text-primary">
-                  Recent Activity
+                  My Events
                 </h3>
-                <Link
-                  href="/profile/activity"
-                  className="font-label-md text-label-md text-secondary hover:underline"
-                >
-                  View All
-                </Link>
               </div>
               <div className="divide-y divide-border-subtle">
-                {MOCK_ACTIVITY.map((item) => (
-                  <div key={item.activity_id} className="flex items-start gap-4 px-6 py-4">
-                    {/* Timeline dot */}
-                    <div className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center">
-                      <div
-                        className={`h-3 w-3 rounded-full border-2 ${
-                          item.type === "ticket_purchased"
-                            ? "border-secondary bg-white"
-                            : "border-border-subtle bg-white"
-                        }`}
-                      />
-                    </div>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-label-md text-label-md text-text-primary">{item.title}</p>
-                        <span className="shrink-0 font-label-sm text-label-sm text-text-secondary">
-                          {item.time_label}
-                        </span>
-                      </div>
-                      <p className="font-body-sm text-body-sm text-text-secondary">{item.description}</p>
-                      {item.tag_label && item.tag_href && (
-                        <Link
-                          href={item.tag_href}
-                          className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface-container-low px-2.5 py-1 font-label-sm text-label-sm text-text-secondary transition-colors hover:border-secondary hover:text-secondary"
-                        >
-                          <Ticket size={12} />
-                          {item.tag_label}
-                        </Link>
+                {profile.events && profile.events.length > 0 ? (
+                  profile.events.map((evt) => (
+                    <div key={evt.event_id} className="flex items-start gap-4 px-6 py-4">
+                      {evt.cover_image_url ? (
+                        <img
+                          src={evt.cover_image_url}
+                          alt={evt.title}
+                          className="h-16 w-24 rounded-lg object-cover border border-border-subtle"
+                        />
+                      ) : (
+                        <div className="flex h-16 w-24 items-center justify-center rounded-lg bg-surface-container text-text-secondary text-xs">
+                          No Image
+                        </div>
                       )}
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-label-md text-label-md text-text-primary truncate">{evt.title}</h4>
+                        <p className="mt-1 font-body-sm text-body-sm text-text-secondary">
+                          {new Date(evt.starts_at).toLocaleDateString("en-US", {
+                            weekday: "short",
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </p>
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 font-label-sm text-label-sm ${
+                            evt.status === "published"
+                              ? "bg-success/10 text-success"
+                              : evt.status === "draft"
+                              ? "bg-surface-container-high text-text-secondary"
+                              : "bg-secondary/10 text-secondary"
+                          }`}>
+                            {evt.status.toUpperCase()}
+                          </span>
+                        </div>
+                      </div>
+                      <Link
+                        href={`/events/${evt.event_id}`}
+                        className="shrink-0 rounded-lg border border-border-subtle px-3 py-1.5 font-label-sm text-label-sm text-text-primary hover:bg-surface-container-high transition-colors"
+                      >
+                        View Details
+                      </Link>
                     </div>
+                  ))
+                ) : (
+                  <div className="px-6 py-8 text-center text-text-secondary font-body-md">
+                    No associated events found.
                   </div>
-                ))}
+                )}
               </div>
             </div>
           </div>

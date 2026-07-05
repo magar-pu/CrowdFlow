@@ -38,6 +38,7 @@ type EventListResponse struct {
 	Title         string             `json:"title"`
 	EventStart    time.Time          `json:"starts_at"`
 	EventEnd      time.Time          `json:"ends_at"`
+	Category      string             `json:"category"`
 	CoverImageURL string             `json:"cover_image_url"`
 	Venue         *VenueResponse     `json:"venue,omitempty"`
 	Organizer     *OrganizerResponse `json:"organizer,omitempty"`
@@ -50,6 +51,7 @@ type EventDetailResponse struct {
 	Description                   string             `json:"description"`
 	EventStart                    time.Time          `json:"starts_at"`
 	EventEnd                      time.Time          `json:"ends_at"`
+	Category      string             `json:"category"`
 	EntertainmentTaxRate          float64            `json:"entertainment_tax_rate"`
 	EntertainmentTaxPassedToBuyer bool               `json:"entertainment_tax_passed_to_buyer"`
 	CoverImageURL                 string             `json:"cover_image_url"`
@@ -94,6 +96,7 @@ func MapEventToList(e *Event) *EventListResponse {
 		Title:         e.EventName,
 		EventStart:    e.EventStart,
 		EventEnd:      e.EventEnd,
+		Category:      mapCategory(e.EventTypeID),
 		CoverImageURL: e.CoverImageURL,
 		Venue:         MapVenue(e.Venue),
 		Organizer:     MapOrganizer(e.Organizer),
@@ -111,10 +114,32 @@ func MapEventToDetail(e *Event) *EventDetailResponse {
 		Description:                   e.Description,
 		EventStart:                    e.EventStart,
 		EventEnd:                      e.EventEnd,
+		Category:                      mapCategory(e.EventTypeID),
 		EntertainmentTaxRate:          e.EntertainmentTaxRate,
 		EntertainmentTaxPassedToBuyer: e.EntertainmentTaxPassedToBuyer,
 		CoverImageURL:                 e.CoverImageURL,
 		Venue:                         MapVenue(e.Venue),
 		Organizer:                     MapOrganizer(e.Organizer),
+	}
+}
+
+func mapCategory(id int) string {
+	switch id {
+	case 1:
+		return "concert"
+	case 2:
+		return "festival"
+	case 3:
+		return "sport"
+	case 4:
+		return "conference"
+	case 5:
+		return "exhibition"
+	case 6:
+		return "community"
+	case 7:
+		return "workshop_seminar"
+	default:
+		return "other"
 	}
 }
