@@ -27,6 +27,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, authenticate func(http.Hand
 	mux.HandleFunc("GET /api/auth/google/callback", h.handleGoogleCallback)
 	mux.HandleFunc("POST /api/auth/logout", h.handleLogout)
 	mux.Handle("GET /api/auth/me", authenticate(http.HandlerFunc(h.handleMe)))
+	mux.Handle("PUT /api/auth/me", authenticate(http.HandlerFunc(h.handleUpdateProfile)))
 }
 
 func generateCSRFToken() string {
@@ -264,10 +265,72 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"user_id":   user.ID,
-		"email":     user.Email,
-		"full_name": user.FullName,
-		"role":      roleName,
+	stats, err := h.service.repo.GetProfileStats(userID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", "Failed to retrieve profile stats: "+err.Error())
+		return
+	}
+
+	isOrganizer := roleName == "Event Organizer" || roleName == "Super Admin"
+	events, err := h.service.repo.GetAssociatedEvents(userID, isOrganizer)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", "Failed to retrieve associated events: "+err.Error())
+		return
+	}
+
+	if events == nil {
+		events = []ProfileEventSummary{}
+	}
+
+	profileResponse := UserProfileResponse{
+		UserID:      user.ID,
+		Email:       user.Email,
+		FullName:    user.FullName,
+		PhoneNumber: user.PhoneNumber,
+		Location:    user.Location,
+		Bio:         user.Bio,
+		AvatarURL:   user.AvatarPic,
+		Role:        roleName,
+		MemberSince: user.CreatedAt.Format("January 2006"),
+		Stats:       stats,
+		Events:      events,
+	}
+
+	response.JSON(w, http.StatusOK, profileResponse)
+}
+
+func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User is not authenticated")
+		return
+	}
+
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user ID in token claims")
+		return
+	}
+
+	var req UpdateProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
+		return
+	}
+
+	if req.FullName == "" {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Full name is required")
+		return
+	}
+
+	err = h.service.repo.UpdateProfile(userID, req)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", "Failed to update profile: "+err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{
+		"message": "Profile updated successfully",
 	})
 }
+
