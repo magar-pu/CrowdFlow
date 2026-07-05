@@ -4,12 +4,21 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/response"
 )
+
+// rolePriority defines the privilege hierarchy for platform-level roles.
+// Higher value = higher privilege. Used to resolve users who hold multiple roles.
+var rolePriority = map[string]int{
+	"User":            1,
+	"Event Organizer": 2,
+	"Super Admin":     3,
+}
 
 type Handler struct {
 	service *AuthService
@@ -62,9 +71,12 @@ func (h *Handler) setAuthCookies(w http.ResponseWriter, token string) {
 }
 
 func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
+	// Limit body to 1MB to prevent unauthenticated memory exhaustion DoS
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
 	var req RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body or payload too large")
 		return
 	}
 
@@ -88,9 +100,12 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
+	// Limit body to 1MB to prevent unauthenticated memory exhaustion DoS
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body or payload too large")
 		return
 	}
 
@@ -103,14 +118,13 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// Set secure auth cookies instead of returning token in JSON body
 	h.setAuthCookies(w, token)
 
-	// Fetch platform role for the user
-	var roleName string = "User" // Default fallback
+	// Resolve the highest-privilege platform role for this user
+	roleName := "User"
 	if userID, err := strconv.Atoi(user.ID); err == nil {
 		if mappings, err := h.service.repo.GetUserRolesAndPermissions(userID); err == nil {
 			for _, m := range mappings {
-				if m.EventID == nil {
+				if m.EventID == nil && rolePriority[m.RoleName] > rolePriority[roleName] {
 					roleName = m.RoleName
-					break
 				}
 			}
 		}
@@ -189,13 +203,13 @@ func (h *Handler) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	h.setAuthCookies(w, token)
 
 	// 5. Redirect browser based on user platform role
-	var roleName string = "User" // Default fallback
+	// Resolve the highest-privilege platform role for this user
+	roleName := "User"
 	if userID, err := strconv.Atoi(user.ID); err == nil {
 		if mappings, err := h.service.repo.GetUserRolesAndPermissions(userID); err == nil {
 			for _, m := range mappings {
-				if m.EventID == nil {
+				if m.EventID == nil && rolePriority[m.RoleName] > rolePriority[roleName] {
 					roleName = m.RoleName
-					break
 				}
 			}
 		}
@@ -255,26 +269,28 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var roleName string = "User" // Default fallback
+	// Resolve the highest-privilege platform role for this user
+	roleName := "User"
 	if mappings, err := h.service.repo.GetUserRolesAndPermissions(userID); err == nil {
 		for _, m := range mappings {
-			if m.EventID == nil {
+			if m.EventID == nil && rolePriority[m.RoleName] > rolePriority[roleName] {
 				roleName = m.RoleName
-				break
 			}
 		}
 	}
 
 	stats, err := h.service.repo.GetProfileStats(userID)
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", "Failed to retrieve profile stats: "+err.Error())
+		log.Printf("[ERROR] handleMe: GetProfileStats userID=%d: %v", userID, err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", "An internal error occurred")
 		return
 	}
 
 	isOrganizer := roleName == "Event Organizer" || roleName == "Super Admin"
 	events, err := h.service.repo.GetAssociatedEvents(userID, isOrganizer)
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", "Failed to retrieve associated events: "+err.Error())
+		log.Printf("[ERROR] handleMe: GetAssociatedEvents userID=%d: %v", userID, err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", "An internal error occurred")
 		return
 	}
 
@@ -300,6 +316,9 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
+	// Limit request body size to 1MB to prevent memory exhaustion DoS
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User is not authenticated")
@@ -314,12 +333,29 @@ func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	var req UpdateProfileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body or payload too large")
 		return
 	}
 
+	// Validate inputs length to match database character varying constraints
 	if req.FullName == "" {
 		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Full name is required")
+		return
+	}
+	if len(req.FullName) > 255 {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Full name must be 255 characters or less")
+		return
+	}
+	if len(req.PhoneNumber) > 50 {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Phone number must be 50 characters or less")
+		return
+	}
+	if len(req.Location) > 255 {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Location must be 255 characters or less")
+		return
+	}
+	if len(req.Bio) > 2000 {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Bio must be 2000 characters or less")
 		return
 	}
 

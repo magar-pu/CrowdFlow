@@ -13,6 +13,36 @@ import (
 	"crowdflow-backend/internal/storage"
 )
 
+// Pagination constants — change these to tune page size behaviour globally.
+const (
+	defaultLimit = 20  // default page size when no limit param is given
+	limitStep    = 10  // all limits and offsets are snapped to multiples of this
+	maxLimit     = 100 // absolute ceiling — no single request can fetch more than this
+)
+
+// snapLimit rounds l up to the nearest multiple of limitStep, then caps at maxLimit.
+// Examples: 7→10, 11→20, 99→100, 101→100, 0→defaultLimit.
+func snapLimit(l int) int {
+	if l <= 0 {
+		return defaultLimit
+	}
+	snapped := ((l + limitStep - 1) / limitStep) * limitStep
+	if snapped > maxLimit {
+		return maxLimit
+	}
+	return snapped
+}
+
+// snapOffset floors o to the nearest multiple of limitStep so offsets always
+// align to page boundaries. Negative values are clamped to 0.
+// Examples: 0→0, 5→0, 10→10, 15→10, 25→20.
+func snapOffset(o int) int {
+	if o < 0 {
+		return 0
+	}
+	return (o / limitStep) * limitStep
+}
+
 type Handler struct {
 	service Service
 	storage *storage.S3Storage
@@ -63,18 +93,20 @@ func (h *Handler) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	limitStr := r.URL.Query().Get("limit")
 	offsetStr := r.URL.Query().Get("offset")
 
-	limit := 20
+	limit := defaultLimit
 	offset := 0
 
 	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
+		if l, err := strconv.Atoi(limitStr); err == nil {
+			limit = snapLimit(l)
 		}
+		// Non-integer string leaves limit at defaultLimit
 	}
 	if offsetStr != "" {
-		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
-			offset = o
+		if o, err := strconv.Atoi(offsetStr); err == nil {
+			offset = snapOffset(o)
 		}
+		// Non-integer string leaves offset at 0
 	}
 
 	events, err := h.service.ListEvents(limit, offset)
@@ -132,7 +164,9 @@ func (h *Handler) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !isSuperAdmin && evt.OrganizerID != callerID {
-			response.Error(w, http.StatusForbidden, "FORBIDDEN", "You do not have permission to view this event")
+			// Return 404, not 403: returning 403 would leak that the event ID
+			// exists in the database, enabling enumeration of draft/hidden events.
+			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Event not found")
 			return
 		}
 	}

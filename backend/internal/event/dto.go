@@ -1,6 +1,9 @@
 package event
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // CreateEventRequest holds incoming payload data for event creation
 type CreateEventRequest struct {
@@ -27,9 +30,10 @@ type VenueResponse struct {
 
 // OrganizerResponse defines a cleaned organizer payload for API outputs
 type OrganizerResponse struct {
-	ID        int    `json:"organizer_id"`
-	Name      string `json:"name"`
-	AvatarURL string `json:"avatar_url"`
+	ID         int    `json:"organizer_id"`
+	Name       string `json:"name"`
+	AvatarURL  string `json:"avatar_url"`
+	ProfileURL string `json:"profile_url"`
 }
 
 // EventListResponse defines a optimized payload returned on event discovery list query (excludes description and tax rate)
@@ -80,9 +84,10 @@ func MapOrganizer(o *Organizer) *OrganizerResponse {
 		return nil
 	}
 	return &OrganizerResponse{
-		ID:        o.ID,
-		Name:      o.Name,
-		AvatarURL: o.AvatarURL,
+		ID:         o.ID,
+		Name:       o.Name,
+		AvatarURL:  o.AvatarURL,
+		ProfileURL: fmt.Sprintf("/organizers/%d", o.ID),
 	}
 }
 

@@ -19,14 +19,14 @@ func (r *PostgresRepository) GetByEmail(email string) (*User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	query := `
-		SELECT u.id, u.email, u.password_hash, u.auth_provider, u.verification_status, u.created_at, 
+		SELECT u.id, u.email, u.password_hash, u.auth_provider, u.verification_status, u.created_at, u.updated_at,
 		       COALESCE(up.full_name, ''), COALESCE(up.phone_number, ''), COALESCE(up.location, ''), COALESCE(up.bio, ''), COALESCE(up.avatar_pic, '')
 		FROM users u
 		LEFT JOIN user_profiles up ON u.id = up.user_id
 		WHERE u.email = $1`
 	var u User
 	err := r.db.QueryRowContext(ctx, query, email).Scan(
-		&u.ID, &u.Email, &u.PasswordHash, &u.AuthProvider, &u.VerificationStatus, &u.CreatedAt, 
+		&u.ID, &u.Email, &u.PasswordHash, &u.AuthProvider, &u.VerificationStatus, &u.CreatedAt, &u.UpdatedAt,
 		&u.FullName, &u.PhoneNumber, &u.Location, &u.Bio, &u.AvatarPic,
 	)
 	if err != nil {
@@ -39,14 +39,14 @@ func (r *PostgresRepository) GetByID(id int) (*User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	query := `
-		SELECT u.id, u.email, u.password_hash, u.auth_provider, u.verification_status, u.created_at, 
+		SELECT u.id, u.email, u.password_hash, u.auth_provider, u.verification_status, u.created_at, u.updated_at,
 		       COALESCE(up.full_name, ''), COALESCE(up.phone_number, ''), COALESCE(up.location, ''), COALESCE(up.bio, ''), COALESCE(up.avatar_pic, '')
 		FROM users u
 		LEFT JOIN user_profiles up ON u.id = up.user_id
 		WHERE u.id = $1`
 	var u User
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&u.ID, &u.Email, &u.PasswordHash, &u.AuthProvider, &u.VerificationStatus, &u.CreatedAt, 
+		&u.ID, &u.Email, &u.PasswordHash, &u.AuthProvider, &u.VerificationStatus, &u.CreatedAt, &u.UpdatedAt,
 		&u.FullName, &u.PhoneNumber, &u.Location, &u.Bio, &u.AvatarPic,
 	)
 	if err != nil {
@@ -136,42 +136,29 @@ func (r *PostgresRepository) GetProfileStats(userID int) (ProfileStats, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	var stats ProfileStats
-
-	// Calculate TotalTickets
-	ticketQuery := `
-		SELECT COUNT(t.id)
-		FROM tickets t
-		JOIN orders o ON t.order_id = o.id
-		WHERE o.purchaser_id = $1 AND o.status = 'paid'`
-	err := r.db.QueryRowContext(ctx, ticketQuery, userID).Scan(&stats.TotalTickets)
-	if err != nil {
-		return stats, err
-	}
-
-	// Calculate EventsAttended (distinct events in the past with paid orders)
-	attendedQuery := `
-		SELECT COUNT(DISTINCT o.event_id)
+	// Single consolidated query replaces 3 sequential round-trips.
+	// All three counts are computed in one DB execution plan for efficiency.
+	query := `
+		SELECT
+			COUNT(t.id)                                                             AS total_tickets,
+			COUNT(DISTINCT CASE WHEN e.event_end < NOW() THEN o.event_id END)       AS events_attended,
+			COUNT(DISTINCT o.id)                                                    AS total_orders
 		FROM orders o
-		JOIN events e ON o.event_id = e.id
-		WHERE o.purchaser_id = $1 AND o.status = 'paid' AND e.event_end < CURRENT_TIMESTAMP`
-	err = r.db.QueryRowContext(ctx, attendedQuery, userID).Scan(&stats.EventsAttended)
+		LEFT JOIN tickets t ON t.order_id = o.id
+		LEFT JOIN events  e ON o.event_id = e.id
+		WHERE o.purchaser_id = $1 AND o.status = 'paid'`
+
+	var stats ProfileStats
+	err := r.db.QueryRowContext(ctx, query, userID).Scan(
+		&stats.TotalTickets,
+		&stats.EventsAttended,
+		&stats.TotalOrders,
+	)
 	if err != nil {
 		return stats, err
 	}
 
-	// Calculate TotalOrders (paid orders)
-	orderQuery := `
-		SELECT COUNT(id)
-		FROM orders
-		WHERE purchaser_id = $1 AND status = 'paid'`
-	err = r.db.QueryRowContext(ctx, orderQuery, userID).Scan(&stats.TotalOrders)
-	if err != nil {
-		return stats, err
-	}
-
-	stats.SavedEvents = 0 // Mocked / stubbed to 0 as per the plan
-
+	stats.SavedEvents = 0 // Stubbed for future development
 	return stats, nil
 }
 
@@ -185,14 +172,16 @@ func (r *PostgresRepository) GetAssociatedEvents(userID int, isOrganizer bool) (
 			SELECT id, event_name, event_start, event_end, COALESCE(cover_image_url, ''), status
 			FROM events
 			WHERE organizer_id = $1
-			ORDER BY event_start DESC`
+			ORDER BY event_start DESC
+			LIMIT 20`
 	} else {
 		query = `
 			SELECT DISTINCT e.id, e.event_name, e.event_start, e.event_end, COALESCE(e.cover_image_url, ''), e.status
 			FROM events e
 			JOIN orders o ON o.event_id = e.id
 			WHERE o.purchaser_id = $1 AND o.status = 'paid'
-			ORDER BY e.event_start DESC`
+			ORDER BY e.event_start DESC
+			LIMIT 20`
 	}
 
 	rows, err := r.db.QueryContext(ctx, query, userID)
@@ -225,11 +214,12 @@ func (r *PostgresRepository) UpdateProfile(userID int, req UpdateProfileRequest)
 	query := `
 		INSERT INTO user_profiles (user_id, full_name, phone_number, location, bio)
 		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (user_id) 
-		DO UPDATE SET full_name = EXCLUDED.full_name, 
-		              phone_number = EXCLUDED.phone_number, 
-		              location = EXCLUDED.location, 
-		              bio = EXCLUDED.bio`
+		ON CONFLICT (user_id)
+		DO UPDATE SET full_name    = EXCLUDED.full_name,
+		              phone_number = EXCLUDED.phone_number,
+		              location     = EXCLUDED.location,
+		              bio          = EXCLUDED.bio,
+		              updated_at   = NOW()`
 	_, err := r.db.ExecContext(ctx, query, userID, req.FullName, req.PhoneNumber, req.Location, req.Bio)
 	return err
 }
