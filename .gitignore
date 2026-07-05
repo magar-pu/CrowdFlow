@@ -62,3 +62,6 @@ DEVELOPER.md
 
 # Local Dev Storage Compose
 docker-compose-minio.yml
+
+# Local Dev Scripts
+*.sh

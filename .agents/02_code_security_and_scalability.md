@@ -93,3 +93,33 @@ Where:
 * $\text{Platform PPN} = \text{Platform Fee} \times 0.11$
 * $\text{Gateway PPN} = \text{Gateway Fee} \times 0.11$
 * $\text{Entertainment Tax} = \text{Ticket Value} \times \text{Regional Tax Rate}$
+
+---
+
+## 🚀 Future Development: Real-Time Platform Role Revocation (Redis Blacklist)
+
+To ensure stateless JWT platform roles can be revoked instantly mid-session without querying PostgreSQL on every HTTP request:
+
+### 1. Token Blacklist Architecture
+* **Trigger**: When a user's global platform role is edited/revoked, the admin service pushes the user's ID to Redis with a TTL matching the remaining lifetime of the current JWT:
+  ```redis
+  SETEX blacklist:user:{userID} {ttl} "revoked"
+  ```
+* **Verification**: The `Authenticate` middleware queries Redis in $O(1)$ time:
+  ```go
+  exists, err := rdb.Exists(ctx, fmt.Sprintf("blacklist:user:%s", claims.UserID)).Result()
+  ```
+  If the key exists in Redis, the middleware intercepts the request, invalidates the cookie session, and responds with `401 Unauthorized`.
+
+---
+
+## 🔒 Privilege Escalation & Impersonation Prevention (BOLA Protection)
+
+To prevent Event Organizers from creating events on behalf of other organizers (impersonation / Broken Object Level Authorization):
+
+### 1. Context-Bound Event Creation
+* **Requirement**: The `POST /api/events` handler must enforce session binding for the organizer entity.
+* **Mechanism**:
+  1. Retrieve the authenticated user's ID (`claims.UserID`) and roles from the JWT context claims.
+  2. If the caller does **not** carry the `Super Admin` role, the backend automatically overrides the incoming `"organizer_id"` field in the JSON request with the caller's verified user ID from the claims context.
+  3. If the caller is a `Super Admin`, they are permitted to specify a different `organizer_id` to allow admin-managed event creation on behalf of third-party organizer accounts.

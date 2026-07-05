@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/response"
 	"crowdflow-backend/internal/storage"
 )
@@ -126,6 +127,33 @@ func (h *Handler) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 	if err := json.Unmarshal([]byte(eventDataJSON), &req); err != nil {
 		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid event_data JSON: "+err.Error())
 		return
+	}
+
+	// Enforce organizer validation / prevent BOLA/impersonation attacks
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+
+	callerID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in token claims")
+		return
+	}
+
+	isSuperAdmin := false
+	for _, role := range claims.Roles {
+		if role == "Super Admin" {
+			isSuperAdmin = true
+			break
+		}
+	}
+
+	if !isSuperAdmin {
+		req.OrganizerID = callerID
+	} else if req.OrganizerID <= 0 {
+		req.OrganizerID = callerID
 	}
 
 	// 4. Process Cover Image file upload if present

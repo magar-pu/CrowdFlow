@@ -34,12 +34,13 @@ export default function EventDetailPage() {
   const event_id = params?.event_id;
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!event_id) return;
     const id = parseInt(event_id as string, 10);
     if (isNaN(id)) {
-      setEvent(mockEvent);
+      setError("ID Event tidak valid");
       setLoading(false);
       return;
     }
@@ -49,11 +50,11 @@ export default function EventDetailPage() {
         if (res.success && res.data) {
           setEvent(res.data);
         } else {
-          setEvent(mockEvent);
+          setError(res.error?.message || "Event tidak ditemukan");
         }
       })
       .catch(() => {
-        setEvent(mockEvent);
+        setError("Gagal memuat rincian event. Silakan coba lagi.");
       })
       .finally(() => {
         setLoading(false);
@@ -68,7 +69,28 @@ export default function EventDetailPage() {
     );
   }
 
-  const currentEvent = event || mockEvent;
+  if (error || !event) {
+    return (
+      <div className="flex min-h-screen flex-col bg-surface text-muted-foreground">
+        <Navbar active_href="/events" />
+        <main className="flex-grow flex items-center justify-center p-6">
+          <div className="text-center max-w-md bg-white p-8 rounded-xl shadow-md border border-border-subtle">
+            <h2 className="text-2xl font-bold text-text-primary mb-2">Gagal Memuat Event</h2>
+            <p className="text-text-secondary mb-6">{error || "Event tidak ditemukan"}</p>
+            <button
+              onClick={() => router.push("/events")}
+              className="rounded-full bg-secondary px-8 py-3 font-semibold text-white transition-all hover:bg-secondary/90"
+            >
+              Kembali ke Discovery
+            </button>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  const currentEvent = event;
   const categories = currentEvent.ticket_categories || mockEvent.ticket_categories;
   const active_categories = categories.filter((c) => c.is_active);
   const cheapest_price = Math.min(

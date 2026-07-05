@@ -2,12 +2,12 @@
 -- PostgreSQL database dump
 --
 
-\restrict GUU3r7dFCcZkxymPVBUtfdaszwFQFdD4dgtiKOweLtdMCMFUeKLMl1SgvmIpr4y
+\restrict kbnuX62cMFMcOop0nzaziWCQdZtV4hwcls4oJCBsXDq4uQexa5WtofYReuPf0bP
 
 -- Dumped from database version 18.4
 -- Dumped by pg_dump version 18.4
 
--- Started on 2026-06-24 10:57:09
+-- Started on 2026-07-05 23:51:31
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -32,7 +32,7 @@ CREATE SCHEMA public;
 ALTER SCHEMA public OWNER TO pg_database_owner;
 
 --
--- TOC entry 5393 (class 0 OID 0)
+-- TOC entry 5404 (class 0 OID 0)
 -- Dependencies: 4
 -- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: pg_database_owner
 --
@@ -41,7 +41,7 @@ COMMENT ON SCHEMA public IS 'standard public schema';
 
 
 --
--- TOC entry 906 (class 1247 OID 16656)
+-- TOC entry 908 (class 1247 OID 16656)
 -- Name: event_seat_state; Type: TYPE; Schema: public; Owner: postgres
 --
 
@@ -55,7 +55,7 @@ CREATE TYPE public.event_seat_state AS ENUM (
 ALTER TYPE public.event_seat_state OWNER TO postgres;
 
 --
--- TOC entry 921 (class 1247 OID 16700)
+-- TOC entry 923 (class 1247 OID 16700)
 -- Name: event_status; Type: TYPE; Schema: public; Owner: postgres
 --
 
@@ -70,7 +70,7 @@ CREATE TYPE public.event_status AS ENUM (
 ALTER TYPE public.event_status OWNER TO postgres;
 
 --
--- TOC entry 891 (class 1247 OID 16606)
+-- TOC entry 893 (class 1247 OID 16606)
 -- Name: order_status; Type: TYPE; Schema: public; Owner: postgres
 --
 
@@ -86,7 +86,7 @@ CREATE TYPE public.order_status AS ENUM (
 ALTER TYPE public.order_status OWNER TO postgres;
 
 --
--- TOC entry 894 (class 1247 OID 16618)
+-- TOC entry 896 (class 1247 OID 16618)
 -- Name: order_type; Type: TYPE; Schema: public; Owner: postgres
 --
 
@@ -99,7 +99,7 @@ CREATE TYPE public.order_type AS ENUM (
 ALTER TYPE public.order_type OWNER TO postgres;
 
 --
--- TOC entry 897 (class 1247 OID 16624)
+-- TOC entry 899 (class 1247 OID 16624)
 -- Name: payment_method; Type: TYPE; Schema: public; Owner: postgres
 --
 
@@ -116,7 +116,7 @@ CREATE TYPE public.payment_method AS ENUM (
 ALTER TYPE public.payment_method OWNER TO postgres;
 
 --
--- TOC entry 912 (class 1247 OID 16674)
+-- TOC entry 914 (class 1247 OID 16674)
 -- Name: refund_reason; Type: TYPE; Schema: public; Owner: postgres
 --
 
@@ -130,7 +130,7 @@ CREATE TYPE public.refund_reason AS ENUM (
 ALTER TYPE public.refund_reason OWNER TO postgres;
 
 --
--- TOC entry 909 (class 1247 OID 16664)
+-- TOC entry 911 (class 1247 OID 16664)
 -- Name: refund_status; Type: TYPE; Schema: public; Owner: postgres
 --
 
@@ -145,7 +145,7 @@ CREATE TYPE public.refund_status AS ENUM (
 ALTER TYPE public.refund_status OWNER TO postgres;
 
 --
--- TOC entry 915 (class 1247 OID 16682)
+-- TOC entry 917 (class 1247 OID 16682)
 -- Name: resale_status; Type: TYPE; Schema: public; Owner: postgres
 --
 
@@ -160,7 +160,7 @@ CREATE TYPE public.resale_status AS ENUM (
 ALTER TYPE public.resale_status OWNER TO postgres;
 
 --
--- TOC entry 903 (class 1247 OID 16648)
+-- TOC entry 905 (class 1247 OID 16648)
 -- Name: seat_status; Type: TYPE; Schema: public; Owner: postgres
 --
 
@@ -174,7 +174,7 @@ CREATE TYPE public.seat_status AS ENUM (
 ALTER TYPE public.seat_status OWNER TO postgres;
 
 --
--- TOC entry 888 (class 1247 OID 16595)
+-- TOC entry 890 (class 1247 OID 16595)
 -- Name: ticket_status; Type: TYPE; Schema: public; Owner: postgres
 --
 
@@ -190,7 +190,7 @@ CREATE TYPE public.ticket_status AS ENUM (
 ALTER TYPE public.ticket_status OWNER TO postgres;
 
 --
--- TOC entry 900 (class 1247 OID 16638)
+-- TOC entry 902 (class 1247 OID 16638)
 -- Name: tier_visibility; Type: TYPE; Schema: public; Owner: postgres
 --
 
@@ -205,7 +205,7 @@ CREATE TYPE public.tier_visibility AS ENUM (
 ALTER TYPE public.tier_visibility OWNER TO postgres;
 
 --
--- TOC entry 918 (class 1247 OID 16692)
+-- TOC entry 920 (class 1247 OID 16692)
 -- Name: verification_status; Type: TYPE; Schema: public; Owner: postgres
 --
 
@@ -219,7 +219,7 @@ CREATE TYPE public.verification_status AS ENUM (
 ALTER TYPE public.verification_status OWNER TO postgres;
 
 --
--- TOC entry 255 (class 1255 OID 17296)
+-- TOC entry 257 (class 1255 OID 17296)
 -- Name: check_ticket_limit_per_user(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -254,7 +254,7 @@ $$;
 ALTER FUNCTION public.check_ticket_limit_per_user() OWNER TO postgres;
 
 --
--- TOC entry 254 (class 1255 OID 16709)
+-- TOC entry 256 (class 1255 OID 16709)
 -- Name: set_updated_at(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -309,7 +309,7 @@ CREATE SEQUENCE public.event_approval_log_id_seq
 ALTER SEQUENCE public.event_approval_log_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5394 (class 0 OID 0)
+-- TOC entry 5405 (class 0 OID 0)
 -- Dependencies: 239
 -- Name: event_approval_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -351,7 +351,7 @@ CREATE SEQUENCE public.event_seats_matrix_id_seq
 ALTER SEQUENCE public.event_seats_matrix_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5395 (class 0 OID 0)
+-- TOC entry 5406 (class 0 OID 0)
 -- Dependencies: 245
 -- Name: event_seats_matrix_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -392,12 +392,50 @@ CREATE SEQUENCE public.event_sections_id_seq
 ALTER SEQUENCE public.event_sections_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5396 (class 0 OID 0)
+-- TOC entry 5407 (class 0 OID 0)
 -- Dependencies: 243
 -- Name: event_sections_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
 ALTER SEQUENCE public.event_sections_id_seq OWNED BY public.event_sections.id;
+
+
+--
+-- TOC entry 255 (class 1259 OID 17428)
+-- Name: event_types; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.event_types (
+    id integer NOT NULL,
+    event_type character varying(100) NOT NULL
+);
+
+
+ALTER TABLE public.event_types OWNER TO postgres;
+
+--
+-- TOC entry 254 (class 1259 OID 17427)
+-- Name: event_types_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.event_types_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.event_types_id_seq OWNER TO postgres;
+
+--
+-- TOC entry 5408 (class 0 OID 0)
+-- Dependencies: 254
+-- Name: event_types_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.event_types_id_seq OWNED BY public.event_types.id;
 
 
 --
@@ -417,7 +455,9 @@ CREATE TABLE public.events (
     entertainment_tax_passed_to_buyer boolean DEFAULT false NOT NULL,
     status public.event_status DEFAULT 'draft'::public.event_status NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    event_type_id integer NOT NULL,
+    cover_image_url character varying(255)
 );
 
 
@@ -440,7 +480,7 @@ CREATE SEQUENCE public.events_id_seq
 ALTER SEQUENCE public.events_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5397 (class 0 OID 0)
+-- TOC entry 5409 (class 0 OID 0)
 -- Dependencies: 237
 -- Name: events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -515,7 +555,7 @@ CREATE SEQUENCE public.permissions_id_seq
 ALTER SEQUENCE public.permissions_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5398 (class 0 OID 0)
+-- TOC entry 5410 (class 0 OID 0)
 -- Dependencies: 224
 -- Name: permissions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -610,7 +650,7 @@ CREATE SEQUENCE public.roles_id_seq
 ALTER SEQUENCE public.roles_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5399 (class 0 OID 0)
+-- TOC entry 5411 (class 0 OID 0)
 -- Dependencies: 219
 -- Name: roles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -650,7 +690,7 @@ CREATE SEQUENCE public.schema_migrations_id_seq
 ALTER SEQUENCE public.schema_migrations_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5400 (class 0 OID 0)
+-- TOC entry 5412 (class 0 OID 0)
 -- Dependencies: 252
 -- Name: schema_migrations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -691,7 +731,7 @@ CREATE SEQUENCE public.seats_id_seq
 ALTER SEQUENCE public.seats_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5401 (class 0 OID 0)
+-- TOC entry 5413 (class 0 OID 0)
 -- Dependencies: 235
 -- Name: seats_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -763,7 +803,7 @@ CREATE SEQUENCE public.ticket_tiers_id_seq
 ALTER SEQUENCE public.ticket_tiers_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5402 (class 0 OID 0)
+-- TOC entry 5414 (class 0 OID 0)
 -- Dependencies: 241
 -- Name: ticket_tiers_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -834,7 +874,7 @@ CREATE SEQUENCE public.user_bank_accounts_id_seq
 ALTER SEQUENCE public.user_bank_accounts_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5403 (class 0 OID 0)
+-- TOC entry 5415 (class 0 OID 0)
 -- Dependencies: 229
 -- Name: user_bank_accounts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -892,7 +932,7 @@ CREATE SEQUENCE public.user_roles_id_seq
 ALTER SEQUENCE public.user_roles_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5404 (class 0 OID 0)
+-- TOC entry 5416 (class 0 OID 0)
 -- Dependencies: 227
 -- Name: user_roles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -936,7 +976,7 @@ CREATE SEQUENCE public.users_id_seq
 ALTER SEQUENCE public.users_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5405 (class 0 OID 0)
+-- TOC entry 5417 (class 0 OID 0)
 -- Dependencies: 221
 -- Name: users_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -977,7 +1017,7 @@ CREATE SEQUENCE public.venue_sections_id_seq
 ALTER SEQUENCE public.venue_sections_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5406 (class 0 OID 0)
+-- TOC entry 5418 (class 0 OID 0)
 -- Dependencies: 233
 -- Name: venue_sections_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -1021,7 +1061,7 @@ CREATE SEQUENCE public.venues_id_seq
 ALTER SEQUENCE public.venues_id_seq OWNER TO postgres;
 
 --
--- TOC entry 5407 (class 0 OID 0)
+-- TOC entry 5419 (class 0 OID 0)
 -- Dependencies: 231
 -- Name: venues_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
@@ -1030,7 +1070,7 @@ ALTER SEQUENCE public.venues_id_seq OWNED BY public.venues.id;
 
 
 --
--- TOC entry 5012 (class 2604 OID 16941)
+-- TOC entry 5017 (class 2604 OID 16941)
 -- Name: event_approval_log id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1038,7 +1078,7 @@ ALTER TABLE ONLY public.event_approval_log ALTER COLUMN id SET DEFAULT nextval('
 
 
 --
--- TOC entry 5022 (class 2604 OID 17029)
+-- TOC entry 5027 (class 2604 OID 17029)
 -- Name: event_seats_matrix id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1046,7 +1086,7 @@ ALTER TABLE ONLY public.event_seats_matrix ALTER COLUMN id SET DEFAULT nextval('
 
 
 --
--- TOC entry 5020 (class 2604 OID 16999)
+-- TOC entry 5025 (class 2604 OID 16999)
 -- Name: event_sections id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1054,7 +1094,15 @@ ALTER TABLE ONLY public.event_sections ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
--- TOC entry 5006 (class 2604 OID 16900)
+-- TOC entry 5056 (class 2604 OID 17431)
+-- Name: event_types id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.event_types ALTER COLUMN id SET DEFAULT nextval('public.event_types_id_seq'::regclass);
+
+
+--
+-- TOC entry 5011 (class 2604 OID 16900)
 -- Name: events id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1062,7 +1110,7 @@ ALTER TABLE ONLY public.events ALTER COLUMN id SET DEFAULT nextval('public.event
 
 
 --
--- TOC entry 4993 (class 2604 OID 16766)
+-- TOC entry 4998 (class 2604 OID 16766)
 -- Name: permissions id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1070,7 +1118,7 @@ ALTER TABLE ONLY public.permissions ALTER COLUMN id SET DEFAULT nextval('public.
 
 
 --
--- TOC entry 4987 (class 2604 OID 16714)
+-- TOC entry 4992 (class 2604 OID 16714)
 -- Name: roles id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1078,7 +1126,7 @@ ALTER TABLE ONLY public.roles ALTER COLUMN id SET DEFAULT nextval('public.roles_
 
 
 --
--- TOC entry 5049 (class 2604 OID 17305)
+-- TOC entry 5054 (class 2604 OID 17305)
 -- Name: schema_migrations id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1086,7 +1134,7 @@ ALTER TABLE ONLY public.schema_migrations ALTER COLUMN id SET DEFAULT nextval('p
 
 
 --
--- TOC entry 5004 (class 2604 OID 16880)
+-- TOC entry 5009 (class 2604 OID 16880)
 -- Name: seats id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1094,7 +1142,7 @@ ALTER TABLE ONLY public.seats ALTER COLUMN id SET DEFAULT nextval('public.seats_
 
 
 --
--- TOC entry 5014 (class 2604 OID 16967)
+-- TOC entry 5019 (class 2604 OID 16967)
 -- Name: ticket_tiers id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1102,7 +1150,7 @@ ALTER TABLE ONLY public.ticket_tiers ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
--- TOC entry 4995 (class 2604 OID 16816)
+-- TOC entry 5000 (class 2604 OID 16816)
 -- Name: user_bank_accounts id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1110,7 +1158,7 @@ ALTER TABLE ONLY public.user_bank_accounts ALTER COLUMN id SET DEFAULT nextval('
 
 
 --
--- TOC entry 4994 (class 2604 OID 16794)
+-- TOC entry 4999 (class 2604 OID 16794)
 -- Name: user_roles id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1118,7 +1166,7 @@ ALTER TABLE ONLY public.user_roles ALTER COLUMN id SET DEFAULT nextval('public.u
 
 
 --
--- TOC entry 4988 (class 2604 OID 16725)
+-- TOC entry 4993 (class 2604 OID 16725)
 -- Name: users id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1126,7 +1174,7 @@ ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_
 
 
 --
--- TOC entry 5002 (class 2604 OID 16862)
+-- TOC entry 5007 (class 2604 OID 16862)
 -- Name: venue_sections id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1134,7 +1182,7 @@ ALTER TABLE ONLY public.venue_sections ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
--- TOC entry 4999 (class 2604 OID 16842)
+-- TOC entry 5004 (class 2604 OID 16842)
 -- Name: venues id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1142,7 +1190,7 @@ ALTER TABLE ONLY public.venues ALTER COLUMN id SET DEFAULT nextval('public.venue
 
 
 --
--- TOC entry 5374 (class 0 OID 16938)
+-- TOC entry 5383 (class 0 OID 16938)
 -- Dependencies: 240
 -- Data for Name: event_approval_log; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -1150,7 +1198,7 @@ ALTER TABLE ONLY public.venues ALTER COLUMN id SET DEFAULT nextval('public.venue
 
 
 --
--- TOC entry 5380 (class 0 OID 17026)
+-- TOC entry 5389 (class 0 OID 17026)
 -- Dependencies: 246
 -- Data for Name: event_seats_matrix; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -1158,7 +1206,7 @@ ALTER TABLE ONLY public.venues ALTER COLUMN id SET DEFAULT nextval('public.venue
 
 
 --
--- TOC entry 5378 (class 0 OID 16996)
+-- TOC entry 5387 (class 0 OID 16996)
 -- Dependencies: 244
 -- Data for Name: event_sections; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -1166,15 +1214,36 @@ ALTER TABLE ONLY public.venues ALTER COLUMN id SET DEFAULT nextval('public.venue
 
 
 --
--- TOC entry 5372 (class 0 OID 16897)
+-- TOC entry 5398 (class 0 OID 17428)
+-- Dependencies: 255
+-- Data for Name: event_types; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+INSERT INTO public.event_types VALUES (1, 'Concert');
+INSERT INTO public.event_types VALUES (2, 'Festival');
+INSERT INTO public.event_types VALUES (3, 'Sport');
+INSERT INTO public.event_types VALUES (4, 'Conference');
+INSERT INTO public.event_types VALUES (5, 'Exhibition');
+INSERT INTO public.event_types VALUES (6, 'Community');
+INSERT INTO public.event_types VALUES (7, 'Workshop & Seminar');
+INSERT INTO public.event_types VALUES (8, 'Other');
+
+
+--
+-- TOC entry 5381 (class 0 OID 16897)
 -- Dependencies: 238
 -- Data for Name: events; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
+INSERT INTO public.events VALUES (2, 1, 15, 'In-Memory Event via Bash Curl', 'An event uploaded using memory-only tokens.', '2026-10-16 02:00:00+07', '2026-10-16 05:30:00+07', 15.00, true, 'approved', '2026-07-05 22:59:26.052146+07', '2026-07-05 22:59:26.052146+07', 1, 'http://minio:9000/crowdflow-uploads/events/covers/1783267166384660342.png');
+INSERT INTO public.events VALUES (3, 1, 15, 'In-Memory Event via Bash Curl - Drafted', 'An event uploaded using memory-only tokens.', '2026-10-16 02:00:00+07', '2026-10-16 05:30:00+07', 15.00, true, 'draft', '2026-07-05 23:21:05.286452+07', '2026-07-05 23:21:05.286452+07', 1, 'http://minio:9000/crowdflow-uploads/events/covers/1783268465170433522.png');
+INSERT INTO public.events VALUES (4, 1, 15, 'Taylor Swift: The Eras Tour Jakarta', 'Experience the monumental tour live in Jakarta with a state-of-the-art stage setup.', '2026-10-16 02:00:00+07', '2026-10-16 05:30:00+07', 15.00, true, 'approved', '2026-07-05 23:24:41.345152+07', '2026-07-05 23:24:41.345152+07', 1, 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=800&auto=format&fit=crop');
+INSERT INTO public.events VALUES (5, 2, 15, 'Java Jazz Festival 2026', 'Three days of incredible jazz music featuring global legends and local masterminds.', '2026-11-20 23:00:00+07', '2026-11-23 06:59:59+07', 10.00, false, 'approved', '2026-07-05 23:24:41.405014+07', '2026-07-05 23:24:41.405014+07', 2, 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=800&auto=format&fit=crop');
+INSERT INTO public.events VALUES (6, 3, 15, 'Prambanan Jazz Festival 2026', 'Witness music under the stars with the majestic Prambanan temple as the backdrop.', '2026-09-06 00:00:00+07', '2026-09-06 06:00:00+07', 10.00, true, 'approved', '2026-07-05 23:24:41.459718+07', '2026-07-05 23:48:27.361122+07', 1, 'http://localhost:9000/crowdflow-uploads/events/covers/image.png');
 
 
 --
--- TOC entry 5382 (class 0 OID 17095)
+-- TOC entry 5391 (class 0 OID 17095)
 -- Dependencies: 248
 -- Data for Name: orders; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -1182,15 +1251,32 @@ ALTER TABLE ONLY public.venues ALTER COLUMN id SET DEFAULT nextval('public.venue
 
 
 --
--- TOC entry 5359 (class 0 OID 16763)
+-- TOC entry 5368 (class 0 OID 16763)
 -- Dependencies: 225
 -- Data for Name: permissions; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
+INSERT INTO public.permissions VALUES (1, 'users:view');
+INSERT INTO public.permissions VALUES (2, 'users:manage');
+INSERT INTO public.permissions VALUES (3, 'roles:view');
+INSERT INTO public.permissions VALUES (4, 'roles:manage');
+INSERT INTO public.permissions VALUES (5, 'venues:view');
+INSERT INTO public.permissions VALUES (6, 'venues:manage');
+INSERT INTO public.permissions VALUES (7, 'events:view');
+INSERT INTO public.permissions VALUES (8, 'events:create');
+INSERT INTO public.permissions VALUES (9, 'events:update');
+INSERT INTO public.permissions VALUES (10, 'events:publish');
+INSERT INTO public.permissions VALUES (11, 'events:audit');
+INSERT INTO public.permissions VALUES (12, 'tickets:view');
+INSERT INTO public.permissions VALUES (13, 'tickets:scan');
+INSERT INTO public.permissions VALUES (14, 'orders:view');
+INSERT INTO public.permissions VALUES (15, 'refunds:view');
+INSERT INTO public.permissions VALUES (16, 'refunds:manage');
+INSERT INTO public.permissions VALUES (17, 'reports:view');
 
 
 --
--- TOC entry 5381 (class 0 OID 17061)
+-- TOC entry 5390 (class 0 OID 17061)
 -- Dependencies: 247
 -- Data for Name: queue_entries; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -1198,7 +1284,7 @@ ALTER TABLE ONLY public.venues ALTER COLUMN id SET DEFAULT nextval('public.venue
 
 
 --
--- TOC entry 5385 (class 0 OID 17222)
+-- TOC entry 5394 (class 0 OID 17222)
 -- Dependencies: 251
 -- Data for Name: refunds; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -1206,32 +1292,65 @@ ALTER TABLE ONLY public.venues ALTER COLUMN id SET DEFAULT nextval('public.venue
 
 
 --
--- TOC entry 5360 (class 0 OID 16773)
+-- TOC entry 5369 (class 0 OID 16773)
 -- Dependencies: 226
 -- Data for Name: role_permissions; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
+INSERT INTO public.role_permissions VALUES (1, 1);
+INSERT INTO public.role_permissions VALUES (1, 2);
+INSERT INTO public.role_permissions VALUES (1, 3);
+INSERT INTO public.role_permissions VALUES (1, 4);
+INSERT INTO public.role_permissions VALUES (1, 5);
+INSERT INTO public.role_permissions VALUES (1, 6);
+INSERT INTO public.role_permissions VALUES (1, 7);
+INSERT INTO public.role_permissions VALUES (1, 8);
+INSERT INTO public.role_permissions VALUES (1, 9);
+INSERT INTO public.role_permissions VALUES (1, 10);
+INSERT INTO public.role_permissions VALUES (1, 11);
+INSERT INTO public.role_permissions VALUES (1, 12);
+INSERT INTO public.role_permissions VALUES (1, 13);
+INSERT INTO public.role_permissions VALUES (1, 14);
+INSERT INTO public.role_permissions VALUES (1, 15);
+INSERT INTO public.role_permissions VALUES (1, 16);
+INSERT INTO public.role_permissions VALUES (1, 17);
+INSERT INTO public.role_permissions VALUES (2, 5);
+INSERT INTO public.role_permissions VALUES (2, 7);
+INSERT INTO public.role_permissions VALUES (2, 11);
+INSERT INTO public.role_permissions VALUES (2, 12);
+INSERT INTO public.role_permissions VALUES (2, 14);
+INSERT INTO public.role_permissions VALUES (2, 15);
+INSERT INTO public.role_permissions VALUES (2, 16);
+INSERT INTO public.role_permissions VALUES (2, 17);
+INSERT INTO public.role_permissions VALUES (4, 7);
+INSERT INTO public.role_permissions VALUES (4, 13);
 
 
 --
--- TOC entry 5354 (class 0 OID 16711)
+-- TOC entry 5363 (class 0 OID 16711)
 -- Dependencies: 220
 -- Data for Name: roles; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
+INSERT INTO public.roles VALUES (1, 'Super Admin');
+INSERT INTO public.roles VALUES (2, 'Auditor');
+INSERT INTO public.roles VALUES (3, 'Event Organizer');
+INSERT INTO public.roles VALUES (4, 'Gate Scanner');
+INSERT INTO public.roles VALUES (5, 'User');
 
 
 --
--- TOC entry 5387 (class 0 OID 17302)
+-- TOC entry 5396 (class 0 OID 17302)
 -- Dependencies: 253
 -- Data for Name: schema_migrations; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 INSERT INTO public.schema_migrations VALUES (1, '0001_initial_schema.up.sql', 1, '2026-06-24 10:10:44.917912');
+INSERT INTO public.schema_migrations VALUES (2, '0002_testing_migration_table.up.sql', 2, '2026-06-24 11:07:22.748318');
 
 
 --
--- TOC entry 5370 (class 0 OID 16877)
+-- TOC entry 5379 (class 0 OID 16877)
 -- Dependencies: 236
 -- Data for Name: seats; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -1239,7 +1358,7 @@ INSERT INTO public.schema_migrations VALUES (1, '0001_initial_schema.up.sql', 1,
 
 
 --
--- TOC entry 5384 (class 0 OID 17183)
+-- TOC entry 5393 (class 0 OID 17183)
 -- Dependencies: 250
 -- Data for Name: ticket_resale_listings; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -1247,7 +1366,7 @@ INSERT INTO public.schema_migrations VALUES (1, '0001_initial_schema.up.sql', 1,
 
 
 --
--- TOC entry 5376 (class 0 OID 16964)
+-- TOC entry 5385 (class 0 OID 16964)
 -- Dependencies: 242
 -- Data for Name: ticket_tiers; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -1255,7 +1374,7 @@ INSERT INTO public.schema_migrations VALUES (1, '0001_initial_schema.up.sql', 1,
 
 
 --
--- TOC entry 5383 (class 0 OID 17144)
+-- TOC entry 5392 (class 0 OID 17144)
 -- Dependencies: 249
 -- Data for Name: tickets; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -1263,7 +1382,7 @@ INSERT INTO public.schema_migrations VALUES (1, '0001_initial_schema.up.sql', 1,
 
 
 --
--- TOC entry 5364 (class 0 OID 16813)
+-- TOC entry 5373 (class 0 OID 16813)
 -- Dependencies: 230
 -- Data for Name: user_bank_accounts; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -1271,32 +1390,40 @@ INSERT INTO public.schema_migrations VALUES (1, '0001_initial_schema.up.sql', 1,
 
 
 --
--- TOC entry 5357 (class 0 OID 16742)
+-- TOC entry 5366 (class 0 OID 16742)
 -- Dependencies: 223
 -- Data for Name: user_profiles; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
+INSERT INTO public.user_profiles VALUES (14, 'organizer1', NULL, NULL, NULL, NULL, NULL);
+INSERT INTO public.user_profiles VALUES (15, 'Admin Super', NULL, NULL, NULL, NULL, NULL);
+INSERT INTO public.user_profiles VALUES (16, 'user 1', NULL, NULL, NULL, NULL, NULL);
 
 
 --
--- TOC entry 5362 (class 0 OID 16791)
+-- TOC entry 5371 (class 0 OID 16791)
 -- Dependencies: 228
 -- Data for Name: user_roles; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
+INSERT INTO public.user_roles VALUES (8, 16, NULL, 5);
+INSERT INTO public.user_roles VALUES (7, 15, NULL, 1);
+INSERT INTO public.user_roles VALUES (6, 14, NULL, 3);
 
 
 --
--- TOC entry 5356 (class 0 OID 16722)
+-- TOC entry 5365 (class 0 OID 16722)
 -- Dependencies: 222
 -- Data for Name: users; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-INSERT INTO public.users VALUES (2, 'g3rald.dj@gmail.com', NULL, 'verified', '2026-06-24 10:32:59.83121+07', '2026-06-24 10:32:59.83121+07', 'google');
+INSERT INTO public.users VALUES (16, 'user1@gmail.com', '$2a$12$sI6r3Ec30GgvCviyV5HG2emObu02lYkHeCoGvKd7ndmBObG5hvpEu', 'pending_verification', '2026-07-05 21:47:00.969565+07', '2026-07-05 21:47:00.969565+07', 'native');
+INSERT INTO public.users VALUES (15, 'super-admin@crowdflow.my.id', '$2a$12$cE6SbWY.nwfCh9ZanWvOfOEriE8bC8JeqPbh6bGWXEiWneBH8knIK', 'verified', '2026-07-05 21:45:35.571487+07', '2026-07-05 21:51:10.503586+07', 'native');
+INSERT INTO public.users VALUES (14, 'organizer1@crowdflow.my.id', '$2a$12$VdFcEnsCQROZ.UkmtFUZS.zvRkWiW3MCOdeUcO111RA6fOzgU/hfe', 'verified', '2026-07-05 21:44:43.719071+07', '2026-07-05 21:53:25.403133+07', 'native');
 
 
 --
--- TOC entry 5368 (class 0 OID 16859)
+-- TOC entry 5377 (class 0 OID 16859)
 -- Dependencies: 234
 -- Data for Name: venue_sections; Type: TABLE DATA; Schema: public; Owner: postgres
 --
@@ -1304,15 +1431,18 @@ INSERT INTO public.users VALUES (2, 'g3rald.dj@gmail.com', NULL, 'verified', '20
 
 
 --
--- TOC entry 5366 (class 0 OID 16839)
+-- TOC entry 5375 (class 0 OID 16839)
 -- Dependencies: 232
 -- Data for Name: venues; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
+INSERT INTO public.venues VALUES (1, 'Stadion Utama Gelora Bung Karno', 'Jl. Pintu Satu Senayan', 'Jakarta', 'DKI Jakarta', 78000, '2026-07-05 22:01:55.851872+07', '2026-07-05 22:01:55.851872+07');
+INSERT INTO public.venues VALUES (2, 'Indonesia Convention Exhibition (ICE) BSD', 'Jl. BSD Grand Boulevard No.1', 'Tangerang', 'Banten', 10000, '2026-07-05 22:01:55.851872+07', '2026-07-05 22:01:55.851872+07');
+INSERT INTO public.venues VALUES (3, 'Candi Prambanan', 'Jl. Raya Solo - Yogyakarta No.16', 'Sleman', 'DI Yogyakarta', 5000, '2026-07-05 22:01:55.851872+07', '2026-07-05 22:01:55.851872+07');
 
 
 --
--- TOC entry 5408 (class 0 OID 0)
+-- TOC entry 5420 (class 0 OID 0)
 -- Dependencies: 239
 -- Name: event_approval_log_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -1321,7 +1451,7 @@ SELECT pg_catalog.setval('public.event_approval_log_id_seq', 1, false);
 
 
 --
--- TOC entry 5409 (class 0 OID 0)
+-- TOC entry 5421 (class 0 OID 0)
 -- Dependencies: 245
 -- Name: event_seats_matrix_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -1330,7 +1460,7 @@ SELECT pg_catalog.setval('public.event_seats_matrix_id_seq', 1, false);
 
 
 --
--- TOC entry 5410 (class 0 OID 0)
+-- TOC entry 5422 (class 0 OID 0)
 -- Dependencies: 243
 -- Name: event_sections_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -1339,43 +1469,52 @@ SELECT pg_catalog.setval('public.event_sections_id_seq', 1, false);
 
 
 --
--- TOC entry 5411 (class 0 OID 0)
+-- TOC entry 5423 (class 0 OID 0)
+-- Dependencies: 254
+-- Name: event_types_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+--
+
+SELECT pg_catalog.setval('public.event_types_id_seq', 8, true);
+
+
+--
+-- TOC entry 5424 (class 0 OID 0)
 -- Dependencies: 237
 -- Name: events_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.events_id_seq', 1, false);
+SELECT pg_catalog.setval('public.events_id_seq', 6, true);
 
 
 --
--- TOC entry 5412 (class 0 OID 0)
+-- TOC entry 5425 (class 0 OID 0)
 -- Dependencies: 224
 -- Name: permissions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.permissions_id_seq', 1, false);
+SELECT pg_catalog.setval('public.permissions_id_seq', 17, true);
 
 
 --
--- TOC entry 5413 (class 0 OID 0)
+-- TOC entry 5426 (class 0 OID 0)
 -- Dependencies: 219
 -- Name: roles_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.roles_id_seq', 1, false);
+SELECT pg_catalog.setval('public.roles_id_seq', 5, true);
 
 
 --
--- TOC entry 5414 (class 0 OID 0)
+-- TOC entry 5427 (class 0 OID 0)
 -- Dependencies: 252
 -- Name: schema_migrations_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.schema_migrations_id_seq', 1, true);
+SELECT pg_catalog.setval('public.schema_migrations_id_seq', 2, true);
 
 
 --
--- TOC entry 5415 (class 0 OID 0)
+-- TOC entry 5428 (class 0 OID 0)
 -- Dependencies: 235
 -- Name: seats_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -1384,7 +1523,7 @@ SELECT pg_catalog.setval('public.seats_id_seq', 1, false);
 
 
 --
--- TOC entry 5416 (class 0 OID 0)
+-- TOC entry 5429 (class 0 OID 0)
 -- Dependencies: 241
 -- Name: ticket_tiers_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -1393,7 +1532,7 @@ SELECT pg_catalog.setval('public.ticket_tiers_id_seq', 1, false);
 
 
 --
--- TOC entry 5417 (class 0 OID 0)
+-- TOC entry 5430 (class 0 OID 0)
 -- Dependencies: 229
 -- Name: user_bank_accounts_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -1402,25 +1541,25 @@ SELECT pg_catalog.setval('public.user_bank_accounts_id_seq', 1, false);
 
 
 --
--- TOC entry 5418 (class 0 OID 0)
+-- TOC entry 5431 (class 0 OID 0)
 -- Dependencies: 227
 -- Name: user_roles_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.user_roles_id_seq', 1, false);
+SELECT pg_catalog.setval('public.user_roles_id_seq', 8, true);
 
 
 --
--- TOC entry 5419 (class 0 OID 0)
+-- TOC entry 5432 (class 0 OID 0)
 -- Dependencies: 221
 -- Name: users_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.users_id_seq', 2, true);
+SELECT pg_catalog.setval('public.users_id_seq', 16, true);
 
 
 --
--- TOC entry 5420 (class 0 OID 0)
+-- TOC entry 5433 (class 0 OID 0)
 -- Dependencies: 233
 -- Name: venue_sections_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -1429,7 +1568,7 @@ SELECT pg_catalog.setval('public.venue_sections_id_seq', 1, false);
 
 
 --
--- TOC entry 5421 (class 0 OID 0)
+-- TOC entry 5434 (class 0 OID 0)
 -- Dependencies: 231
 -- Name: venues_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
@@ -1438,7 +1577,7 @@ SELECT pg_catalog.setval('public.venues_id_seq', 1, false);
 
 
 --
--- TOC entry 5103 (class 2606 OID 16952)
+-- TOC entry 5109 (class 2606 OID 16952)
 -- Name: event_approval_log event_approval_log_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1447,7 +1586,7 @@ ALTER TABLE ONLY public.event_approval_log
 
 
 --
--- TOC entry 5116 (class 2606 OID 17038)
+-- TOC entry 5122 (class 2606 OID 17038)
 -- Name: event_seats_matrix event_seats_matrix_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1456,7 +1595,7 @@ ALTER TABLE ONLY public.event_seats_matrix
 
 
 --
--- TOC entry 5111 (class 2606 OID 17007)
+-- TOC entry 5117 (class 2606 OID 17007)
 -- Name: event_sections event_sections_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1465,7 +1604,16 @@ ALTER TABLE ONLY public.event_sections
 
 
 --
--- TOC entry 5098 (class 2606 OID 16920)
+-- TOC entry 5167 (class 2606 OID 17435)
+-- Name: event_types event_types_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.event_types
+    ADD CONSTRAINT event_types_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 5104 (class 2606 OID 16920)
 -- Name: events events_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1474,7 +1622,7 @@ ALTER TABLE ONLY public.events
 
 
 --
--- TOC entry 5136 (class 2606 OID 17132)
+-- TOC entry 5142 (class 2606 OID 17132)
 -- Name: orders orders_external_transaction_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1483,7 +1631,7 @@ ALTER TABLE ONLY public.orders
 
 
 --
--- TOC entry 5138 (class 2606 OID 17130)
+-- TOC entry 5144 (class 2606 OID 17130)
 -- Name: orders orders_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1492,7 +1640,7 @@ ALTER TABLE ONLY public.orders
 
 
 --
--- TOC entry 5072 (class 2606 OID 16772)
+-- TOC entry 5078 (class 2606 OID 16772)
 -- Name: permissions permissions_permission_name_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1501,7 +1649,7 @@ ALTER TABLE ONLY public.permissions
 
 
 --
--- TOC entry 5074 (class 2606 OID 16770)
+-- TOC entry 5080 (class 2606 OID 16770)
 -- Name: permissions permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1510,7 +1658,7 @@ ALTER TABLE ONLY public.permissions
 
 
 --
--- TOC entry 5125 (class 2606 OID 17075)
+-- TOC entry 5131 (class 2606 OID 17075)
 -- Name: queue_entries queue_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1519,7 +1667,7 @@ ALTER TABLE ONLY public.queue_entries
 
 
 --
--- TOC entry 5127 (class 2606 OID 17077)
+-- TOC entry 5133 (class 2606 OID 17077)
 -- Name: queue_entries queue_entries_queue_token_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1528,7 +1676,7 @@ ALTER TABLE ONLY public.queue_entries
 
 
 --
--- TOC entry 5155 (class 2606 OID 17243)
+-- TOC entry 5161 (class 2606 OID 17243)
 -- Name: refunds refunds_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1537,7 +1685,7 @@ ALTER TABLE ONLY public.refunds
 
 
 --
--- TOC entry 5076 (class 2606 OID 16779)
+-- TOC entry 5082 (class 2606 OID 16779)
 -- Name: role_permissions role_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1546,7 +1694,7 @@ ALTER TABLE ONLY public.role_permissions
 
 
 --
--- TOC entry 5055 (class 2606 OID 16718)
+-- TOC entry 5061 (class 2606 OID 16718)
 -- Name: roles roles_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1555,7 +1703,7 @@ ALTER TABLE ONLY public.roles
 
 
 --
--- TOC entry 5057 (class 2606 OID 16720)
+-- TOC entry 5063 (class 2606 OID 16720)
 -- Name: roles roles_role_name_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1564,7 +1712,7 @@ ALTER TABLE ONLY public.roles
 
 
 --
--- TOC entry 5157 (class 2606 OID 17313)
+-- TOC entry 5163 (class 2606 OID 17313)
 -- Name: schema_migrations schema_migrations_migration_name_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1573,7 +1721,7 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
--- TOC entry 5159 (class 2606 OID 17311)
+-- TOC entry 5165 (class 2606 OID 17311)
 -- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1582,7 +1730,7 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
--- TOC entry 5094 (class 2606 OID 16888)
+-- TOC entry 5100 (class 2606 OID 16888)
 -- Name: seats seats_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1591,7 +1739,7 @@ ALTER TABLE ONLY public.seats
 
 
 --
--- TOC entry 5151 (class 2606 OID 17200)
+-- TOC entry 5157 (class 2606 OID 17200)
 -- Name: ticket_resale_listings ticket_resale_listings_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1600,7 +1748,7 @@ ALTER TABLE ONLY public.ticket_resale_listings
 
 
 --
--- TOC entry 5109 (class 2606 OID 16988)
+-- TOC entry 5115 (class 2606 OID 16988)
 -- Name: ticket_tiers ticket_tiers_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1609,7 +1757,7 @@ ALTER TABLE ONLY public.ticket_tiers
 
 
 --
--- TOC entry 5144 (class 2606 OID 17164)
+-- TOC entry 5150 (class 2606 OID 17164)
 -- Name: tickets tickets_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1618,7 +1766,7 @@ ALTER TABLE ONLY public.tickets
 
 
 --
--- TOC entry 5146 (class 2606 OID 17166)
+-- TOC entry 5152 (class 2606 OID 17166)
 -- Name: tickets tickets_qr_signature_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1627,7 +1775,7 @@ ALTER TABLE ONLY public.tickets
 
 
 --
--- TOC entry 5120 (class 2606 OID 17040)
+-- TOC entry 5126 (class 2606 OID 17040)
 -- Name: event_seats_matrix unique_event_seat; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1636,7 +1784,7 @@ ALTER TABLE ONLY public.event_seats_matrix
 
 
 --
--- TOC entry 5114 (class 2606 OID 17009)
+-- TOC entry 5120 (class 2606 OID 17009)
 -- Name: event_sections unique_event_section; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1645,7 +1793,7 @@ ALTER TABLE ONLY public.event_sections
 
 
 --
--- TOC entry 5096 (class 2606 OID 16890)
+-- TOC entry 5102 (class 2606 OID 16890)
 -- Name: seats unique_section_seat; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1654,7 +1802,7 @@ ALTER TABLE ONLY public.seats
 
 
 --
--- TOC entry 5083 (class 2606 OID 16831)
+-- TOC entry 5089 (class 2606 OID 16831)
 -- Name: user_bank_accounts unique_user_bank; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1663,7 +1811,7 @@ ALTER TABLE ONLY public.user_bank_accounts
 
 
 --
--- TOC entry 5129 (class 2606 OID 17079)
+-- TOC entry 5135 (class 2606 OID 17079)
 -- Name: queue_entries unique_user_queue; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1672,7 +1820,7 @@ ALTER TABLE ONLY public.queue_entries
 
 
 --
--- TOC entry 5085 (class 2606 OID 16829)
+-- TOC entry 5091 (class 2606 OID 16829)
 -- Name: user_bank_accounts user_bank_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1681,7 +1829,7 @@ ALTER TABLE ONLY public.user_bank_accounts
 
 
 --
--- TOC entry 5064 (class 2606 OID 16754)
+-- TOC entry 5070 (class 2606 OID 16754)
 -- Name: user_profiles user_profiles_nik_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1690,7 +1838,7 @@ ALTER TABLE ONLY public.user_profiles
 
 
 --
--- TOC entry 5066 (class 2606 OID 16756)
+-- TOC entry 5072 (class 2606 OID 16756)
 -- Name: user_profiles user_profiles_passport_number_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1699,7 +1847,7 @@ ALTER TABLE ONLY public.user_profiles
 
 
 --
--- TOC entry 5068 (class 2606 OID 16752)
+-- TOC entry 5074 (class 2606 OID 16752)
 -- Name: user_profiles user_profiles_phone_number_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1708,7 +1856,7 @@ ALTER TABLE ONLY public.user_profiles
 
 
 --
--- TOC entry 5070 (class 2606 OID 16750)
+-- TOC entry 5076 (class 2606 OID 16750)
 -- Name: user_profiles user_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1717,7 +1865,7 @@ ALTER TABLE ONLY public.user_profiles
 
 
 --
--- TOC entry 5080 (class 2606 OID 16799)
+-- TOC entry 5086 (class 2606 OID 16799)
 -- Name: user_roles user_roles_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1726,7 +1874,7 @@ ALTER TABLE ONLY public.user_roles
 
 
 --
--- TOC entry 5060 (class 2606 OID 16740)
+-- TOC entry 5066 (class 2606 OID 16740)
 -- Name: users users_email_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1735,7 +1883,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- TOC entry 5062 (class 2606 OID 16738)
+-- TOC entry 5068 (class 2606 OID 16738)
 -- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1744,7 +1892,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- TOC entry 5090 (class 2606 OID 16870)
+-- TOC entry 5096 (class 2606 OID 16870)
 -- Name: venue_sections venue_sections_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1753,7 +1901,7 @@ ALTER TABLE ONLY public.venue_sections
 
 
 --
--- TOC entry 5087 (class 2606 OID 16856)
+-- TOC entry 5093 (class 2606 OID 16856)
 -- Name: venues venues_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -1762,7 +1910,7 @@ ALTER TABLE ONLY public.venues
 
 
 --
--- TOC entry 5104 (class 1259 OID 17266)
+-- TOC entry 5110 (class 1259 OID 17266)
 -- Name: idx_approval_log_auditor; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1770,7 +1918,7 @@ CREATE INDEX idx_approval_log_auditor ON public.event_approval_log USING btree (
 
 
 --
--- TOC entry 5105 (class 1259 OID 17265)
+-- TOC entry 5111 (class 1259 OID 17265)
 -- Name: idx_approval_log_event; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1778,7 +1926,7 @@ CREATE INDEX idx_approval_log_event ON public.event_approval_log USING btree (ev
 
 
 --
--- TOC entry 5081 (class 1259 OID 17261)
+-- TOC entry 5087 (class 1259 OID 17261)
 -- Name: idx_bank_accounts_user_verified; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1786,7 +1934,7 @@ CREATE INDEX idx_bank_accounts_user_verified ON public.user_bank_accounts USING 
 
 
 --
--- TOC entry 5117 (class 1259 OID 17273)
+-- TOC entry 5123 (class 1259 OID 17273)
 -- Name: idx_esm_lookup; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1794,7 +1942,7 @@ CREATE INDEX idx_esm_lookup ON public.event_seats_matrix USING btree (event_id, 
 
 
 --
--- TOC entry 5118 (class 1259 OID 17274)
+-- TOC entry 5124 (class 1259 OID 17274)
 -- Name: idx_esm_tier_pricing; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1802,7 +1950,7 @@ CREATE INDEX idx_esm_tier_pricing ON public.event_seats_matrix USING btree (even
 
 
 --
--- TOC entry 5112 (class 1259 OID 17272)
+-- TOC entry 5118 (class 1259 OID 17272)
 -- Name: idx_event_sections_lookup; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1810,7 +1958,7 @@ CREATE INDEX idx_event_sections_lookup ON public.event_sections USING btree (eve
 
 
 --
--- TOC entry 5099 (class 1259 OID 17263)
+-- TOC entry 5105 (class 1259 OID 17263)
 -- Name: idx_events_organizer; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1818,7 +1966,7 @@ CREATE INDEX idx_events_organizer ON public.events USING btree (organizer_id);
 
 
 --
--- TOC entry 5100 (class 1259 OID 17262)
+-- TOC entry 5106 (class 1259 OID 17262)
 -- Name: idx_events_status; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1826,7 +1974,7 @@ CREATE INDEX idx_events_status ON public.events USING btree (status);
 
 
 --
--- TOC entry 5101 (class 1259 OID 17264)
+-- TOC entry 5107 (class 1259 OID 17264)
 -- Name: idx_events_venue; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1834,7 +1982,7 @@ CREATE INDEX idx_events_venue ON public.events USING btree (venue_id);
 
 
 --
--- TOC entry 5130 (class 1259 OID 17276)
+-- TOC entry 5136 (class 1259 OID 17276)
 -- Name: idx_orders_event; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1842,7 +1990,7 @@ CREATE INDEX idx_orders_event ON public.orders USING btree (event_id);
 
 
 --
--- TOC entry 5131 (class 1259 OID 17279)
+-- TOC entry 5137 (class 1259 OID 17279)
 -- Name: idx_orders_external_tx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1850,7 +1998,7 @@ CREATE INDEX idx_orders_external_tx ON public.orders USING btree (external_trans
 
 
 --
--- TOC entry 5132 (class 1259 OID 17275)
+-- TOC entry 5138 (class 1259 OID 17275)
 -- Name: idx_orders_purchaser; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1858,7 +2006,7 @@ CREATE INDEX idx_orders_purchaser ON public.orders USING btree (purchaser_id);
 
 
 --
--- TOC entry 5133 (class 1259 OID 17277)
+-- TOC entry 5139 (class 1259 OID 17277)
 -- Name: idx_orders_status; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1866,7 +2014,7 @@ CREATE INDEX idx_orders_status ON public.orders USING btree (status);
 
 
 --
--- TOC entry 5134 (class 1259 OID 17278)
+-- TOC entry 5140 (class 1259 OID 17278)
 -- Name: idx_orders_type; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1874,7 +2022,7 @@ CREATE INDEX idx_orders_type ON public.orders USING btree (order_type);
 
 
 --
--- TOC entry 5121 (class 1259 OID 17289)
+-- TOC entry 5127 (class 1259 OID 17289)
 -- Name: idx_queue_event_tier_position; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1882,7 +2030,7 @@ CREATE INDEX idx_queue_event_tier_position ON public.queue_entries USING btree (
 
 
 --
--- TOC entry 5122 (class 1259 OID 17291)
+-- TOC entry 5128 (class 1259 OID 17291)
 -- Name: idx_queue_token; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1890,7 +2038,7 @@ CREATE INDEX idx_queue_token ON public.queue_entries USING btree (queue_token);
 
 
 --
--- TOC entry 5123 (class 1259 OID 17290)
+-- TOC entry 5129 (class 1259 OID 17290)
 -- Name: idx_queue_user; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1898,7 +2046,7 @@ CREATE INDEX idx_queue_user ON public.queue_entries USING btree (user_id);
 
 
 --
--- TOC entry 5152 (class 1259 OID 17287)
+-- TOC entry 5158 (class 1259 OID 17287)
 -- Name: idx_refunds_order; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1906,7 +2054,7 @@ CREATE INDEX idx_refunds_order ON public.refunds USING btree (order_id);
 
 
 --
--- TOC entry 5153 (class 1259 OID 17288)
+-- TOC entry 5159 (class 1259 OID 17288)
 -- Name: idx_refunds_status; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1914,7 +2062,7 @@ CREATE INDEX idx_refunds_status ON public.refunds USING btree (status);
 
 
 --
--- TOC entry 5147 (class 1259 OID 17285)
+-- TOC entry 5153 (class 1259 OID 17285)
 -- Name: idx_resale_active; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1922,7 +2070,7 @@ CREATE INDEX idx_resale_active ON public.ticket_resale_listings USING btree (sta
 
 
 --
--- TOC entry 5148 (class 1259 OID 17286)
+-- TOC entry 5154 (class 1259 OID 17286)
 -- Name: idx_resale_seller; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1930,7 +2078,7 @@ CREATE INDEX idx_resale_seller ON public.ticket_resale_listings USING btree (sel
 
 
 --
--- TOC entry 5149 (class 1259 OID 17284)
+-- TOC entry 5155 (class 1259 OID 17284)
 -- Name: idx_resale_ticket_status; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1938,7 +2086,7 @@ CREATE INDEX idx_resale_ticket_status ON public.ticket_resale_listings USING btr
 
 
 --
--- TOC entry 5091 (class 1259 OID 17270)
+-- TOC entry 5097 (class 1259 OID 17270)
 -- Name: idx_seats_section_lookup; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1946,7 +2094,7 @@ CREATE INDEX idx_seats_section_lookup ON public.seats USING btree (section_id);
 
 
 --
--- TOC entry 5092 (class 1259 OID 17269)
+-- TOC entry 5098 (class 1259 OID 17269)
 -- Name: idx_seats_section_status; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1954,7 +2102,7 @@ CREATE INDEX idx_seats_section_status ON public.seats USING btree (section_id, s
 
 
 --
--- TOC entry 5106 (class 1259 OID 17267)
+-- TOC entry 5112 (class 1259 OID 17267)
 -- Name: idx_ticket_tiers_event; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1962,7 +2110,7 @@ CREATE INDEX idx_ticket_tiers_event ON public.ticket_tiers USING btree (event_id
 
 
 --
--- TOC entry 5107 (class 1259 OID 17268)
+-- TOC entry 5113 (class 1259 OID 17268)
 -- Name: idx_ticket_tiers_sales_window; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1970,7 +2118,7 @@ CREATE INDEX idx_ticket_tiers_sales_window ON public.ticket_tiers USING btree (s
 
 
 --
--- TOC entry 5139 (class 1259 OID 17282)
+-- TOC entry 5145 (class 1259 OID 17282)
 -- Name: idx_tickets_attendee_lookup; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1978,7 +2126,7 @@ CREATE INDEX idx_tickets_attendee_lookup ON public.tickets USING btree (attendee
 
 
 --
--- TOC entry 5140 (class 1259 OID 17280)
+-- TOC entry 5146 (class 1259 OID 17280)
 -- Name: idx_tickets_order; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1986,7 +2134,7 @@ CREATE INDEX idx_tickets_order ON public.tickets USING btree (order_id);
 
 
 --
--- TOC entry 5141 (class 1259 OID 17283)
+-- TOC entry 5147 (class 1259 OID 17283)
 -- Name: idx_tickets_resale_eligible; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1994,7 +2142,7 @@ CREATE INDEX idx_tickets_resale_eligible ON public.tickets USING btree (id) WHER
 
 
 --
--- TOC entry 5142 (class 1259 OID 17281)
+-- TOC entry 5148 (class 1259 OID 17281)
 -- Name: idx_tickets_tier; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -2002,7 +2150,7 @@ CREATE INDEX idx_tickets_tier ON public.tickets USING btree (ticket_tier_id);
 
 
 --
--- TOC entry 5077 (class 1259 OID 16811)
+-- TOC entry 5083 (class 1259 OID 16811)
 -- Name: idx_user_roles_event; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -2010,7 +2158,7 @@ CREATE UNIQUE INDEX idx_user_roles_event ON public.user_roles USING btree (user_
 
 
 --
--- TOC entry 5078 (class 1259 OID 16810)
+-- TOC entry 5084 (class 1259 OID 16810)
 -- Name: idx_user_roles_platform; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -2018,7 +2166,7 @@ CREATE UNIQUE INDEX idx_user_roles_platform ON public.user_roles USING btree (us
 
 
 --
--- TOC entry 5058 (class 1259 OID 17260)
+-- TOC entry 5064 (class 1259 OID 17260)
 -- Name: idx_users_verification; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -2026,7 +2174,7 @@ CREATE INDEX idx_users_verification ON public.users USING btree (verification_st
 
 
 --
--- TOC entry 5088 (class 1259 OID 17271)
+-- TOC entry 5094 (class 1259 OID 17271)
 -- Name: idx_venue_sections_venue; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -2034,7 +2182,7 @@ CREATE INDEX idx_venue_sections_venue ON public.venue_sections USING btree (venu
 
 
 --
--- TOC entry 5197 (class 2620 OID 16837)
+-- TOC entry 5206 (class 2620 OID 16837)
 -- Name: user_bank_accounts trg_bank_accounts_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -2042,7 +2190,7 @@ CREATE TRIGGER trg_bank_accounts_updated_at BEFORE UPDATE ON public.user_bank_ac
 
 
 --
--- TOC entry 5202 (class 2620 OID 17297)
+-- TOC entry 5211 (class 2620 OID 17297)
 -- Name: tickets trg_check_ticket_limit; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -2050,7 +2198,7 @@ CREATE TRIGGER trg_check_ticket_limit BEFORE INSERT ON public.tickets FOR EACH R
 
 
 --
--- TOC entry 5199 (class 2620 OID 16931)
+-- TOC entry 5208 (class 2620 OID 16931)
 -- Name: events trg_events_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -2058,7 +2206,7 @@ CREATE TRIGGER trg_events_updated_at BEFORE UPDATE ON public.events FOR EACH ROW
 
 
 --
--- TOC entry 5201 (class 2620 OID 17143)
+-- TOC entry 5210 (class 2620 OID 17143)
 -- Name: orders trg_orders_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -2066,7 +2214,7 @@ CREATE TRIGGER trg_orders_updated_at BEFORE UPDATE ON public.orders FOR EACH ROW
 
 
 --
--- TOC entry 5205 (class 2620 OID 17259)
+-- TOC entry 5214 (class 2620 OID 17259)
 -- Name: refunds trg_refunds_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -2074,7 +2222,7 @@ CREATE TRIGGER trg_refunds_updated_at BEFORE UPDATE ON public.refunds FOR EACH R
 
 
 --
--- TOC entry 5204 (class 2620 OID 17221)
+-- TOC entry 5213 (class 2620 OID 17221)
 -- Name: ticket_resale_listings trg_resale_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -2082,7 +2230,7 @@ CREATE TRIGGER trg_resale_updated_at BEFORE UPDATE ON public.ticket_resale_listi
 
 
 --
--- TOC entry 5200 (class 2620 OID 16994)
+-- TOC entry 5209 (class 2620 OID 16994)
 -- Name: ticket_tiers trg_ticket_tiers_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -2090,7 +2238,7 @@ CREATE TRIGGER trg_ticket_tiers_updated_at BEFORE UPDATE ON public.ticket_tiers 
 
 
 --
--- TOC entry 5203 (class 2620 OID 17182)
+-- TOC entry 5212 (class 2620 OID 17182)
 -- Name: tickets trg_tickets_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -2098,7 +2246,7 @@ CREATE TRIGGER trg_tickets_updated_at BEFORE UPDATE ON public.tickets FOR EACH R
 
 
 --
--- TOC entry 5196 (class 2620 OID 16741)
+-- TOC entry 5205 (class 2620 OID 16741)
 -- Name: users trg_users_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -2106,7 +2254,7 @@ CREATE TRIGGER trg_users_updated_at BEFORE UPDATE ON public.users FOR EACH ROW E
 
 
 --
--- TOC entry 5198 (class 2620 OID 16857)
+-- TOC entry 5207 (class 2620 OID 16857)
 -- Name: venues trg_venues_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -2114,7 +2262,7 @@ CREATE TRIGGER trg_venues_updated_at BEFORE UPDATE ON public.venues FOR EACH ROW
 
 
 --
--- TOC entry 5171 (class 2606 OID 16958)
+-- TOC entry 5180 (class 2606 OID 16958)
 -- Name: event_approval_log event_approval_log_auditor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2123,7 +2271,7 @@ ALTER TABLE ONLY public.event_approval_log
 
 
 --
--- TOC entry 5172 (class 2606 OID 16953)
+-- TOC entry 5181 (class 2606 OID 16953)
 -- Name: event_approval_log event_approval_log_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2132,7 +2280,7 @@ ALTER TABLE ONLY public.event_approval_log
 
 
 --
--- TOC entry 5177 (class 2606 OID 17041)
+-- TOC entry 5186 (class 2606 OID 17041)
 -- Name: event_seats_matrix event_seats_matrix_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2141,7 +2289,7 @@ ALTER TABLE ONLY public.event_seats_matrix
 
 
 --
--- TOC entry 5178 (class 2606 OID 17051)
+-- TOC entry 5187 (class 2606 OID 17051)
 -- Name: event_seats_matrix event_seats_matrix_event_section_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2150,7 +2298,7 @@ ALTER TABLE ONLY public.event_seats_matrix
 
 
 --
--- TOC entry 5179 (class 2606 OID 17046)
+-- TOC entry 5188 (class 2606 OID 17046)
 -- Name: event_seats_matrix event_seats_matrix_seat_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2159,7 +2307,7 @@ ALTER TABLE ONLY public.event_seats_matrix
 
 
 --
--- TOC entry 5180 (class 2606 OID 17056)
+-- TOC entry 5189 (class 2606 OID 17056)
 -- Name: event_seats_matrix event_seats_matrix_ticket_tier_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2168,7 +2316,7 @@ ALTER TABLE ONLY public.event_seats_matrix
 
 
 --
--- TOC entry 5174 (class 2606 OID 17010)
+-- TOC entry 5183 (class 2606 OID 17010)
 -- Name: event_sections event_sections_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2177,7 +2325,7 @@ ALTER TABLE ONLY public.event_sections
 
 
 --
--- TOC entry 5175 (class 2606 OID 17015)
+-- TOC entry 5184 (class 2606 OID 17015)
 -- Name: event_sections event_sections_section_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2186,7 +2334,7 @@ ALTER TABLE ONLY public.event_sections
 
 
 --
--- TOC entry 5176 (class 2606 OID 17020)
+-- TOC entry 5185 (class 2606 OID 17020)
 -- Name: event_sections event_sections_ticket_tier_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2195,7 +2343,7 @@ ALTER TABLE ONLY public.event_sections
 
 
 --
--- TOC entry 5169 (class 2606 OID 16926)
+-- TOC entry 5177 (class 2606 OID 16926)
 -- Name: events events_organizer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2204,7 +2352,7 @@ ALTER TABLE ONLY public.events
 
 
 --
--- TOC entry 5170 (class 2606 OID 16921)
+-- TOC entry 5178 (class 2606 OID 16921)
 -- Name: events events_venue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2213,7 +2361,16 @@ ALTER TABLE ONLY public.events
 
 
 --
--- TOC entry 5184 (class 2606 OID 17138)
+-- TOC entry 5179 (class 2606 OID 17437)
+-- Name: events fk_events_event_type; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.events
+    ADD CONSTRAINT fk_events_event_type FOREIGN KEY (event_type_id) REFERENCES public.event_types(id);
+
+
+--
+-- TOC entry 5193 (class 2606 OID 17138)
 -- Name: orders orders_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2222,7 +2379,7 @@ ALTER TABLE ONLY public.orders
 
 
 --
--- TOC entry 5185 (class 2606 OID 17133)
+-- TOC entry 5194 (class 2606 OID 17133)
 -- Name: orders orders_purchaser_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2231,7 +2388,7 @@ ALTER TABLE ONLY public.orders
 
 
 --
--- TOC entry 5181 (class 2606 OID 17080)
+-- TOC entry 5190 (class 2606 OID 17080)
 -- Name: queue_entries queue_entries_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2240,7 +2397,7 @@ ALTER TABLE ONLY public.queue_entries
 
 
 --
--- TOC entry 5182 (class 2606 OID 17085)
+-- TOC entry 5191 (class 2606 OID 17085)
 -- Name: queue_entries queue_entries_ticket_tier_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2249,7 +2406,7 @@ ALTER TABLE ONLY public.queue_entries
 
 
 --
--- TOC entry 5183 (class 2606 OID 17090)
+-- TOC entry 5192 (class 2606 OID 17090)
 -- Name: queue_entries queue_entries_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2258,7 +2415,7 @@ ALTER TABLE ONLY public.queue_entries
 
 
 --
--- TOC entry 5193 (class 2606 OID 17244)
+-- TOC entry 5202 (class 2606 OID 17244)
 -- Name: refunds refunds_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2267,7 +2424,7 @@ ALTER TABLE ONLY public.refunds
 
 
 --
--- TOC entry 5194 (class 2606 OID 17254)
+-- TOC entry 5203 (class 2606 OID 17254)
 -- Name: refunds refunds_requested_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2276,7 +2433,7 @@ ALTER TABLE ONLY public.refunds
 
 
 --
--- TOC entry 5195 (class 2606 OID 17249)
+-- TOC entry 5204 (class 2606 OID 17249)
 -- Name: refunds refunds_ticket_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2285,7 +2442,7 @@ ALTER TABLE ONLY public.refunds
 
 
 --
--- TOC entry 5161 (class 2606 OID 16785)
+-- TOC entry 5169 (class 2606 OID 16785)
 -- Name: role_permissions role_permissions_permission_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2294,7 +2451,7 @@ ALTER TABLE ONLY public.role_permissions
 
 
 --
--- TOC entry 5162 (class 2606 OID 16780)
+-- TOC entry 5170 (class 2606 OID 16780)
 -- Name: role_permissions role_permissions_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2303,7 +2460,7 @@ ALTER TABLE ONLY public.role_permissions
 
 
 --
--- TOC entry 5168 (class 2606 OID 16891)
+-- TOC entry 5176 (class 2606 OID 16891)
 -- Name: seats seats_section_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2312,7 +2469,7 @@ ALTER TABLE ONLY public.seats
 
 
 --
--- TOC entry 5189 (class 2606 OID 17211)
+-- TOC entry 5198 (class 2606 OID 17211)
 -- Name: ticket_resale_listings ticket_resale_listings_buyer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2321,7 +2478,7 @@ ALTER TABLE ONLY public.ticket_resale_listings
 
 
 --
--- TOC entry 5190 (class 2606 OID 17216)
+-- TOC entry 5199 (class 2606 OID 17216)
 -- Name: ticket_resale_listings ticket_resale_listings_resale_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2330,7 +2487,7 @@ ALTER TABLE ONLY public.ticket_resale_listings
 
 
 --
--- TOC entry 5191 (class 2606 OID 17206)
+-- TOC entry 5200 (class 2606 OID 17206)
 -- Name: ticket_resale_listings ticket_resale_listings_seller_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2339,7 +2496,7 @@ ALTER TABLE ONLY public.ticket_resale_listings
 
 
 --
--- TOC entry 5192 (class 2606 OID 17201)
+-- TOC entry 5201 (class 2606 OID 17201)
 -- Name: ticket_resale_listings ticket_resale_listings_ticket_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2348,7 +2505,7 @@ ALTER TABLE ONLY public.ticket_resale_listings
 
 
 --
--- TOC entry 5173 (class 2606 OID 16989)
+-- TOC entry 5182 (class 2606 OID 16989)
 -- Name: ticket_tiers ticket_tiers_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2357,7 +2514,7 @@ ALTER TABLE ONLY public.ticket_tiers
 
 
 --
--- TOC entry 5186 (class 2606 OID 17172)
+-- TOC entry 5195 (class 2606 OID 17172)
 -- Name: tickets tickets_event_seats_matrix_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2366,7 +2523,7 @@ ALTER TABLE ONLY public.tickets
 
 
 --
--- TOC entry 5187 (class 2606 OID 17167)
+-- TOC entry 5196 (class 2606 OID 17167)
 -- Name: tickets tickets_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2375,7 +2532,7 @@ ALTER TABLE ONLY public.tickets
 
 
 --
--- TOC entry 5188 (class 2606 OID 17177)
+-- TOC entry 5197 (class 2606 OID 17177)
 -- Name: tickets tickets_ticket_tier_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2384,7 +2541,7 @@ ALTER TABLE ONLY public.tickets
 
 
 --
--- TOC entry 5166 (class 2606 OID 16832)
+-- TOC entry 5174 (class 2606 OID 16832)
 -- Name: user_bank_accounts user_bank_accounts_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2393,7 +2550,7 @@ ALTER TABLE ONLY public.user_bank_accounts
 
 
 --
--- TOC entry 5160 (class 2606 OID 16757)
+-- TOC entry 5168 (class 2606 OID 16757)
 -- Name: user_profiles user_profiles_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2402,7 +2559,7 @@ ALTER TABLE ONLY public.user_profiles
 
 
 --
--- TOC entry 5163 (class 2606 OID 16932)
+-- TOC entry 5171 (class 2606 OID 16932)
 -- Name: user_roles user_roles_event_fk; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2411,7 +2568,7 @@ ALTER TABLE ONLY public.user_roles
 
 
 --
--- TOC entry 5164 (class 2606 OID 16805)
+-- TOC entry 5172 (class 2606 OID 16805)
 -- Name: user_roles user_roles_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2420,7 +2577,7 @@ ALTER TABLE ONLY public.user_roles
 
 
 --
--- TOC entry 5165 (class 2606 OID 16800)
+-- TOC entry 5173 (class 2606 OID 16800)
 -- Name: user_roles user_roles_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2429,7 +2586,7 @@ ALTER TABLE ONLY public.user_roles
 
 
 --
--- TOC entry 5167 (class 2606 OID 16871)
+-- TOC entry 5175 (class 2606 OID 16871)
 -- Name: venue_sections venue_sections_venue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2437,11 +2594,11 @@ ALTER TABLE ONLY public.venue_sections
     ADD CONSTRAINT venue_sections_venue_id_fkey FOREIGN KEY (venue_id) REFERENCES public.venues(id) ON DELETE CASCADE;
 
 
--- Completed on 2026-06-24 10:57:10
+-- Completed on 2026-07-05 23:51:32
 
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict GUU3r7dFCcZkxymPVBUtfdaszwFQFdD4dgtiKOweLtdMCMFUeKLMl1SgvmIpr4y
+\unrestrict kbnuX62cMFMcOop0nzaziWCQdZtV4hwcls4oJCBsXDq4uQexa5WtofYReuPf0bP
 
