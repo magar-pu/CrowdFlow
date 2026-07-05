@@ -25,11 +25,12 @@ func NewHandler(service Service, storage *storage.S3Storage) *Handler {
 func (h *Handler) RegisterRoutes(
 	mux *http.ServeMux,
 	authenticate func(http.Handler) http.Handler,
+	optionalAuthenticate func(http.Handler) http.Handler,
 	requirePlatformRole func(allowedRoles ...string) func(http.Handler) http.Handler,
 	requireEventRole func(roleName string) func(http.Handler) http.Handler,
 ) {
-	mux.HandleFunc("GET /api/events", h.handleListEvents)
-	mux.HandleFunc("GET /api/events/{id}", h.handleGetEvent)
+	mux.Handle("GET /api/events", optionalAuthenticate(http.HandlerFunc(h.handleListEvents)))
+	mux.Handle("GET /api/events/{id}", optionalAuthenticate(http.HandlerFunc(h.handleGetEvent)))
 	mux.Handle("POST /api/events", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleCreateEvent))))
 	mux.Handle("PATCH /api/events/{id}/publish", authenticate(requireEventRole("Event Organizer")(http.HandlerFunc(h.handlePublishEvent))))
 }
@@ -107,6 +108,35 @@ func (h *Handler) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", err.Error())
 		return
 	}
+
+	// If event is not approved, authorize the request (only organizer or Super Admin can view)
+	if evt.Status != "approved" {
+		claims, ok := middleware.GetClaims(r.Context())
+		if !ok {
+			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Event not found or not approved")
+			return
+		}
+
+		callerID, err := strconv.Atoi(claims.UserID)
+		if err != nil {
+			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Event not found or not approved")
+			return
+		}
+
+		isSuperAdmin := false
+		for _, role := range claims.Roles {
+			if role == "Super Admin" {
+				isSuperAdmin = true
+				break
+			}
+		}
+
+		if !isSuperAdmin && evt.OrganizerID != callerID {
+			response.Error(w, http.StatusForbidden, "FORBIDDEN", "You do not have permission to view this event")
+			return
+		}
+	}
+
 	response.JSON(w, http.StatusOK, MapEventToDetail(evt))
 }
 

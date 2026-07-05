@@ -94,7 +94,7 @@ func main() {
 	eventHandler := event.NewHandler(eventService, s3Storage)
 
 	// Register feature routes
-	eventHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole, authMounter.RequireEventRole)
+	eventHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.OptionalAuthenticate, authMounter.RequirePlatformRole, authMounter.RequireEventRole)
 
 	// Initialize Authentication dependencies
 	authRepo := auth.NewPostgresRepository(db)
