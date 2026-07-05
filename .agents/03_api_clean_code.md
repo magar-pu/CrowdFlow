@@ -178,3 +178,32 @@ To enforce role authorization or display premium state loading indicators during
 * **Location**: [AuthGuard.tsx](file:///c:/Users/geral/Documents/code/Projects/webdev/CrowdFlow/frontend/src/components/auth/AuthGuard.tsx)
 * **Rule**: Use the `AuthGuard` component at the layout level of route groups (e.g. `(organizer)/layout.tsx` and `(user)/layout.tsx`) to guard pages based on roles (such as `"verified_organizer"` or `"user"`).
 
+---
+
+## 📦 Data Transfer Objects (DTOs) & Data Decoupling
+
+To prevent leaking sensitive database properties, unpopulated zero-values (e.g., Go default `0001-01-01` dates), and redundant fields (e.g. root-level ID columns matching nested object IDs), Go handlers **MUST** decouple internal database entities from external JSON representations using explicit Request and Response DTO structs.
+
+### Go Backend DTO Architecture
+DTO structs are defined in service-specific DTO files (e.g., [dto.go](file:///C:/Users/geral/Documents/code/Projects/webdev/CrowdFlow/backend/internal/event/dto.go)) under domain packages:
+
+1. **Request DTOs** (e.g., `CreateEventRequest`):
+   * Capture incoming payload data.
+   * Enable Go handlers to run JSON unmarshaling and validation without exposing private database auto-increment properties.
+2. **Response DTOs** (e.g., `EventListResponse`, `EventDetailResponse`):
+   * Contain strictly the fields required by the UI client.
+   * Exclude database-level audit timestamps (`created_at`, `updated_at`), status reviews, and redundant foreign keys.
+   * Excluded values default to omission via `omitempty` or are completely dropped by mapping handlers.
+
+### Translation & Mapping Rules
+* **DTO Mappers**: The package must provide mapping functions (e.g., `MapEventToList()`, `MapEventToDetail()`) to handle the conversion from internal domain structs to clean output DTOs.
+* **Handler Mapping**: Handlers must never serialize internal database structs directly to the standard response envelope. They must call the DTO translation function before passing the payload to `response.JSON()`.
+
+Example inside Handlers:
+```go
+// Good Practice: Mapping to Detail DTO
+evt, err := h.service.GetEventDetails(id)
+if err != nil { ... }
+response.JSON(w, http.StatusOK, MapEventToDetail(evt))
+```
+

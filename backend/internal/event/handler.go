@@ -81,7 +81,12 @@ func (h *Handler) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
-	response.JSON(w, http.StatusOK, events)
+
+	res := make([]*EventListResponse, len(events))
+	for i, e := range events {
+		res[i] = MapEventToList(e)
+	}
+	response.JSON(w, http.StatusOK, res)
 }
 
 func (h *Handler) handleGetEvent(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +107,7 @@ func (h *Handler) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", err.Error())
 		return
 	}
-	response.JSON(w, http.StatusOK, evt)
+	response.JSON(w, http.StatusOK, MapEventToDetail(evt))
 }
 
 func (h *Handler) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +128,7 @@ func (h *Handler) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req Event
+	var req CreateEventRequest
 	if err := json.Unmarshal([]byte(eventDataJSON), &req); err != nil {
 		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid event_data JSON: "+err.Error())
 		return
@@ -156,6 +161,19 @@ func (h *Handler) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 		req.OrganizerID = callerID
 	}
 
+	// Construct domain model from request DTO
+	eventModel := &Event{
+		VenueID:                       req.VenueID,
+		OrganizerID:                   req.OrganizerID,
+		EventName:                     req.EventName,
+		Description:                   req.Description,
+		EventStart:                    req.EventStart,
+		EventEnd:                      req.EventEnd,
+		EntertainmentTaxRate:          req.EntertainmentTaxRate,
+		EntertainmentTaxPassedToBuyer: req.EntertainmentTaxPassedToBuyer,
+		EventTypeID:                   req.EventTypeID,
+	}
+
 	// 4. Process Cover Image file upload if present
 	file, header, err := r.FormFile("cover_image")
 	if err == nil {
@@ -179,7 +197,7 @@ func (h *Handler) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Assign resolved URL to event model
-		req.CoverImageURL = h.storage.GetPublicURL(objectKey)
+		eventModel.CoverImageURL = h.storage.GetPublicURL(objectKey)
 	} else if err != http.ErrMissingFile {
 		// FormFile returned a non-nil error other than "missing file"
 		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Error reading cover_image field: "+err.Error())
@@ -187,12 +205,12 @@ func (h *Handler) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. Save Event details to database
-	if err := h.service.CreateEvent(&req); err != nil {
+	if err := h.service.CreateEvent(eventModel); err != nil {
 		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
 		return
 	}
 
-	response.JSON(w, http.StatusCreated, req)
+	response.JSON(w, http.StatusCreated, MapEventToDetail(eventModel))
 }
 
 
