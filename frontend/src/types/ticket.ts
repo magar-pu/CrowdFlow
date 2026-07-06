@@ -403,14 +403,12 @@ export interface BentoCollectionTile {
   href: string;
 }
 
-/** One card in the "Event Paling Dinanti" trending grid, with a star rating. */
+/** One card in the "Event Paling Dinanti" trending grid, driven by real API data. */
 export interface TrendingEventCard {
   event_id: string;
   title: string;
   cover_image_url: string;
   city: string;
-  rating: number; // e.g. 4.9
-  review_count: number; // e.g. 1200, displayed as "1.2k"
-  starting_price: number;
-  country: string; // drives the country filter pills ("Indonesia", "Japan", ...)
+  category: string;  // e.g. "concert", "festival", "conference" — drives the category filter pills
+  starts_at: string; // ISO-8601 — displayed as a formatted date on the card
 }
