@@ -4,14 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "dev:admin": "npm run dev --prefix admin",
-    "dev:all": "concurrently \"npm run dev\" \"npm run dev:admin\"",
     "build": "next build",
-    "build:admin": "npm run build --prefix admin",
-    "build:all": "npm run build && npm run build:admin",
     "start": "next start",
-    "start:admin": "npm run start --prefix admin",
-    "start:all": "concurrently \"npm run start\" \"npm run start:admin\"",
     "lint": "eslint"
   },
   "dependencies": {
