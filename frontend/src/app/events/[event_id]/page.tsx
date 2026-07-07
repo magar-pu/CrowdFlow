@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/Navbar";
-import { Footer } from "@/components/layout/Footer";
+import { HomeFooterV2 } from "@/components/home-v2/HomeFooterV2";
 import { EventHero } from "@/components/event-detail/EventHero";
 import { AboutEventSection } from "@/components/event-detail/AboutEventSection";
 import { VenueInfoSection } from "@/components/event-detail/VenueInfoSection";
@@ -52,7 +52,7 @@ export default function EventDetailPage() {
           </div>
         </div>
       </main>
-      <Footer />
+      <HomeFooterV2 />
     </div>
   );
 }

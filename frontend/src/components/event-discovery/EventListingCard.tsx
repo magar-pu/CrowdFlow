@@ -122,7 +122,7 @@ export function EventListingCard({ event }: EventListingCardProps) {
         <div className="mt-auto flex items-center justify-between border-t border-border-subtle pt-6">
           <div>
             <p className="text-[11px] uppercase tracking-wider text-text-secondary">
-              Mulai Dari
+              Starting From
             </p>
             <p className="font-headline-sm text-text-primary">
               {formatIDR(event.starting_price)}

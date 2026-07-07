@@ -26,6 +26,7 @@ import {
   Phone,
   Briefcase
 } from "lucide-react";
+import { HomeFooterV2 } from "@/components/home-v2/HomeFooterV2";
 
 export default function BusinessPage() {
   const [openModal, setOpenModal] = useState(false);
@@ -796,44 +797,7 @@ export default function BusinessPage() {
       </section>
 
       {/* Footer */}
-      <footer className="w-full py-stack-lg px-margin-desktop bg-surface-container-highest mt-section-gap">
-        <div className="max-w-container-max mx-auto grid grid-cols-1 md:grid-cols-4 gap-gutter">
-          <div className="space-y-4">
-            <span className="font-headline-md text-headline-md font-bold text-primary tracking-tight">CrowdFlow</span>
-            <p className="font-body-sm text-body-sm text-on-surface-variant">Defining the future of global live entertainment ticketing.</p>
-          </div>
-          <div>
-            <h5 className="font-label-md text-label-md text-text-primary mb-4">Company</h5>
-            <ul className="space-y-2">
-              <li><Link className="text-on-surface-variant hover:text-primary transition-all font-body-sm text-body-sm" href="#">About Us</Link></li>
-              <li><Link className="text-on-surface-variant hover:text-primary transition-all font-body-sm text-body-sm" href="#">Careers</Link></li>
-              <li><Link className="text-on-surface-variant hover:text-primary transition-all font-body-sm text-body-sm" href="#">Newsroom</Link></li>
-            </ul>
-          </div>
-          <div>
-            <h5 className="font-label-md text-label-md text-text-primary mb-4">Resources</h5>
-            <ul className="space-y-2">
-              <li><Link className="text-on-surface-variant hover:text-primary transition-all font-body-sm text-body-sm" href="#">Support</Link></li>
-              <li><Link className="text-on-surface-variant hover:text-primary transition-all font-body-sm text-body-sm" href="#">API Docs</Link></li>
-              <li><Link className="text-on-surface-variant hover:text-primary transition-all font-body-sm text-body-sm" href="#">Contact Us</Link></li>
-            </ul>
-          </div>
-          <div>
-            <h5 className="font-label-md text-label-md text-text-primary mb-4">Legal</h5>
-            <ul className="space-y-2">
-              <li><Link className="text-on-surface-variant hover:text-primary transition-all font-body-sm text-body-sm" href="#">Privacy Policy</Link></li>
-              <li><Link className="text-on-surface-variant hover:text-primary transition-all font-body-sm text-body-sm" href="#">Terms of Service</Link></li>
-            </ul>
-          </div>
-        </div>
-        <div className="max-w-container-max mx-auto mt-16 pt-8 border-t border-border-subtle flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="font-body-sm text-body-sm text-on-surface-variant">© 2024 CrowdFlow Ticketing Ecosystem. All rights reserved.</p>
-          <div className="flex gap-6">
-            <Link href="#" className="text-text-secondary hover:text-primary"><Globe size={24} /></Link>
-            <Link href="#" className="text-text-secondary hover:text-primary"><Share2 size={24} /></Link>
-          </div>
-        </div>
-      </footer>
+      <HomeFooterV2 />
     </div>
   );
 }

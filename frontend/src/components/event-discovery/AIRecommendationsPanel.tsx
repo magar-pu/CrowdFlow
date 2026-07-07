@@ -26,7 +26,7 @@ export function AIRecommendationsPanel({
           className="text-tertiary [animation:pulse-ai_2s_cubic-bezier(0.4,0,0.6,1)_infinite]"
         />
         <h3 className="font-headline-sm text-headline-sm text-text-primary">
-          Direkomendasikan Untukmu (AI)
+          Recommended For You (AI)
         </h3>
       </div>
       <style>{`

@@ -25,7 +25,7 @@ import { FilterSidebar } from "@/components/event-discovery/FilterSidebar";
 import { AIRecommendationsPanel } from "@/components/event-discovery/AIRecommendationsPanel";
 import { EventListingCard } from "@/components/event-discovery/EventListingCard";
 import { ResaleMarketplacePromo } from "@/components/event-discovery/ResaleMarketplacePromo";
-import { EventDiscoveryFooter } from "@/components/event-discovery/EventDiscoveryFooter";
+import { HomeFooterV2 } from "@/components/home-v2/HomeFooterV2";
 import {
   mockFeaturedCarousel,
   mockAIRecommendedEvents,
@@ -35,12 +35,12 @@ import {
 const DEFAULT_MAX_PRICE = 5_000_000;
 
 export default function EventsDiscoveryPage() {
-  const [active_quick_filter, set_active_quick_filter] = useState("Semua");
-  const [sort_by, set_sort_by] = useState("Paling Populer");
+  const [active_quick_filter, set_active_quick_filter] = useState("All");
+  const [sort_by, set_sort_by] = useState("Most Popular");
   const [selected_cities, set_selected_cities] = useState<string[]>(["Jakarta"]);
   const [max_price, set_max_price] = useState(DEFAULT_MAX_PRICE);
-  const [availability, set_availability] = useState<"tersedia" | "terbatas">(
-    "tersedia"
+  const [availability, set_availability] = useState<"available" | "limited">(
+    "available"
   );
 
   function handle_toggle_city(city: string) {
@@ -54,8 +54,8 @@ export default function EventsDiscoveryPage() {
   function handle_clear_filters() {
     set_selected_cities([]);
     set_max_price(DEFAULT_MAX_PRICE);
-    set_availability("tersedia");
-    set_active_quick_filter("Semua");
+    set_availability("available");
+    set_active_quick_filter("All");
   }
 
   const filtered_events = useMemo(() => {
@@ -67,7 +67,7 @@ export default function EventsDiscoveryPage() {
       events = events.filter((event) => selected_cities.includes(event.city));
     }
 
-    if (availability === "tersedia") {
+    if (availability === "available") {
       events = events.filter((event) => event.badge !== "sold_out");
     } else {
       events = events.filter(
@@ -75,9 +75,9 @@ export default function EventsDiscoveryPage() {
       );
     }
 
-    if (sort_by === "Harga Terendah") {
+    if (sort_by === "Lowest Price") {
       events = [...events].sort((a, b) => a.starting_price - b.starting_price);
-    } else if (sort_by === "Harga Tertinggi") {
+    } else if (sort_by === "Highest Price") {
       events = [...events].sort((a, b) => b.starting_price - a.starting_price);
     }
 
@@ -129,7 +129,7 @@ export default function EventsDiscoveryPage() {
                 ) : (
                   <div className="rounded-xl border border-dashed border-border-subtle py-16 text-center">
                     <p className="font-body-md text-body-md text-text-secondary">
-                      Tidak ada event yang cocok dengan filter Anda.
+                      No events match your filter.
                     </p>
                   </div>
                 )}
@@ -140,7 +140,7 @@ export default function EventsDiscoveryPage() {
                       type="button"
                       className="rounded-full border-2 border-border-subtle px-12 py-4 font-bold text-text-primary transition-all hover:border-secondary hover:text-secondary"
                     >
-                      Muat Lebih Banyak
+                      Load More
                     </button>
                   </div>
                 )}
@@ -152,7 +152,7 @@ export default function EventsDiscoveryPage() {
         <ResaleMarketplacePromo />
       </main>
 
-      <EventDiscoveryFooter />
+      <HomeFooterV2 />
     </div>
   );
 }

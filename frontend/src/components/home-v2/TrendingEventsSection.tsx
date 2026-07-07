@@ -36,7 +36,7 @@ export function TrendingEventsSection({
         <div className="mb-stack-lg flex items-end justify-between">
           <div>
             <h2 className="mb-2 font-headline-lg text-headline-lg text-text-primary">
-              Event Paling Dinanti
+              Most Anticipated Events
             </h2>
             <div className="mt-4 flex gap-4 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {countries.map((country) => (
@@ -100,12 +100,12 @@ export function TrendingEventsSection({
                       {event.review_count >= 1000
                         ? `${(event.review_count / 1000).toFixed(1)}k`
                         : event.review_count}{" "}
-                      ulasan)
+                      reviews)
                     </span>
                   </div>
                   <div className="flex items-center justify-between border-t border-border-subtle pt-3">
                     <span className="text-label-sm text-text-secondary">
-                      Mulai dari
+                      Starting from
                     </span>
                     <span className="font-headline-sm text-headline-sm font-bold text-secondary">
                       {formatIDR(event.starting_price)}
@@ -118,7 +118,7 @@ export function TrendingEventsSection({
         ) : (
           <div className="rounded-xl border border-dashed border-border-subtle bg-white py-16 text-center">
             <p className="font-body-md text-body-md text-text-secondary">
-              Belum ada event untuk {active_country}.
+              No events yet for {active_country}.
             </p>
           </div>
         )}

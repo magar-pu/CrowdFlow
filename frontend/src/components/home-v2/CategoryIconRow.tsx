@@ -27,14 +27,14 @@ interface CategoryItem {
 }
 
 const CATEGORIES: CategoryItem[] = [
-  { label: "Konser", href: "/events?category=konser", icon: Music },
-  { label: "Teater", href: "/events?category=teater", icon: Drama },
-  { label: "Olahraga", href: "/events?category=olahraga", icon: Volleyball },
+  { label: "Concerts", href: "/events?category=konser", icon: Music },
+  { label: "Theater", href: "/events?category=teater", icon: Drama },
+  { label: "Sports", href: "/events?category=olahraga", icon: Volleyball },
   { label: "Seminar", href: "/events?category=seminar", icon: Megaphone },
-  { label: "Hiburan Malam", href: "/events?category=hiburan-malam", icon: Moon },
-  { label: "Pameran", href: "/events?category=pameran", icon: Palette },
-  { label: "Kuliner", href: "/events?category=kuliner", icon: UtensilsCrossed },
-  { label: "Lainnya", href: "/events", icon: Grid2x2 },
+  { label: "Nightlife", href: "/events?category=hiburan-malam", icon: Moon },
+  { label: "Exhibition", href: "/events?category=pameran", icon: Palette },
+  { label: "Culinary", href: "/events?category=kuliner", icon: UtensilsCrossed },
+  { label: "Others", href: "/events", icon: Grid2x2 },
 ];
 
 export function CategoryIconRow() {

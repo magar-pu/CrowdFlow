@@ -31,19 +31,18 @@ export function BentoCollectionGrid({ tiles }: BentoCollectionGridProps) {
       <div className="mb-4 flex items-end justify-between md:mb-stack-lg">
         <div>
           <h2 className="mb-1 text-xl font-bold text-text-primary md:font-headline-lg md:text-headline-lg">
-            Koleksi Event Pilihan
+            Curated Event Collections
           </h2>
           <p className="text-sm text-text-secondary md:font-body-md md:text-body-md">
-            Kurasi event terbaik mulai dari festival musik hingga pameran
-            seni eksklusif.
+            The best curated events from music festivals to exclusive art exhibitions.
           </p>
         </div>
         <Link
           href="/events"
           className="flex shrink-0 items-center gap-1 font-label-md text-label-md text-secondary hover:underline"
         >
-          <span className="hidden sm:inline">Lihat Semua Destinasi</span>
-          <span className="sm:hidden text-xs">Lihat Semua</span>
+          <span className="hidden sm:inline">View All Destinations</span>
+          <span className="sm:hidden text-xs">View All</span>
           <ChevronRight size={16} />
         </Link>
       </div>

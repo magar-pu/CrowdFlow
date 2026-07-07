@@ -15,7 +15,7 @@
 
 import { useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
-import { Footer } from "@/components/layout/Footer";
+import { HomeFooterV2 } from "@/components/home-v2/HomeFooterV2";
 import { ResaleHeroSearch } from "@/components/resale-marketplace/ResaleHeroSearch";
 import { ResaleFilterToolbar } from "@/components/resale-marketplace/ResaleFilterToolbar";
 import { ResaleListingCard } from "@/components/resale-marketplace/ResaleListingCard";
@@ -30,7 +30,7 @@ export default function ResaleMarketplacePage() {
 
       <ResaleHeroSearch />
 
-      <main className="mx-auto flex w-full max-w-container-max flex-col gap-stack-lg px-margin-mobile py-section-gap md:px-margin-desktop">
+      <main className="mx-auto flex w-full max-w-container-max flex-1 flex-col gap-stack-lg px-margin-mobile py-section-gap md:px-margin-desktop">
         <ResaleFilterToolbar sort_by={sort_by} on_sort_change={set_sort_by} />
 
         <div className="grid grid-cols-1 gap-gutter md:grid-cols-2 xl:grid-cols-3">
@@ -49,7 +49,7 @@ export default function ResaleMarketplacePage() {
         </div>
       </main>
 
-      <Footer />
+      <HomeFooterV2 />
     </div>
   );
 }

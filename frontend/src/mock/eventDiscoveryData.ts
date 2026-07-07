@@ -62,7 +62,7 @@ import type {
     {
       event_id: "evt_205_sheila_on_7",
       title: "Sheila on 7: Tunggu Aku di Jakarta",
-      category_label: "Music • Konser",
+      category_label: "Music • Concert",
       cover_image_url:
         "https://images.unsplash.com/photo-1429962714451-bb934ecdc4ec?q=80&w=800&auto=format&fit=crop",
       badge: "on_sale",
@@ -101,7 +101,7 @@ import type {
     {
       event_id: "evt_208_bandung_food_fest",
       title: "Bandung Culinary Festival 2026",
-      category_label: "Festival • Kuliner",
+      category_label: "Festival • Culinary",
       cover_image_url:
         "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?q=80&w=800&auto=format&fit=crop",
       badge: "on_sale",
@@ -114,7 +114,7 @@ import type {
     {
       event_id: "evt_209_surabaya_marathon",
       title: "Surabaya Night Marathon 2026",
-      category_label: "Sports • Lari",
+      category_label: "Sports • Running",
       cover_image_url:
         "https://images.unsplash.com/photo-1452626038306-9aae5e071dd3?q=80&w=800&auto=format&fit=crop",
       badge: "sold_out",
@@ -127,7 +127,7 @@ import type {
     {
       event_id: "evt_210_art_exhibition",
       title: "Pameran Seni Rupa Nusantara",
-      category_label: "Exhibition • Seni",
+      category_label: "Exhibition • Art",
       cover_image_url:
         "https://images.unsplash.com/photo-1531913764164-f85c52e6e654?q=80&w=800&auto=format&fit=crop",
       badge: "newly_added",

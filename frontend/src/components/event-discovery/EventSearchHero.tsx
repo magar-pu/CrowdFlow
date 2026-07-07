@@ -12,7 +12,7 @@
 import { useState } from "react";
 import { Search, MapPin, Calendar, RotateCcw } from "lucide-react";
 
-const LOCATIONS = ["Semua Lokasi", "Jakarta", "Bandung", "Bali", "Surabaya"];
+const LOCATIONS = ["All Locations", "Jakarta", "Bandung", "Bali", "Surabaya"];
 
 export function EventSearchHero() {
   const [query, set_query] = useState("");
@@ -30,11 +30,11 @@ export function EventSearchHero() {
       <div className="mx-auto flex max-w-container-max flex-col gap-8">
         <div className="max-w-2xl">
           <h1 className="mb-2 font-headline-xl text-headline-xl text-text-primary">
-            Temukan Event Seru Selanjutnya
+            Find Your Next Exciting Event
           </h1>
           <p className="font-body-lg text-body-lg text-text-secondary">
-            Platform ticketing paling aman dengan teknologi verifikasi
-            identitas real-time.
+            The most secure ticketing platform with real-time identity
+            verification technology.
           </p>
         </div>
 
@@ -48,7 +48,7 @@ export function EventSearchHero() {
               type="text"
               value={query}
               onChange={(e) => set_query(e.target.value)}
-              placeholder="Cari nama event, artis, atau tim..."
+              placeholder="Search event, artist, or team name..."
               className="w-full rounded-lg border-none bg-surface-white py-4 pl-12 pr-4 font-body-md text-body-md focus:outline-none focus:ring-2 focus:ring-secondary"
             />
           </div>
@@ -78,7 +78,7 @@ export function EventSearchHero() {
               type="date"
               value={date}
               onChange={(e) => set_date(e.target.value)}
-              placeholder="Pilih Tanggal"
+              placeholder="Select Date"
               className="w-full rounded-lg border-none bg-surface-white py-4 pl-12 pr-4 font-body-md text-body-md focus:outline-none focus:ring-2 focus:ring-secondary"
             />
           </div>

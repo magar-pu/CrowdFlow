@@ -29,11 +29,10 @@ export function HeroSearchSection() {
       {/* Headline */}
       <div className="relative z-10 mb-6 max-w-3xl px-2 text-center md:mb-stack-lg">
         <h1 className="mb-3 text-3xl font-bold leading-tight tracking-tight text-white md:font-headline-xl md:text-headline-xl">
-          Temukan Event Seru di Sekitar Anda
+          Discover Exciting Events Near You
         </h1>
         <p className="text-sm text-white/80 md:font-body-lg md:text-body-lg">
-          Pesan tiket konser, festival, olahraga, dan seminar terbaik
-          dengan mudah dan aman.
+          Book the best concert, festival, sports, and seminar tickets easily and securely.
         </p>
       </div>
 
@@ -42,7 +41,7 @@ export function HeroSearchSection() {
         {/* Event / Artist */}
         <div className="w-full flex-1 space-y-1.5">
           <label className="block px-1 font-label-sm text-label-sm uppercase text-text-secondary">
-            Nama Event atau Artis
+            Event or Artist Name
           </label>
           <div className="flex items-center rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2">
             <Search size={18} className="mr-2 shrink-0 text-text-secondary" />
@@ -50,7 +49,7 @@ export function HeroSearchSection() {
               type="text"
               value={query}
               onChange={(e) => set_query(e.target.value)}
-              placeholder="Konser, Seminar, atau Olahraga..."
+              placeholder="Concert, Seminar, or Sports..."
               className="w-full border-none bg-transparent text-sm text-text-primary focus:outline-none focus:ring-0"
             />
           </div>
@@ -59,7 +58,7 @@ export function HeroSearchSection() {
         {/* Lokasi */}
         <div className="w-full space-y-1.5 md:w-48">
           <label className="block px-1 font-label-sm text-label-sm uppercase text-text-secondary">
-            Lokasi
+            Location
           </label>
           <div className="flex items-center rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2">
             <MapPin size={18} className="mr-2 shrink-0 text-text-secondary" />
@@ -80,7 +79,7 @@ export function HeroSearchSection() {
         {/* Tanggal */}
         <div className="w-full space-y-1.5 md:w-48">
           <label className="block px-1 font-label-sm text-label-sm uppercase text-text-secondary">
-            Tanggal
+            Date
           </label>
           <div className="flex items-center rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2">
             <Calendar size={18} className="mr-2 shrink-0 text-text-secondary" />
@@ -98,7 +97,7 @@ export function HeroSearchSection() {
           type="button"
           className="w-full shrink-0 rounded-lg bg-secondary py-2.5 font-label-md text-label-md text-white transition-all hover:brightness-110 active:scale-95 md:w-auto md:px-8 md:py-3"
         >
-          Cari
+          Search
         </button>
       </div>
     </section>

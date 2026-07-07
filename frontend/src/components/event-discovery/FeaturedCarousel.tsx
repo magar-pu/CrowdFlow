@@ -42,7 +42,7 @@ export function FeaturedCarousel({ events }: FeaturedCarouselProps) {
               Editor&apos;s Choice
             </span>
             <h2 className="font-headline-lg text-headline-lg text-text-primary">
-              Event Terpopuler Pekan Ini
+              Most Popular Events This Week
             </h2>
           </div>
           <div className="hidden gap-2 sm:flex">
@@ -100,7 +100,7 @@ export function FeaturedCarousel({ events }: FeaturedCarouselProps) {
                   <div className="hidden flex-col items-end gap-4 sm:flex">
                     <div className="text-right">
                       <p className="text-label-sm uppercase tracking-wider text-white/60">
-                        Mulai Dari
+                        Starting From
                       </p>
                       <p className="font-headline-md text-headline-md text-white">
                         {formatIDR(event.starting_price)}

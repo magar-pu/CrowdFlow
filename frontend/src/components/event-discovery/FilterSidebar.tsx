@@ -16,8 +16,8 @@ interface FilterSidebarProps {
   on_toggle_city: (city: string) => void;
   max_price: number;
   on_max_price_change: (value: number) => void;
-  availability: "tersedia" | "terbatas";
-  on_availability_change: (value: "tersedia" | "terbatas") => void;
+  availability: "available" | "limited";
+  on_availability_change: (value: "available" | "limited") => void;
   on_clear_filters: () => void;
 }
 
@@ -42,7 +42,7 @@ export function FilterSidebar({
           {/* City */}
           <div>
             <label className="mb-4 block font-label-md text-label-md text-text-primary">
-              Kota
+              City
             </label>
             <div className="space-y-3">
               {CITIES.map((city) => (
@@ -67,7 +67,7 @@ export function FilterSidebar({
           {/* Price range */}
           <div className="border-t border-border-subtle pt-6">
             <label className="mb-4 block font-label-md text-label-md text-text-primary">
-              Range Harga
+              Price Range
             </label>
             <input
               type="range"
@@ -87,31 +87,31 @@ export function FilterSidebar({
           {/* Availability */}
           <div className="border-t border-border-subtle pt-6">
             <label className="mb-4 block font-label-md text-label-md text-text-primary">
-              Ketersediaan
+              Availability
             </label>
             <div className="space-y-3">
               <label className="flex items-center gap-3">
                 <input
                   type="radio"
                   name="avail"
-                  checked={availability === "tersedia"}
-                  onChange={() => on_availability_change("tersedia")}
+                  checked={availability === "available"}
+                  onChange={() => on_availability_change("available")}
                   className="h-5 w-5 border-border-subtle text-secondary focus:ring-secondary"
                 />
                 <span className="text-body-md text-text-primary">
-                  Tersedia
+                  Available
                 </span>
               </label>
               <label className="flex items-center gap-3">
                 <input
                   type="radio"
                   name="avail"
-                  checked={availability === "terbatas"}
-                  onChange={() => on_availability_change("terbatas")}
+                  checked={availability === "limited"}
+                  onChange={() => on_availability_change("limited")}
                   className="h-5 w-5 border-border-subtle text-secondary focus:ring-secondary"
                 />
                 <span className="text-body-md text-text-primary">
-                  Terbatas
+                  Limited
                 </span>
               </label>
             </div>
