@@ -200,8 +200,10 @@ func (h *Handler) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if roleName == "Event Organizer" || roleName == "Super Admin" {
+	if roleName == "Event Organizer" {
 		http.Redirect(w, r, "/dashboard", http.StatusTemporaryRedirect)
+	} else if roleName == "Super Admin" {
+		http.Redirect(w, r, "/admin", http.StatusTemporaryRedirect)
 	} else {
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 	}
