@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"crowdflow-backend/internal/admin"
 	"crowdflow-backend/internal/auth"
 	"crowdflow-backend/internal/event"
 	"crowdflow-backend/internal/middleware"
@@ -104,6 +105,14 @@ func main() {
 
 	// Register Authentication routes
 	authHandler.RegisterRoutes(mux, authMounter.Authenticate)
+
+	// Initialize Admin console dependencies
+	adminRepo := admin.NewPostgresRepository(db)
+	adminService := admin.NewAdminService(adminRepo)
+	adminHandler := admin.NewHandler(adminService)
+
+	// Register Admin console routes (Super Admin only)
+	adminHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole)
 
 	fmt.Println("Starting server on :8080 with CSRF protection enabled")
 	if err := http.ListenAndServe(":8080", middleware.CSRF(mux)); err != nil {

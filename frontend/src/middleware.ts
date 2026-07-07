@@ -10,7 +10,8 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/dashboard") ||
     pathname.startsWith("/profile") ||
     pathname.startsWith("/orders") ||
-    pathname.startsWith("/checkout");
+    pathname.startsWith("/checkout") ||
+    pathname.startsWith("/admin");
 
   const isAuthPath = pathname === "/login" || pathname === "/register";
 
@@ -37,6 +38,7 @@ export const config = {
     "/profile/:path*",
     "/orders/:path*",
     "/checkout/:path*",
+    "/admin/:path*",
     "/login",
     "/register",
   ],
