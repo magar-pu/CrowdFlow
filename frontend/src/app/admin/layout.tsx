@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './admin.css';
+import { AuthGuard } from '@/components/auth/AuthGuard';
 
 export const metadata: Metadata = {
   title: 'CrowdFlow Admin Operations Panel',
@@ -13,7 +14,7 @@ export default function AdminLayout({
 }>) {
   return (
     <div className='w-full min-h-screen bg-slate-50 text-slate-900'>
-      {children}
+      <AuthGuard requiredRole="super_admin">{children}</AuthGuard>
     </div>
   );
 }
