@@ -18,58 +18,58 @@ export default function TransactionHistory({ transactions }: TransactionHistoryP
   );
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5 shadow-sm">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-900 pb-4">
+    <div className="rounded-lg border border-border-subtle bg-surface-white p-6 shadow-sm">
+      <div className="flex flex-col gap-4 border-b border-border-subtle pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-base font-bold text-white">Cryptographic Transaction Ledger</h2>
-          <p className="text-xs text-slate-400">Search and audit all platform sales transactions.</p>
+          <h2 className="text-base font-bold text-text-primary">Transaction History</h2>
+          <p className="text-xs text-text-secondary">Search and review platform sales transactions.</p>
         </div>
         
         {/* Search bar inside transaction log */}
         <div className="relative w-full max-w-xs">
-          <Search className="absolute top-2.5 left-3 h-4 w-4 text-slate-500" />
+          <Search className="absolute top-3 left-3 h-4 w-4 text-text-secondary" />
           <input
             type="text"
             placeholder="Search by customer, event, TXID..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full rounded-xl border border-slate-900 bg-slate-900 px-3 pr-4 pl-9 py-2.5 text-xs text-white outline-none focus:border-indigo-500"
+            className="h-11 w-full rounded-lg border border-border-subtle bg-surface px-3 py-2.5 pr-4 pl-9 text-sm text-text-primary outline-none placeholder:text-text-secondary focus:border-secondary focus:bg-surface-white focus:ring-2 focus:ring-secondary/20"
           />
         </div>
       </div>
 
       <div className="mt-4 overflow-x-auto">
-        <table className="w-full text-left text-xs text-slate-400 border-collapse">
+        <table className="w-full border-collapse text-left text-xs text-text-secondary">
           <thead>
-            <tr className="border-b border-slate-900 text-slate-500 text-[10px] uppercase tracking-wider bg-slate-900/10">
+            <tr className="border-b border-border-subtle bg-surface text-[10px] uppercase tracking-wide text-text-secondary">
               <th className="py-3 px-4">TXID</th>
               <th className="py-3 px-4">Customer</th>
               <th className="py-3 px-4">Event Name</th>
-              <th className="py-3 px-4">Net Flow</th>
+              <th className="py-3 px-4">Amount</th>
               <th className="py-3 px-4">Payment Method</th>
-              <th className="py-3 px-4">Trading Date</th>
-              <th className="py-3 px-4 text-right">Verification Status</th>
+              <th className="py-3 px-4">Date</th>
+              <th className="py-3 px-4 text-right">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-900/50">
+          <tbody className="divide-y divide-border-subtle">
             {filteredTransactions.map((tx) => (
-              <tr key={tx.id} className="hover:bg-slate-900/30 transition-colors">
-                <td className="py-3 px-4 font-mono text-slate-300 font-bold">{tx.id}</td>
-                <td className="py-3 px-4 text-slate-200 font-semibold">{tx.customerName}</td>
-                <td className="py-3 px-4 text-slate-400">{tx.eventName}</td>
-                <td className="py-3 px-4 text-slate-200 font-bold font-mono">${tx.amount}</td>
-                <td className="py-3 px-4 text-slate-500">{tx.method}</td>
-                <td className="py-3 px-4 text-slate-500 font-mono text-2xs">{tx.date}</td>
+              <tr key={tx.id} className="transition-colors hover:bg-surface">
+                <td className="py-3 px-4 font-bold text-text-primary">{tx.id}</td>
+                <td className="py-3 px-4 font-semibold text-text-primary">{tx.customerName}</td>
+                <td className="py-3 px-4 text-text-secondary">{tx.eventName}</td>
+                <td className="py-3 px-4 font-bold text-text-primary">${tx.amount}</td>
+                <td className="py-3 px-4 text-text-secondary">{tx.method}</td>
+                <td className="py-3 px-4 text-xs text-text-secondary">{tx.date}</td>
                 <td className="py-3 px-4 text-right">
                   <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold border ${
                     tx.status === 'Success' 
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                      ? 'bg-success/10 text-success border-success/20' 
                       : tx.status === 'Pending' 
-                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
-                      : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                      ? 'bg-warning/10 text-warning border-warning/20' 
+                      : 'bg-danger/10 text-danger border-danger/20'
                   }`}>
                     <span className={`h-1.5 w-1.5 rounded-full ${
-                      tx.status === 'Success' ? 'bg-emerald-400' : tx.status === 'Pending' ? 'bg-amber-400' : 'bg-rose-455'
+                      tx.status === 'Success' ? 'bg-success' : tx.status === 'Pending' ? 'bg-warning' : 'bg-danger'
                     }`} />
                     {tx.status}
                   </span>

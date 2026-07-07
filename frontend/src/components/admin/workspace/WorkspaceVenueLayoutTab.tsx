@@ -34,27 +34,27 @@ export default function WorkspaceVenueLayoutTab({ venueSections, onUpdateSection
     <div className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Left Column: Seating interactive section block map */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5 lg:col-span-2">
-          <div className="flex items-center justify-between border-b border-slate-900 pb-4">
+        <div className="rounded-2xl border border-border-subtle bg-surface-white p-4 sm:p-5 lg:col-span-2">
+          <div className="flex flex-col gap-2 border-b border-border-subtle pb-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h3 className="text-sm font-bold text-white">Live Venue Seating Plan</h3>
-              <p className="text-[11px] text-slate-400">Select any physical section block below to coordinate section capacity and status.</p>
+              <h3 className="text-sm font-bold text-text-primary">Live Venue Seating Plan</h3>
+              <p className="text-[11px] text-text-muted">Select any physical section block below to coordinate section capacity and status.</p>
             </div>
-            <span className="text-[10px] font-mono text-slate-500 uppercase">Interactive Layout Plan</span>
+            <span className="text-[10px] font-mono uppercase text-text-muted">Interactive Layout Plan</span>
           </div>
 
           {/* Seating Layout Visual Representation */}
-          <div className="mt-6 flex flex-col gap-4 items-center bg-slate-900/10 p-6 rounded-2xl border border-slate-900/50">
+          <div className="mt-6 flex flex-col items-center gap-4 rounded-2xl border border-border-subtle bg-surface-soft p-4 sm:p-6">
             {/* Physical STAGE visual banner */}
-            <div className="w-4/5 h-10 rounded-xl bg-gradient-to-r from-pink-500 to-indigo-600 flex items-center justify-center text-center shadow-lg shadow-pink-500/10">
-              <span className="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2">
+            <div className="flex min-h-11 w-full max-w-xl items-center justify-center rounded-xl bg-primary text-center shadow-sm sm:w-4/5">
+              <span className="flex items-center gap-2 px-3 text-[10px] font-bold uppercase tracking-widest text-white sm:text-xs">
                 <Cpu className="h-4 w-4 text-white animate-pulse" />
                 <span>PERFORMANCE MAIN STAGE</span>
               </span>
             </div>
 
             {/* Section Blocks Grid */}
-            <div className="mt-6 grid grid-cols-3 gap-4 w-full">
+            <div className="mt-6 grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 xl:gap-4">
               {venueSections.map((sec) => {
                 const isSelected = selectedSection?.id === sec.id;
                 const isClosed = sec.occupied === -1;
@@ -69,7 +69,7 @@ export default function WorkspaceVenueLayoutTab({ venueSections, onUpdateSection
                         ? 'border-indigo-500 bg-indigo-500/10 scale-[1.02] shadow-lg shadow-indigo-500/5' 
                         : isClosed 
                         ? 'border-slate-900 bg-slate-900/30 opacity-40'
-                        : 'border-slate-800 bg-slate-950 hover:border-slate-700'
+                        : 'border-border-subtle bg-surface-white hover:border-border-medium'
                     }`}
                   >
                     <h4 className="text-xs font-bold text-slate-200">{sec.name.split(' ')[0]}</h4>
@@ -82,7 +82,7 @@ export default function WorkspaceVenueLayoutTab({ venueSections, onUpdateSection
                         </span>
                       ) : (
                         <>
-                          <span className="text-base font-extrabold text-white">{occupancyPct}%</span>
+                          <span className="text-base font-extrabold text-text-primary">{occupancyPct}%</span>
                           <span className="text-[10px] text-slate-500 font-mono mt-0.5">Capacity occupancy</span>
                           <div className="mt-2.5 h-1 w-full bg-slate-900 overflow-hidden rounded-full">
                             <div className={`h-full ${sec.color}`} style={{ width: `${occupancyPct}%` }} />
@@ -98,32 +98,32 @@ export default function WorkspaceVenueLayoutTab({ venueSections, onUpdateSection
         </div>
 
         {/* Right Column: Section Controls panel */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
-          <h3 className="text-sm font-bold text-white border-b border-slate-900 pb-3">Section Control Desk</h3>
+        <div className="rounded-2xl border border-border-subtle bg-surface-white p-4 sm:p-5">
+          <h3 className="border-b border-border-subtle pb-3 text-sm font-bold text-text-primary">Section Control Desk</h3>
           
           {selectedSection ? (
             <div className="mt-4 space-y-4">
               <div>
-                <span className="text-[10px] font-mono text-slate-500 font-bold uppercase tracking-wider">Active Section Focus</span>
-                <h4 className="text-sm font-bold text-white mt-1">{selectedSection.name}</h4>
-                <p className="text-xs font-mono text-indigo-400 mt-0.5">Section Key: {selectedSection.id}</p>
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-text-muted">Active Section Focus</span>
+                <h4 className="mt-1 text-sm font-bold text-text-primary">{selectedSection.name}</h4>
+                <p className="mt-0.5 text-xs font-mono text-primary">Section Key: {selectedSection.id}</p>
               </div>
 
-              <div className="rounded-xl bg-slate-900/30 border border-slate-900 p-4 space-y-3">
+              <div className="space-y-3 rounded-xl border border-border-subtle bg-surface-soft p-4">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-400 font-medium">Physical Capacity limit</span>
-                  <span className="font-mono text-slate-200 font-bold">{selectedSection.capacity} seats</span>
+                  <span className="font-medium text-text-secondary">Physical Capacity limit</span>
+                  <span className="font-mono font-bold text-text-primary">{selectedSection.capacity} seats</span>
                 </div>
 
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-400 font-medium">Checked-in Attendee Count</span>
-                  <span className="font-mono text-slate-200 font-bold">
+                  <span className="font-medium text-text-secondary">Checked-in Attendee Count</span>
+                  <span className="font-mono font-bold text-text-primary">
                     {selectedSection.occupied === -1 ? 'Blocked' : `${selectedSection.occupied} occupied`}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-400 font-medium">Occupancy status</span>
+                  <span className="font-medium text-text-secondary">Occupancy status</span>
                   <span className="font-bold">
                     {selectedSection.occupied === -1 ? (
                       <span className="text-rose-400 uppercase text-[10px]">LOCKED</span>
@@ -162,7 +162,7 @@ export default function WorkspaceVenueLayoutTab({ venueSections, onUpdateSection
                     const matched = updated.find(s => s.id === selectedSection.id);
                     if (matched) setSelectedSection(matched);
                   }}
-                  className="w-full bg-slate-900 border border-slate-800 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="w-full rounded-xl border border-border-subtle bg-surface-soft py-2.5 text-xs font-semibold text-text-secondary transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Simulate 10 Attendee Entries
                 </button>

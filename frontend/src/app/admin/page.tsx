@@ -17,6 +17,7 @@ import { Event, User, Scanner, Transaction, Payout, VerificationApplication, Sec
 
 import Sidebar from '@/components/admin/layout/Sidebar';
 import Header from '@/components/admin/layout/Header';
+import MobileAdminBottomNav from '@/components/admin/layout/MobileAdminBottomNav';
 import DashboardView from '@/components/admin/dashboard/DashboardView';
 import AnalyticsView from '@/components/admin/analytics/AnalyticsView';
 import EventManagementView from '@/components/admin/events/EventManagementView';
@@ -28,6 +29,7 @@ import SettingsView from '@/components/admin/finance/SettingsView';
 export default function AdminPage() {
   const [currentView, setCurrentView] = useState<'dashboard' | 'analytics' | 'events' | 'users' | 'finance' | 'settings' | 'workspace'>('dashboard');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const [events, setEvents] = useState<Event[]>(initialEvents);
   const [users, setUsers] = useState<User[]>(initialUsers);
@@ -56,7 +58,7 @@ export default function AdminPage() {
       timestamp: 'Just now'
     };
     setActivities(prev => [newActivity, ...prev]);
-    alert(`Successfully processed identity verification for: ${targetApp.name}. Database nodes updated.`);
+    alert(`Verification approved for ${targetApp.name}.`);
   };
 
   const handleRejectVerification = (appId: string) => {
@@ -86,11 +88,11 @@ export default function AdminPage() {
       id: `ACT-${Math.floor(900 + Math.random() * 99)}`,
       userName: 'Richie M.',
       action: newStatus === 'Suspended' ? 'Issued Suspension' : 'Verified User',
-      detail: `${newStatus === 'Suspended' ? 'Revoked' : 'Re-instated'} system access nodes for ${targetUser.name}.`,
+      detail: `${newStatus === 'Suspended' ? 'Restricted' : 'Restored'} account access for ${targetUser.name}.`,
       timestamp: 'Just now'
     };
     setActivities(prev => [newActivity, ...prev]);
-    alert(`User status for ${targetUser.name} modified to: ${newStatus.toUpperCase()}.`);
+    alert(`User status for ${targetUser.name} changed to ${newStatus}.`);
   };
 
   const handleProcessPayout = (payoutId: string) => {
@@ -150,28 +152,28 @@ export default function AdminPage() {
     const newActivity: Activity = {
       id: `ACT-${Math.floor(900 + Math.random() * 99)}`,
       userName: 'Richie M.',
-      action: 'Launched Event Node',
+      action: 'Created Event',
       detail: `Initiated active ticket contract for: ${newEvent.name}.`,
       timestamp: 'Just now'
     };
     setActivities(prev => [newActivity, ...prev]);
-    alert(`Successfully launched Event contract node for "${newEvent.name}".`);
+    alert(`Event "${newEvent.name}" has been added.`);
   };
 
   const handleAddScanner = (newScanner: Scanner) => {
     setScanners(prev => [...prev, newScanner]);
-    alert(`Laser device token [${newScanner.id}] registered successfully. Access node synchronized.`);
+    alert(`Scanner ${newScanner.id} has been registered.`);
   };
 
   const handleDeleteScanner = (id: string) => {
     setScanners(prev => prev.filter(s => s.id !== id));
-    alert(`Device token access revoked. Remote locking lockouts synchronized.`);
+    alert(`Scanner access has been revoked.`);
   };
 
   const selectedEvent = events.find(e => e.id === selectedEventId);
 
   return (
-    <div id="crowdflow-admin-root" className="min-h-screen bg-slate-50 text-slate-900 flex font-sans w-full">
+    <div id="crowdflow-admin-root" className="flex min-h-screen w-full bg-surface font-sans text-text-primary">
       {/* 1. Global Left Navigation Sidebar */}
       <Sidebar 
         currentView={currentView} 
@@ -180,10 +182,24 @@ export default function AdminPage() {
           setSelectedEventId(null);
         }} 
         pendingVerificationsCount={verifications.filter(v => v.status === 'Pending').length}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
+      />
+      <MobileAdminBottomNav
+        currentView={currentView}
+        pendingVerificationsCount={verifications.filter(v => v.status === 'Pending').length}
+        onViewChange={(view) => {
+          setCurrentView(view);
+          setSelectedEventId(null);
+        }}
       />
 
       {/* 2. Main Right Operations Container */}
-      <div className="flex-1 pl-64 min-h-screen flex flex-col bg-slate-50 w-full">
+      <div
+        className={`flex min-h-screen w-full flex-1 flex-col bg-surface transition-[padding] duration-300 ${
+          isSidebarCollapsed ? "md:pl-[88px]" : "md:pl-[280px]"
+        }`}
+      >
         {/* Global Header Search & Alerts popover */}
         <Header 
           alerts={securityAlerts} 
@@ -191,7 +207,7 @@ export default function AdminPage() {
         />
 
         {/* Core dynamic content main frame */}
-        <main className="flex-1 p-6 md:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
+        <main className="mx-auto w-full max-w-[1440px] flex-1 overflow-y-auto px-4 pb-28 pt-5 sm:px-6 md:p-8">
           {currentView === 'dashboard' && (
             <DashboardView 
               events={events}
@@ -205,10 +221,6 @@ export default function AdminPage() {
               onViewChange={(view) => {
                 setCurrentView(view);
                 setSelectedEventId(null);
-              }}
-              onSelectEvent={(id) => {
-                setSelectedEventId(id);
-                setCurrentView('workspace');
               }}
             />
           )}

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { ArrowLeft, Check, ShieldAlert, X, Zap, Shield, Activity, Ticket, Map, Smartphone, Settings } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Event, Scanner, TicketTier, VenueSection, Transaction } from '@/types/admin';
 import WorkspaceLiveTrackerTab from './WorkspaceLiveTrackerTab';
 import WorkspaceTicketTiersTab from './WorkspaceTicketTiersTab';
@@ -23,6 +24,8 @@ interface EventWorkspaceViewProps {
   onUpdateScanners: (updatedScanners: Scanner[]) => void;
 }
 
+type WorkspaceTab = 'overview' | 'tickets' | 'venue' | 'scanners' | 'settings';
+
 export default function EventWorkspaceView({
   event,
   scanners,
@@ -36,7 +39,7 @@ export default function EventWorkspaceView({
   onUpdateTiers,
   onUpdateScanners
 }: EventWorkspaceViewProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'tickets' | 'venue' | 'scanners' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('overview');
   const [validationResult, setValidationResult] = useState<{
     show: boolean;
     success: boolean;
@@ -63,24 +66,24 @@ export default function EventWorkspaceView({
     <div className="space-y-6 relative">
       {/* Validation Animation Overlay Popups */}
       {validationResult && (
-        <div className="fixed top-6 right-6 z-50 animate-bounce">
-          <div className={`rounded-2xl border p-4 shadow-2xl flex items-start gap-3 w-80 backdrop-blur-md ${
+        <div className="fixed top-6 right-6 z-50">
+          <div className={`flex w-80 items-start gap-3 rounded-lg border p-4 shadow-overlay backdrop-blur-md ${
             validationResult.success 
-              ? 'bg-emerald-950/90 border-emerald-500 text-emerald-200' 
-              : 'bg-rose-950/90 border-rose-500 text-rose-200'
+              ? 'border-success/20 bg-success/10 text-success' 
+              : 'border-danger/20 bg-danger/10 text-danger'
           }`}>
             <div className={`rounded-xl p-2 ${validationResult.success ? 'bg-emerald-500/20' : 'bg-rose-500/20'}`}>
               {validationResult.success ? <Check className="h-5 w-5 text-emerald-400" /> : <ShieldAlert className="h-5 w-5 text-rose-400" />}
             </div>
             <div className="flex-1">
-              <h4 className="text-xs font-mono font-bold tracking-widest uppercase">{validationResult.message}</h4>
-              <p className="mt-1 text-[11px] text-slate-300 font-semibold">Holder: {validationResult.holder}</p>
-              <p className="text-3xs text-slate-400 font-mono">Tier: {validationResult.tier}</p>
-              <div className="mt-2.5 h-1 w-full bg-slate-900 overflow-hidden rounded">
+              <h4 className="text-xs font-bold uppercase tracking-wide">{validationResult.message}</h4>
+              <p className="mt-1 text-[11px] font-semibold text-text-primary">Holder: {validationResult.holder}</p>
+              <p className="text-[10px] text-text-secondary">Tier: {validationResult.tier}</p>
+              <div className="mt-2.5 h-1 w-full overflow-hidden rounded bg-surface-container">
                 <div className={`h-full animate-pulse ${validationResult.success ? 'bg-emerald-400' : 'bg-rose-400'}`} style={{ width: '100%' }} />
               </div>
             </div>
-            <button onClick={() => setValidationResult(null)} className="text-slate-500 hover:text-slate-300 cursor-pointer">
+            <button onClick={() => setValidationResult(null)} className="text-text-secondary hover:text-text-primary cursor-pointer">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -88,31 +91,31 @@ export default function EventWorkspaceView({
       )}
 
       {/* Header breadcrumb & info */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-900 pb-5">
+      <div className="flex flex-col gap-4 border-b border-border-subtle pb-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
           <button 
             onClick={onBack}
-            className="rounded-xl border border-slate-800 bg-slate-950 p-2.5 text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-colors cursor-pointer"
+            className="rounded-lg border border-border-subtle bg-surface-white p-2.5 text-text-secondary transition-colors hover:bg-surface hover:text-text-primary cursor-pointer"
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 font-mono bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+              <span className="rounded-full border border-secondary/20 bg-secondary/5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-secondary">
                 {event.category} Workspace
               </span>
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-[10px] font-mono text-slate-500">Node ID: {event.id}</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-success" />
+              <span className="text-[10px] text-text-secondary">Event ID: {event.id}</span>
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl mt-1">{event.name}</h1>
+            <h1 className="mt-1 text-xl font-bold tracking-normal text-text-primary sm:text-2xl">{event.name}</h1>
           </div>
         </div>
 
         {/* Workspace Quick Simulator Trigger */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <button
             onClick={() => triggerScanSimulation(true)}
-            className="rounded-xl bg-emerald-600/15 border border-emerald-500/20 px-3.5 py-2 text-xs font-semibold text-emerald-400 hover:bg-emerald-500 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
+            className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-success/20 bg-success/10 px-3.5 py-2 text-xs font-semibold text-success transition-all hover:bg-success hover:text-on-success cursor-pointer"
             title="Simulate a Valid Ticket Scanning"
           >
             <Zap className="h-3.5 w-3.5" />
@@ -120,34 +123,34 @@ export default function EventWorkspaceView({
           </button>
           <button
             onClick={() => triggerScanSimulation(false)}
-            className="rounded-xl bg-rose-600/15 border border-rose-500/20 px-3.5 py-2 text-xs font-semibold text-rose-400 hover:bg-rose-500 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
+            className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-danger/20 bg-danger/10 px-3.5 py-2 text-xs font-semibold text-danger transition-all hover:bg-danger hover:text-on-error cursor-pointer"
             title="Simulate an Anti-Counterfeit Failure"
           >
             <Shield className="h-3.5 w-3.5" />
-            <span>Simulate Threat Scan</span>
+            <span>Simulate Failed Scan</span>
           </button>
         </div>
       </div>
 
       {/* Tabs navigation panel */}
-      <div className="flex border-b border-slate-800 space-x-1 overflow-x-auto">
-        {[
+      <div className="flex space-x-1 overflow-x-auto border-b border-border-subtle">
+        {([
           { id: 'overview', name: 'Live Tracker', icon: Activity },
           { id: 'tickets', name: 'Ticket Tiers', icon: Ticket },
           { id: 'venue', name: 'Venue Layout', icon: Map },
           { id: 'scanners', name: 'Handheld Scanners', icon: Smartphone },
           { id: 'settings', name: 'Security Config', icon: Settings },
-        ].map((tab) => {
+        ] satisfies { id: WorkspaceTab; name: string; icon: LucideIcon }[]).map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-4 py-3.5 text-xs font-bold border-b-2 transition-all whitespace-nowrap cursor-pointer ${
                 isActive 
-                  ? 'border-indigo-500 text-white bg-indigo-500/5' 
-                  : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-900/10'
+                  ? 'border-secondary bg-secondary/5 text-secondary' 
+                  : 'border-transparent text-text-secondary hover:bg-surface hover:text-text-primary'
               }`}
             >
               <Icon className="h-4 w-4" />

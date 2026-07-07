@@ -10,8 +10,11 @@ import {
   DollarSign, 
   Settings2, 
   LogOut,
-  Sparkles
+  Sparkles,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 
 interface SidebarProps {
@@ -22,6 +25,8 @@ interface SidebarProps {
   userRole?: string;
   userAvatar?: string;
   onLogout?: () => void;
+  isCollapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }
 
 export default function Sidebar({ 
@@ -31,14 +36,16 @@ export default function Sidebar({
   userName = "Richie M.",
   userRole = "Platform Administrator",
   userAvatar = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop",
-  onLogout
+  onLogout,
+  isCollapsed = false,
+  onToggleCollapsed
 }: SidebarProps) {
   const router = useRouter();
 
   interface MenuItem {
     readonly id: 'dashboard' | 'analytics' | 'events' | 'users' | 'finance' | 'settings';
     readonly name: string;
-    readonly icon: React.ComponentType<any>;
+    readonly icon: LucideIcon;
     readonly badge?: number;
   }
 
@@ -67,23 +74,45 @@ export default function Sidebar({
   return (
     <aside 
       id="sidebar" 
-      className="fixed inset-y-0 left-0 z-20 flex w-64 flex-col border-r border-slate-200 bg-white text-slate-800 transition-transform duration-300 md:translate-x-0"
+      className={`fixed inset-y-0 left-0 z-20 hidden flex-col border-r border-border-subtle bg-surface-white text-text-primary transition-all duration-300 md:flex ${
+        isCollapsed ? "w-[88px]" : "w-[280px]"
+      }`}
     >
       {/* Brand Logo Header */}
-      <div className="flex h-16 items-center justify-between border-b border-slate-200 px-6">
+      <div className={`flex h-[72px] items-center border-b border-border-subtle ${isCollapsed ? "justify-center px-4" : "justify-between px-6"}`}>
         <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 shadow-lg shadow-indigo-600/30">
-            <Sparkles className="h-5 w-5 text-white" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary shadow-sm">
+            <Sparkles className="h-5 w-5 text-on-primary" />
           </div>
-          <div>
-            <span className="text-lg font-bold tracking-tight text-slate-900">CrowdFlow</span>
-            <div className="text-[10px] font-medium tracking-wide text-indigo-600 uppercase">Super Admin</div>
+          <div className={isCollapsed ? "hidden" : "block"}>
+            <span className="text-lg font-bold tracking-normal text-text-primary">CrowdFlow</span>
+            <div className="text-xs font-medium text-text-secondary">Admin Console</div>
           </div>
         </div>
+        {!isCollapsed && (
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            className="rounded-lg p-2 text-text-secondary transition-colors hover:bg-surface hover:text-text-primary"
+            aria-label="Collapse sidebar"
+          >
+            <PanelLeftClose className="h-5 w-5" />
+          </button>
+        )}
       </div>
+      {isCollapsed && (
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          className="mx-auto mt-4 rounded-lg p-2 text-text-secondary transition-colors hover:bg-surface hover:text-text-primary"
+          aria-label="Expand sidebar"
+        >
+          <PanelLeftOpen className="h-5 w-5" />
+        </button>
+      )}
 
       {/* Nav Menu Items */}
-      <nav className="flex-1 space-y-1.5 px-4 py-6">
+      <nav className={`flex-1 space-y-1.5 py-6 ${isCollapsed ? "px-3" : "px-4"}`}>
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentView === item.id || (item.id === 'events' && currentView === 'workspace');
@@ -92,19 +121,20 @@ export default function Sidebar({
               key={item.id}
               id={`nav-item-${item.id}`}
               onClick={() => onViewChange(item.id)}
-              className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 cursor-pointer ${
+              title={isCollapsed ? item.name : undefined}
+              className={`flex min-h-11 w-full items-center rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer ${
                 isActive 
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20' 
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
+                  ? 'bg-primary text-on-primary shadow-sm' 
+                  : 'text-text-secondary hover:bg-surface-container-low hover:text-text-primary'
+              } ${isCollapsed ? "justify-center px-0 py-3" : "justify-between px-4 py-3"}`}
             >
               <div className="flex items-center gap-3">
-                <Icon className={`h-5 w-5 ${isActive ? 'text-white' : 'text-slate-500'}`} />
-                <span>{item.name}</span>
+                <Icon className={`h-5 w-5 ${isActive ? 'text-on-primary' : 'text-text-secondary'}`} />
+                <span className={isCollapsed ? "hidden" : "block"}>{item.name}</span>
               </div>
-              {item.badge !== undefined && (
+              {item.badge !== undefined && !isCollapsed && (
                 <span className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${
-                  isActive ? 'bg-white text-indigo-600' : 'bg-rose-50/10 text-rose-600 border border-rose-500/20'
+                  isActive ? 'bg-white text-primary' : 'border border-danger/20 bg-danger/5 text-danger'
                 }`}>
                   {item.badge}
                 </span>
@@ -115,27 +145,30 @@ export default function Sidebar({
       </nav>
 
       {/* Admin Profile Footer */}
-      <div className="border-t border-slate-200 p-4 bg-slate-50/50">
-        <div className="flex items-center gap-3 rounded-xl p-2 bg-slate-100/50">
+      <div className={`border-t border-border-subtle bg-surface p-4 ${isCollapsed ? "flex flex-col items-center" : ""}`}>
+        <div className={`flex items-center gap-3 rounded-lg border border-border-subtle bg-surface-white p-2 ${isCollapsed ? "justify-center border-transparent bg-transparent" : ""}`}>
           <img 
             id="admin-avatar-footer"
             src={userAvatar} 
             alt={`${userName} Admin`} 
             referrerPolicy="no-referrer"
-            className="h-10 w-10 rounded-full object-cover border border-indigo-500/20"
+            className="h-10 w-10 rounded-full border border-border-subtle object-cover"
           />
-          <div className="flex-1 overflow-hidden">
-            <h4 className="text-sm font-semibold text-slate-800 truncate">{userName}</h4>
-            <p className="text-xs text-slate-500 truncate">{userRole}</p>
+          <div className={isCollapsed ? "hidden" : "flex-1 overflow-hidden"}>
+            <h4 className="truncate text-sm font-semibold text-text-primary">{userName}</h4>
+            <p className="truncate text-xs text-text-secondary">{userRole}</p>
           </div>
         </div>
         
         <button 
           onClick={handleExit}
-          className="mt-4 flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-all duration-200 cursor-pointer"
+          className={`mt-4 flex min-h-11 items-center rounded-lg text-sm font-medium text-text-secondary transition-all duration-200 hover:bg-danger/5 hover:text-danger cursor-pointer ${
+            isCollapsed ? "w-11 justify-center px-0" : "w-full gap-3 px-4 py-2.5"
+          }`}
+          title={isCollapsed ? "Exit Console" : undefined}
         >
           <LogOut className="h-4.5 w-4.5" />
-          <span>Exit Console</span>
+          <span className={isCollapsed ? "hidden" : "block"}>Exit Console</span>
         </button>
       </div>
     </aside>

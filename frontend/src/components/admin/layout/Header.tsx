@@ -34,39 +34,39 @@ export default function Header({
     if (alerts.length > 0 && onClearAlert) {
       alerts.forEach(alert => onClearAlert(alert.id));
     } else {
-      alert('All active threats dismissed. Syncing security ledger...');
+      alert('All active alerts cleared.');
     }
   };
 
   return (
-    <header className="sticky top-0 z-10 flex h-16 w-full items-center justify-between border-b border-slate-200 bg-white/80 px-6 backdrop-blur-md">
+    <header className="sticky top-0 z-10 flex w-full flex-col gap-3 border-b border-border-subtle bg-surface-white/95 px-4 py-3 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between sm:px-6 md:min-h-[72px]">
       {/* Search Bar */}
-      <div className="flex flex-1 items-center max-w-lg">
+      <div className="flex w-full flex-1 items-center sm:max-w-lg">
         <div className="relative w-full">
-          <Search className="absolute top-2.5 left-3.5 h-4.5 w-4.5 text-slate-500" />
+          <Search className="absolute top-3 left-3.5 h-4.5 w-4.5 text-text-secondary" />
           <input
             id="global-search-input"
             type="text"
-            placeholder="Search users, events, transactions, scanner logs..."
+            placeholder="Search users, events, transactions..."
             value={searchVal}
             onChange={handleSearchChange}
-            className="w-full rounded-xl border border-slate-200 bg-slate-100 py-2.5 pr-4 pl-10.5 text-sm text-slate-800 placeholder-slate-400 outline-none transition-all duration-200 focus:border-indigo-500 focus:bg-white focus:ring-1 focus:ring-indigo-500"
+            className="h-11 w-full rounded-lg border border-border-subtle bg-surface px-4 pl-10.5 text-sm text-text-primary outline-none transition-all duration-200 placeholder:text-text-secondary focus:border-secondary focus:bg-surface-white focus:ring-2 focus:ring-secondary/20"
           />
         </div>
       </div>
 
       {/* Right Side Tools */}
-      <div className="flex items-center gap-4">
+      <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end sm:gap-4">
         {/* System Health Status */}
-        <div className="hidden items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-600 border border-emerald-500/20 sm:flex">
-          <CheckCircle className="h-3.5 w-3.5 animate-pulse" />
-          <span>SYS STATUS: OPERATIONAL</span>
+        <div className="hidden items-center gap-1.5 rounded-full border border-success/20 bg-success/5 px-3 py-1 text-xs font-medium text-success sm:flex">
+          <CheckCircle className="h-3.5 w-3.5" />
+          <span>Operational</span>
         </div>
 
         {/* Support Hub Button */}
         <button 
           onClick={() => alert('Accessing the Admin operations manual: standard operations and escalation protocols.')}
-          className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-all duration-200 cursor-pointer"
+          className="hidden rounded-lg p-2 text-text-secondary transition-all duration-200 hover:bg-surface-container-low hover:text-text-primary cursor-pointer sm:block"
           title="System Help Manual"
         >
           <HelpCircle className="h-5 w-5" />
@@ -77,60 +77,60 @@ export default function Header({
           <button
             id="notification-bell-btn"
             onClick={() => setShowNotifications(!showNotifications)}
-            className="relative rounded-xl p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-all duration-200 cursor-pointer"
+            className="relative rounded-lg p-2 text-text-secondary transition-all duration-200 hover:bg-surface-container-low hover:text-text-primary cursor-pointer"
           >
             <Bell className="h-5 w-5" />
             {alerts.length > 0 && (
-              <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[10px] font-bold text-white ring-2 ring-white animate-bounce">
+              <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-on-error ring-2 ring-white">
                 {alerts.length}
               </span>
             )}
           </button>
 
           {showNotifications && (
-            <div className="absolute right-0 mt-3 w-80 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl ring-1 ring-black/10 z-30">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
-                  <ShieldAlert className="h-4 w-4 text-indigo-600" />
-                  <span>Security & Activity Monitor</span>
+            <div className="absolute right-0 z-30 mt-3 w-80 rounded-xl border border-border-subtle bg-surface-white p-4 shadow-overlay">
+              <div className="flex items-center justify-between border-b border-border-subtle pb-3">
+                <h3 className="flex items-center gap-1.5 text-sm font-semibold text-text-primary">
+                  <ShieldAlert className="h-4 w-4 text-secondary" />
+                  <span>Security Monitor</span>
                 </h3>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] font-medium text-text-secondary">
                   {alerts.length} Alerts
                 </span>
               </div>
               <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
                 {alerts.length === 0 ? (
-                  <div className="py-6 text-center text-xs text-slate-500">No active priority threats detected.</div>
+                  <div className="py-6 text-center text-xs text-text-secondary">No active priority alerts.</div>
                 ) : (
                   alerts.map((alert) => (
                     <div 
                       key={alert.id} 
-                      className={`relative rounded-xl border p-3 transition-colors ${
+                      className={`relative rounded-lg border p-3 transition-colors ${
                         alert.severity === 'high' 
-                          ? 'bg-rose-50 border-rose-100 text-rose-800' 
-                          : 'bg-amber-50 border-amber-100 text-amber-800'
+                          ? 'border-danger/20 bg-danger/5 text-danger' 
+                          : 'border-warning/20 bg-warning/5 text-warning'
                       }`}
                     >
                       <button 
                         onClick={() => onClearAlert?.(alert.id)}
-                        className="absolute top-2 right-2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        className="absolute top-2 right-2 text-text-secondary hover:text-text-primary cursor-pointer"
                       >
                         <X className="h-3 w-3" />
                       </button>
                       <h4 className="text-xs font-semibold pr-4">{alert.title}</h4>
-                      <p className="mt-1 text-[11px] text-slate-600 leading-relaxed">{alert.description}</p>
-                      <span className="mt-1.5 block text-[9px] text-slate-400 font-mono">{alert.timestamp}</span>
+                      <p className="mt-1 text-[11px] leading-relaxed text-text-secondary">{alert.description}</p>
+                      <span className="mt-1.5 block text-[9px] text-text-secondary">{alert.timestamp}</span>
                     </div>
                   ))
                 )}
               </div>
               {alerts.length > 0 && (
-                <div className="mt-3 border-t border-slate-100 pt-3 text-center">
+                <div className="mt-3 border-t border-border-subtle pt-3 text-center">
                   <button 
                     onClick={handleClearAll}
-                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-500 transition-colors cursor-pointer"
+                    className="text-xs font-semibold text-secondary transition-colors hover:text-primary cursor-pointer"
                   >
-                    Clear All Threats
+                    Clear All Alerts
                   </button>
                 </div>
               )}
@@ -139,17 +139,17 @@ export default function Header({
         </div>
 
         {/* Profile Identity Banner */}
-        <div className="flex items-center gap-3 border-l border-slate-200 pl-4">
+        <div className="hidden items-center gap-3 border-l border-border-subtle pl-4 sm:flex">
           <div className="hidden text-right md:block">
-            <span className="block text-sm font-medium text-slate-800">{userName}</span>
-            <span className="block text-[9px] font-mono text-indigo-600 uppercase tracking-widest">{userRole}</span>
+            <span className="block text-sm font-medium text-text-primary">{userName}</span>
+            <span className="block text-xs text-text-secondary">{userRole}</span>
           </div>
           <img 
             id="admin-profile-avatar"
             src={userAvatar} 
             alt={userName} 
             referrerPolicy="no-referrer"
-            className="h-9 w-9 rounded-full object-cover border border-indigo-500/20 ring-2 ring-indigo-500/10"
+            className="h-9 w-9 rounded-full border border-border-subtle object-cover"
           />
         </div>
       </div>

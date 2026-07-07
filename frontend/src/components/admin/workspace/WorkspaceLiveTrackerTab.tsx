@@ -1,7 +1,6 @@
 "use client";
 
 import React from 'react';
-import { Activity } from 'lucide-react';
 import { Event, Transaction, Scanner } from '@/types/admin';
 
 interface WorkspaceLiveTrackerTabProps {
@@ -15,49 +14,49 @@ export default function WorkspaceLiveTrackerTab({ event, scanners, transactions 
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
-        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Sales Volume</span>
-          <p className="mt-1 text-lg font-bold text-white">${event.totalRevenue.toLocaleString()}</p>
-          <span className="text-[10px] text-slate-500">All prices face value locked</span>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
+        <div className="rounded-lg border border-border-subtle bg-surface-white p-5 shadow-sm">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">Total Sales</span>
+          <p className="mt-1 text-lg font-bold text-text-primary">${event.totalRevenue.toLocaleString()}</p>
+          <span className="text-[10px] text-text-secondary">Gross event revenue</span>
         </div>
-        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Attendance Ratio</span>
-          <p className="mt-1 text-lg font-bold text-white">{Math.round((event.ticketsSold / event.capacity) * 100)}%</p>
-          <span className="text-[10px] text-indigo-400 font-mono">{event.ticketsSold} seats claimed</span>
+        <div className="rounded-lg border border-border-subtle bg-surface-white p-5 shadow-sm">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">Capacity Sold</span>
+          <p className="mt-1 text-lg font-bold text-text-primary">{Math.round((event.ticketsSold / event.capacity) * 100)}%</p>
+          <span className="text-[10px] text-secondary">{event.ticketsSold} seats claimed</span>
         </div>
-        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Connected Scanners</span>
-          <p className="mt-1 text-lg font-bold text-white">{activeScannersCount} Devices</p>
-          <span className="text-[10px] text-emerald-400">All nodes operational</span>
+        <div className="rounded-lg border border-border-subtle bg-surface-white p-5 shadow-sm">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">Connected Scanners</span>
+          <p className="mt-1 text-lg font-bold text-text-primary">{activeScannersCount} Devices</p>
+          <span className="text-[10px] text-success">Operational</span>
         </div>
-        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Average Validation Lag</span>
-          <p className="mt-1 text-lg font-bold text-white">1.2 Seconds</p>
-          <span className="text-[10px] text-slate-500">Cryptographic verification speed</span>
+        <div className="rounded-lg border border-border-subtle bg-surface-white p-5 shadow-sm">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">Average Validation</span>
+          <p className="mt-1 text-lg font-bold text-text-primary">1.2 Seconds</p>
+          <span className="text-[10px] text-text-secondary">Ticket scan speed</span>
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Sales Velocity Chart */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5 lg:col-span-2">
-          <div className="flex items-center justify-between border-b border-slate-900 pb-4">
-            <h3 className="text-sm font-bold text-white">Event Registration Trajectory</h3>
-            <span className="text-[10px] font-mono text-slate-500">TICKETS CLAIMED OVER TIME</span>
+        <div className="rounded-lg border border-border-subtle bg-surface-white p-6 shadow-sm lg:col-span-2">
+          <div className="flex items-center justify-between border-b border-border-subtle pb-4">
+            <h3 className="text-sm font-bold text-text-primary">Event Registration Trajectory</h3>
+            <span className="text-[10px] text-text-secondary">Tickets claimed over time</span>
           </div>
           {/* Draw a neat mock ticket sales line */}
-          <div className="mt-5 relative h-48 flex items-end bg-slate-900/10 p-4 rounded-xl">
+          <div className="relative mt-5 flex h-48 items-end rounded-lg border border-border-subtle bg-surface p-4">
             <svg className="absolute inset-0 h-full w-full p-4 overflow-visible" viewBox="0 0 400 150" preserveAspectRatio="none">
               <path 
                 d="M 0,150 Q 100,140 200,90 T 400,20" 
                 fill="none" 
-                stroke="#06b6d4" 
+                stroke="#1D4ED8" 
                 strokeWidth="3.5" 
                 strokeLinecap="round" 
               />
-              <line x1="0" y1="150" x2="400" y2="150" stroke="#1e293b" />
+              <line x1="0" y1="150" x2="400" y2="150" stroke="#E2E8F0" />
             </svg>
-            <div className="absolute inset-x-0 bottom-1 flex justify-between px-6 text-[9px] font-mono text-slate-500">
+            <div className="absolute inset-x-0 bottom-1 flex justify-between px-6 text-[9px] text-text-secondary">
               <span>Presale Launch</span>
               <span>General Sale</span>
               <span>Present Hour (Peak)</span>
@@ -66,21 +65,21 @@ export default function WorkspaceLiveTrackerTab({ event, scanners, transactions 
         </div>
 
         {/* Live activity logs specific to event */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
-          <h3 className="text-sm font-bold text-white border-b border-slate-900 pb-3">Node Entry Logs</h3>
+        <div className="rounded-lg border border-border-subtle bg-surface-white p-6 shadow-sm">
+          <h3 className="border-b border-border-subtle pb-3 text-sm font-bold text-text-primary">Recent Activity</h3>
           <div className="mt-4 space-y-3 max-h-[220px] overflow-y-auto pr-1">
             {transactions.length === 0 ? (
-              <p className="text-3xs text-slate-500 text-center py-10">No recent transactions recorded.</p>
+              <p className="py-10 text-center text-xs text-text-secondary">No recent transactions recorded.</p>
             ) : (
               transactions.slice(0, 4).map((tx, idx) => (
-                <div key={idx} className="rounded-lg bg-slate-900/30 border border-slate-900 p-2.5 text-2xs flex flex-col gap-1">
+                <div key={idx} className="flex flex-col gap-1 rounded-lg border border-border-subtle bg-surface p-2.5 text-xs">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-200">{tx.customerName}</span>
-                    <span className="text-[10px] text-slate-500 font-mono">{tx.id}</span>
+                    <span className="font-bold text-text-primary">{tx.customerName}</span>
+                    <span className="text-[10px] text-text-secondary">{tx.id}</span>
                   </div>
-                  <div className="flex items-center justify-between text-[10px] text-slate-400">
+                  <div className="flex items-center justify-between text-[10px] text-text-secondary">
                     <span>Purchased Event Ticket</span>
-                    <span className="font-bold text-emerald-400">${tx.amount}</span>
+                    <span className="font-bold text-success">${tx.amount}</span>
                   </div>
                 </div>
               ))

@@ -41,6 +41,7 @@ frontend/out/
 frontend/build/
 frontend/dist/
 frontend/.eslintcache
+frontend/.md
 
 # Logs
 frontend/npm-debug.log*
