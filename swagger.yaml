@@ -1,0 +1,524 @@
+openapi: 3.0.3
+info:
+  title: CrowdFlow Event Ticketing API
+  description: |
+    API documentation for the CrowdFlow Venue and Event Management platform.
+    
+    ### Security Architecture:
+    - **Session Authentication**: JWT access token set as a secure `HttpOnly` cookie named `access_token`.
+    - **CSRF Protection**: State-changing endpoints require Double-Submit Cookie verification. The client extracts the value of the `csrf_token` cookie and submits it in the custom header `X-CSRF-Token`.
+    
+    All responses (success and error) are wrapped in a standard JSON response envelope.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Development Server
+  - url: /
+    description: Proxy Gateway (Nginx)
+
+paths:
+  /api/health:
+    get:
+      summary: Health Check
+      description: Verifies database connectivity and application status.
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            example: ok
+                          message:
+                            type: string
+                            example: CrowdFlow API is running
+        '500':
+          description: Database or server connectivity error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/register:
+    post:
+      summary: User Registration
+      description: Registers a new user native credentials.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered successfully.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: User registered successfully
+        '400':
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation failed (missing required fields).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict (email already exists).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/login:
+    post:
+      summary: User Login
+      description: Native credentials login. Generates access session cookies.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Successful authentication. Sets `access_token` and `csrf_token` cookies.
+          headers:
+            Set-Cookie:
+              description: |
+                Sets two cookies:
+                1. `access_token`: Secure HttpOnly JWT session token.
+                2. `csrf_token`: Client-readable cookie for CSRF double-submission.
+              schema:
+                type: string
+                example: access_token=eyJhbGciOi...; Path=/; HttpOnly; SameSite=Lax
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Logged in successfully
+        '400':
+          description: Invalid JSON body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized (invalid credentials).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/google/login:
+    get:
+      summary: Google OAuth Redirect
+      description: Initiates Google OAuth2 authorization code flow by redirecting the browser.
+      responses:
+        '302':
+          description: Temporary redirect to Google's consent screen. Sets `oauth_state` cookie.
+          headers:
+            Location:
+              description: Google Authorization URL.
+              schema:
+                type: string
+                example: https://accounts.google.com/o/oauth2/v2/auth?...
+            Set-Cookie:
+              description: Sets `oauth_state` HttpOnly cookie for CSRF state validation.
+              schema:
+                type: string
+
+  /api/auth/google/callback:
+    get:
+      summary: Google OAuth Callback
+      description: Processes Google authorization code, verifies state, provisions user, and redirects to dashboard.
+      parameters:
+        - name: state
+          in: query
+          required: true
+          description: OAuth state verification token matching the `oauth_state` cookie.
+          schema:
+            type: string
+        - name: code
+          in: query
+          required: true
+          description: Authorization code returned from Google.
+          schema:
+            type: string
+      security:
+        - StateCookie: []
+      responses:
+        '302':
+          description: Successful login. Clears `oauth_state` cookie, sets `access_token` and `csrf_token` session cookies, and redirects to `/dashboard`.
+          headers:
+            Location:
+              schema:
+                type: string
+                example: /dashboard
+        '400':
+          description: State verification cookie missing or auth code missing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: State token verification mismatch.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication code exchange failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/logout:
+    post:
+      summary: User Logout
+      description: Clears active user session. Requires CSRF verification.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      responses:
+        '200':
+          description: Successfully logged out. Clears `access_token` and `csrf_token` cookies.
+          headers:
+            Set-Cookie:
+              description: Overwrites active cookies with MaxAge=-1 to delete them.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Logged out successfully
+        '403':
+          description: CSRF verification missing or failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/events:
+    get:
+      summary: List Events
+      description: Retrieves a list of all venue events.
+      responses:
+        '200':
+          description: List retrieved successfully.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Event'
+        '500':
+          description: Database/Internal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: Create Event
+      description: Creates a new event tier. Requires Event Organizer role.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Event'
+      responses:
+        '201':
+          description: Event created successfully.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Event'
+        '400':
+          description: Invalid request payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token is missing or expired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed (Event Organizer required) or CSRF mismatch.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation of event properties failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/events/{id}:
+    get:
+      summary: Get Event Details
+      description: Retrieves detailed parameters of a specific event.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The UUID or numeric ID of the event.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Event details retrieved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Event'
+        '404':
+          description: Event not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/events/{id}/publish:
+    patch:
+      summary: Publish Event
+      description: Publishes an event. Requires specific Event-level Event Organizer role authorization.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the event.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Event published successfully.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Event published successfully
+                          event_id:
+                            type: string
+                            example: "5"
+        '400':
+          description: Event ID path parameter missing or malformed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication missing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Event role authorization failed (User is not an event organizer of this event) or CSRF mismatch.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Publication execution failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+      description: JWT authentication token.
+    StateCookie:
+      type: apiKey
+      in: cookie
+      name: oauth_state
+      description: Google oauth flow verification token.
+    CSRFToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: Double-Submit CSRF Token header. Must match values in the `csrf_token` cookie.
+
+  schemas:
+    StandardResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          description: Set to true if request completed successfully.
+          example: true
+
+    APIError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Machine-readable short error classification code.
+          example: FORBIDDEN
+        message:
+          type: string
+          description: Human-readable error description context.
+          example: You do not have permission to access this resource
+        details:
+          type: object
+          description: Optional key-value structured details about validation failures.
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          $ref: '#/components/schemas/APIError'
+
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+        - full_name
+      properties:
+        email:
+          type: string
+          format: email
+          example: richie@crowdflow.com
+        password:
+          type: string
+          format: password
+          example: password123
+        full_name:
+          type: string
+          example: Richie Obhasa
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: admin@crowdflow.com
+        password:
+          type: string
+          format: password
+          example: admin123
+
+    Event:
+      type: object
+      required:
+        - title
+        - description
+        - venue_name
+        - total_seats
+        - event_date
+      properties:
+        id:
+          type: string
+          description: Event ID (UUID format or auto-incrementing id)
+          example: "5"
+        title:
+          type: string
+          example: "Symphony Orchestra Concert"
+        description:
+          type: string
+          example: "An evening featuring classical symphonies from Mozart and Beethoven."
+        venue_name:
+          type: string
+          example: "Jakarta Concert Hall"
+        total_seats:
+          type: integer
+          example: 500
+        event_date:
+          type: string
+          format: date-time
+          example: "2026-10-15T19:30:00Z"

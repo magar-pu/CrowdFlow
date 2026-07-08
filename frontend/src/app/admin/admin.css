@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+@theme {
+  --animate-scannerLaser: scannerLaser 2s linear infinite;
+
+  @keyframes scannerLaser {
+    0% {
+      top: 0%;
+      opacity: 0.3;
+    }
+    50% {
+      top: 100%;
+      opacity: 1;
+    }
+    100% {
+      top: 0%;
+      opacity: 0.3;
+    }
+  }
+}
+
+/* Light Mode Global Color Overrides for Admin Root */
+#crowdflow-admin-root {
+  background-color: #f8fafc !important; /* bg-slate-50 */
+  color: #0f172a !important; /* text-slate-900 */
+}
+
+#crowdflow-admin-root .bg-slate-950 {
+  background-color: #ffffff !important;
+}
+
+#crowdflow-admin-root .bg-slate-900 {
+  background-color: #f1f5f9 !important; /* slate-100 */
+}
+
+#crowdflow-admin-root .bg-slate-900\/50,
+#crowdflow-admin-root .bg-slate-900\/15,
+#crowdflow-admin-root .bg-slate-900\/20,
+#crowdflow-admin-root .bg-slate-900\/30 {
+  background-color: #f8fafc !important; /* slate-50 */
+}
+
+#crowdflow-admin-root .border-slate-800,
+#crowdflow-admin-root .border-slate-900 {
+  border-color: #e2e8f0 !important; /* slate-200 */
+}
+
+#crowdflow-admin-root .text-white {
+  color: #0f172a !important; /* slate-900 */
+}
+
+#crowdflow-admin-root .text-slate-200 {
+  color: #1e293b !important; /* slate-800 */
+}
+
+#crowdflow-admin-root .text-slate-300 {
+  color: #334155 !important; /* slate-700 */
+}
+
+#crowdflow-admin-root .text-slate-400 {
+  color: #475569 !important; /* slate-600 */
+}
+
+#crowdflow-admin-root .text-indigo-400 {
+  color: #4f46e5 !important; /* indigo-600 */
+}
+
+#crowdflow-admin-root .bg-indigo-500\/10 {
+  background-color: #e0e7ff !important; /* indigo-100 */
+}
+
+#crowdflow-admin-root .text-cyan-400 {
+  color: #0891b2 !important; /* cyan-600 */
+}
+
+#crowdflow-admin-root .text-pink-400 {
+  color: #db2777 !important; /* pink-600 */
+}
+
+#crowdflow-admin-root .text-emerald-400 {
+  color: #059669 !important; /* emerald-600 */
+}
+
+#crowdflow-admin-root .text-amber-400 {
+  color: #d97706 !important; /* amber-600 */
+}
+
+#crowdflow-admin-root .text-rose-400 {
+  color: #e11d48 !important; /* rose-600 */
+}
+
+#crowdflow-admin-root .bg-indigo-600 {
+  background-color: #4f46e5 !important;
+  color: #ffffff !important;
+}
+
+#crowdflow-admin-root select option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}

@@ -1,9 +1,8 @@
 services:
   frontend:
     build: ./frontend
-    container_name: crowdflow-frontend
     ports:
-      - "3000:3000"
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
     restart: always
     networks:
       - crowdflow-net
@@ -12,20 +11,36 @@ services:
 
   backend:
     build: ./backend
-    container_name: crowdflow-backend
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
+    restart: always
+    networks:
+      - crowdflow-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - ./backend/.env
+    environment:
+      - GOOGLE_CLIENT_ID=91716845059-1l96nahbcu7nb39k1sa9r4ev8p2nitdu.apps.googleusercontent.com
+      - S3_ENDPOINT=http://minio:9000
+      - DEV_MODE=false
+      - REDIS_ADDR=redis:6379
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
     restart: always
     networks:
       - crowdflow-net
 
   nginx:
     image: nginx:alpine
+    pull_policy: never
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    container_name: crowdflow-nginx
     ports:
-      - "80:80"
+      - "127.0.0.1:${NGINX_PORT:-8000}:80"
     restart: always
     depends_on:
       - frontend
@@ -36,3 +51,7 @@ services:
 networks:
   crowdflow-net:
     driver: bridge
+
+volumes:
+  minio-data:
+    driver: local
