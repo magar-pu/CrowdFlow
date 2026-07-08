@@ -6,42 +6,42 @@ import { ShieldCheck, Database, Sliders, Save } from 'lucide-react';
 export default function SettingsView() {
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    alert('Global Super Admin settings saved successfully. Broadcasted configuration update across all cluster nodes.');
+    alert('Admin settings saved successfully.');
   };
 
   return (
     <div className="space-y-6">
       {/* Settings Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">Global System Settings</h1>
-        <p className="mt-1 text-sm text-slate-400">Control core API cluster parameters, security rate limiting, and main ledger maintenance protocols.</p>
+        <h1 className="text-2xl font-bold tracking-normal text-text-primary md:text-4xl">Global Settings</h1>
+        <p className="mt-2 text-sm text-text-secondary">Manage platform configuration, security rules, and operational defaults.</p>
       </div>
 
       <form onSubmit={handleSave} className="grid gap-6 md:grid-cols-3">
         {/* Left main settings column */}
         <div className="md:col-span-2 space-y-6">
           {/* Cluster configuration */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5 space-y-4">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-900 pb-3">
-              <Database className="h-4.5 w-4.5 text-indigo-400" />
-              <span>Database Cluster Nodes</span>
+          <div className="space-y-4 rounded-lg border border-border-subtle bg-surface-white p-6 shadow-sm">
+            <h3 className="flex items-center gap-2 border-b border-border-subtle pb-3 text-sm font-bold text-text-primary">
+              <Database className="h-4.5 w-4.5 text-secondary" />
+              <span>Database Configuration</span>
             </h3>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-3xs font-bold text-slate-500 uppercase mb-1.5">Master Cluster Primary Host</label>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-text-secondary">Primary Host</label>
                 <input
                   type="text"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3.5 py-2.5 text-xs text-slate-300 outline-none"
+                  className="h-11 w-full rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 text-sm text-text-secondary outline-none"
                   defaultValue="db-master.singapore.gcp.crowdflow.internal"
                   disabled
                 />
               </div>
               <div>
-                <label className="block text-3xs font-bold text-slate-500 uppercase mb-1.5">Read Replica Nodes Allocation</label>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-text-secondary">Read Replicas</label>
                 <input
                   type="text"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3.5 py-2.5 text-xs text-slate-300 outline-none"
+                  className="h-11 w-full rounded-lg border border-border-subtle bg-surface px-3.5 py-2.5 text-sm text-text-secondary outline-none"
                   defaultValue="3 Active Replicas"
                   disabled
                 />
@@ -50,27 +50,27 @@ export default function SettingsView() {
           </div>
 
           {/* Security Protocols */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5 space-y-4">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-900 pb-3">
-              <ShieldCheck className="h-4.5 w-4.5 text-pink-400" />
+          <div className="space-y-4 rounded-lg border border-border-subtle bg-surface-white p-6 shadow-sm">
+            <h3 className="flex items-center gap-2 border-b border-border-subtle pb-3 text-sm font-bold text-text-primary">
+              <ShieldCheck className="h-4.5 w-4.5 text-tertiary" />
               <span>Identity & Fraud Protection Rules</span>
             </h3>
 
             <div className="space-y-4">
-              <div className="flex items-start justify-between rounded-xl bg-slate-900/30 border border-slate-900 p-3.5">
+              <div className="flex items-start justify-between rounded-lg border border-border-subtle bg-surface p-4">
                 <div className="max-w-md">
-                  <h4 className="text-xs font-bold text-slate-200">Device Fingerprint Enforce</h4>
-                  <p className="text-3xs text-slate-500 mt-0.5">Enforce browser and device hardware fingerprint checks to detect bulk reseller botnets.</p>
+                  <h4 className="text-xs font-bold text-text-primary">Device Fingerprint Enforcement</h4>
+                  <p className="mt-0.5 text-xs text-text-secondary">Require device checks for suspicious purchasing behavior.</p>
                 </div>
-                <input type="checkbox" defaultChecked className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4 bg-slate-900 border-slate-800 cursor-pointer" />
+                <input type="checkbox" defaultChecked className="h-4 w-4 rounded border-border-subtle text-secondary focus:ring-secondary cursor-pointer" />
               </div>
 
-              <div className="flex items-start justify-between rounded-xl bg-slate-900/30 border border-slate-900 p-3.5">
+              <div className="flex items-start justify-between rounded-lg border border-border-subtle bg-surface p-4">
                 <div className="max-w-md">
-                  <h4 className="text-xs font-bold text-slate-200">KYC/Document Checklist Trigger</h4>
-                  <p className="text-3xs text-slate-500 mt-0.5">Require instant document verification files for organizer withdrawal payouts above $10,000.</p>
+                  <h4 className="text-xs font-bold text-text-primary">KYC Document Review</h4>
+                  <p className="mt-0.5 text-xs text-text-secondary">Require document verification for organizer withdrawals above $10,000.</p>
                 </div>
-                <input type="checkbox" defaultChecked className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4 bg-slate-900 border-slate-800 cursor-pointer" />
+                <input type="checkbox" defaultChecked className="h-4 w-4 rounded border-border-subtle text-secondary focus:ring-secondary cursor-pointer" />
               </div>
             </div>
           </div>
@@ -78,30 +78,30 @@ export default function SettingsView() {
 
         {/* Right sidebar info */}
         <div className="space-y-6">
-          <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5 space-y-4">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-900 pb-3">
-              <Sliders className="h-4.5 w-4.5 text-cyan-400" />
+          <div className="space-y-4 rounded-lg border border-border-subtle bg-surface-white p-6 shadow-sm">
+            <h3 className="flex items-center gap-2 border-b border-border-subtle pb-3 text-sm font-bold text-text-primary">
+              <Sliders className="h-4.5 w-4.5 text-tertiary" />
               <span>Platform Mode Control</span>
             </h3>
 
             <div className="space-y-4 text-xs">
               <div>
-                <span className="text-3xs font-bold text-slate-500 uppercase">Current cluster load</span>
-                <p className="text-base font-extrabold text-white mt-1">Normal (8% CPU)</p>
+                <span className="text-xs font-bold uppercase tracking-wide text-text-secondary">Current Load</span>
+                <p className="mt-1 text-base font-extrabold text-text-primary">Normal (8% CPU)</p>
               </div>
 
               <div>
-                <span className="text-3xs font-bold text-slate-500 uppercase">Platform Status</span>
-                <p className="text-xs text-emerald-400 font-bold mt-1 flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>ONLINE & SECURE</span>
+                <span className="text-xs font-bold uppercase tracking-wide text-text-secondary">Platform Status</span>
+                <p className="mt-1 flex items-center gap-1.5 text-xs font-bold text-success">
+                  <span className="h-2 w-2 rounded-full bg-success" />
+                  <span>Online</span>
                 </p>
               </div>
 
               <div className="pt-2">
                 <button
                   type="submit"
-                  className="w-full rounded-xl bg-indigo-600 py-2.5 text-xs font-bold text-white hover:bg-indigo-500 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg bg-primary py-2.5 text-xs font-bold text-on-primary transition-colors hover:bg-primary-container cursor-pointer"
                 >
                   <Save className="h-4 w-4" />
                   <span>Save configurations</span>

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Smartphone, QrCode, Wifi, Battery, Camera, Volume2, VolumeX, Check, ShieldAlert, X, History } from 'lucide-react';
+import { ArrowLeft, QrCode, Wifi, Battery, Camera, Volume2, VolumeX, Check, ShieldAlert, X, History } from 'lucide-react';
 import { Scanner, VenueSection } from '@/types/admin';
 
 interface WorkspaceScannerSimulatorProps {
@@ -22,6 +22,10 @@ interface MockTicket {
   seatNumber: string;
   avatarUrl: string;
 }
+
+type SafariAudioWindow = Window & typeof globalThis & {
+  webkitAudioContext?: typeof AudioContext;
+};
 
 const mockTickets: MockTicket[] = [
   {
@@ -144,7 +148,9 @@ export default function WorkspaceScannerSimulator({
   const playBeep = (type: 'success' | 'error' | 'warning') => {
     if (!soundEnabled) return;
     try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioContextCtor = window.AudioContext || (window as SafariAudioWindow).webkitAudioContext;
+      if (!AudioContextCtor) return;
+      const audioCtx = new AudioContextCtor();
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.connect(gain);
@@ -292,27 +298,27 @@ export default function WorkspaceScannerSimulator({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between border-b border-slate-900 pb-4">
+      <div className="flex flex-col gap-3 border-b border-border-subtle pb-4 sm:flex-row sm:items-center sm:justify-between">
         <button
           onClick={() => {
             onClose();
             setUseRealCamera(false);
           }}
-          className="rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2 text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-900 cursor-pointer flex items-center gap-1 transition-colors"
+          className="inline-flex min-h-11 items-center justify-center gap-1 rounded-xl border border-border-subtle bg-surface-white px-3.5 py-2 text-xs font-semibold text-text-secondary transition-colors hover:bg-surface-soft hover:text-text-primary"
         >
           <ArrowLeft className="h-4 w-4" />
           <span>Back to Device Directory</span>
         </button>
-        <div className="text-right">
-          <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest font-bold">Client App Portal</span>
-          <p className="text-xs text-slate-300 font-semibold mt-0.5">{selectedScannerForApp.name} ({selectedScannerForApp.deviceName})</p>
+        <div className="text-left sm:text-right">
+          <span className="text-[10px] font-mono text-text-muted uppercase tracking-widest font-bold">Client App Portal</span>
+          <p className="mt-0.5 text-xs font-semibold text-text-primary">{selectedScannerForApp.name} ({selectedScannerForApp.deviceName})</p>
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-12 items-start">
         {/* Smartphone Simulator */}
-        <div className="lg:col-span-5 flex justify-center">
-          <div className="w-[310px] h-[610px] bg-slate-950 border-[10px] border-slate-800 rounded-[44px] shadow-2xl relative flex flex-col overflow-hidden border-t-[12px] border-b-[12px]">
+        <div className="flex justify-center lg:col-span-5">
+          <div className="relative flex aspect-[310/610] w-full max-w-[310px] flex-col overflow-hidden rounded-[44px] border-[10px] border-slate-800 border-t-[12px] border-b-[12px] bg-slate-950 shadow-2xl">
             {/* Notch */}
             <div className="w-24 h-4.5 bg-black rounded-full absolute top-1.5 left-1/2 -translate-x-1/2 z-30 flex items-center justify-center shadow-inner">
               <span className="w-1.5 h-1.5 bg-indigo-900/40 rounded-full absolute left-4" />
@@ -498,10 +504,10 @@ export default function WorkspaceScannerSimulator({
         </div>
 
         {/* Guest queue & session history (Right side) */}
-        <div className="lg:col-span-7 space-y-5">
-          <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
-            <h4 className="text-xs font-bold text-slate-200">Arriving Guest Tickets Queue</h4>
-            <p className="text-[10px] text-slate-500 font-medium mt-0.5">Click "Present Ticket QR" to present the attendee's ticket. Each ticket simulates a unique check-in condition.</p>
+        <div className="space-y-5 lg:col-span-7">
+          <div className="rounded-2xl border border-border-subtle bg-surface-white p-4 sm:p-5">
+            <h4 className="text-sm font-bold text-text-primary">Arriving Guest Tickets Queue</h4>
+            <p className="mt-0.5 text-xs font-medium text-text-muted">Use Present Ticket QR to present an attendee ticket. Each ticket simulates a unique check-in condition.</p>
 
             <div className="mt-4 space-y-3">
               {mockTickets.map((t) => {
@@ -512,7 +518,7 @@ export default function WorkspaceScannerSimulator({
                     className={`rounded-xl border p-3 flex flex-col sm:flex-row items-center justify-between gap-3 transition-all duration-205 ${
                       hasCheckedInInHistory 
                         ? 'bg-emerald-500/5 border-emerald-500/10' 
-                        : 'bg-slate-900/40 border-slate-800/80 hover:border-slate-700'
+                        : 'bg-surface-soft border-border-subtle hover:border-border-medium'
                     }`}
                   >
                     <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -520,11 +526,11 @@ export default function WorkspaceScannerSimulator({
                         src={t.avatarUrl} 
                         alt={t.holderName} 
                         referrerPolicy="no-referrer"
-                        className="h-8 w-8 rounded-full border border-slate-700 object-cover" 
+                        className="h-9 w-9 shrink-0 rounded-full border border-border-subtle object-cover"
                       />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-extrabold text-slate-200">{t.holderName}</span>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-extrabold text-text-primary">{t.holderName}</span>
                           {t.status === 'valid' && (
                             <span className="rounded-full bg-indigo-500/10 border border-indigo-500/20 px-1.5 py-0.5 text-[9px] font-extrabold text-indigo-400">
                               VIP Access
@@ -546,18 +552,18 @@ export default function WorkspaceScannerSimulator({
                             </span>
                           )}
                         </div>
-                        <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{t.tierName} • Seat: {t.seatNumber}</p>
-                        <p className="text-[9px] font-mono text-slate-500 mt-0.5">ID: {t.id}</p>
+                        <p className="mt-0.5 text-[10px] font-medium text-text-secondary">{t.tierName} - Seat: {t.seatNumber}</p>
+                        <p className="mt-0.5 text-[9px] font-mono text-text-muted">ID: {t.id}</p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 self-end sm:self-center">
+                    <div className="flex w-full items-center justify-between gap-3 sm:w-auto sm:self-center">
                       <VisualQRCode id={t.id} />
                       
                       <button
                         disabled={scannerAppIsScanning}
                         onClick={() => handleScanTicket(t)}
-                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-wide transition-all cursor-pointer ${
+                        className={`min-h-10 rounded-lg px-3 py-1.5 text-[10px] font-bold tracking-wide transition-all ${
                           hasCheckedInInHistory 
                             ? 'bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 cursor-default' 
                             : 'bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40 disabled:cursor-not-allowed'
@@ -573,22 +579,22 @@ export default function WorkspaceScannerSimulator({
           </div>
 
           {/* CHECK-IN HISTORY LOGS */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
-            <div className="flex items-center justify-between border-b border-slate-900 pb-3">
-              <h4 className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                <History className="h-3.5 w-3.5 text-indigo-400" />
+          <div className="rounded-2xl border border-border-subtle bg-surface-white p-4 sm:p-5">
+            <div className="flex flex-col gap-2 border-b border-border-subtle pb-3 sm:flex-row sm:items-center sm:justify-between">
+              <h4 className="flex items-center gap-1.5 text-sm font-bold text-text-primary">
+                <History className="h-3.5 w-3.5 text-primary" />
                 <span>Gate Check-In Session History Logs</span>
               </h4>
-              <span className="text-[9px] font-mono text-slate-500 uppercase font-bold">Real-Time Ingress</span>
+              <span className="text-[9px] font-mono font-bold uppercase text-text-muted">Real-Time Ingress</span>
             </div>
 
-            <div className="mt-4 space-y-2 max-h-[140px] overflow-y-auto font-mono scrollbar-thin scrollbar-thumb-slate-800">
+            <div className="mt-4 max-h-[180px] space-y-2 overflow-y-auto font-mono scrollbar-thin scrollbar-thumb-slate-300">
               {scannerAppHistory.length === 0 ? (
                 <p className="text-[10px] text-slate-500 text-center py-6 italic">No scans recorded in this phone session yet. Connect ticket QR code to start logging.</p>
               ) : (
                 scannerAppHistory.map((h, index) => (
-                  <div key={index} className="flex items-center justify-between text-[10px] py-1.5 border-b border-slate-900 last:border-b-0">
-                    <div className="flex items-center gap-2">
+                  <div key={index} className="flex flex-col gap-2 border-b border-border-subtle py-2 text-[10px] last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <span className="text-slate-500 font-bold">{h.time}</span>
                       <span className="text-slate-200 font-semibold">{h.holder}</span>
                       <span className="text-slate-600">({h.id.split('-').pop()})</span>

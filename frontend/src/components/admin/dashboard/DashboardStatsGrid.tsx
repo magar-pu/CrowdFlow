@@ -45,104 +45,104 @@ export default function DashboardStatsGrid({ events, users, verifications }: Das
   };
 
   return (
-    <div className="grid gap-4 grid-cols-2 lg:grid-cols-6">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
       {/* Total Users */}
-      <div id="kpi-total-users" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col justify-between min-h-[110px]">
+      <div id="kpi-total-users" className="flex min-h-[120px] flex-col justify-between rounded-lg border border-border-subtle bg-surface-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Users</span>
-          <div className="rounded-lg bg-indigo-50 p-1.5 text-indigo-600 border border-indigo-100">
+          <span className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Total Users</span>
+          <div className="rounded-lg border border-secondary/20 bg-secondary/5 p-1.5 text-secondary">
             <Users className="h-4 w-4" />
           </div>
         </div>
         <div className="mt-2 flex items-baseline justify-between">
           <div>
-            <span className="text-lg font-bold text-slate-900 md:text-xl">{totalUsers.toLocaleString()}</span>
+            <span className="text-xl font-bold text-text-primary">{totalUsers.toLocaleString()}</span>
           </div>
-          {renderSparkline([40, 50, 48, 62, 70, 85, 95], '#6366f1')}
+          {renderSparkline([40, 50, 48, 62, 70, 85, 95], '#1D4ED8')}
         </div>
       </div>
 
       {/* Active Events */}
-      <div id="kpi-active-events" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col justify-between min-h-[110px]">
+      <div id="kpi-active-events" className="flex min-h-[120px] flex-col justify-between rounded-lg border border-border-subtle bg-surface-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active Events</span>
-          <div className="rounded-lg bg-pink-50 p-1.5 text-pink-600 border border-pink-100">
+          <span className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Active Events</span>
+          <div className="rounded-lg border border-primary/10 bg-primary/5 p-1.5 text-primary">
             <Calendar className="h-4 w-4" />
           </div>
         </div>
         <div className="mt-2 flex items-baseline justify-between">
           <div>
-            <span className="text-lg font-bold text-slate-900 md:text-xl">{activeEventsCount}</span>
+            <span className="text-xl font-bold text-text-primary">{activeEventsCount}</span>
           </div>
-          {renderSparkline([10, 11, 11, 12, 12, 13, 14], '#ec4899')}
+          {renderSparkline([10, 11, 11, 12, 12, 13, 14], '#0F172A')}
         </div>
       </div>
 
       {/* Tickets Sold */}
-      <div id="kpi-tickets-sold" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col justify-between min-h-[110px]">
+      <div id="kpi-tickets-sold" className="flex min-h-[120px] flex-col justify-between rounded-lg border border-border-subtle bg-surface-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tickets Sold</span>
-          <div className="rounded-lg bg-cyan-50 p-1.5 text-cyan-600 border border-cyan-100">
+          <span className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Tickets Sold</span>
+          <div className="rounded-lg border border-tertiary/20 bg-tertiary/5 p-1.5 text-tertiary">
             <Ticket className="h-4 w-4" />
           </div>
         </div>
         <div className="mt-2 flex items-baseline justify-between">
           <div>
-            <span className="text-lg font-bold text-slate-900 md:text-xl">{ticketsSold.toLocaleString()}</span>
+            <span className="text-xl font-bold text-text-primary">{ticketsSold.toLocaleString()}</span>
           </div>
-          {renderSparkline([20, 32, 28, 45, 60, 72, 88], '#06b6d4')}
+          {renderSparkline([20, 32, 28, 45, 60, 72, 88], '#14B8A6')}
         </div>
       </div>
 
       {/* Revenue */}
-      <div id="kpi-revenue" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col justify-between min-h-[110px]">
+      <div id="kpi-revenue" className="flex min-h-[120px] flex-col justify-between rounded-lg border border-border-subtle bg-surface-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Gross Sales</span>
-          <div className="rounded-lg bg-emerald-50 p-1.5 text-emerald-600 border border-emerald-100">
+          <span className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Gross Sales</span>
+          <div className="rounded-lg border border-success/20 bg-success/5 p-1.5 text-success">
             <DollarSign className="h-4 w-4" />
           </div>
         </div>
         <div className="mt-2 flex items-baseline justify-between">
           <div>
-            <span className="text-lg font-bold text-slate-900 md:text-xl">${(grossRevenue / 1000000).toFixed(2)}M</span>
+            <span className="text-xl font-bold text-text-primary">${(grossRevenue / 1000000).toFixed(2)}M</span>
           </div>
-          {renderSparkline([30, 42, 58, 48, 65, 80, 95], '#10b981')}
+          {renderSparkline([30, 42, 58, 48, 65, 80, 95], '#22C55E')}
         </div>
       </div>
 
       {/* Pending Verification */}
-      <div id="kpi-pending-verifications" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col justify-between min-h-[110px]">
+      <div id="kpi-pending-verifications" className="flex min-h-[120px] flex-col justify-between rounded-lg border border-border-subtle bg-surface-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Verification Queue</span>
-          <div className="rounded-lg bg-amber-50 p-1.5 text-amber-600 border border-amber-100">
+          <span className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Verification Queue</span>
+          <div className="rounded-lg border border-warning/20 bg-warning/5 p-1.5 text-warning">
             <UserCheck className="h-4 w-4" />
           </div>
         </div>
         <div className="mt-2 flex items-baseline justify-between">
           <div>
-            <span className="text-lg font-bold text-slate-900 md:text-xl">{pendingVerifications}</span>
-            <span className="ml-1.5 text-[10px] text-amber-600 animate-pulse block">Action Required</span>
+            <span className="text-xl font-bold text-text-primary">{pendingVerifications}</span>
+            <span className="ml-1.5 block text-[10px] text-warning">Action Required</span>
           </div>
           <div className="h-8 flex items-center justify-end">
-            <span className="text-2xs font-mono px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-600">Pending</span>
+            <span className="rounded-full border border-warning/20 bg-warning/5 px-2 py-0.5 text-[10px] font-semibold text-warning">Pending</span>
           </div>
         </div>
       </div>
 
       {/* Active Resale Hub */}
-      <div id="kpi-active-resale" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col justify-between min-h-[110px]">
+      <div id="kpi-active-resale" className="flex min-h-[120px] flex-col justify-between rounded-lg border border-border-subtle bg-surface-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active Resale</span>
-          <div className="rounded-lg bg-indigo-50 p-1.5 text-indigo-600 border border-indigo-100">
+          <span className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Active Resale</span>
+          <div className="rounded-lg border border-secondary/20 bg-secondary/5 p-1.5 text-secondary">
             <RefreshCw className="h-4 w-4" />
           </div>
         </div>
         <div className="mt-2 flex items-baseline justify-between">
           <div>
-            <span className="text-lg font-bold text-slate-900 md:text-xl">184</span>
-            <span className="ml-1.5 text-[10px] text-slate-500">Stable</span>
+            <span className="text-xl font-bold text-text-primary">184</span>
+            <span className="ml-1.5 text-[10px] text-text-secondary">Stable</span>
           </div>
-          {renderSparkline([50, 48, 52, 49, 51, 50, 50], '#6366f1')}
+          {renderSparkline([50, 48, 52, 49, 51, 50, 50], '#1D4ED8')}
         </div>
       </div>
     </div>

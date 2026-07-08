@@ -20,16 +20,16 @@ export default function UserDetailDrawer({ user, onClose, onToggleStatus }: User
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-xs animate-fade-in">
+    <div className="fixed inset-0 z-50 flex justify-end bg-primary/40 backdrop-blur-xs animate-fade-in">
       {/* Backdrop exit */}
       <div className="absolute inset-0" onClick={onClose} />
       
-      <div className="relative w-full max-w-md h-full bg-slate-950 border-l border-slate-800 p-6 shadow-2xl flex flex-col justify-between z-10 animate-slide-in">
+      <div className="relative z-10 flex h-full w-full max-w-md flex-col justify-between border-l border-border-subtle bg-surface-white p-6 shadow-overlay animate-slide-in">
         {/* Header */}
         <div>
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 rounded-lg p-1 text-slate-500 hover:bg-slate-900 hover:text-slate-300 cursor-pointer"
+            className="absolute top-4 right-4 rounded-lg p-1 text-text-secondary hover:bg-surface hover:text-text-primary cursor-pointer"
           >
             <X className="h-5 w-5" />
           </button>
@@ -39,43 +39,43 @@ export default function UserDetailDrawer({ user, onClose, onToggleStatus }: User
               src={user.profilePic} 
               alt={user.name} 
               referrerPolicy="no-referrer"
-              className="h-20 w-20 rounded-full object-cover border-2 border-indigo-500/20"
+              className="h-20 w-20 rounded-full border-2 border-border-subtle object-cover"
             />
-            <h3 className="mt-3 text-base font-bold text-white">{user.name}</h3>
-            <p className="text-[10px] text-slate-500 font-mono">{user.email}</p>
-            <span className="mt-2.5 rounded bg-slate-900 border border-slate-800 px-2.5 py-0.5 text-[9px] font-mono text-indigo-400 uppercase tracking-widest">
-              {user.role} Key Node
+            <h3 className="mt-3 text-base font-bold text-text-primary">{user.name}</h3>
+            <p className="text-[10px] text-text-secondary">{user.email}</p>
+            <span className="mt-2.5 rounded-full border border-secondary/20 bg-secondary/5 px-2.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-secondary">
+              {user.role}
             </span>
           </div>
 
           {/* Stats */}
-          <div className="mt-6 grid grid-cols-2 gap-3 border-t border-b border-slate-900 py-4 text-center">
+          <div className="mt-6 grid grid-cols-2 gap-3 border-y border-border-subtle py-4 text-center">
             <div>
-              <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Trading History</span>
-              <p className="text-base font-bold text-white mt-0.5">{user.transactionsCount} Orders</p>
+              <span className="text-[9px] font-bold uppercase tracking-wide text-text-secondary">Order History</span>
+              <p className="mt-0.5 text-base font-bold text-text-primary">{user.transactionsCount} Orders</p>
             </div>
             <div>
-              <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Enrollment Date</span>
-              <p className="text-xs text-slate-300 mt-1 font-mono">{user.joinedAt}</p>
+              <span className="text-[9px] font-bold uppercase tracking-wide text-text-secondary">Enrollment Date</span>
+              <p className="mt-1 text-xs text-text-primary">{user.joinedAt}</p>
             </div>
           </div>
 
           {/* Hardware / Security metrics */}
           <div className="mt-4 space-y-3">
-            <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Identity Security Controls</span>
-            <div className="rounded-xl bg-slate-900/30 border border-slate-900 p-4 space-y-3.5">
-              <div className="flex items-center justify-between text-[11px] text-slate-400">
-                <span>Active hardware locks</span>
-                <span className="font-mono text-slate-200 font-bold">1/1 verified MAC</span>
+            <span className="text-[9px] font-bold uppercase tracking-wide text-text-secondary">Account Controls</span>
+            <div className="space-y-3.5 rounded-lg border border-border-subtle bg-surface p-4">
+              <div className="flex items-center justify-between text-[11px] text-text-secondary">
+                <span>Device authorization</span>
+                <span className="font-bold text-text-primary">Verified</span>
               </div>
-              <div className="flex items-center justify-between text-[11px] text-slate-400">
-                <span>Verified payout bank</span>
-                <span className="font-mono text-slate-200 font-bold">Stripe Custom Connect</span>
+              <div className="flex items-center justify-between text-[11px] text-text-secondary">
+                <span>Payout account</span>
+                <span className="font-bold text-text-primary">Connected</span>
               </div>
-              <div className="flex items-center justify-between text-[11px] text-slate-400">
+              <div className="flex items-center justify-between text-[11px] text-text-secondary">
                 <span>Identity Status</span>
-                <span className={`font-bold font-mono text-[10px] ${
-                  user.status === 'Verified' ? 'text-emerald-400' : user.status === 'Suspended' ? 'text-rose-400' : 'text-amber-400'
+                <span className={`text-[10px] font-bold ${
+                  user.status === 'Verified' ? 'text-success' : user.status === 'Suspended' ? 'text-danger' : 'text-warning'
                 }`}>
                   {user.status.toUpperCase()}
                 </span>
@@ -85,11 +85,11 @@ export default function UserDetailDrawer({ user, onClose, onToggleStatus }: User
         </div>
 
         {/* Quick Actions Panel */}
-        <div className="space-y-2 border-t border-slate-900 pt-4">
+        <div className="space-y-2 border-t border-border-subtle pt-4">
           {user.status !== 'Verified' && (
             <button
               onClick={handleVerify}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 py-2.5 rounded-xl text-xs font-bold text-white transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg bg-success py-2.5 text-xs font-bold text-on-success transition-colors hover:bg-success/90 cursor-pointer"
             >
               <UserCheck className="h-4 w-4" />
               <span>Verify User Credentials</span>
@@ -99,19 +99,19 @@ export default function UserDetailDrawer({ user, onClose, onToggleStatus }: User
           {user.status !== 'Suspended' && user.role !== 'Admin' && (
             <button
               onClick={handleSuspend}
-              className="w-full bg-rose-600/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500 hover:text-white py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-danger/20 bg-danger/10 py-2.5 text-xs font-bold text-danger transition-all hover:bg-danger hover:text-on-error cursor-pointer"
             >
               <Ban className="h-4 w-4" />
-              <span>Suspend Node Access</span>
+              <span>Suspend Account</span>
             </button>
           )}
 
           <button
             type="button"
-            onClick={() => alert(`Resetting secure hardware authorization hashes for: ${user.name}`)}
-            className="w-full bg-slate-900 border border-slate-800 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:bg-slate-800 transition-colors cursor-pointer"
+            onClick={() => alert(`Resetting authorized device for ${user.name}`)}
+            className="min-h-11 w-full rounded-lg border border-border-subtle bg-surface-white py-2.5 text-xs font-semibold text-text-secondary transition-colors hover:bg-surface cursor-pointer"
           >
-            Reset Authorized Hardware ID
+            Reset Authorized Device
           </button>
         </div>
       </div>

@@ -42,16 +42,16 @@ export default function UserManagementView({
       {/* User Header with Sub-Tabs */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">User Management</h1>
-          <p className="mt-1 text-sm text-slate-400">Audit user profiles, process identity verification files, and issue security bans.</p>
+          <h1 className="text-2xl font-bold tracking-normal text-text-primary md:text-4xl">User Management</h1>
+          <p className="mt-2 text-sm text-text-secondary">Review users, verification requests, and account status changes.</p>
         </div>
 
         {/* Sub-tab selection */}
-        <div className="flex rounded-xl bg-slate-900 border border-slate-800 p-1">
+        <div className="flex rounded-lg border border-border-subtle bg-surface p-1">
           <button
             onClick={() => setActiveSubTab('directory')}
             className={`rounded-lg px-4 py-2 text-xs font-semibold uppercase transition-all cursor-pointer ${
-              activeSubTab === 'directory' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+              activeSubTab === 'directory' ? 'bg-primary text-on-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
             }`}
           >
             Users Directory
@@ -59,12 +59,12 @@ export default function UserManagementView({
           <button
             onClick={() => setActiveSubTab('queue')}
             className={`rounded-lg px-4 py-2 text-xs font-semibold uppercase transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeSubTab === 'queue' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+              activeSubTab === 'queue' ? 'bg-primary text-on-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
             }`}
           >
             <span>Verification Queue</span>
             {pendingCount > 0 && (
-              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold text-white animate-pulse">
+              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[9px] font-bold text-on-error">
                 {pendingCount}
               </span>
             )}

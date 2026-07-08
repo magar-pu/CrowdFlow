@@ -63,8 +63,8 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /api/v1/users", admin(h.handleListUsers))
 	mux.Handle("POST /api/v1/users/{id}/status", admin(h.handleUpdateUserStatus))
 	mux.Handle("GET /api/v1/users/verifications", admin(h.handleListVerifications))
-	mux.Handle("POST /api/v1/users/verifications/{id}/approve", admin(h.handleNotImplemented))
-	mux.Handle("POST /api/v1/users/verifications/{id}/reject", admin(h.handleNotImplemented))
+	mux.Handle("POST /api/v1/users/verifications/{id}/approve", admin(h.handleApproveVerification))
+	mux.Handle("POST /api/v1/users/verifications/{id}/reject", admin(h.handleRejectVerification))
 }
 
 // handleNotImplemented is returned for actions on resources with no backing
@@ -267,4 +267,35 @@ func (h *Handler) handleListVerifications(w http.ResponseWriter, r *http.Request
 		return
 	}
 	response.JSON(w, http.StatusOK, verifications)
+}
+
+// handleApproveVerification and handleRejectVerification treat the
+// verification "application" ID as the user's own ID (see
+// Repository.ListVerifications) and reuse UpdateUserStatus rather than a
+// separate applications data model.
+
+func (h *Handler) handleApproveVerification(w http.ResponseWriter, r *http.Request) {
+	userID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Applicant ID must be a valid integer")
+		return
+	}
+	if err := h.service.UpdateUserStatus(userID, "Verified"); err != nil {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Verification approved"})
+}
+
+func (h *Handler) handleRejectVerification(w http.ResponseWriter, r *http.Request) {
+	userID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Applicant ID must be a valid integer")
+		return
+	}
+	if err := h.service.UpdateUserStatus(userID, "Suspended"); err != nil {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Verification rejected"})
 }

@@ -29,19 +29,19 @@ export default function PayoutRequestTable({
   return (
     <div className="grid gap-6 lg:grid-cols-3">
       {/* Settlement Desk Panel */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5 lg:col-span-2">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-900 pb-4">
+      <div className="rounded-lg border border-border-subtle bg-surface-white p-6 shadow-sm lg:col-span-2">
+        <div className="flex flex-col gap-4 border-b border-border-subtle pb-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-base font-bold text-white">Organizer Settlement Desk</h2>
-            <p className="text-xs text-slate-400">Validate compliance and execute direct wire payouts to organizers.</p>
+            <h2 className="text-base font-bold text-text-primary">Organizer Settlements</h2>
+            <p className="text-xs text-text-secondary">Validate and process organizer payout requests.</p>
           </div>
           
           {/* Tab switch */}
-          <div className="flex rounded-xl bg-slate-900 border border-slate-800 p-1 self-start sm:self-center">
+          <div className="flex self-start rounded-lg border border-border-subtle bg-surface p-1 sm:self-center">
             <button
               onClick={() => setPayoutTab('payouts')}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold uppercase cursor-pointer ${
-                payoutTab === 'payouts' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                payoutTab === 'payouts' ? 'bg-primary text-on-primary' : 'text-text-secondary hover:text-text-primary'
               }`}
             >
               Payout Queue
@@ -49,7 +49,7 @@ export default function PayoutRequestTable({
             <button
               onClick={() => setPayoutTab('refunds')}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold uppercase cursor-pointer ${
-                payoutTab === 'refunds' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                payoutTab === 'refunds' ? 'bg-primary text-on-primary' : 'text-text-secondary hover:text-text-primary'
               }`}
             >
               Refund Desk
@@ -60,37 +60,37 @@ export default function PayoutRequestTable({
         <div className="mt-5 space-y-4">
           {payoutTab === 'payouts' ? (
             pendingPayouts.length === 0 ? (
-              <div className="py-12 text-center text-slate-500 border border-dashed border-slate-900 rounded-2xl bg-slate-950/20">
-                <ShieldCheck className="h-10 w-10 text-slate-600 mx-auto mb-3" />
-                <p className="text-sm font-semibold text-slate-400">All organizer payout files processed.</p>
-                <p className="text-xs text-slate-500 mt-1">Stripe Custom Connect automated ledgers matched completely.</p>
+              <div className="rounded-lg border border-dashed border-border-subtle bg-surface py-12 text-center text-text-secondary">
+                <ShieldCheck className="mx-auto mb-3 h-10 w-10 text-text-secondary" />
+                <p className="text-sm font-semibold text-text-primary">All organizer payout requests are processed.</p>
+                <p className="mt-1 text-xs text-text-secondary">No pending payout requests.</p>
               </div>
             ) : (
               pendingPayouts.map((payout) => (
-                <div key={payout.id} className="rounded-xl border border-slate-900 bg-slate-900/10 p-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div key={payout.id} className="flex flex-col gap-4 rounded-lg border border-border-subtle bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-bold text-slate-200">{payout.organizerName}</h4>
-                      <span className="rounded bg-indigo-500/10 px-1.5 py-0.5 text-[9px] font-mono text-indigo-400 border border-indigo-500/20 uppercase">
+                      <h4 className="text-sm font-bold text-text-primary">{payout.organizerName}</h4>
+                      <span className="rounded-full border border-secondary/20 bg-secondary/5 px-1.5 py-0.5 text-[9px] font-medium uppercase text-secondary">
                         {payout.id}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">Event: <span className="text-slate-300 font-medium">{payout.eventName}</span></p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">Wire Requested Date: {payout.requestedDate}</p>
+                    <p className="mt-1 text-xs text-text-secondary">Event: <span className="font-medium text-text-primary">{payout.eventName}</span></p>
+                    <p className="mt-0.5 text-[10px] text-text-secondary">Requested date: {payout.requestedDate}</p>
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <span className="text-base font-extrabold text-white">${payout.amount.toLocaleString()}</span>
+                    <span className="text-base font-extrabold text-text-primary">${payout.amount.toLocaleString()}</span>
                     <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => onProcessPayout(payout.id)}
-                        className="rounded-lg bg-emerald-600 px-3 py-1.5 text-2xs font-bold text-white hover:bg-emerald-500 transition-colors cursor-pointer"
+                        className="rounded-lg bg-success px-3 py-1.5 text-[10px] font-bold text-on-success transition-colors hover:bg-success/90 cursor-pointer"
                       >
-                        Process Wire
+                        Process
                       </button>
                       <button
                         onClick={() => onRejectPayout(payout.id)}
-                        className="rounded-lg bg-slate-900 border border-slate-800 p-1.5 text-slate-400 hover:text-rose-455 hover:bg-rose-500/5 transition-all cursor-pointer"
+                        className="rounded-lg border border-border-subtle bg-surface-white p-1.5 text-text-secondary transition-all hover:bg-danger/5 hover:text-danger cursor-pointer"
                         title="Reject payout request"
                       >
                         <X className="h-4 w-4" />
@@ -102,37 +102,37 @@ export default function PayoutRequestTable({
             )
           ) : (
             pendingRefunds.length === 0 ? (
-              <div className="py-12 text-center text-slate-500 border border-dashed border-slate-900 rounded-2xl bg-slate-950/20">
-                <Receipt className="h-10 w-10 text-slate-600 mx-auto mb-3" />
-                <p className="text-sm font-semibold text-slate-400">Zero pending refund requests.</p>
-                <p className="text-xs text-slate-500 mt-1">Excellent job! Refunds compliance ledger matched.</p>
+              <div className="rounded-lg border border-dashed border-border-subtle bg-surface py-12 text-center text-text-secondary">
+                <Receipt className="mx-auto mb-3 h-10 w-10 text-text-secondary" />
+                <p className="text-sm font-semibold text-text-primary">No pending refund requests.</p>
+                <p className="mt-1 text-xs text-text-secondary">Refund queue is clear.</p>
               </div>
             ) : (
               pendingRefunds.map((tx) => (
-                <div key={tx.id} className="rounded-xl border border-slate-900 bg-slate-900/10 p-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div key={tx.id} className="flex flex-col gap-4 rounded-lg border border-border-subtle bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-bold text-slate-200">{tx.customerName}</h4>
-                      <span className="rounded bg-rose-500/10 px-1.5 py-0.5 text-[9px] font-mono text-rose-400 border border-rose-500/20 uppercase">
+                      <h4 className="text-sm font-bold text-text-primary">{tx.customerName}</h4>
+                      <span className="rounded-full border border-danger/20 bg-danger/10 px-1.5 py-0.5 text-[9px] font-medium uppercase text-danger">
                         {tx.id}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">Requested Refund on: <span className="text-slate-300 font-medium">{tx.eventName}</span></p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">Purchased Date: {tx.date}</p>
+                    <p className="mt-1 text-xs text-text-secondary">Requested refund on: <span className="font-medium text-text-primary">{tx.eventName}</span></p>
+                    <p className="mt-0.5 text-[10px] text-text-secondary">Purchased date: {tx.date}</p>
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <span className="text-base font-extrabold text-white">${tx.amount.toLocaleString()}</span>
+                    <span className="text-base font-extrabold text-text-primary">${tx.amount.toLocaleString()}</span>
                     <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => onUpdateTransactionStatus(tx.id, 'Refunded')}
-                        className="rounded-lg bg-rose-600 px-3 py-1.5 text-2xs font-bold text-white hover:bg-rose-500 transition-colors cursor-pointer"
+                        className="rounded-lg bg-danger px-3 py-1.5 text-[10px] font-bold text-on-error transition-colors hover:bg-danger/90 cursor-pointer"
                       >
                         Approve Refund
                       </button>
                       <button
                         onClick={() => onUpdateTransactionStatus(tx.id, 'Success')}
-                        className="rounded-lg bg-slate-900 border border-slate-800 p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/5 transition-all cursor-pointer"
+                        className="rounded-lg border border-border-subtle bg-surface-white p-1.5 text-text-secondary transition-all hover:bg-success/5 hover:text-success cursor-pointer"
                         title="Reject and maintain transaction success"
                       >
                         <X className="h-4 w-4" />
@@ -147,23 +147,23 @@ export default function PayoutRequestTable({
       </div>
 
       {/* Payment Gateway Splits Panel */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5">
-        <h2 className="text-base font-bold text-white">Payment Method Splits</h2>
-        <p className="text-xs text-slate-400">Trading volume contribution by client payment method.</p>
+      <div className="rounded-lg border border-border-subtle bg-surface-white p-6 shadow-sm">
+        <h2 className="text-base font-bold text-text-primary">Payment Method Splits</h2>
+        <p className="text-xs text-text-secondary">Sales volume by payment method.</p>
 
         <div className="mt-6 space-y-4">
           {[
-            { name: 'Apple Pay (Mobile)', volume: totalVolume * 0.41, percentage: 41, color: 'bg-indigo-500' },
-            { name: 'Credit Cards (Visa/Mastercard)', volume: totalVolume * 0.38, percentage: 38, color: 'bg-pink-500' },
-            { name: 'Bank Wire Transfer', volume: totalVolume * 0.12, percentage: 12, color: 'bg-cyan-500' },
-            { name: 'Cryptocurrency (USDT/USDC)', volume: totalVolume * 0.09, percentage: 9, color: 'bg-amber-500' }
+            { name: 'Apple Pay (Mobile)', volume: totalVolume * 0.41, percentage: 41, color: 'bg-secondary' },
+            { name: 'Credit Cards', volume: totalVolume * 0.38, percentage: 38, color: 'bg-tertiary' },
+            { name: 'Bank Transfer', volume: totalVolume * 0.12, percentage: 12, color: 'bg-success' },
+            { name: 'Other Methods', volume: totalVolume * 0.09, percentage: 9, color: 'bg-warning' }
           ].map((method, idx) => (
             <div key={idx} className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-300 font-medium">{method.name}</span>
-                <span className="font-mono text-slate-400 font-bold">${Math.round(method.volume / 1000).toLocaleString()}K ({method.percentage}%)</span>
+                <span className="font-medium text-text-primary">{method.name}</span>
+                <span className="font-bold text-text-secondary">${Math.round(method.volume / 1000).toLocaleString()}K ({method.percentage}%)</span>
               </div>
-              <div className="h-1.5 w-full rounded bg-slate-900 overflow-hidden">
+              <div className="h-1.5 w-full overflow-hidden rounded bg-surface-container">
                 <div className={`h-full ${method.color}`} style={{ width: `${method.percentage}%` }} />
               </div>
             </div>

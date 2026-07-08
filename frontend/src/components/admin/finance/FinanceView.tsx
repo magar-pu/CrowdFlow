@@ -28,12 +28,12 @@ export default function FinanceView({
       {/* Finance Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">Finance Center</h1>
-          <p className="mt-1 text-sm text-slate-400">Audit ticket volume ledger trails, process compliance organizer payouts, and authorize refund requests.</p>
+          <h1 className="text-2xl font-bold tracking-normal text-text-primary md:text-4xl">Finance Center</h1>
+          <p className="mt-2 text-sm text-text-secondary">Review sales volume, organizer payouts, and refund requests.</p>
         </div>
         <button
-          onClick={() => alert('Generating financial statement summary. Cryptographic ledger verified.')}
-          className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer"
+          onClick={() => alert('Generating financial statement summary.')}
+          className="min-h-11 rounded-lg border border-border-subtle bg-surface-white px-4 py-2 text-xs font-semibold text-text-primary transition-colors hover:bg-surface cursor-pointer"
         >
           Export Balance Sheet
         </button>
@@ -52,7 +52,7 @@ export default function FinanceView({
         totalVolume={totalVolume}
       />
 
-      {/* Master Transaction Log ledger */}
+      {/* Master Transaction Log */}
       <TransactionHistory transactions={transactions} />
     </div>
   );

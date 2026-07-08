@@ -129,6 +129,7 @@ type Repository interface {
 	UpdateVenueSections(eventID int, sections []*VenueSection) error
 	UpdateUserStatus(userID int, status string) error
 	UpdateTransactionStatus(orderID string, status string) error
+	ListVerifications() ([]*VerificationApplication, error)
 }
 
 type Service interface {
@@ -142,11 +143,11 @@ type Service interface {
 	UpdateVenueSections(eventID int, sections []*VenueSection) error
 	UpdateUserStatus(userID int, status string) error
 	UpdateTransactionStatus(orderID string, status string) error
+	ListVerifications() ([]*VerificationApplication, error)
 
 	// Placeholder-backed - see service.go
 	ListPayouts() ([]*Payout, error)
 	ListScanners(eventID int) ([]*Scanner, error)
 	ListSecurityAlerts() ([]*SecurityAlert, error)
 	ListActivities() ([]*Activity, error)
-	ListVerifications() ([]*VerificationApplication, error)
 }
