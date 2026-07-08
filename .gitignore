@@ -15,6 +15,7 @@ Desktop.ini
 *.sln
 *.sw?
 *~
+.claude/
 
 # Compiled binaries (Go)
 backend/main
@@ -30,7 +31,7 @@ backend/bin/
 # Frontend (Node.js/Next.js)
 # Dependency directory
 frontend/node_modules/
-node_modules/
+node_modules*
 
 # Next.js build output
 frontend/admin/.next/

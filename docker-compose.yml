@@ -25,6 +25,16 @@ services:
       - GOOGLE_CLIENT_ID=91716845059-1l96nahbcu7nb39k1sa9r4ev8p2nitdu.apps.googleusercontent.com
       - DEV_MODE=true
       - S3_ENDPOINT=http://minio:9000
+      - REDIS_ADDR=redis:6379
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: crowdflow-redis
+    restart: always
+    networks:
+      - crowdflow-net
 
   nginx:
     image: nginx:alpine

@@ -10,9 +10,11 @@ import (
 
 	"crowdflow-backend/internal/admin"
 	"crowdflow-backend/internal/auth"
+	"crowdflow-backend/internal/booking"
 	"crowdflow-backend/internal/event"
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/platform/database"
+	"crowdflow-backend/internal/platform/redisclient"
 	"crowdflow-backend/internal/response"
 	"crowdflow-backend/internal/storage"
 	"golang.org/x/oauth2"
@@ -53,6 +55,16 @@ func main() {
 		log.Fatalf("Failed to connect to database: %s", err)
 	}
 	defer db.Close()
+
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	redisClient, err := redisclient.Connect(redisclient.Config{Addr: redisAddr})
+	if err != nil {
+		log.Fatalf("Failed to connect to Redis: %s", err)
+	}
+	defer redisClient.Close()
 
 	mux := http.NewServeMux()
 
@@ -113,6 +125,14 @@ func main() {
 
 	// Register Admin console routes (Super Admin only)
 	adminHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole)
+
+	// Initialize Booking dependencies (ticket tiers, seat map, seat/GA holds)
+	bookingRepo := booking.NewPostgresRedisRepository(db, redisClient)
+	bookingService := booking.NewBookingService(bookingRepo)
+	bookingHandler := booking.NewHandler(bookingService)
+
+	// Register Booking routes
+	bookingHandler.RegisterRoutes(mux, authMounter.Authenticate)
 
 	fmt.Println("Starting server on :8080 with CSRF protection enabled")
 	if err := http.ListenAndServe(":8080", middleware.CSRF(mux)); err != nil {
