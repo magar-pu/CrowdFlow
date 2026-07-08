@@ -15,6 +15,7 @@ Desktop.ini
 *.sln
 *.sw?
 *~
+.claude/
 
 # Compiled binaries (Go)
 backend/main
