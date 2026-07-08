@@ -399,6 +399,52 @@ func (r *PostgresRepository) UpdateUserStatus(userID int, status string) error {
 	return err
 }
 
+// ListVerifications derives the Verification Queue directly from users with
+// verification_status = 'pending_verification' - there is no separate
+// verification_applications table. The applicant's ID is the user's own ID,
+// so Approve/Reject reuse UpdateUserStatus rather than needing a parallel
+// data model. businessType/documentType/submittedAt are fields the frontend
+// type expects that the DB doesn't model - placeholders until a real KYC
+// application table exists.
+func (r *PostgresRepository) ListVerifications() ([]*VerificationApplication, error) {
+	rows, err := r.db.Query(`
+		SELECT u.id, COALESCE(up.full_name, ''), u.email, u.created_at
+		FROM users u
+		LEFT JOIN user_profiles up ON u.id = up.user_id
+		WHERE u.verification_status = 'pending_verification'
+		ORDER BY u.created_at ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var verifications []*VerificationApplication
+	for rows.Next() {
+		var id int
+		var fullName, email string
+		var createdAt time.Time
+
+		if err := rows.Scan(&id, &fullName, &email, &createdAt); err != nil {
+			return nil, err
+		}
+
+		verifications = append(verifications, &VerificationApplication{
+			ID:           strconv.Itoa(id),
+			Name:         fullName,
+			Email:        email,
+			BusinessType: "Not specified",
+			DocumentType: "Not specified",
+			SubmittedAt:  createdAt.Format("2006-01-02"),
+			Status:       "Pending",
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return verifications, nil
+}
+
 // UpdateTransactionStatus reverse-maps the admin frontend's display status
 // onto orders.status - see mapOrderStatus for the forward direction.
 func (r *PostgresRepository) UpdateTransactionStatus(orderID string, status string) error {

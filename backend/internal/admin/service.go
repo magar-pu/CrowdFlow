@@ -51,6 +51,13 @@ func (s *AdminService) UpdateTransactionStatus(orderID string, status string) er
 	return s.repo.UpdateTransactionStatus(orderID, status)
 }
 
+// ListVerifications is real - derived from users.verification_status in
+// repository.go (no separate applications table exists; see the comment
+// there). Approve/reject reuse UpdateUserStatus above.
+func (s *AdminService) ListVerifications() ([]*VerificationApplication, error) {
+	return s.repo.ListVerifications()
+}
+
 // ---------------------------------------------------------------------------
 // PLACEHOLDERS - no backing tables exist yet for the features below.
 //
@@ -61,9 +68,6 @@ func (s *AdminService) UpdateTransactionStatus(orderID string, status string) er
 //   - SecurityAlerts: fraud/anomaly detection has no table.
 //   - Activities:     admin action audit trail has no table (event_approval_log
 //                      exists but only covers event approve/reject decisions).
-//   - Verifications:  organizer KYC has only a status enum on users
-//                      (verification_status); there's no "application" record
-//                      with business type, document type, or submission date.
 //
 // These return empty slices (correct envelope, zero data) rather than
 // fabricated rows, so the frontend can safely switch from local mock state to
@@ -85,8 +89,4 @@ func (s *AdminService) ListSecurityAlerts() ([]*SecurityAlert, error) {
 
 func (s *AdminService) ListActivities() ([]*Activity, error) {
 	return []*Activity{}, nil
-}
-
-func (s *AdminService) ListVerifications() ([]*VerificationApplication, error) {
-	return []*VerificationApplication{}, nil
 }
