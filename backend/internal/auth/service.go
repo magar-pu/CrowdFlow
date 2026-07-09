@@ -95,8 +95,8 @@ func (s *AuthService) Login(req LoginRequest) (string, *User, error) {
 		return "", nil, errors.New("invalid email or password")
 	}
 
-	if user.AuthProvider != "native" || user.PasswordHash == nil {
-		return "", nil, errors.New("this account uses Google authentication. Please sign in with Google")
+	if user.AuthProvider != "native" {
+		return "", nil, errors.New("invalid email or password")
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(req.Password))
@@ -105,7 +105,11 @@ func (s *AuthService) Login(req LoginRequest) (string, *User, error) {
 	}
 
 	token, err := s.GenerateJWT(user)
-	return token, user, err
+	if err != nil {
+		return "", nil, err
+	}
+
+	return token, user, nil
 }
 
 func (s *AuthService) GetGoogleAuthURL(state string) string {
@@ -151,8 +155,17 @@ func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (st
 		} else {
 			return "", nil, err
 		}
+	} else {
+		// Verify that this user account was registered with Google
+		if user.AuthProvider != "google" {
+			return "", nil, errors.New("PROVIDER_MISMATCH: native")
+		}
 	}
 
-	jwtToken, err := s.GenerateJWT(user)
-	return jwtToken, user, err
+	jwtStr, err := s.GenerateJWT(user)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return jwtStr, user, nil
 }

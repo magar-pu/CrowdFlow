@@ -15,22 +15,26 @@ Desktop.ini
 *.sln
 *.sw?
 *~
+.claude/
 
 # Compiled binaries (Go)
 backend/main
 backend/main.exe
 backend/backend
 backend/backend.exe
+backend/crowdflow-backend.exe
 backend/bin/
 *.test
+*.exe
 *.prof
 
 # Frontend (Node.js/Next.js)
 # Dependency directory
 frontend/node_modules/
-node_modules/
+node_modules*
 
 # Next.js build output
+frontend/admin/.next/
 frontend/.next/
 frontend/out/
 
@@ -38,6 +42,7 @@ frontend/out/
 frontend/build/
 frontend/dist/
 frontend/.eslintcache
+frontend/.md
 
 # Logs
 frontend/npm-debug.log*
@@ -60,3 +65,9 @@ DEVELOPER.md
 
 # UI Materials
 bahan ui/
+
+# Local Dev Storage Compose
+docker-compose-minio.yml
+
+# Local Dev Scripts
+*.sh

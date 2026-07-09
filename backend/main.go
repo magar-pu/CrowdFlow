@@ -8,11 +8,15 @@ import (
 	"os"
 	"time"
 
+	"crowdflow-backend/internal/admin"
 	"crowdflow-backend/internal/auth"
+	"crowdflow-backend/internal/booking"
 	"crowdflow-backend/internal/event"
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/platform/database"
+	"crowdflow-backend/internal/platform/redisclient"
 	"crowdflow-backend/internal/response"
+	"crowdflow-backend/internal/storage"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -52,6 +56,16 @@ func main() {
 	}
 	defer db.Close()
 
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	redisClient, err := redisclient.Connect(redisclient.Config{Addr: redisAddr})
+	if err != nil {
+		log.Fatalf("Failed to connect to Redis: %s", err)
+	}
+	defer redisClient.Close()
+
 	mux := http.NewServeMux()
 
 	// Register global system health route
@@ -82,13 +96,18 @@ func main() {
 	// Initialize Auth Middleware
 	authMounter := middleware.NewAuthMiddleware(jwtSecret, db)
 
+	// Initialize Storage Client
+	s3Storage, err := storage.NewS3Storage()
+	if err != nil {
+		log.Fatalf("Failed to initialize S3 storage: %s", err)
+	}
 	// Initialize domain packages dependencies
-	eventRepo := event.NewInMemoryRepository()
+	eventRepo := event.NewPostgresRepository(db)
 	eventService := event.NewEventService(eventRepo)
-	eventHandler := event.NewHandler(eventService)
+	eventHandler := event.NewHandler(eventService, s3Storage)
 
 	// Register feature routes
-	eventHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole, authMounter.RequireEventRole)
+	eventHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.OptionalAuthenticate, authMounter.RequirePlatformRole, authMounter.RequireEventRole)
 
 	// Initialize Authentication dependencies
 	authRepo := auth.NewPostgresRepository(db)
@@ -97,7 +116,23 @@ func main() {
 	authHandler := auth.NewHandler(authService, isSecure)
 
 	// Register Authentication routes
-	authHandler.RegisterRoutes(mux)
+	authHandler.RegisterRoutes(mux, authMounter.Authenticate)
+
+	// Initialize Admin console dependencies
+	adminRepo := admin.NewPostgresRepository(db)
+	adminService := admin.NewAdminService(adminRepo)
+	adminHandler := admin.NewHandler(adminService)
+
+	// Register Admin console routes (Super Admin only)
+	adminHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole)
+
+	// Initialize Booking dependencies (ticket tiers, seat map, seat/GA holds)
+	bookingRepo := booking.NewPostgresRedisRepository(db, redisClient)
+	bookingService := booking.NewBookingService(bookingRepo)
+	bookingHandler := booking.NewHandler(bookingService)
+
+	// Register Booking routes
+	bookingHandler.RegisterRoutes(mux, authMounter.Authenticate)
 
 	fmt.Println("Starting server on :8080 with CSRF protection enabled")
 	if err := http.ListenAndServe(":8080", middleware.CSRF(mux)); err != nil {

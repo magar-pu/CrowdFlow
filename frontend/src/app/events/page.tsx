@@ -15,7 +15,7 @@
  * params.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { EventSearchHero } from "@/components/event-discovery/EventSearchHero";
 import { FeaturedCarousel } from "@/components/event-discovery/FeaturedCarousel";
@@ -31,6 +31,9 @@ import {
   mockAIRecommendedEvents,
   mockEventListingCards,
 } from "@/mock/eventDiscoveryData";
+import { EventDiscoveryFooter } from "@/components/event-discovery/EventDiscoveryFooter";
+import { listEvents } from "@/lib/api/events";
+import { EventListingCard as EventCardType, FeaturedCarouselEvent, AIRecommendedEvent } from "@/types/ticket";
 
 const DEFAULT_MAX_PRICE = 5_000_000;
 
@@ -42,6 +45,68 @@ export default function EventsDiscoveryPage() {
   const [availability, set_availability] = useState<"available" | "limited">(
     "available"
   );
+  const [dbEvents, setDbEvents] = useState<EventCardType[]>([]);
+
+  useEffect(() => {
+    listEvents()
+      .then((res) => {
+        if (res.success && res.data && res.data.length > 0) {
+          const mapped: EventCardType[] = res.data.map((evt) => {
+            const startsAtDate = new Date(evt.starts_at);
+            const formattedDate = startsAtDate.toLocaleDateString("id-ID", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            });
+            return {
+              event_id: String(evt.event_id),
+              title: evt.title,
+              category_label: "Music • Konser",
+              cover_image_url: evt.cover_image_url || "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=800&auto=format&fit=crop",
+              badge: "on_sale",
+              trust_signal: "verified",
+              date_label: `${formattedDate} • ${startsAtDate.toLocaleTimeString("id-ID", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })} WIB`,
+              venue_label: evt.venue ? `${evt.venue.name}, ${evt.venue.city}` : "Lokasi Belum Ditentukan",
+              starting_price: 150_000,
+              city: evt.venue ? evt.venue.city : "Jakarta",
+            };
+          });
+          setDbEvents(mapped);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch events from API:", err);
+      });
+  }, []);
+
+  const displayEvents = dbEvents;
+
+  const featuredEvents = useMemo<FeaturedCarouselEvent[]>(() => {
+    return dbEvents.slice(0, 3).map((evt, idx) => ({
+      event_id: evt.event_id,
+      cover_image_url: evt.cover_image_url,
+      tag_label: idx === 0 ? "Pilihan Editor" : "Trending",
+      tag_color: idx % 2 === 0 ? "secondary" : "success",
+      title: evt.title,
+      date_venue_label: evt.date_label,
+      starting_price: evt.starting_price,
+    }));
+  }, [dbEvents]);
+
+  const aiRecommendedEvents = useMemo<AIRecommendedEvent[]>(() => {
+    return dbEvents.slice(0, 2).map((evt, idx) => ({
+      event_id: evt.event_id,
+      cover_image_url: evt.cover_image_url,
+      tag_label: idx === 0 ? "Top Match" : "Hot Deal",
+      match_pct: idx === 0 ? 98 : 94,
+      title: evt.title,
+      date_venue_label: evt.date_label.split("•")[0].trim(),
+      price: evt.starting_price,
+    }));
+  }, [dbEvents]);
 
   function handle_toggle_city(city: string) {
     set_selected_cities((cities) =>
@@ -59,7 +124,7 @@ export default function EventsDiscoveryPage() {
   }
 
   const filtered_events = useMemo(() => {
-    let events = mockEventListingCards.filter(
+    let events = displayEvents.filter(
       (event) => event.starting_price <= max_price
     );
 
@@ -82,7 +147,7 @@ export default function EventsDiscoveryPage() {
     }
 
     return events;
-  }, [selected_cities, max_price, availability, sort_by]);
+  }, [displayEvents, selected_cities, max_price, availability, sort_by]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -90,7 +155,7 @@ export default function EventsDiscoveryPage() {
 
       <main>
         <EventSearchHero />
-        <FeaturedCarousel events={mockFeaturedCarousel} />
+        {featuredEvents.length > 0 && <FeaturedCarousel events={featuredEvents} />}
         <CategoryIconsGrid />
 
         <section className="bg-background px-margin-mobile py-section-gap md:px-margin-desktop">
@@ -116,9 +181,11 @@ export default function EventsDiscoveryPage() {
               />
 
               <div className="flex-1">
-                <AIRecommendationsPanel
-                  recommendations={mockAIRecommendedEvents}
-                />
+                {aiRecommendedEvents.length > 0 && (
+                  <AIRecommendationsPanel
+                    recommendations={aiRecommendedEvents}
+                  />
+                )}
 
                 {filtered_events.length > 0 ? (
                   <div className="grid grid-cols-1 gap-gutter md:grid-cols-2 xl:grid-cols-3">

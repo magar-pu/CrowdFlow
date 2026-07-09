@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store/authStore";
+import { getMe } from "@/lib/api/auth";
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -23,17 +24,34 @@ export function AuthGuard({
   redirectTo = "/login",
 }: AuthGuardProps) {
   const router = useRouter();
-  const { is_authenticated, user } = useAuthStore();
+  const { is_authenticated, user, set_user_from_api } = useAuthStore();
   const [isHydrated, setIsHydrated] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
 
-  // 1. Handle hydration to avoid Server-Side Rendering (SSR) mismatches
+  // 1. Handle hydration and verify session cookies
   useEffect(() => {
     setIsHydrated(true);
-  }, []);
 
-  // 2. Perform authentication and role checks once hydrated
+    async function verifySession() {
+      if (!is_authenticated) {
+        try {
+          const result = await getMe();
+          if (result.success && result.data) {
+            set_user_from_api(result.data);
+          }
+        } catch {
+          // ignore network failure
+        }
+      }
+      setCheckingSession(false);
+    }
+
+    verifySession();
+  }, [is_authenticated, set_user_from_api]);
+
+  // 2. Perform authentication and role checks once session is verified
   useEffect(() => {
-    if (!isHydrated) return;
+    if (!isHydrated || checkingSession) return;
 
     if (!is_authenticated) {
       router.replace(redirectTo);
@@ -44,10 +62,10 @@ export function AuthGuard({
       // If user doesn't match the specific role (super_admin bypasses role checks)
       router.replace("/");
     }
-  }, [isHydrated, is_authenticated, user, requiredRole, redirectTo, router]);
+  }, [isHydrated, checkingSession, is_authenticated, user, requiredRole, redirectTo, router]);
 
   // 3. Show a sleek, premium loading screen while state is loading
-  if (!isHydrated || !is_authenticated) {
+  if (!isHydrated || checkingSession || !is_authenticated) {
     return (
       <div className="flex min-h-screen w-full items-center justify-center bg-surface-dim">
         <div className="flex flex-col items-center space-y-4">

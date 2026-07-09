@@ -15,6 +15,47 @@ type User struct{
 	UpdatedAt 			time.Time 	`json:"updated_at"`
 
 	FullName 			string 		`json:"full_name"`
+	PhoneNumber         string      `json:"phone_number"`
+	Location            string      `json:"location"`
+	Bio                 string      `json:"bio"`
+	AvatarPic           string      `json:"avatar_pic"`
+}
+
+type ProfileStats struct {
+	TotalTickets   int `json:"total_tickets"`
+	EventsAttended int `json:"events_attended"`
+	SavedEvents    int `json:"saved_events"` // Mocked / stubbed to 0 (for future dev)
+	TotalOrders    int `json:"total_orders"`
+}
+
+type ProfileEventSummary struct {
+	EventID       int       `json:"event_id"`
+	Title         string    `json:"title"`
+	StartsAt      time.Time `json:"starts_at"`
+	EndsAt        time.Time `json:"ends_at"`
+	CoverImageURL string    `json:"cover_image_url"`
+	Status        string    `json:"status"`
+}
+
+type UserProfileResponse struct {
+	UserID       string                 `json:"user_id"`
+	Email        string                 `json:"email"`
+	FullName     string                 `json:"full_name"`
+	PhoneNumber  string                 `json:"phone_number"`
+	Location     string                 `json:"location"`
+	Bio          string                 `json:"bio"`
+	AvatarURL    string                 `json:"avatar_url"`
+	Role         string                 `json:"role"`
+	MemberSince  string                 `json:"member_since"`
+	Stats        ProfileStats           `json:"stats"`
+	Events       []ProfileEventSummary `json:"events"`
+}
+
+type UpdateProfileRequest struct {
+	FullName    string `json:"full_name"`
+	PhoneNumber string `json:"phone_number"`
+	Location    string `json:"location"`
+	Bio         string `json:"bio"`
 }
 
 type RegisterRequest struct {
@@ -54,6 +95,9 @@ type Repository interface{
 	GetByID(id int) (*User, error)
 	Create(user *User, fullName string) error
 	GetUserRolesAndPermissions(userID int) ([]UserRoleMapping, error)
+	GetProfileStats(userID int) (ProfileStats, error)
+	GetAssociatedEvents(userID int, isOrganizer bool) ([]ProfileEventSummary, error)
+	UpdateProfile(userID int, req UpdateProfileRequest) error
 }
 
 type Service interface{
@@ -62,4 +106,5 @@ type Service interface{
 	GetGoogleAuthURL(state string) string
 	HandleGoogleCallback(ctx context.Context, code string) (string, *User, error)
 }
+
 

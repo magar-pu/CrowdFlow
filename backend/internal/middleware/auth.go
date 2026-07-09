@@ -90,6 +90,58 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 	})
 }
 
+// OptionalAuthenticate parses the access_token JWT and populates claims into request context if present, but does not reject the request if missing/invalid
+func (m *AuthMiddleware) OptionalAuthenticate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("access_token")
+		if err != nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		token, err := jwt.Parse(cookie.Value, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return m.jwtSecret, nil
+		})
+
+		if err != nil || !token.Valid {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		sub, _ := claims["sub"].(string)
+		email, _ := claims["email"].(string)
+		var roles []string
+
+		if rolesVal, exists := claims["roles"]; exists {
+			if rolesSlice, ok := rolesVal.([]interface{}); ok {
+				for _, rVal := range rolesSlice {
+					if rStr, ok := rVal.(string); ok {
+						roles = append(roles, rStr)
+					}
+				}
+			}
+		}
+
+		userClaims := &UserClaims{
+			UserID: sub,
+			Email:  email,
+			Roles:  roles,
+		}
+
+		ctx := context.WithValue(r.Context(), UserContextKey, userClaims)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 // RequirePlatformRole checks if the authenticated user has at least one of the required platform roles (or is Super Admin)
 func (m *AuthMiddleware) RequirePlatformRole(allowedRoles ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
