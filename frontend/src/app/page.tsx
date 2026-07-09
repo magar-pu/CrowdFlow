@@ -2,19 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
-import { HeroSearchSection } from "@/components/home-v2/HeroSearchSection";
-import { CategoryIconRow } from "@/components/home-v2/CategoryIconRow";
-import { BentoCollectionGrid } from "@/components/home-v2/BentoCollectionGrid";
-import { TrendingEventsSection } from "@/components/home-v2/TrendingEventsSection";
-import { NewsletterBanner } from "@/components/home-v2/NewsletterBanner";
-import { HomeFooterV2 } from "@/components/home-v2/HomeFooterV2";
+import { HeroSlider } from "@/components/home-v3/HeroSlider";
+import { SearchBar } from "@/components/home-v3/SearchBar";
+import { UpcomingConcerts } from "@/components/home-v3/UpcomingConcerts";
+import { StatsBanner } from "@/components/home-v3/StatsBanner";
+import { BentoCollections } from "@/components/home-v3/BentoCollections";
+import { HomeFooterV3 } from "@/components/home-v3/HomeFooterV3";
 import { listEvents } from "@/lib/api/events";
 import type { TrendingEventCard } from "@/types/ticket";
-import {
-  mockBentoTiles,
-  mockTrendingCardStats,
-  CATEGORY_FILTERS,
-} from "@/mock/homeV2Data";
+import { mockTrendingCardStats } from "@/mock/homeV2Data";
 
 const FALLBACK_COVER =
   "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=600&auto=format&fit=crop";
@@ -33,7 +29,6 @@ export default function HomePage() {
             city: evt.venue?.city ?? "Indonesia",
             category: evt.category ?? "other",
             starts_at: evt.starts_at,
-            // Placeholder stats — no backend source yet, see mockTrendingCardStats.
             ...mockTrendingCardStats(String(evt.event_id)),
           }));
           setTrendingEvents(mapped);
@@ -45,21 +40,26 @@ export default function HomePage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navbar active_href="/" />
+    <div className="min-h-screen bg-surface">
+      <Navbar active_href="/" isTransparentOnTop={true} />
+      
       <main className="w-full">
-        <HeroSearchSection />
-        <CategoryIconRow />
-        <BentoCollectionGrid tiles={mockBentoTiles} />
-        {trendingEvents.length > 0 && (
-          <TrendingEventsSection
-            events={trendingEvents}
-            categories={CATEGORY_FILTERS}
-          />
-        )}
-        <NewsletterBanner />
+        <HeroSlider />
+        
+        {/* Dashboard Content */}
+        <div className="relative z-10 bg-surface min-h-screen pb-20">
+          <SearchBar />
+          
+          <div className="px-6 lg:px-16 max-w-7xl mx-auto">
+            {/* API data available as 'trendingEvents' when you need to pass it to components */}
+            <UpcomingConcerts />
+            <StatsBanner />
+            <BentoCollections />
+          </div>
+        </div>
       </main>
-      <HomeFooterV2 />
+      
+      <HomeFooterV3 />
     </div>
   );
 }

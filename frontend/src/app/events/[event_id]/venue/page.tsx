@@ -36,7 +36,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
-import { HomeFooterV2 } from "@/components/home-v2/HomeFooterV2";
+import { HomeFooterV3 } from "@/components/home-v3/HomeFooterV3";
 import { mockEvent } from "@/mock/eventData";
 import { cn } from "@/lib/utils";
 
@@ -489,7 +489,7 @@ export default function VenueLayoutPage() {
         </div>
       </main>
 
-      <HomeFooterV2 />
+      <HomeFooterV3 />
     </div>
   );
 }

@@ -15,7 +15,7 @@
 
 import { useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
-import { HomeFooterV2 } from "@/components/home-v2/HomeFooterV2";
+import { HomeFooterV3 } from "@/components/home-v3/HomeFooterV3";
 import { ResaleHeroSearch } from "@/components/resale-marketplace/ResaleHeroSearch";
 import { ResaleFilterToolbar } from "@/components/resale-marketplace/ResaleFilterToolbar";
 import { ResaleListingCard } from "@/components/resale-marketplace/ResaleListingCard";
@@ -49,7 +49,7 @@ export default function ResaleMarketplacePage() {
         </div>
       </main>
 
-      <HomeFooterV2 />
+      <HomeFooterV3 />
     </div>
   );
 }

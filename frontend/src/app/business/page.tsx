@@ -26,7 +26,7 @@ import {
   Phone,
   Briefcase
 } from "lucide-react";
-import { HomeFooterV2 } from "@/components/home-v2/HomeFooterV2";
+import { HomeFooterV3 } from "@/components/home-v3/HomeFooterV3";
 
 export default function BusinessPage() {
   const [openModal, setOpenModal] = useState(false);
@@ -797,7 +797,7 @@ export default function BusinessPage() {
       </section>
 
       {/* Footer */}
-      <HomeFooterV2 />
+      <HomeFooterV3 />
     </div>
   );
 }

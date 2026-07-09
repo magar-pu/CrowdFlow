@@ -25,7 +25,7 @@ import { FilterSidebar } from "@/components/event-discovery/FilterSidebar";
 import { AIRecommendationsPanel } from "@/components/event-discovery/AIRecommendationsPanel";
 import { EventListingCard } from "@/components/event-discovery/EventListingCard";
 import { ResaleMarketplacePromo } from "@/components/event-discovery/ResaleMarketplacePromo";
-import { HomeFooterV2 } from "@/components/home-v2/HomeFooterV2";
+import { HomeFooterV3 } from "@/components/home-v3/HomeFooterV3";
 import {
   mockFeaturedCarousel,
   mockAIRecommendedEvents,
@@ -219,7 +219,7 @@ export default function EventsDiscoveryPage() {
         <ResaleMarketplacePromo />
       </main>
 
-      <HomeFooterV2 />
+      <HomeFooterV3 />
     </div>
   );
 }

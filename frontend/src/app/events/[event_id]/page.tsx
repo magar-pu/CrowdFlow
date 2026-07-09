@@ -17,7 +17,7 @@
 import { useRouter, useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
-import { HomeFooterV2 } from "@/components/home-v2/HomeFooterV2";
+import { HomeFooterV3 } from "@/components/home-v3/HomeFooterV3";
 import { EventHero } from "@/components/event-detail/EventHero";
 import { AboutEventSection } from "@/components/event-detail/AboutEventSection";
 import { VenueInfoSection } from "@/components/event-detail/VenueInfoSection";
@@ -133,7 +133,7 @@ export default function EventDetailPage() {
           </div>
         </div>
       </main>
-      <HomeFooterV2 />
+      <HomeFooterV3 />
     </div>
   );
 }
