@@ -97,7 +97,7 @@ export function VenueInfoSection({ venue, event_id }: VenueInfoSectionProps) {
                 Max Capacity
               </p>
               <p className="mt-1 font-label-md text-label-md font-bold text-text-primary">
-                {venue.capacity.toLocaleString("id-ID")}
+                {venue.total_capacity.toLocaleString("id-ID")}
               </p>
             </div>
           </div>
@@ -106,7 +106,7 @@ export function VenueInfoSection({ venue, event_id }: VenueInfoSectionProps) {
         {/* Stats row */}
         <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
           {[
-            { icon: Armchair, label: "Seating Capacity", value: venue.capacity.toLocaleString("id-ID") },
+            { icon: Armchair, label: "Seating Capacity", value: venue.total_capacity.toLocaleString("id-ID") },
             { icon: DoorOpen, label: "Entrances", value: "12" },
             { icon: LogOut, label: "Exits", value: "12" },
             { icon: Car, label: "Parking Capacity", value: "5,000" },

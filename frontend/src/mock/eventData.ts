@@ -18,7 +18,7 @@ const VENUE_GBK = {
   postal_code: "10270",
   latitude: -6.2186,
   longitude: 106.8023,
-  capacity: 60000,
+  total_capacity: 60000,
   timezone: "Asia/Jakarta",
 };
 
@@ -180,7 +180,7 @@ export const mockEventList: Event[] = [
       postal_code: "15345",
       latitude: -6.3018,
       longitude: 106.6527,
-      capacity: 8000,
+      total_capacity: 8000,
       timezone: "Asia/Jakarta",
     },
     starts_at: "2026-11-02T09:00:00+07:00",
@@ -221,7 +221,7 @@ export const mockEventList: Event[] = [
       postal_code: "14410",
       latitude: -6.1488,
       longitude: 106.8508,
-      capacity: 25000,
+      total_capacity: 25000,
       timezone: "Asia/Jakarta",
     },
     starts_at: "2026-08-07T16:00:00+07:00",

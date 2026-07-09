@@ -2,16 +2,19 @@
  * components/home-v2/TrendingEventsSection.tsx
  *
  * "Event Paling Dinanti" section: category filter pills (functional —
- * filters the grid below) + a responsive card grid. All data comes from
- * the real GET /api/events response — no mock values.
+ * filters the grid below) + a responsive card grid. Title, image, city,
+ * category, and date come from the real GET /api/events response;
+ * rating/review-count/starting-price are placeholder values from
+ * mockTrendingCardStats() until the backend provides them.
  */
 
 "use client";
 
 import { useState } from "react";
 import Link from "next/link";
-import { MapPin, Calendar, ChevronRight } from "lucide-react";
+import { MapPin, Calendar, ChevronRight, Star } from "lucide-react";
 import type { TrendingEventCard } from "@/types/ticket";
+import { formatIDR } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 
 // Human-readable labels for the backend category strings from mapCategory().
@@ -120,6 +123,16 @@ export function TrendingEventsSection({
                     {event.title}
                   </h4>
                   <div className="mb-3 flex items-center gap-1">
+                    <Calendar size={14} className="text-text-secondary" />
+                    <span className="text-label-sm text-text-secondary">
+                      {new Date(event.starts_at).toLocaleDateString("en-GB", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </span>
+                  </div>
+                  <div className="mb-3 flex items-center gap-1">
                     <Star size={14} fill="#F59E0B" className="text-warning" />
                     <span className="font-label-sm text-label-sm text-text-primary">
                       {event.rating.toFixed(1)}/5
@@ -147,7 +160,8 @@ export function TrendingEventsSection({
         ) : (
           <div className="rounded-xl border border-dashed border-border-subtle bg-white py-16 text-center">
             <p className="font-body-md text-body-md text-text-secondary">
-              No events yet for {active_country}.
+              No events yet for{" "}
+              {CATEGORY_LABELS[active_category] ?? active_category}.
             </p>
           </div>
         )}

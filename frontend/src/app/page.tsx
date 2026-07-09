@@ -10,7 +10,11 @@ import { NewsletterBanner } from "@/components/home-v2/NewsletterBanner";
 import { HomeFooterV2 } from "@/components/home-v2/HomeFooterV2";
 import { listEvents } from "@/lib/api/events";
 import type { TrendingEventCard } from "@/types/ticket";
-import { mockBentoTiles, CATEGORY_FILTERS } from "@/mock/homeV2Data";
+import {
+  mockBentoTiles,
+  mockTrendingCardStats,
+  CATEGORY_FILTERS,
+} from "@/mock/homeV2Data";
 
 const FALLBACK_COVER =
   "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=600&auto=format&fit=crop";
@@ -29,6 +33,8 @@ export default function HomePage() {
             city: evt.venue?.city ?? "Indonesia",
             category: evt.category ?? "other",
             starts_at: evt.starts_at,
+            // Placeholder stats — no backend source yet, see mockTrendingCardStats.
+            ...mockTrendingCardStats(String(evt.event_id)),
           }));
           setTrendingEvents(mapped);
         }

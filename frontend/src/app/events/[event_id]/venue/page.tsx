@@ -214,7 +214,7 @@ export default function VenueLayoutPage() {
             </span>
             <span className="flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 font-label-sm text-label-sm text-white backdrop-blur-sm">
               <Users size={12} />
-              {venue.capacity.toLocaleString("id-ID")} Capacity
+              {venue.total_capacity.toLocaleString("id-ID")} Capacity
             </span>
           </div>
           <div className="flex gap-3">

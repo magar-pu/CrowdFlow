@@ -48,7 +48,7 @@ export interface Venue {
   postal_code: string;
   latitude: number;
   longitude: number;
-  capacity: number;
+  total_capacity: number; // matches the backend's `total_capacity` JSON key
   timezone: string; // e.g. "Asia/Jakarta"
 }
 
@@ -411,4 +411,10 @@ export interface TrendingEventCard {
   city: string;
   category: string;  // e.g. "concert", "festival", "conference" — drives the category filter pills
   starts_at: string; // ISO-8601 — displayed as a formatted date on the card
+  // MOCK-BACKED FIELDS — no backend source yet: there is no reviews system,
+  // and GET /api/events carries no tier prices. Filled with placeholder values
+  // by mockTrendingCardStats() (mock/homeV2Data.ts) until the API provides them.
+  rating: number; // 0–5
+  review_count: number;
+  starting_price: number; // whole IDR, lowest tier price
 }

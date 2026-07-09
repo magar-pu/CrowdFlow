@@ -27,6 +27,7 @@ import { formatIDR } from "@/lib/pricing";
 import { mockEvent } from "@/mock/eventData";
 import { getEvent } from "@/lib/api/events";
 import { Event } from "@/types/ticket";
+import { Footer } from "@/components/layout/Footer";
 
 export default function EventDetailPage() {
   const router = useRouter();
