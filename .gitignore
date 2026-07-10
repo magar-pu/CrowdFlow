@@ -68,3 +68,5 @@ docker-compose-minio.yml
 
 # Local Dev Scripts
 *.sh
+
+.claude.json
