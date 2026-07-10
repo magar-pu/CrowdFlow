@@ -20,8 +20,11 @@ export async function getEvent(id: string): Promise<ApiResponse<Event>> {
   });
 }
 
+// Deliberately posts to /api/events (the event package's real endpoint,
+// Organizer-gated - Super Admin bypasses that check) rather than /api/v1/events,
+// which is not a registered route. See admin/handler.go's RegisterRoutes comment.
 export async function createEvent(formData: FormData): Promise<ApiResponse<Event>> {
-  return apiRequest<Event>("/api/v1/events", {
+  return apiRequest<Event>("/api/events", {
     method: "POST",
     body: formData,
   });

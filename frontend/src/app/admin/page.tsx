@@ -2,7 +2,6 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  initialEvents,
   initialScanners,
   initialTransactions,
   initialPayouts,
@@ -19,6 +18,7 @@ import {
   approveVerification,
   rejectVerification,
 } from '@/lib/api/admin/userService';
+import { listEvents } from '@/lib/api/admin/eventService';
 
 import Sidebar from '@/components/admin/layout/Sidebar';
 import Header from '@/components/admin/layout/Header';
@@ -36,7 +36,9 @@ export default function AdminPage() {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
-  const [events, setEvents] = useState<Event[]>(initialEvents);
+  const [events, setEvents] = useState<Event[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsError, setEventsError] = useState<string | null>(null);
   const [scanners, setScanners] = useState<Scanner[]>(initialScanners);
   const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions);
   const [payouts, setPayouts] = useState<Payout[]>(initialPayouts);
@@ -74,6 +76,26 @@ export default function AdminPage() {
   useEffect(() => {
     refreshUsers();
   }, [refreshUsers]);
+
+  // Events are backed by the real GET /api/v1/events endpoint (Super Admin
+  // only, returns every event regardless of status).
+  const refreshEvents = useCallback(async () => {
+    setEventsLoading(true);
+    setEventsError(null);
+
+    const result = await listEvents();
+    if (result.success && result.data) {
+      setEvents(result.data);
+    } else {
+      setEventsError(result.error?.message ?? 'Failed to load events');
+    }
+
+    setEventsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    refreshEvents();
+  }, [refreshEvents]);
 
   const handleApproveVerification = async (appId: string) => {
     const result = await approveVerification(appId);
@@ -241,14 +263,25 @@ export default function AdminPage() {
           )}
 
           {currentView === 'events' && (
-            <EventManagementView 
-              events={events}
-              onAddEvent={handleAddEvent}
-              onSelectEvent={(id) => {
-                setSelectedEventId(id);
-                setCurrentView('workspace');
-              }}
-            />
+            <div className="space-y-4">
+              {eventsError && (
+                <div className="rounded-lg border border-danger/20 bg-danger/5 px-4 py-3 text-xs font-semibold text-danger">
+                  {eventsError}
+                </div>
+              )}
+              {eventsLoading ? (
+                <div className="py-24 text-center text-sm text-text-secondary">Loading events...</div>
+              ) : (
+                <EventManagementView
+                  events={events}
+                  onAddEvent={handleAddEvent}
+                  onSelectEvent={(id) => {
+                    setSelectedEventId(id);
+                    setCurrentView('workspace');
+                  }}
+                />
+              )}
+            </div>
           )}
 
           {currentView === 'workspace' && selectedEvent && (
