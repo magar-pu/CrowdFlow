@@ -128,6 +128,7 @@ type Repository interface {
 	GetVenueSections(eventID int) ([]*VenueSection, error)
 	UpdateVenueSections(eventID int, sections []*VenueSection) error
 	UpdateUserStatus(userID int, status string) error
+	GrantUserRole(userID int, roleID int, eventID *int) error
 	UpdateTransactionStatus(orderID string, status string) error
 	ListVerifications() ([]*VerificationApplication, error)
 }
@@ -142,6 +143,7 @@ type Service interface {
 	GetVenueSections(eventID int) ([]*VenueSection, error)
 	UpdateVenueSections(eventID int, sections []*VenueSection) error
 	UpdateUserStatus(userID int, status string) error
+	GrantUserRole(userID int, roleID int, eventID *int) error
 	UpdateTransactionStatus(orderID string, status string) error
 	ListVerifications() ([]*VerificationApplication, error)
 

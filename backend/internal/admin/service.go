@@ -47,6 +47,10 @@ func (s *AdminService) UpdateUserStatus(userID int, status string) error {
 	return s.repo.UpdateUserStatus(userID, status)
 }
 
+func (s *AdminService) GrantUserRole(userID int, roleID int, eventID *int) error {
+	return s.repo.GrantUserRole(userID, roleID, eventID)
+}
+
 func (s *AdminService) UpdateTransactionStatus(orderID string, status string) error {
 	return s.repo.UpdateTransactionStatus(orderID, status)
 }

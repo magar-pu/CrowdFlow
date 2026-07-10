@@ -399,6 +399,39 @@ func (r *PostgresRepository) UpdateUserStatus(userID int, status string) error {
 	return err
 }
 
+// GrantUserRole assigns a role to a user, scoped to a specific event when
+// eventID is non-nil (e.g. Auditor on event 42) or platform-wide when nil
+// (e.g. Event Organizer everywhere) - mirrors the user_roles.event_id design
+// (see the two partial unique indexes idx_user_roles_event/idx_user_roles_platform).
+// Only verified users may be granted a role. Duplicate grants are rejected
+// with a clean validation error rather than surfacing the raw unique
+// constraint violation.
+func (r *PostgresRepository) GrantUserRole(userID int, roleID int, eventID *int) error {
+	var verificationStatus string
+	err := r.db.QueryRow(`SELECT verification_status FROM users WHERE id = $1`, userID).Scan(&verificationStatus)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return errors.New("user not found")
+		}
+		return err
+	}
+	if verificationStatus != "verified" {
+		return errors.New("user must be verified before a role can be granted")
+	}
+
+	var alreadyGranted bool
+	existsQuery := `SELECT EXISTS (SELECT 1 FROM user_roles WHERE user_id = $1 AND role_id = $2 AND event_id IS NOT DISTINCT FROM $3)`
+	if err := r.db.QueryRow(existsQuery, userID, roleID, eventID).Scan(&alreadyGranted); err != nil {
+		return err
+	}
+	if alreadyGranted {
+		return errors.New("user already has this role assignment")
+	}
+
+	_, err = r.db.Exec(`INSERT INTO user_roles (user_id, event_id, role_id) VALUES ($1, $2, $3)`, userID, eventID, roleID)
+	return err
+}
+
 // ListVerifications derives the Verification Queue directly from users with
 // verification_status = 'pending_verification' - there is no separate
 // verification_applications table. The applicant's ID is the user's own ID,

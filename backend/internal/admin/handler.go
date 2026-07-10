@@ -62,6 +62,7 @@ func (h *Handler) RegisterRoutes(
 
 	mux.Handle("GET /api/v1/users", admin(h.handleListUsers))
 	mux.Handle("POST /api/v1/users/{id}/status", admin(h.handleUpdateUserStatus))
+	mux.Handle("POST /api/v1/users/{id}/roles", admin(h.handleGrantUserRole))
 	mux.Handle("GET /api/v1/users/verifications", admin(h.handleListVerifications))
 	mux.Handle("POST /api/v1/users/verifications/{id}/approve", admin(h.handleApproveVerification))
 	mux.Handle("POST /api/v1/users/verifications/{id}/reject", admin(h.handleRejectVerification))
@@ -258,6 +259,32 @@ func (h *Handler) handleUpdateUserStatus(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]string{"message": "User status updated"})
+}
+
+type grantRoleRequest struct {
+	RoleID  int  `json:"role_id"`
+	EventID *int `json:"event_id"`
+}
+
+// handleGrantUserRole assigns a role_id to the target user, platform-wide
+// when event_id is omitted/null or scoped to that event otherwise (e.g.
+// Event Organizer everywhere vs. Auditor on one specific event).
+func (h *Handler) handleGrantUserRole(w http.ResponseWriter, r *http.Request) {
+	userID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "User ID must be a valid integer")
+		return
+	}
+	var req grantRoleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
+		return
+	}
+	if err := h.service.GrantUserRole(userID, req.RoleID, req.EventID); err != nil {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+		return
+	}
+	response.JSON(w, http.StatusCreated, map[string]string{"message": "Role granted"})
 }
 
 func (h *Handler) handleListVerifications(w http.ResponseWriter, r *http.Request) {
