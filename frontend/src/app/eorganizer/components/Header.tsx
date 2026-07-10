@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bell, Search, Activity, Play, RefreshCw, Building2, ChevronsUpDown, Check } from 'lucide-react';
+import { Bell, Search, Activity, Play, RefreshCw, Building2, ChevronsUpDown, Check, Menu, CheckCircle, HelpCircle } from 'lucide-react';
 import { LogEntry } from '../types';
 
 const ORGANIZATIONS = ['CrowdFlow Inc.', 'Nightfall Presents', 'Summit Live Events'];
@@ -14,6 +14,7 @@ interface HeaderProps {
   selectedEventName?: string;
   onResetData?: () => void;
   onTriggerLiveScan?: () => void;
+  onOpenMenu?: () => void;
   recentLogs?: LogEntry[];
   searchQuery?: string;
   setSearchQuery?: (query: string) => void;
@@ -29,6 +30,7 @@ export default function Header({
   selectedEventName,
   onResetData,
   onTriggerLiveScan,
+  onOpenMenu,
   recentLogs = [],
   searchQuery = '',
   setSearchQuery,
@@ -48,6 +50,15 @@ export default function Header({
       className="sticky top-0 z-10 flex min-h-[72px] w-full items-center justify-between gap-3 border-b border-border-subtle bg-surface-white/95 px-6 py-3 backdrop-blur-md"
     >
       <div className="flex items-center gap-3">
+        {onOpenMenu && (
+          <button
+            onClick={onOpenMenu}
+            className="hidden md:flex lg:hidden items-center justify-center p-2 -ml-1 rounded-lg text-text-secondary hover:bg-surface-container-low hover:text-text-primary transition-colors cursor-pointer"
+            aria-label="Open menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
         <div className="text-left">
           <span className="text-[10px] text-on-surface-variant font-mono font-bold tracking-wider uppercase">
             {selectedEventName ? `WORKSPACE: ${selectedEventName}` : 'CROWDFLOW PORTAL'}
@@ -72,6 +83,19 @@ export default function Header({
       )}
 
       <div className="flex items-center gap-4">
+        <div className="hidden lg:flex items-center gap-1.5 rounded-full border border-success/20 bg-success/5 px-3 py-1 text-xs font-medium text-success">
+          <CheckCircle className="h-3.5 w-3.5" />
+          <span>Operational</span>
+        </div>
+
+        <button
+          onClick={() => alert('CrowdFlow Organizer Help Center: guides for events, ticketing, and check-in operations.')}
+          className="hidden sm:flex rounded-lg p-2 text-text-secondary transition-colors hover:bg-surface-container-low hover:text-text-primary cursor-pointer"
+          title="Help"
+        >
+          <HelpCircle className="w-4 h-4" />
+        </button>
+
         {selectedEventName && onTriggerLiveScan && (
           <button
             onClick={onTriggerLiveScan}
@@ -158,7 +182,11 @@ export default function Header({
             className="relative p-1.5 text-text-secondary hover:text-text-primary hover:bg-surface-container-low border border-border-subtle rounded-lg cursor-pointer transition-colors"
           >
             <Bell className="w-4 h-4" />
-            <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-danger"></span>
+            {MOCK_NOTIFICATIONS.length > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[9px] font-bold text-on-error ring-2 ring-white">
+                {MOCK_NOTIFICATIONS.length}
+              </span>
+            )}
           </button>
 
           {showNotifications && (

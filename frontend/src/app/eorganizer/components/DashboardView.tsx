@@ -1,18 +1,35 @@
 import React from 'react';
 import { Order } from '../types';
-import { DollarSign, Ticket, CalendarDays, QrCode, TrendingUp, Minus, MapPin, Plus } from 'lucide-react';
+import { DollarSign, Ticket, CalendarDays, Users, ClipboardCheck, Repeat, TrendingUp, Minus, MapPin, Plus, RefreshCw } from 'lucide-react';
 
 interface DashboardViewProps {
   onCreateEvent: () => void;
   onNavigateToView: (view: 'orders' | 'events' | 'finance' | 'reports') => void;
 }
 
+const SPARKLINE_POINTS = [4, 7, 5, 9, 8, 11, 10, 13, 12, 15];
+const LAST_UPDATED = new Date().toISOString().slice(0, 10);
+
+function Sparkline() {
+  const w = 64;
+  const h = 20;
+  const max = Math.max(...SPARKLINE_POINTS);
+  const points = SPARKLINE_POINTS.map((v, i) => `${(i / (SPARKLINE_POINTS.length - 1)) * w},${h - (v / max) * h}`).join(' ');
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-16 h-5 overflow-visible">
+      <polyline points={points} fill="none" stroke="var(--color-secondary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export default function DashboardView({ onCreateEvent, onNavigateToView }: DashboardViewProps) {
   const kpis = [
-    { title: 'Total Revenue', value: '$1,240,000', change: '+12.5% from last month', icon: DollarSign, isPositive: true },
-    { title: 'Tickets Sold', value: '17,095', change: '+5.2% from last month', icon: Ticket, isPositive: true },
+    { title: 'Total Users', value: '48,210', change: '+3.8% from last month', icon: Users, isPositive: true, sparkline: true },
     { title: 'Active Events', value: '3', change: 'No change', icon: CalendarDays, isPositive: null },
-    { title: "Today's Check-ins", value: '1,204', change: 'Peak arrival time', icon: QrCode, isPositive: true },
+    { title: 'Tickets Sold', value: '17,095', change: '+5.2% from last month', icon: Ticket, isPositive: true },
+    { title: 'Gross Sales', value: '$1.24M', change: '+12.5% from last month', icon: DollarSign, isPositive: true },
+    { title: 'Verification Queue', value: '5', change: 'Pending manual approval', icon: ClipboardCheck, isPositive: false },
+    { title: 'Active Resale', value: '212', change: 'Listings on marketplace', icon: Repeat, isPositive: null },
   ];
 
   const recentOrders: Order[] = [
@@ -53,12 +70,22 @@ export default function DashboardView({ onCreateEvent, onNavigateToView }: Dashb
 
   return (
     <div className="space-y-8 pb-12 text-left">
-      <section className="flex flex-col gap-1">
-        <h2 className="font-sans text-3xl font-bold text-text-primary tracking-tight">Good Morning, Alex</h2>
-        <p className="font-sans text-sm text-text-secondary font-normal">Welcome back. Here&apos;s what&apos;s happening with your events today.</p>
+      <section className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <h2 className="font-sans text-3xl font-bold text-text-primary tracking-tight">Good Morning, Alex</h2>
+          <p className="font-sans text-sm text-text-secondary font-normal">Welcome back. Here&apos;s what&apos;s happening with your events today.</p>
+          <p className="font-mono text-[10px] text-on-surface-variant uppercase tracking-wider">Updated {LAST_UPDATED}</p>
+        </div>
+        <button
+          onClick={() => alert('Force sync triggered: refreshing dashboard data from the database.')}
+          className="flex items-center gap-1.5 px-3.5 py-2 border border-border-subtle hover:bg-surface-container-low rounded-lg font-sans text-xs font-semibold text-text-secondary hover:text-text-primary transition-colors cursor-pointer shrink-0"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          Force Sync DB
+        </button>
       </section>
 
-      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
         {kpis.map((kpi, idx) => {
           const Icon = kpi.icon;
           return (
@@ -70,11 +97,12 @@ export default function DashboardView({ onCreateEvent, onNavigateToView }: Dashb
                 <span className="font-mono text-[10px] font-bold text-text-secondary uppercase tracking-wider">{kpi.title}</span>
                 <Icon className="w-4 h-4 text-on-surface-variant" />
               </div>
-              <div className="flex items-baseline gap-2">
+              <div className="flex items-baseline justify-between gap-2">
                 <span className="font-sans text-2xl font-bold text-text-primary">{kpi.value}</span>
+                {kpi.sparkline && <Sparkline />}
               </div>
               <div className={`flex items-center gap-1 font-mono text-[10px] font-bold ${
-                kpi.isPositive ? 'text-success' : 'text-text-secondary'
+                kpi.isPositive ? 'text-success' : kpi.isPositive === false ? 'text-warning' : 'text-text-secondary'
               }`}>
                 {kpi.isPositive ? <TrendingUp className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
                 <span>{kpi.change}</span>

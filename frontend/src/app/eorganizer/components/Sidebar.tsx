@@ -44,7 +44,7 @@ export default function Sidebar({
   return (
     <aside
       id="sidebar"
-      className={`fixed inset-y-0 left-0 z-20 hidden flex-col border-r border-border-subtle bg-surface-white text-text-primary transition-all duration-300 md:flex ${
+      className={`fixed inset-y-0 left-0 z-20 hidden flex-col border-r border-border-subtle bg-surface-white text-text-primary transition-all duration-300 lg:flex ${
         isCollapsed ? 'w-[88px]' : 'w-[280px]'
       }`}
     >

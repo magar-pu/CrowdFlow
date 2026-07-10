@@ -15,6 +15,8 @@ import {
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
 import EventWorkspaceHeader from "./components/EventWorkspaceHeader";
+import MobileNavDrawer from "./components/MobileNavDrawer";
+import MobileBottomNav from "./components/MobileBottomNav";
 import DashboardView from "./components/DashboardView";
 import EventsView from "./components/EventsView";
 import OrdersView from "./components/OrdersView";
@@ -36,6 +38,7 @@ export default function Page() {
   const [currentView, setView] = useState<AppView>('dashboard');
   const [workspaceTab, setWorkspaceTab] = useState<string>('overview');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Profile
   const [adminName, setAdminName] = useState('Alex Rivera');
@@ -165,9 +168,19 @@ export default function Page() {
         setIsCollapsed={setIsSidebarCollapsed}
       />
 
+      <MobileNavDrawer
+        isOpen={isMobileMenuOpen}
+        onClose={() => setIsMobileMenuOpen(false)}
+        currentView={currentView}
+        setView={setView}
+        onCreateEventClick={() => setView('create-event')}
+      />
+
+      <MobileBottomNav currentView={currentView} setView={setView} />
+
       <div
         className={`flex min-h-screen w-full flex-1 flex-col bg-surface transition-[padding] duration-300 ${
-          isSidebarCollapsed ? 'md:pl-[88px]' : 'md:pl-[280px]'
+          isSidebarCollapsed ? 'lg:pl-[88px]' : 'lg:pl-[280px]'
         }`}
       >
         <Header
@@ -176,10 +189,11 @@ export default function Page() {
           onResetData={handleResetData}
           onTriggerLiveScan={currentView === 'workspace' ? handleTriggerLiveScan : undefined}
           recentLogs={logs}
+          onOpenMenu={() => setIsMobileMenuOpen(true)}
           user={{ name: adminName, role: adminRole, avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop' }}
         />
 
-        <main className="mx-auto w-full max-w-[1440px] flex-1 overflow-y-auto px-4 pb-10 pt-5 sm:px-6 md:p-8 space-y-6">
+        <main className="mx-auto w-full max-w-[1440px] flex-1 overflow-y-auto px-4 pb-24 pt-5 sm:px-6 md:p-8 space-y-6">
           {toast && (
             <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-xl border bg-white border-secondary text-text-primary animate-fade-in">
               <span className={`w-2.5 h-2.5 rounded-full ${toast.type === "success" ? "bg-success" : toast.type === "warning" ? "bg-danger" : "bg-secondary/100"}`}></span>
