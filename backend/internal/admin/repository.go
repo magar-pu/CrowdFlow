@@ -3,7 +3,9 @@ package admin
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -385,7 +387,7 @@ func (r *PostgresRepository) UpdateVenueSections(eventID int, sections []*VenueS
 // UpdateUserStatus reverse-maps the admin frontend's display status onto
 // users.verification_status. There is no dedicated account-suspension column,
 // so "Suspended" is approximated as "rejected" - see mapVerificationStatus.
-func (r *PostgresRepository) UpdateUserStatus(userID int, status string) error {
+func (r *PostgresRepository) UpdateUserStatus(userID int, status string, actorID int) error {
 	var dbStatus string
 	switch status {
 	case "Verified":
@@ -397,8 +399,18 @@ func (r *PostgresRepository) UpdateUserStatus(userID int, status string) error {
 	default:
 		return errors.New("unknown status: " + status)
 	}
-	_, err := r.db.Exec(`UPDATE users SET verification_status = $1, updated_at = now() WHERE id = $2`, dbStatus, userID)
-	return err
+	var targetName string
+	if err := r.db.QueryRow(`
+		SELECT COALESCE(up.full_name, u.email) FROM users u
+		LEFT JOIN user_profiles up ON up.user_id = u.id
+		WHERE u.id = $1
+	`, userID).Scan(&targetName); err != nil {
+		return err
+	}
+	if _, err := r.db.Exec(`UPDATE users SET verification_status = $1, updated_at = now() WHERE id = $2`, dbStatus, userID); err != nil {
+		return err
+	}
+	return r.insertActivity(actorID, "Updated User Status", fmt.Sprintf("Set %q's status to %s.", targetName, status))
 }
 
 // GrantUserRole assigns a role to a user, scoped to a specific event when
@@ -408,9 +420,13 @@ func (r *PostgresRepository) UpdateUserStatus(userID int, status string) error {
 // Only verified users may be granted a role. Duplicate grants are rejected
 // with a clean validation error rather than surfacing the raw unique
 // constraint violation.
-func (r *PostgresRepository) GrantUserRole(userID int, roleID int, eventID *int) error {
-	var verificationStatus string
-	err := r.db.QueryRow(`SELECT verification_status FROM users WHERE id = $1`, userID).Scan(&verificationStatus)
+func (r *PostgresRepository) GrantUserRole(userID int, roleID int, eventID *int, actorID int) error {
+	var verificationStatus, targetName string
+	err := r.db.QueryRow(`
+		SELECT u.verification_status, COALESCE(up.full_name, u.email) FROM users u
+		LEFT JOIN user_profiles up ON up.user_id = u.id
+		WHERE u.id = $1
+	`, userID).Scan(&verificationStatus, &targetName)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return errors.New("user not found")
@@ -430,8 +446,20 @@ func (r *PostgresRepository) GrantUserRole(userID int, roleID int, eventID *int)
 		return errors.New("user already has this role assignment")
 	}
 
-	_, err = r.db.Exec(`INSERT INTO user_roles (user_id, event_id, role_id) VALUES ($1, $2, $3)`, userID, eventID, roleID)
-	return err
+	var roleName string
+	if err := r.db.QueryRow(`SELECT role_name FROM roles WHERE id = $1`, roleID).Scan(&roleName); err != nil {
+		return err
+	}
+
+	if _, err := r.db.Exec(`INSERT INTO user_roles (user_id, event_id, role_id) VALUES ($1, $2, $3)`, userID, eventID, roleID); err != nil {
+		return err
+	}
+
+	detail := fmt.Sprintf("Granted %q the %s role.", targetName, roleName)
+	if eventID != nil {
+		detail = fmt.Sprintf("Granted %q the %s role for event #%d.", targetName, roleName, *eventID)
+	}
+	return r.insertActivity(actorID, "Granted Role", detail)
 }
 
 // ListVerifications derives the Verification Queue directly from users with
@@ -482,7 +510,7 @@ func (r *PostgresRepository) ListVerifications() ([]*VerificationApplication, er
 
 // UpdateTransactionStatus reverse-maps the admin frontend's display status
 // onto orders.status - see mapOrderStatus for the forward direction.
-func (r *PostgresRepository) UpdateTransactionStatus(orderID string, status string) error {
+func (r *PostgresRepository) UpdateTransactionStatus(orderID string, status string, actorID int) error {
 	var dbStatus string
 	switch status {
 	case "Success":
@@ -494,6 +522,224 @@ func (r *PostgresRepository) UpdateTransactionStatus(orderID string, status stri
 	default:
 		return errors.New("unknown status: " + status)
 	}
-	_, err := r.db.Exec(`UPDATE orders SET status = $1, updated_at = now() WHERE id = $2`, dbStatus, orderID)
+	if _, err := r.db.Exec(`UPDATE orders SET status = $1, updated_at = now() WHERE id = $2`, dbStatus, orderID); err != nil {
+		return err
+	}
+	return r.insertActivity(actorID, "Updated Transaction Status", fmt.Sprintf("Set order #%s to %s.", orderID, status))
+}
+
+// insertActivity appends a row to the admin action audit trail
+// (migrations/0001_payouts_and_activity_log.sql). Failures here surface as a
+// real error rather than being swallowed, since a silently-dropped audit
+// entry is itself a correctness problem for an admin console.
+func (r *PostgresRepository) insertActivity(actorID int, action, detail string) error {
+	_, err := r.db.Exec(`INSERT INTO activity_log (actor_id, action, detail) VALUES ($1, $2, $3)`, actorID, action, detail)
 	return err
+}
+
+func (r *PostgresRepository) ListActivities() ([]*Activity, error) {
+	rows, err := r.db.Query(`
+		SELECT al.id, COALESCE(up.full_name, 'Admin'), al.action, al.detail, al.created_at
+		FROM activity_log al
+		LEFT JOIN user_profiles up ON up.user_id = al.actor_id
+		ORDER BY al.created_at DESC
+		LIMIT 50
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var activities []*Activity
+	for rows.Next() {
+		var id int
+		var userName, action, detail string
+		var createdAt time.Time
+		if err := rows.Scan(&id, &userName, &action, &detail, &createdAt); err != nil {
+			return nil, err
+		}
+		activities = append(activities, &Activity{
+			ID:        strconv.Itoa(id),
+			UserName:  userName,
+			Action:    action,
+			Detail:    detail,
+			Timestamp: createdAt.Format("2006-01-02 15:04"),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return activities, nil
+}
+
+// mapPayoutStatus translates the payout_status enum to the admin frontend's
+// 'Processed' | 'Pending' | 'Failed' union.
+func mapPayoutStatus(dbStatus string) string {
+	switch dbStatus {
+	case "processed":
+		return "Processed"
+	case "failed":
+		return "Failed"
+	default:
+		return "Pending"
+	}
+}
+
+// ListPayouts unions two things under one Payout shape:
+//  1. Live-computed outstanding balances - for each event, paid orders'
+//     net_amount minus whatever has already been recorded in `payouts`. There
+//     is no organizer-facing "request a payout" flow yet, so these synthetic
+//     rows (id "PENDING-<eventID>") represent money owed but not yet settled,
+//     the same "derive from real data, don't fabricate a table" approach used
+//     by ListVerifications above.
+//  2. Real historical rows already recorded in `payouts` (processed or
+//     rejected/failed) - see ProcessPayout/RejectPayout.
+func (r *PostgresRepository) ListPayouts() ([]*Payout, error) {
+	rows, err := r.db.Query(`
+		WITH balances AS (
+			SELECT
+				e.id AS event_id,
+				e.event_name,
+				COALESCE(up.full_name, '') AS organizer_name,
+				COALESCE((SELECT SUM(o.net_amount) FROM orders o WHERE o.event_id = e.id AND o.status = 'paid'), 0)
+					- COALESCE((SELECT SUM(p.amount) FROM payouts p WHERE p.event_id = e.id), 0) AS outstanding,
+				COALESCE((SELECT MAX(o.paid_at) FROM orders o WHERE o.event_id = e.id AND o.status = 'paid'), e.created_at) AS last_activity
+			FROM events e
+			LEFT JOIN users u ON u.id = e.organizer_id
+			LEFT JOIN user_profiles up ON up.user_id = u.id
+		)
+		SELECT 'PENDING-' || event_id, organizer_name, event_name, outstanding, 'pending', last_activity
+		FROM balances
+		WHERE outstanding > 0
+		UNION ALL
+		SELECT p.id::text, COALESCE(up.full_name, ''), e.event_name, p.amount, p.status::text, p.requested_at
+		FROM payouts p
+		JOIN events e ON e.id = p.event_id
+		LEFT JOIN users u ON u.id = e.organizer_id
+		LEFT JOIN user_profiles up ON up.user_id = u.id
+		ORDER BY 6 DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var payouts []*Payout
+	for rows.Next() {
+		var id, organizerName, eventName, dbStatus string
+		var amount float64
+		var requestedAt time.Time
+		if err := rows.Scan(&id, &organizerName, &eventName, &amount, &dbStatus, &requestedAt); err != nil {
+			return nil, err
+		}
+		payouts = append(payouts, &Payout{
+			ID:            id,
+			OrganizerName: organizerName,
+			EventName:     eventName,
+			Amount:        amount,
+			Status:        mapPayoutStatus(dbStatus),
+			RequestedDate: requestedAt.Format("2006-01-02"),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return payouts, nil
+}
+
+// parsePayoutID distinguishes a synthetic live-computed balance
+// ("PENDING-<eventID>", see ListPayouts) from a real payouts.id being
+// retried after a prior rejection.
+func parsePayoutID(payoutID string) (eventID int, existingID int, isSynthetic bool, err error) {
+	if rest, ok := strings.CutPrefix(payoutID, "PENDING-"); ok {
+		id, convErr := strconv.Atoi(rest)
+		if convErr != nil {
+			return 0, 0, false, errors.New("invalid payout id")
+		}
+		return id, 0, true, nil
+	}
+	id, convErr := strconv.Atoi(payoutID)
+	if convErr != nil {
+		return 0, 0, false, errors.New("invalid payout id")
+	}
+	return 0, id, false, nil
+}
+
+// settlePayout records a payout decision (process or reject) as a real row.
+// For a synthetic pending balance, it re-computes the outstanding amount
+// inside the transaction (holding a per-event advisory lock so two concurrent
+// "Process" clicks can't double-pay the same balance) and inserts a new row.
+// For a retry of a previously-failed real payout, it updates that row in
+// place rather than creating a duplicate ledger entry.
+func (r *PostgresRepository) settlePayout(payoutID string, actorID int, newStatus string, actionLabel string) error {
+	eventIDArg, existingID, isSynthetic, err := parsePayoutID(payoutID)
+	if err != nil {
+		return err
+	}
+
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var resultEventID int
+	var amount float64
+
+	if isSynthetic {
+		if _, err := tx.Exec(`SELECT pg_advisory_xact_lock($1)`, eventIDArg); err != nil {
+			return err
+		}
+
+		if err := tx.QueryRow(`
+			SELECT
+				COALESCE((SELECT SUM(o.net_amount) FROM orders o WHERE o.event_id = $1 AND o.status = 'paid'), 0)
+					- COALESCE((SELECT SUM(p.amount) FROM payouts p WHERE p.event_id = $1), 0)
+		`, eventIDArg).Scan(&amount); err != nil {
+			return err
+		}
+		if amount <= 0 {
+			return errors.New("no outstanding balance for this event")
+		}
+
+		if err := tx.QueryRow(`
+			INSERT INTO payouts (event_id, amount, status, processed_at, processed_by)
+			VALUES ($1, $2, $3, now(), $4)
+			RETURNING event_id
+		`, eventIDArg, amount, newStatus, actorID).Scan(&resultEventID); err != nil {
+			return err
+		}
+	} else {
+		err := tx.QueryRow(`
+			UPDATE payouts SET status = $1, processed_at = now(), processed_by = $2, updated_at = now()
+			WHERE id = $3 AND status = 'failed'
+			RETURNING event_id, amount
+		`, newStatus, actorID, existingID).Scan(&resultEventID, &amount)
+		if err == sql.ErrNoRows {
+			return errors.New("payout not found or already settled")
+		}
+		if err != nil {
+			return err
+		}
+	}
+
+	var eventName string
+	if err := tx.QueryRow(`SELECT event_name FROM events WHERE id = $1`, resultEventID).Scan(&eventName); err != nil {
+		return err
+	}
+
+	detail := fmt.Sprintf("%s payout of %.2f for %q.", actionLabel, amount, eventName)
+	if _, err := tx.Exec(`INSERT INTO activity_log (actor_id, action, detail) VALUES ($1, $2, $3)`, actorID, actionLabel+" Payout", detail); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (r *PostgresRepository) ProcessPayout(payoutID string, actorID int) error {
+	return r.settlePayout(payoutID, actorID, "processed", "Processed")
+}
+
+func (r *PostgresRepository) RejectPayout(payoutID string, actorID int) error {
+	return r.settlePayout(payoutID, actorID, "failed", "Rejected")
 }

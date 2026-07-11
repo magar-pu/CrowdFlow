@@ -3,10 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   initialScanners,
-  initialTransactions,
-  initialPayouts,
   initialSecurityAlerts,
-  initialActivities,
   initialTicketTiers,
   initialVenueSections
 } from '@/lib/mock/admin';
@@ -19,6 +16,14 @@ import {
   rejectVerification,
 } from '@/lib/api/admin/userService';
 import { listEvents, listEventTypes } from '@/lib/api/admin/eventService';
+import {
+  listTransactions,
+  listPayouts,
+  processPayout,
+  rejectPayout,
+  updateTransactionStatus,
+} from '@/lib/api/admin/financeService';
+import { listSystemActivities } from '@/lib/api/admin/dashboardService';
 
 import Sidebar from '@/components/admin/layout/Sidebar';
 import Header from '@/components/admin/layout/Header';
@@ -42,10 +47,60 @@ export default function AdminPage() {
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [eventTypes, setEventTypes] = useState<EventType[]>([]);
   const [scanners, setScanners] = useState<Scanner[]>(initialScanners);
-  const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions);
-  const [payouts, setPayouts] = useState<Payout[]>(initialPayouts);
   const [securityAlerts, setSecurityAlerts] = useState<SecurityAlert[]>(initialSecurityAlerts);
-  const [activities, setActivities] = useState<Activity[]>(initialActivities);
+
+  // Transactions, payouts, and activities are backed by the real
+  // /api/v1/finance* and /api/v1/dashboard/activities endpoints.
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactionsLoading, setTransactionsLoading] = useState(true);
+  const [transactionsError, setTransactionsError] = useState<string | null>(null);
+  const [payouts, setPayouts] = useState<Payout[]>([]);
+  const [payoutsLoading, setPayoutsLoading] = useState(true);
+  const [payoutsError, setPayoutsError] = useState<string | null>(null);
+  const [activities, setActivities] = useState<Activity[]>([]);
+
+  const refreshTransactions = useCallback(async () => {
+    setTransactionsLoading(true);
+    setTransactionsError(null);
+    const result = await listTransactions();
+    if (result.success && result.data) {
+      setTransactions(result.data);
+    } else {
+      setTransactionsError(result.error?.message ?? 'Failed to load transactions');
+    }
+    setTransactionsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    refreshTransactions();
+  }, [refreshTransactions]);
+
+  const refreshPayouts = useCallback(async () => {
+    setPayoutsLoading(true);
+    setPayoutsError(null);
+    const result = await listPayouts();
+    if (result.success && result.data) {
+      setPayouts(result.data);
+    } else {
+      setPayoutsError(result.error?.message ?? 'Failed to load payouts');
+    }
+    setPayoutsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    refreshPayouts();
+  }, [refreshPayouts]);
+
+  const refreshActivities = useCallback(async () => {
+    const result = await listSystemActivities();
+    if (result.success && result.data) {
+      setActivities(result.data);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshActivities();
+  }, [refreshActivities]);
 
   const [ticketTiers, setTicketTiers] = useState<TicketTier[]>(initialTicketTiers);
   const [venueSections, setVenueSections] = useState<VenueSection[]>(initialVenueSections);
@@ -136,55 +191,31 @@ export default function AdminPage() {
     }
   };
 
-  const handleProcessPayout = (payoutId: string) => {
-    const targetPayout = payouts.find(p => p.id === payoutId);
-    if (!targetPayout) return;
-
-    setPayouts(prev => prev.map(p => p.id === payoutId ? { ...p, status: 'Processed' } : p));
-    setEvents(prev => prev.map(e => e.name === targetPayout.eventName ? {
-      ...e,
-      totalRevenue: Math.max(0, e.totalRevenue - targetPayout.amount)
-    } : e));
-
-    const newActivity: Activity = {
-      id: `ACT-${Math.floor(900 + Math.random() * 99)}`,
-      userName: 'Finance System',
-      action: 'Settled Payout',
-      detail: `Disbursed payout balance of $${targetPayout.amount.toLocaleString()} to ${targetPayout.organizerName}.`,
-      timestamp: 'Just now'
-    };
-    setActivities(prev => [newActivity, ...prev]);
-    alert(`Payout wire dispatched successfully to: ${targetPayout.organizerName}.`);
-  };
-
-  const handleRejectPayout = (payoutId: string) => {
-    setPayouts(prev => prev.map(p => p.id === payoutId ? { ...p, status: 'Failed' } : p));
-    alert('Wire payout flagged and locked in escrow pending audit review.');
-  };
-
-  const handleUpdateTransactionStatus = (txId: string, newStatus: 'Success' | 'Refunded') => {
-    setTransactions(prev => prev.map(t => t.id === txId ? { ...t, status: newStatus } : t));
-
-    const targetTx = transactions.find(t => t.id === txId);
-    if (!targetTx) return;
-
-    if (newStatus === 'Refunded') {
-      setEvents(prev => prev.map(e => e.name === targetTx.eventName ? {
-        ...e,
-        ticketsSold: Math.max(0, e.ticketsSold - 1),
-        totalRevenue: Math.max(0, e.totalRevenue - targetTx.amount)
-      } : e));
+  const handleProcessPayout = async (payoutId: string) => {
+    const result = await processPayout(payoutId);
+    if (result.success) {
+      await Promise.all([refreshPayouts(), refreshActivities(), refreshEvents()]);
+    } else {
+      alert(result.error?.message ?? 'Failed to process payout');
     }
+  };
 
-    const newActivity: Activity = {
-      id: `ACT-${Math.floor(900 + Math.random() * 99)}`,
-      userName: 'Refund Desk',
-      action: newStatus === 'Refunded' ? 'Issued Refund' : 'Re-instated Success',
-      detail: `Refund process ${newStatus === 'Refunded' ? 'completed' : 'rejected'} for transaction: ${txId}.`,
-      timestamp: 'Just now'
-    };
-    setActivities(prev => [newActivity, ...prev]);
-    alert(`Transaction status for ${txId} has been resolved: ${newStatus.toUpperCase()}.`);
+  const handleRejectPayout = async (payoutId: string) => {
+    const result = await rejectPayout(payoutId);
+    if (result.success) {
+      await Promise.all([refreshPayouts(), refreshActivities()]);
+    } else {
+      alert(result.error?.message ?? 'Failed to reject payout');
+    }
+  };
+
+  const handleUpdateTransactionStatus = async (txId: string, newStatus: 'Success' | 'Refunded') => {
+    const result = await updateTransactionStatus(txId, newStatus);
+    if (result.success) {
+      await Promise.all([refreshTransactions(), refreshActivities(), refreshEvents()]);
+    } else {
+      alert(result.error?.message ?? 'Failed to update transaction status');
+    }
   };
 
   const handleAddScanner = (newScanner: Scanner) => {
@@ -334,13 +365,24 @@ export default function AdminPage() {
           )}
 
           {currentView === 'finance' && (
-            <FinanceView 
-              transactions={transactions}
-              payouts={payouts}
-              onProcessPayout={handleProcessPayout}
-              onRejectPayout={handleRejectPayout}
-              onUpdateTransactionStatus={handleUpdateTransactionStatus}
-            />
+            <div className="space-y-4">
+              {(transactionsError || payoutsError) && (
+                <div className="rounded-lg border border-danger/20 bg-danger/5 px-4 py-3 text-xs font-semibold text-danger">
+                  {transactionsError ?? payoutsError}
+                </div>
+              )}
+              {transactionsLoading || payoutsLoading ? (
+                <div className="py-24 text-center text-sm text-text-secondary">Loading finance data...</div>
+              ) : (
+                <FinanceView
+                  transactions={transactions}
+                  payouts={payouts}
+                  onProcessPayout={handleProcessPayout}
+                  onRejectPayout={handleRejectPayout}
+                  onUpdateTransactionStatus={handleUpdateTransactionStatus}
+                />
+              )}
+            </div>
           )}
 
           {currentView === 'settings' && (

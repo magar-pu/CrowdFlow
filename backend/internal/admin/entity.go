@@ -48,10 +48,11 @@ type Transaction struct {
 	Date         string  `json:"date"`
 }
 
-// Payout, Scanner, VerificationApplication, SecurityAlert, and Activity have no
-// backing tables yet. Structs kept here so handler.go can return correctly
-// shaped placeholder payloads - see service.go for the TODO covering real
-// implementations once the underlying schema exists.
+// Scanner, VerificationApplication, and SecurityAlert have no backing tables
+// yet. Structs kept here so handler.go can return correctly shaped
+// placeholder payloads - see service.go for the TODO covering real
+// implementations once the underlying schema exists. Payout and Activity are
+// now backed by the payouts/activity_log tables (migrations/0001_payouts_and_activity_log.sql).
 
 type Payout struct {
 	ID            string  `json:"id"`
@@ -127,10 +128,15 @@ type Repository interface {
 	UpdateTicketTiers(eventID int, tiers []*TicketTier) error
 	GetVenueSections(eventID int) ([]*VenueSection, error)
 	UpdateVenueSections(eventID int, sections []*VenueSection) error
-	UpdateUserStatus(userID int, status string) error
-	GrantUserRole(userID int, roleID int, eventID *int) error
-	UpdateTransactionStatus(orderID string, status string) error
+	UpdateUserStatus(userID int, status string, actorID int) error
+	GrantUserRole(userID int, roleID int, eventID *int, actorID int) error
+	UpdateTransactionStatus(orderID string, status string, actorID int) error
 	ListVerifications() ([]*VerificationApplication, error)
+
+	ListPayouts() ([]*Payout, error)
+	ProcessPayout(payoutID string, actorID int) error
+	RejectPayout(payoutID string, actorID int) error
+	ListActivities() ([]*Activity, error)
 }
 
 type Service interface {
@@ -142,14 +148,17 @@ type Service interface {
 	UpdateTicketTiers(eventID int, tiers []*TicketTier) error
 	GetVenueSections(eventID int) ([]*VenueSection, error)
 	UpdateVenueSections(eventID int, sections []*VenueSection) error
-	UpdateUserStatus(userID int, status string) error
-	GrantUserRole(userID int, roleID int, eventID *int) error
-	UpdateTransactionStatus(orderID string, status string) error
+	UpdateUserStatus(userID int, status string, actorID int) error
+	GrantUserRole(userID int, roleID int, eventID *int, actorID int) error
+	UpdateTransactionStatus(orderID string, status string, actorID int) error
 	ListVerifications() ([]*VerificationApplication, error)
 
-	// Placeholder-backed - see service.go
 	ListPayouts() ([]*Payout, error)
+	ProcessPayout(payoutID string, actorID int) error
+	RejectPayout(payoutID string, actorID int) error
+	ListActivities() ([]*Activity, error)
+
+	// Placeholder-backed - see service.go
 	ListScanners(eventID int) ([]*Scanner, error)
 	ListSecurityAlerts() ([]*SecurityAlert, error)
-	ListActivities() ([]*Activity, error)
 }

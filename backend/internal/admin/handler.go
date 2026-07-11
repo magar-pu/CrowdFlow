@@ -5,8 +5,26 @@ import (
 	"net/http"
 	"strconv"
 
+	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/response"
 )
+
+// actorIDFromRequest resolves the authenticated Super Admin's user ID for
+// activity-log attribution. All routes that call this are already gated by
+// requirePlatformRole("Super Admin") in RegisterRoutes, so claims are always
+// present here - a missing/invalid sub claim is treated as a server error
+// rather than re-checked as an auth failure.
+func actorIDFromRequest(r *http.Request) (int, bool) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		return 0, false
+	}
+	actorID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		return 0, false
+	}
+	return actorID, true
+}
 
 type Handler struct {
 	service Service
@@ -56,8 +74,8 @@ func (h *Handler) RegisterRoutes(
 
 	mux.Handle("GET /api/v1/finance/transactions", admin(h.handleListTransactions))
 	mux.Handle("GET /api/v1/finance/payouts", admin(h.handleListPayouts))
-	mux.Handle("POST /api/v1/finance/payouts/{id}/process", admin(h.handleNotImplemented))
-	mux.Handle("POST /api/v1/finance/payouts/{id}/reject", admin(h.handleNotImplemented))
+	mux.Handle("POST /api/v1/finance/payouts/{id}/process", admin(h.handleProcessPayout))
+	mux.Handle("POST /api/v1/finance/payouts/{id}/reject", admin(h.handleRejectPayout))
 	mux.Handle("POST /api/v1/finance/transactions/{id}/status", admin(h.handleUpdateTransactionStatus))
 
 	mux.Handle("GET /api/v1/users", admin(h.handleListUsers))
@@ -216,18 +234,51 @@ func (h *Handler) handleListPayouts(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, payouts)
 }
 
+func (h *Handler) handleProcessPayout(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := actorIDFromRequest(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
+		return
+	}
+	payoutID := r.PathValue("id")
+	if err := h.service.ProcessPayout(payoutID, actorID); err != nil {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Payout processed"})
+}
+
+func (h *Handler) handleRejectPayout(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := actorIDFromRequest(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
+		return
+	}
+	payoutID := r.PathValue("id")
+	if err := h.service.RejectPayout(payoutID, actorID); err != nil {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Payout rejected"})
+}
+
 type statusUpdateRequest struct {
 	Status string `json:"status"`
 }
 
 func (h *Handler) handleUpdateTransactionStatus(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := actorIDFromRequest(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
+		return
+	}
 	orderID := r.PathValue("id")
 	var req statusUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
 		return
 	}
-	if err := h.service.UpdateTransactionStatus(orderID, req.Status); err != nil {
+	if err := h.service.UpdateTransactionStatus(orderID, req.Status, actorID); err != nil {
 		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
 		return
 	}
@@ -244,6 +295,11 @@ func (h *Handler) handleListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleUpdateUserStatus(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := actorIDFromRequest(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
+		return
+	}
 	userID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "INVALID_ID", "User ID must be a valid integer")
@@ -254,7 +310,7 @@ func (h *Handler) handleUpdateUserStatus(w http.ResponseWriter, r *http.Request)
 		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
 		return
 	}
-	if err := h.service.UpdateUserStatus(userID, req.Status); err != nil {
+	if err := h.service.UpdateUserStatus(userID, req.Status, actorID); err != nil {
 		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
 		return
 	}
@@ -270,6 +326,11 @@ type grantRoleRequest struct {
 // when event_id is omitted/null or scoped to that event otherwise (e.g.
 // Event Organizer everywhere vs. Auditor on one specific event).
 func (h *Handler) handleGrantUserRole(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := actorIDFromRequest(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
+		return
+	}
 	userID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "INVALID_ID", "User ID must be a valid integer")
@@ -280,7 +341,7 @@ func (h *Handler) handleGrantUserRole(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
 		return
 	}
-	if err := h.service.GrantUserRole(userID, req.RoleID, req.EventID); err != nil {
+	if err := h.service.GrantUserRole(userID, req.RoleID, req.EventID, actorID); err != nil {
 		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
 		return
 	}
@@ -302,12 +363,17 @@ func (h *Handler) handleListVerifications(w http.ResponseWriter, r *http.Request
 // separate applications data model.
 
 func (h *Handler) handleApproveVerification(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := actorIDFromRequest(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
+		return
+	}
 	userID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Applicant ID must be a valid integer")
 		return
 	}
-	if err := h.service.UpdateUserStatus(userID, "Verified"); err != nil {
+	if err := h.service.UpdateUserStatus(userID, "Verified", actorID); err != nil {
 		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
 		return
 	}
@@ -315,12 +381,17 @@ func (h *Handler) handleApproveVerification(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *Handler) handleRejectVerification(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := actorIDFromRequest(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
+		return
+	}
 	userID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Applicant ID must be a valid integer")
 		return
 	}
-	if err := h.service.UpdateUserStatus(userID, "Suspended"); err != nil {
+	if err := h.service.UpdateUserStatus(userID, "Suspended", actorID); err != nil {
 		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
 		return
 	}
