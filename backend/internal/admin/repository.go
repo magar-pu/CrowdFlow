@@ -84,9 +84,11 @@ func (r *PostgresRepository) ListEvents(limit, offset int) ([]*Event, error) {
 			e.id, e.event_name, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''), COALESCE(e.description, ''),
 			COALESCE(v.name, ''), COALESCE(v.city, ''), COALESCE(v.province, ''), COALESCE(v.total_capacity, 0),
 			COALESCE((SELECT SUM(tt.tickets_sold) FROM ticket_tiers tt WHERE tt.event_id = e.id), 0),
-			COALESCE((SELECT SUM(o.net_amount) FROM orders o WHERE o.event_id = e.id AND o.status = 'paid'), 0)
+			COALESCE((SELECT SUM(o.net_amount) FROM orders o WHERE o.event_id = e.id AND o.status = 'paid'), 0),
+			COALESCE(et.event_type, 'Uncategorized')
 		FROM events e
 		LEFT JOIN venues v ON e.venue_id = v.id
+		LEFT JOIN event_types et ON e.event_type_id = et.id
 		ORDER BY e.created_at DESC
 		LIMIT $1 OFFSET $2
 	`, limit, offset)
@@ -100,14 +102,14 @@ func (r *PostgresRepository) ListEvents(limit, offset int) ([]*Event, error) {
 		var id int
 		var name string
 		var eventStart, eventEnd time.Time
-		var dbStatus, coverImage, description, venueName, city, province string
+		var dbStatus, coverImage, description, venueName, city, province, category string
 		var capacity, ticketsSold int
 		var totalRevenue float64
 
 		if err := rows.Scan(
 			&id, &name, &eventStart, &eventEnd, &dbStatus, &coverImage, &description,
 			&venueName, &city, &province, &capacity,
-			&ticketsSold, &totalRevenue,
+			&ticketsSold, &totalRevenue, &category,
 		); err != nil {
 			return nil, err
 		}
@@ -128,7 +130,7 @@ func (r *PostgresRepository) ListEvents(limit, offset int) ([]*Event, error) {
 			Capacity:     capacity,
 			TicketsSold:  ticketsSold,
 			TotalRevenue: totalRevenue,
-			Category:     "General", // TODO: no event_types lookup table exists yet
+			Category:     category,
 			Description:  description,
 		})
 	}

@@ -212,5 +212,55 @@ func (r *PostgresRepository) Create(event *Event) error {
 	return tx.Commit()
 }
 
+func (r *PostgresRepository) ListVenues() ([]*Venue, error) {
+	rows, err := r.db.Query(`
+		SELECT id, name, address, city, province, total_capacity
+		FROM venues
+		ORDER BY name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var venues []*Venue
+	for rows.Next() {
+		var v Venue
+		if err := rows.Scan(&v.ID, &v.Name, &v.Address, &v.City, &v.Province, &v.TotalCapacity); err != nil {
+			return nil, err
+		}
+		venues = append(venues, &v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return venues, nil
+}
+
+func (r *PostgresRepository) ListEventTypes() ([]*EventType, error) {
+	rows, err := r.db.Query(`
+		SELECT id, event_type
+		FROM event_types
+		ORDER BY id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var eventTypes []*EventType
+	for rows.Next() {
+		var t EventType
+		if err := rows.Scan(&t.ID, &t.EventType); err != nil {
+			return nil, err
+		}
+		eventTypes = append(eventTypes, &t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return eventTypes, nil
+}
+
 
 

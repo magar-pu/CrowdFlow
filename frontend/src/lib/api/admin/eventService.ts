@@ -1,5 +1,5 @@
 import { apiRequest } from '@/utils/api';
-import { ApiResponse, Event, Scanner, TicketTier, VenueSection } from '@/types/admin';
+import { ApiResponse, Event, EventType, Scanner, TicketTier, Venue, VenueSection } from '@/types/admin';
 
 export async function listEvents(limit?: number, offset?: number): Promise<ApiResponse<Event[]>> {
   let query = "";
@@ -27,6 +27,21 @@ export async function createEvent(formData: FormData): Promise<ApiResponse<Event
   return apiRequest<Event>("/api/events", {
     method: "POST",
     body: formData,
+  });
+}
+
+// Same reasoning as createEvent above: these hit the event package's plain
+// /api/ routes (not /api/v1/), since no venue/event-type listing exists
+// anywhere in the admin package.
+export async function listVenues(): Promise<ApiResponse<Venue[]>> {
+  return apiRequest<Venue[]>("/api/venues", {
+    method: "GET",
+  });
+}
+
+export async function listEventTypes(): Promise<ApiResponse<EventType[]>> {
+  return apiRequest<EventType[]>("/api/event-types", {
+    method: "GET",
   });
 }
 

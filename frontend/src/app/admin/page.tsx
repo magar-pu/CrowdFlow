@@ -10,7 +10,7 @@ import {
   initialTicketTiers,
   initialVenueSections
 } from '@/lib/mock/admin';
-import { Event, User, Scanner, Transaction, Payout, VerificationApplication, SecurityAlert, Activity, TicketTier, VenueSection } from '@/types/admin';
+import { Event, EventType, User, Scanner, Transaction, Payout, VerificationApplication, SecurityAlert, Activity, TicketTier, VenueSection } from '@/types/admin';
 import {
   listUsers,
   toggleUserStatus,
@@ -18,7 +18,7 @@ import {
   approveVerification,
   rejectVerification,
 } from '@/lib/api/admin/userService';
-import { listEvents } from '@/lib/api/admin/eventService';
+import { listEvents, listEventTypes } from '@/lib/api/admin/eventService';
 
 import Sidebar from '@/components/admin/layout/Sidebar';
 import Header from '@/components/admin/layout/Header';
@@ -26,19 +26,21 @@ import MobileAdminBottomNav from '@/components/admin/layout/MobileAdminBottomNav
 import DashboardView from '@/components/admin/dashboard/DashboardView';
 import AnalyticsView from '@/components/admin/analytics/AnalyticsView';
 import EventManagementView from '@/components/admin/events/EventManagementView';
+import CreateEventView from '@/components/admin/events/CreateEventView';
 import EventWorkspaceView from '@/components/admin/workspace/EventWorkspaceView';
 import UserManagementView from '@/components/admin/users/UserManagementView';
 import FinanceView from '@/components/admin/finance/FinanceView';
 import SettingsView from '@/components/admin/finance/SettingsView';
 
 export default function AdminPage() {
-  const [currentView, setCurrentView] = useState<'dashboard' | 'analytics' | 'events' | 'users' | 'finance' | 'settings' | 'workspace'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'analytics' | 'events' | 'users' | 'finance' | 'settings' | 'workspace' | 'create-event'>('dashboard');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const [events, setEvents] = useState<Event[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
+  const [eventTypes, setEventTypes] = useState<EventType[]>([]);
   const [scanners, setScanners] = useState<Scanner[]>(initialScanners);
   const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions);
   const [payouts, setPayouts] = useState<Payout[]>(initialPayouts);
@@ -96,6 +98,16 @@ export default function AdminPage() {
   useEffect(() => {
     refreshEvents();
   }, [refreshEvents]);
+
+  // Event types back the category filter/picker — fetched once, rarely changes.
+  useEffect(() => {
+    (async () => {
+      const result = await listEventTypes();
+      if (result.success && result.data) {
+        setEventTypes(result.data);
+      }
+    })();
+  }, []);
 
   const handleApproveVerification = async (appId: string) => {
     const result = await approveVerification(appId);
@@ -173,20 +185,6 @@ export default function AdminPage() {
     };
     setActivities(prev => [newActivity, ...prev]);
     alert(`Transaction status for ${txId} has been resolved: ${newStatus.toUpperCase()}.`);
-  };
-
-  const handleAddEvent = (newEvent: Event) => {
-    setEvents(prev => [newEvent, ...prev]);
-
-    const newActivity: Activity = {
-      id: `ACT-${Math.floor(900 + Math.random() * 99)}`,
-      userName: 'Richie M.',
-      action: 'Created Event',
-      detail: `Initiated active ticket contract for: ${newEvent.name}.`,
-      timestamp: 'Just now'
-    };
-    setActivities(prev => [newActivity, ...prev]);
-    alert(`Event "${newEvent.name}" has been added.`);
   };
 
   const handleAddScanner = (newScanner: Scanner) => {
@@ -274,7 +272,8 @@ export default function AdminPage() {
               ) : (
                 <EventManagementView
                   events={events}
-                  onAddEvent={handleAddEvent}
+                  eventTypes={eventTypes}
+                  onCreateEvent={() => setCurrentView('create-event')}
                   onSelectEvent={(id) => {
                     setSelectedEventId(id);
                     setCurrentView('workspace');
@@ -282,6 +281,16 @@ export default function AdminPage() {
                 />
               )}
             </div>
+          )}
+
+          {currentView === 'create-event' && (
+            <CreateEventView
+              onBack={() => setCurrentView('events')}
+              onCreated={async () => {
+                await refreshEvents();
+                setCurrentView('events');
+              }}
+            />
           )}
 
           {currentView === 'workspace' && selectedEvent && (

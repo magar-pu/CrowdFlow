@@ -28,6 +28,12 @@ type VenueResponse struct {
 	TotalCapacity int    `json:"total_capacity"`
 }
 
+// EventTypeResponse defines a cleaned event-type payload for API outputs
+type EventTypeResponse struct {
+	ID        int    `json:"event_type_id"`
+	EventType string `json:"event_type"`
+}
+
 // OrganizerResponse defines a cleaned organizer payload for API outputs
 type OrganizerResponse struct {
 	ID         int    `json:"organizer_id"`
@@ -88,6 +94,17 @@ func MapOrganizer(o *Organizer) *OrganizerResponse {
 		Name:       o.Name,
 		AvatarURL:  o.AvatarURL,
 		ProfileURL: fmt.Sprintf("/organizers/%d", o.ID),
+	}
+}
+
+// MapEventType translates standard EventType domain entity to EventTypeResponse DTO
+func MapEventType(t *EventType) *EventTypeResponse {
+	if t == nil {
+		return nil
+	}
+	return &EventTypeResponse{
+		ID:        t.ID,
+		EventType: t.EventType,
 	}
 }
 

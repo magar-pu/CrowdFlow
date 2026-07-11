@@ -2,24 +2,23 @@
 
 import React, { useState } from 'react';
 import { Plus, Calendar, MapPin, Search, Filter, ChevronRight } from 'lucide-react';
-import { Event } from '@/types/admin';
-import EventCreateModal from './EventCreateModal';
+import { Event, EventType } from '@/types/admin';
 
 interface EventManagementViewProps {
   events: Event[];
-  onAddEvent: (newEvent: Event) => void;
+  eventTypes: EventType[];
+  onCreateEvent: () => void;
   onSelectEvent: (id: string) => void;
 }
 
-export default function EventManagementView({ events, onAddEvent, onSelectEvent }: EventManagementViewProps) {
+export default function EventManagementView({ events, eventTypes, onCreateEvent, onSelectEvent }: EventManagementViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
-  const [showCreateModal, setShowCreateModal] = useState(false);
 
   // Filtering logic
   const filteredEvents = events.filter(e => {
-    const matchesSearch = e.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    const matchesSearch = e.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           e.venue.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           e.location.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = categoryFilter === 'All' || e.category === categoryFilter;
@@ -27,7 +26,7 @@ export default function EventManagementView({ events, onAddEvent, onSelectEvent 
     return matchesSearch && matchesCategory && matchesStatus;
   });
 
-  const categoriesList = ['All', 'Concert', 'Conference', 'Sports', 'Classical', 'Finance'];
+  const categoriesList = ['All', ...eventTypes.map((t) => t.event_type)];
 
   return (
     <div className="space-y-6">
@@ -39,7 +38,7 @@ export default function EventManagementView({ events, onAddEvent, onSelectEvent 
         </div>
         <button
           id="btn-create-event-modal"
-          onClick={() => setShowCreateModal(true)}
+          onClick={onCreateEvent}
           className="flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary shadow-sm transition-all hover:bg-primary-container cursor-pointer"
         >
           <Plus className="h-4.5 w-4.5" />
@@ -208,14 +207,6 @@ export default function EventManagementView({ events, onAddEvent, onSelectEvent 
           })
         )}
       </div>
-
-      {/* Create New Event Modal Dialog Overlay */}
-      {showCreateModal && (
-        <EventCreateModal 
-          onClose={() => setShowCreateModal(false)} 
-          onAddEvent={onAddEvent} 
-        />
-      )}
     </div>
   );
 }

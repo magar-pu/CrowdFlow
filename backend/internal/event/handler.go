@@ -63,6 +63,36 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /api/events/{id}", optionalAuthenticate(http.HandlerFunc(h.handleGetEvent)))
 	mux.Handle("POST /api/events", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleCreateEvent))))
 	mux.Handle("PATCH /api/events/{id}/publish", authenticate(requireEventRole("Event Organizer")(http.HandlerFunc(h.handlePublishEvent))))
+	mux.Handle("GET /api/venues", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleListVenues))))
+	mux.Handle("GET /api/event-types", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleListEventTypes))))
+}
+
+func (h *Handler) handleListVenues(w http.ResponseWriter, r *http.Request) {
+	venues, err := h.service.ListVenues()
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+
+	res := make([]*VenueResponse, len(venues))
+	for i, v := range venues {
+		res[i] = MapVenue(v)
+	}
+	response.JSON(w, http.StatusOK, res)
+}
+
+func (h *Handler) handleListEventTypes(w http.ResponseWriter, r *http.Request) {
+	eventTypes, err := h.service.ListEventTypes()
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+
+	res := make([]*EventTypeResponse, len(eventTypes))
+	for i, t := range eventTypes {
+		res[i] = MapEventType(t)
+	}
+	response.JSON(w, http.StatusOK, res)
 }
 
 func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {
