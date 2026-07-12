@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { getMe, updateProfile, UserProfileResponse } from "@/lib/api/auth";
+import { BankAccountManager } from "@/components/profile/BankAccountManager";
 
 // ── Stat card data mapping ──────────────────────────────────────────────────
 
@@ -407,6 +408,9 @@ export default function ProfilePage() {
                 )}
               </div>
             </div>
+
+            {/* Bank Accounts */}
+            <BankAccountManager />
 
             {/* My Events */}
             <div className="rounded-xl border border-border-subtle bg-white shadow-sm">
