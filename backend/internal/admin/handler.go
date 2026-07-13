@@ -26,6 +26,21 @@ func actorIDFromRequest(r *http.Request) (int, bool) {
 	return actorID, true
 }
 
+// parsePagination reads limit/offset query params shared by every admin list
+// endpoint, falling back to defaultLimit/0 when absent or invalid. The
+// service layer applies its own default too (limit<=0), so a 0 fallback here
+// is safe.
+func parsePagination(r *http.Request, defaultLimit int) (limit, offset int) {
+	limit, offset = defaultLimit, 0
+	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 {
+		limit = l
+	}
+	if o, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && o >= 0 {
+		offset = o
+	}
+	return limit, offset
+}
+
 type Handler struct {
 	service Service
 }
@@ -122,13 +137,7 @@ func (h *Handler) handleListActivities(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleListEvents(w http.ResponseWriter, r *http.Request) {
-	limit, offset := 20, 0
-	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 {
-		limit = l
-	}
-	if o, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && o >= 0 {
-		offset = o
-	}
+	limit, offset := parsePagination(r, 20)
 
 	events, err := h.service.ListEvents(limit, offset)
 	if err != nil {
@@ -217,7 +226,8 @@ func (h *Handler) handleUpdateVenueSections(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *Handler) handleListTransactions(w http.ResponseWriter, r *http.Request) {
-	transactions, err := h.service.ListTransactions()
+	limit, offset := parsePagination(r, 50)
+	transactions, err := h.service.ListTransactions(limit, offset)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load transactions")
 		return
@@ -226,7 +236,8 @@ func (h *Handler) handleListTransactions(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *Handler) handleListPayouts(w http.ResponseWriter, r *http.Request) {
-	payouts, err := h.service.ListPayouts()
+	limit, offset := parsePagination(r, 50)
+	payouts, err := h.service.ListPayouts(limit, offset)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load payouts")
 		return
@@ -286,7 +297,8 @@ func (h *Handler) handleUpdateTransactionStatus(w http.ResponseWriter, r *http.R
 }
 
 func (h *Handler) handleListUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := h.service.ListUsers()
+	limit, offset := parsePagination(r, 50)
+	users, err := h.service.ListUsers(limit, offset)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load users")
 		return
@@ -349,7 +361,8 @@ func (h *Handler) handleGrantUserRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleListVerifications(w http.ResponseWriter, r *http.Request) {
-	verifications, err := h.service.ListVerifications()
+	limit, offset := parsePagination(r, 50)
+	verifications, err := h.service.ListVerifications(limit, offset)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load verification applications")
 		return

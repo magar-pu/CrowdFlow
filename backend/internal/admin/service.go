@@ -19,12 +19,18 @@ func (s *AdminService) ListEvents(limit, offset int) ([]*Event, error) {
 	return s.repo.ListEvents(limit, offset)
 }
 
-func (s *AdminService) ListUsers() ([]*User, error) {
-	return s.repo.ListUsers()
+func (s *AdminService) ListUsers(limit, offset int) ([]*User, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.repo.ListUsers(limit, offset)
 }
 
-func (s *AdminService) ListTransactions() ([]*Transaction, error) {
-	return s.repo.ListTransactions()
+func (s *AdminService) ListTransactions(limit, offset int) ([]*Transaction, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.repo.ListTransactions(limit, offset)
 }
 
 func (s *AdminService) GetTicketTiers(eventID int) ([]*TicketTier, error) {
@@ -58,12 +64,18 @@ func (s *AdminService) UpdateTransactionStatus(orderID string, status string, ac
 // ListVerifications is real - derived from users.verification_status in
 // repository.go (no separate applications table exists; see the comment
 // there). Approve/reject reuse UpdateUserStatus above.
-func (s *AdminService) ListVerifications() ([]*VerificationApplication, error) {
-	return s.repo.ListVerifications()
+func (s *AdminService) ListVerifications(limit, offset int) ([]*VerificationApplication, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.repo.ListVerifications(limit, offset)
 }
 
-func (s *AdminService) ListPayouts() ([]*Payout, error) {
-	return s.repo.ListPayouts()
+func (s *AdminService) ListPayouts(limit, offset int) ([]*Payout, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.repo.ListPayouts(limit, offset)
 }
 
 func (s *AdminService) ProcessPayout(payoutID string, actorID int) error {

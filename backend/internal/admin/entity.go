@@ -122,8 +122,8 @@ type VenueSection struct {
 type Repository interface {
 	GetDashboardStats() (*DashboardStats, error)
 	ListEvents(limit, offset int) ([]*Event, error)
-	ListUsers() ([]*User, error)
-	ListTransactions() ([]*Transaction, error)
+	ListUsers(limit, offset int) ([]*User, error)
+	ListTransactions(limit, offset int) ([]*Transaction, error)
 	GetTicketTiers(eventID int) ([]*TicketTier, error)
 	UpdateTicketTiers(eventID int, tiers []*TicketTier) error
 	GetVenueSections(eventID int) ([]*VenueSection, error)
@@ -131,9 +131,9 @@ type Repository interface {
 	UpdateUserStatus(userID int, status string, actorID int) error
 	GrantUserRole(userID int, roleID int, eventID *int, actorID int) error
 	UpdateTransactionStatus(orderID string, status string, actorID int) error
-	ListVerifications() ([]*VerificationApplication, error)
+	ListVerifications(limit, offset int) ([]*VerificationApplication, error)
 
-	ListPayouts() ([]*Payout, error)
+	ListPayouts(limit, offset int) ([]*Payout, error)
 	ProcessPayout(payoutID string, actorID int) error
 	RejectPayout(payoutID string, actorID int) error
 	ListActivities() ([]*Activity, error)
@@ -142,8 +142,8 @@ type Repository interface {
 type Service interface {
 	GetDashboardStats() (*DashboardStats, error)
 	ListEvents(limit, offset int) ([]*Event, error)
-	ListUsers() ([]*User, error)
-	ListTransactions() ([]*Transaction, error)
+	ListUsers(limit, offset int) ([]*User, error)
+	ListTransactions(limit, offset int) ([]*Transaction, error)
 	GetTicketTiers(eventID int) ([]*TicketTier, error)
 	UpdateTicketTiers(eventID int, tiers []*TicketTier) error
 	GetVenueSections(eventID int) ([]*VenueSection, error)
@@ -151,9 +151,9 @@ type Service interface {
 	UpdateUserStatus(userID int, status string, actorID int) error
 	GrantUserRole(userID int, roleID int, eventID *int, actorID int) error
 	UpdateTransactionStatus(orderID string, status string, actorID int) error
-	ListVerifications() ([]*VerificationApplication, error)
+	ListVerifications(limit, offset int) ([]*VerificationApplication, error)
 
-	ListPayouts() ([]*Payout, error)
+	ListPayouts(limit, offset int) ([]*Payout, error)
 	ProcessPayout(payoutID string, actorID int) error
 	RejectPayout(payoutID string, actorID int) error
 	ListActivities() ([]*Activity, error)

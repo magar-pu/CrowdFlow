@@ -142,7 +142,7 @@ func (r *PostgresRepository) ListEvents(limit, offset int) ([]*Event, error) {
 	return events, nil
 }
 
-func (r *PostgresRepository) ListUsers() ([]*User, error) {
+func (r *PostgresRepository) ListUsers(limit, offset int) ([]*User, error) {
 	rows, err := r.db.Query(`
 		SELECT
 			u.id, COALESCE(up.full_name, ''), u.email, u.verification_status, u.created_at, COALESCE(up.avatar_pic, ''),
@@ -156,7 +156,8 @@ func (r *PostgresRepository) ListUsers() ([]*User, error) {
 		FROM users u
 		LEFT JOIN user_profiles up ON u.id = up.user_id
 		ORDER BY u.created_at DESC
-	`)
+		LIMIT $1 OFFSET $2
+	`, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +224,7 @@ func mapVerificationStatus(dbStatus string) string {
 	}
 }
 
-func (r *PostgresRepository) ListTransactions() ([]*Transaction, error) {
+func (r *PostgresRepository) ListTransactions(limit, offset int) ([]*Transaction, error) {
 	rows, err := r.db.Query(`
 		SELECT
 			o.id, COALESCE(up.full_name, ''), e.event_name, o.gross_amount, o.payment_type, o.status, o.created_at
@@ -233,7 +234,8 @@ func (r *PostgresRepository) ListTransactions() ([]*Transaction, error) {
 		LEFT JOIN events e ON o.event_id = e.id
 		WHERE o.status IN ('paid', 'pending', 'refunded')
 		ORDER BY o.created_at DESC
-	`)
+		LIMIT $1 OFFSET $2
+	`, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -469,14 +471,15 @@ func (r *PostgresRepository) GrantUserRole(userID int, roleID int, eventID *int,
 // data model. businessType/documentType/submittedAt are fields the frontend
 // type expects that the DB doesn't model - placeholders until a real KYC
 // application table exists.
-func (r *PostgresRepository) ListVerifications() ([]*VerificationApplication, error) {
+func (r *PostgresRepository) ListVerifications(limit, offset int) ([]*VerificationApplication, error) {
 	rows, err := r.db.Query(`
 		SELECT u.id, COALESCE(up.full_name, ''), u.email, u.created_at
 		FROM users u
 		LEFT JOIN user_profiles up ON u.id = up.user_id
 		WHERE u.verification_status = 'pending_verification'
 		ORDER BY u.created_at ASC
-	`)
+		LIMIT $1 OFFSET $2
+	`, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -594,7 +597,7 @@ func mapPayoutStatus(dbStatus string) string {
 //     by ListVerifications above.
 //  2. Real historical rows already recorded in `payouts` (processed or
 //     rejected/failed) - see ProcessPayout/RejectPayout.
-func (r *PostgresRepository) ListPayouts() ([]*Payout, error) {
+func (r *PostgresRepository) ListPayouts(limit, offset int) ([]*Payout, error) {
 	rows, err := r.db.Query(`
 		WITH balances AS (
 			SELECT
@@ -618,7 +621,8 @@ func (r *PostgresRepository) ListPayouts() ([]*Payout, error) {
 		LEFT JOIN users u ON u.id = e.organizer_id
 		LEFT JOIN user_profiles up ON up.user_id = u.id
 		ORDER BY 6 DESC
-	`)
+		LIMIT $1 OFFSET $2
+	`, limit, offset)
 	if err != nil {
 		return nil, err
 	}

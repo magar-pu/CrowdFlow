@@ -29,9 +29,9 @@ func NewHandler(service *AuthService, secure bool) *Handler {
 	return &Handler{service: service, secure: secure}
 }
 
-func (h *Handler) RegisterRoutes(mux *http.ServeMux, authenticate func(http.Handler) http.Handler) {
+func (h *Handler) RegisterRoutes(mux *http.ServeMux, authenticate func(http.Handler) http.Handler, rateLimitLogin func(http.Handler) http.Handler) {
 	mux.HandleFunc("POST /api/auth/register", h.handleRegister)
-	mux.HandleFunc("POST /api/auth/login", h.handleLogin)
+	mux.Handle("POST /api/auth/login", rateLimitLogin(http.HandlerFunc(h.handleLogin)))
 	mux.HandleFunc("GET /api/auth/google/login", h.handleGoogleRedirect)
 	mux.HandleFunc("GET /api/auth/google/callback", h.handleGoogleCallback)
 	mux.HandleFunc("POST /api/auth/logout", h.handleLogout)
