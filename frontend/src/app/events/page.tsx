@@ -22,7 +22,6 @@ import { FeaturedCarousel } from "@/components/event-discovery/FeaturedCarousel"
 import { CategoryIconsGrid } from "@/components/event-discovery/CategoryIconsGrid";
 import { QuickFilterBar } from "@/components/event-discovery/QuickFilterBar";
 import { FilterSidebar } from "@/components/event-discovery/FilterSidebar";
-import { AIRecommendationsPanel } from "@/components/event-discovery/AIRecommendationsPanel";
 import { EventListingCard } from "@/components/event-discovery/EventListingCard";
 import { ResaleMarketplacePromo } from "@/components/event-discovery/ResaleMarketplacePromo";
 import { HomeFooterV3 } from "@/components/home-v3/HomeFooterV3";
@@ -187,11 +186,6 @@ export default function EventsDiscoveryPage() {
               />
 
               <div className="flex-1">
-                {aiRecommendedEvents.length > 0 && (
-                  <AIRecommendationsPanel
-                    recommendations={aiRecommendedEvents}
-                  />
-                )}
 
                 {filtered_events.length > 0 ? (
                   <div className="grid grid-cols-1 gap-gutter md:grid-cols-2 xl:grid-cols-3">

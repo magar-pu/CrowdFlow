@@ -4,13 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { SeatMapHeader } from "@/components/seat-selection/SeatMapHeader";
 import { TicketTypeSelector } from "@/components/seat-selection/TicketTypeSelector";
-import { MapControls } from "@/components/seat-selection/MapControls";
 import { MapLegend } from "@/components/seat-selection/MapLegend";
 import { MapBottomToolbar } from "@/components/seat-selection/MapBottomToolbar";
 import { VenueMapCanvas } from "@/components/seat-selection/VenueMapCanvas";
 import { SelectionPanel } from "@/components/seat-selection/SelectionPanel";
 import { useSeatMap } from "@/lib/hooks/useSeatMap";
 import { mockEvent, mockSeatSections, mockTicketCategoryById } from "@/mock/eventData";
+import { cn } from "@/lib/utils";
 
 const MAX_SEATS = 7;
 
@@ -98,13 +98,38 @@ export default function SeatSelectionPage() {
             on_pan_end={end_pan}
             on_wheel_zoom={handle_wheel_zoom}
           />
-          <MapControls on_zoom_in={zoom_in} on_zoom_out={zoom_out} on_reset={reset_view} />
           <MapLegend />
           <MapBottomToolbar on_zoom_in={zoom_in} on_zoom_out={zoom_out} />
+
+          {/* Mobile floating checkout button (appears when panel is closed but seats are selected) */}
+          {selected_seats.length > 0 && !active_section_id && (
+            <div className="absolute bottom-32 left-4 right-4 z-20 md:hidden">
+              <button
+                type="button"
+                onClick={() => select_section(selected_seats[0].section_id, selected_seats[0].section_label)}
+                className="flex w-full items-center justify-between rounded-xl bg-primary px-4 py-3 font-label-md text-white shadow-elevated"
+              >
+                <span>{selected_seats.length} Seat{selected_seats.length > 1 ? "s" : ""} Selected</span>
+                <span>View / Proceed</span>
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Right panel */}
-        <aside className="hidden h-full w-[360px] shrink-0 border-l border-border-subtle bg-white shadow-[-4px_0_24px_rgba(0,0,0,0.04)] md:flex md:flex-col">
+        {/* Right panel (Desktop) / Bottom Sheet (Mobile) */}
+        <aside className={cn(
+          "fixed inset-x-0 bottom-0 z-50 flex h-[85vh] shrink-0 flex-col rounded-t-3xl border-t border-border-subtle bg-white shadow-[0_-8px_30px_rgba(0,0,0,0.12)] transition-transform duration-300",
+          "md:static md:h-full md:w-[360px] md:translate-y-0 md:rounded-none md:border-l md:border-t-0 md:shadow-[-4px_0_24px_rgba(0,0,0,0.04)]",
+          active_section_id ? "translate-y-0" : "translate-y-full"
+        )}>
+          {/* Mobile Handle to close panel */}
+          <div 
+            className="flex w-full cursor-pointer items-center justify-center pt-3 pb-1 md:hidden"
+            onClick={() => select_section(null)}
+          >
+            <div className="h-1.5 w-12 rounded-full bg-border-subtle" />
+          </div>
+
           <SelectionPanel
             selected_ticket_type_label={TICKET_TYPE_LABELS[active_ticket_type] ?? "VIP"}
             selected_ticket_type_price={TICKET_TYPE_PRICES[active_ticket_type] ?? 0}

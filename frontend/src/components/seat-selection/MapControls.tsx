@@ -19,7 +19,7 @@ export function MapControls({
   on_reset,
 }: MapControlsProps) {
   return (
-    <div className="absolute left-6 top-6 z-10 flex flex-col gap-2 rounded-xl border border-border-subtle bg-surface-white p-1.5 shadow-elevated">
+    <div className="absolute left-6 top-6 z-10 hidden flex-col gap-2 rounded-xl border border-border-subtle bg-surface-white p-1.5 shadow-elevated md:flex">
       <button
         type="button"
         onClick={on_zoom_in}
