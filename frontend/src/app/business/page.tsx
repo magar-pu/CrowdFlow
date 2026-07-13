@@ -71,36 +71,38 @@ export default function BusinessPage() {
   return (
     <div className="text-on-background bg-background min-h-screen">
       {/* TopNavBar */}
-      <nav className="sticky top-0 z-50 flex justify-between items-center w-full px-margin-desktop py-4 max-w-container-max mx-auto bg-surface/80 backdrop-blur-xl border-b border-border-subtle shadow-sm">
-        <div className="flex items-center gap-8">
-          <Link href="/" className="font-headline-md text-headline-md font-bold text-primary tracking-tight">
-            CrowdFlow
-          </Link>
-          <div className="hidden md:flex gap-6">
-            <Link className="text-text-secondary hover:text-primary transition-colors font-body-md text-body-md" href="/">
-              Home
+      <nav className="sticky top-0 z-50 w-full bg-surface/80 backdrop-blur-xl border-b border-border-subtle shadow-sm">
+        <div className="max-w-container-max mx-auto w-full flex justify-between items-center px-margin-desktop py-4">
+          <div className="flex items-center gap-8">
+            <Link href="/" className="font-headline-md text-headline-md font-bold text-primary tracking-tight">
+              CrowdFlow
             </Link>
-            <Link className="text-text-secondary hover:text-primary transition-colors font-body-md text-body-md" href="/events">
-              Events
-            </Link>
-            <Link className="text-text-secondary hover:text-primary transition-colors font-body-md text-body-md" href="/resale">
-              Resale Marketplace
-            </Link>
-            <Link className="text-primary font-bold border-b-2 border-primary pb-1 font-body-md text-body-md" href="/business">
-              Business
-            </Link>
+            <div className="hidden md:flex gap-6">
+              <Link className="text-text-secondary hover:text-primary transition-colors font-body-md text-body-md" href="/">
+                Home
+              </Link>
+              <Link className="text-text-secondary hover:text-primary transition-colors font-body-md text-body-md" href="/events">
+                Events
+              </Link>
+              <Link className="text-text-secondary hover:text-primary transition-colors font-body-md text-body-md" href="/resale">
+                Resale Marketplace
+              </Link>
+              <Link className="text-primary font-bold border-b-2 border-primary pb-1 font-body-md text-body-md" href="/business">
+                Business
+              </Link>
+            </div>
           </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <Link href="/login" className="px-5 py-2 text-text-secondary font-label-md text-label-md hover:text-primary transition-colors">
-            Sign In
-          </Link>
-          <button
-            onClick={() => setOpenModal(true)}
-            className="px-6 py-2 bg-primary text-on-primary rounded-full font-label-md text-label-md hover:opacity-90 active:scale-95 transition-all duration-100"
-          >
-            Become Organizer
-          </button>
+          <div className="flex items-center gap-4">
+            <Link href="/login" className="px-5 py-2 text-text-secondary font-label-md text-label-md hover:text-primary transition-colors">
+              Sign In
+            </Link>
+            <button
+              onClick={() => setOpenModal(true)}
+              className="px-6 py-2 bg-primary text-on-primary rounded-full font-label-md text-label-md hover:opacity-90 active:scale-95 transition-all duration-100"
+            >
+              Become Organizer
+            </button>
+          </div>
         </div>
       </nav>
 

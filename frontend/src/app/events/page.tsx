@@ -82,10 +82,13 @@ export default function EventsDiscoveryPage() {
       });
   }, []);
 
-  const displayEvents = dbEvents;
+  const displayEvents = dbEvents.length > 0 ? dbEvents : mockEventListingCards;
 
   const featuredEvents = useMemo<FeaturedCarouselEvent[]>(() => {
-    return dbEvents.slice(0, 3).map((evt, idx) => ({
+    if (displayEvents === mockEventListingCards) {
+      return mockFeaturedCarousel;
+    }
+    return displayEvents.slice(0, 3).map((evt, idx) => ({
       event_id: evt.event_id,
       cover_image_url: evt.cover_image_url,
       tag_label: idx === 0 ? "Pilihan Editor" : "Trending",
@@ -94,10 +97,13 @@ export default function EventsDiscoveryPage() {
       date_venue_label: evt.date_label,
       starting_price: evt.starting_price,
     }));
-  }, [dbEvents]);
+  }, [displayEvents]);
 
   const aiRecommendedEvents = useMemo<AIRecommendedEvent[]>(() => {
-    return dbEvents.slice(0, 2).map((evt, idx) => ({
+    if (displayEvents === mockEventListingCards) {
+      return mockAIRecommendedEvents;
+    }
+    return displayEvents.slice(0, 2).map((evt, idx) => ({
       event_id: evt.event_id,
       cover_image_url: evt.cover_image_url,
       tag_label: idx === 0 ? "Top Match" : "Hot Deal",
@@ -106,7 +112,7 @@ export default function EventsDiscoveryPage() {
       date_venue_label: evt.date_label.split("•")[0].trim(),
       price: evt.starting_price,
     }));
-  }, [dbEvents]);
+  }, [displayEvents]);
 
   function handle_toggle_city(city: string) {
     set_selected_cities((cities) =>

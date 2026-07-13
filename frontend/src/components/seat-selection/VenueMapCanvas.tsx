@@ -30,119 +30,189 @@ const PRICE_MAP: Record<string, string> = {
 
 const SOLD_OUT_IDS = ["sec_ga_3", "sec_ga_6"];
 
-// Dot grid generator helper
-function make_dots(
-  count: number,
-  cols: number,
-  start_x: number,
-  start_y: number,
-  gap_x: number,
-  gap_y: number
-) {
-  return Array.from({ length: count }, (_, i) => ({
-    cx: start_x + (i % cols) * gap_x,
-    cy: start_y + Math.floor(i / cols) * gap_y,
-  }));
+/* ═══════════════════════════════════════════════════════════════════
+ * Geometry helpers — section shapes AND dots are generated from the
+ * same quadrilateral corners, so dots are GUARANTEED to be inside.
+ * ═══════════════════════════════════════════════════════════════════ */
+
+interface Pt { x: number; y: number }
+interface Quad { tl: Pt; tr: Pt; br: Pt; bl: Pt }
+
+/**
+ * Build an SVG path from a quadrilateral with optional bezier curves on
+ * top and bottom edges to create a stadium-seating arc look.
+ *
+ * top_bow > 0  → top edge bows UPWARD   (away from section interior → safe)
+ * bot_bow > 0  → bottom edge bows DOWN  (away from section interior → safe)
+ *
+ * Because both curves bow OUTWARD, the path always CONTAINS the quad,
+ * so any dot placed inside the quad is also inside the path.
+ */
+function quad_path(q: Quad, top_bow = 0, bot_bow = 0): string {
+  const tcx = (q.tl.x + q.tr.x) / 2;
+  const tcy = (q.tl.y + q.tr.y) / 2 - top_bow;
+  const bcx = (q.br.x + q.bl.x) / 2;
+  const bcy = (q.br.y + q.bl.y) / 2 + bot_bow;
+  return [
+    `M${q.tl.x},${q.tl.y}`,
+    `Q${tcx},${tcy} ${q.tr.x},${q.tr.y}`,
+    `L${q.br.x},${q.br.y}`,
+    `Q${bcx},${bcy} ${q.bl.x},${q.bl.y}`,
+    "Z",
+  ].join(" ");
 }
 
+/**
+ * Place dots inside a quadrilateral using bilinear interpolation.
+ * padding (0–0.4) insets from edges so dots never touch the boundary.
+ */
+function quad_dots(
+  q: Quad, rows: number, cols: number, padding = 0.12
+): { cx: number; cy: number }[] {
+  const dots: { cx: number; cy: number }[] = [];
+  for (let r = 0; r < rows; r++) {
+    const v = rows === 1 ? 0.5 : padding + (r / (rows - 1)) * (1 - 2 * padding);
+    for (let c = 0; c < cols; c++) {
+      const u = cols === 1 ? 0.5 : padding + (c / (cols - 1)) * (1 - 2 * padding);
+      // Bilinear interpolation
+      const topX = q.tl.x + u * (q.tr.x - q.tl.x);
+      const topY = q.tl.y + u * (q.tr.y - q.tl.y);
+      const botX = q.bl.x + u * (q.br.x - q.bl.x);
+      const botY = q.bl.y + u * (q.br.y - q.bl.y);
+      dots.push({
+        cx: Math.round((topX + v * (botX - topX)) * 10) / 10,
+        cy: Math.round((topY + v * (botY - topY)) * 10) / 10,
+      });
+    }
+  }
+  return dots;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * Section definitions
+ *
+ * Each section is defined by a quadrilateral (4 corners).
+ * The SVG path and seat dots are both derived from these same corners.
+ * Left/Right sections are precise mirrors of each other.
+ * ═══════════════════════════════════════════════════════════════════ */
+
+// ── VIP CENTER ────────────────────────────────────────────────────
+const VIP_C_QUAD: Quad = {
+  tl: { x: 330, y: 282 }, tr: { x: 470, y: 282 },
+  bl: { x: 336, y: 370 }, br: { x: 464, y: 370 },
+};
+
+// ── VIP LEFT ──────────────────────────────────────────────────────
+const VIP_L_QUAD: Quad = {
+  tl: { x: 238, y: 296 }, tr: { x: 328, y: 282 },
+  bl: { x: 234, y: 368 }, br: { x: 334, y: 370 },
+};
+
+// ── VIP RIGHT (mirror of LEFT) ───────────────────────────────────
+const VIP_R_QUAD: Quad = {
+  tl: { x: 472, y: 282 }, tr: { x: 562, y: 296 },
+  bl: { x: 466, y: 370 }, br: { x: 566, y: 368 },
+};
+
+// ── VIP C LEFT ────────────────────────────────────────────────────
+const VIPC_L_QUAD: Quad = {
+  tl: { x: 170, y: 316 }, tr: { x: 236, y: 296 },
+  bl: { x: 164, y: 362 }, br: { x: 232, y: 368 },
+};
+
+// ── VIP C RIGHT (mirror of VIP C LEFT) ───────────────────────────
+const VIPC_R_QUAD: Quad = {
+  tl: { x: 564, y: 296 }, tr: { x: 630, y: 316 },
+  bl: { x: 568, y: 368 }, br: { x: 636, y: 362 },
+};
+
+// ── GOLD LEFT ─────────────────────────────────────────────────────
+const GOLD_L_QUAD: Quad = {
+  tl: { x: 148, y: 372 }, tr: { x: 222, y: 388 },
+  bl: { x: 128, y: 444 }, br: { x: 228, y: 474 },
+};
+
+// ── GOLD RIGHT (mirror of GOLD LEFT) ─────────────────────────────
+const GOLD_R_QUAD: Quad = {
+  tl: { x: 578, y: 388 }, tr: { x: 652, y: 372 },
+  bl: { x: 572, y: 474 }, br: { x: 672, y: 444 },
+};
+
+// ── GENERAL ADMISSION ─────────────────────────────────────────────
+const GA_QUAD: Quad = {
+  tl: { x: 232, y: 490 }, tr: { x: 568, y: 490 },
+  bl: { x: 255, y: 555 }, br: { x: 545, y: 555 },
+};
+
 const SECTIONS = [
-  // ── VIP CENTER (purple, innermost) ──────────────────────────────
   {
     section_id: "sec_vip_c",
     label: "VIP\nCENTER",
     color: "#8B5CF6",
-    path: "M310,310 Q400,280 490,310 L478,400 Q400,378 322,400 Z",
-    dots: make_dots(30, 6, 328, 318, 27, 22),
-    lx: 400, ly: 365,
+    path: quad_path(VIP_C_QUAD, 14, 8),
+    dots: quad_dots(VIP_C_QUAD, 5, 7, 0.14),
+    lx: 400, ly: 332,
   },
-  // ── VIP LEFT (purple, left of center) ───────────────────────────
   {
     section_id: "sec_vip_l",
     label: "VIP\nLEFT",
     color: "#8B5CF6",
-    path: "M205,300 Q275,268 318,302 L308,398 Q258,388 198,368 Z",
-    dots: make_dots(25, 5, 215, 308, 21, 22),
-    lx: 262, ly: 358,
+    path: quad_path(VIP_L_QUAD, 10, 6),
+    dots: quad_dots(VIP_L_QUAD, 4, 5, 0.16),
+    lx: 282, ly: 332,
   },
-  // ── VIP RIGHT (purple, right of center) ─────────────────────────
   {
     section_id: "sec_vip_r",
     label: "VIP\nRIGHT",
     color: "#8B5CF6",
-    path: "M482,302 Q525,268 595,300 L602,368 Q542,388 492,398 Z",
-    dots: make_dots(25, 5, 492, 308, 21, 22),
-    lx: 540, ly: 358,
+    path: quad_path(VIP_R_QUAD, 10, 6),
+    dots: quad_dots(VIP_R_QUAD, 4, 5, 0.16),
+    lx: 518, ly: 332,
   },
-  // ── VIP C LEFT (orange/salmon) ───────────────────────────────────
   {
     section_id: "sec_ga_1",
     label: "VIP C\nLEFT",
     color: "#F97316",
-    path: "M130,268 Q185,235 215,272 L202,372 Q158,368 122,338 Z",
-    dots: make_dots(18, 4, 140, 275, 18, 22),
-    lx: 172, ly: 338,
+    path: quad_path(VIPC_L_QUAD, 6, 4),
+    dots: quad_dots(VIPC_L_QUAD, 3, 4, 0.18),
+    lx: 200, ly: 338,
   },
-  // ── VIP C RIGHT (orange/salmon) ──────────────────────────────────
   {
     section_id: "sec_ga_2",
     label: "VIP C\nRIGHT",
     color: "#F97316",
-    path: "M585,272 Q615,235 670,268 L678,338 Q642,368 598,372 Z",
-    dots: make_dots(18, 4, 598, 275, 18, 22),
-    lx: 632, ly: 338,
+    path: quad_path(VIPC_R_QUAD, 6, 4),
+    dots: quad_dots(VIPC_R_QUAD, 3, 4, 0.18),
+    lx: 600, ly: 338,
   },
-  // ── GOLD LEFT (yellow/amber) ─────────────────────────────────────
   {
     section_id: "sec_ga_3",
     label: "GOLD\nLEFT",
     color: "#F59E0B",
-    path: "M105,348 Q148,385 200,410 L215,500 Q148,492 98,448 Z",
-    dots: make_dots(20, 4, 118, 358, 20, 22),
-    lx: 168, ly: 458,
+    path: quad_path(GOLD_L_QUAD, 4, 6),
+    dots: quad_dots(GOLD_L_QUAD, 4, 3, 0.20),
+    lx: 178, ly: 428,
   },
-  // ── GOLD RIGHT (yellow/amber) ────────────────────────────────────
   {
     section_id: "sec_ga_4",
     label: "GOLD\nRIGHT",
     color: "#F59E0B",
-    path: "M600,410 Q652,385 695,348 L702,448 Q652,492 585,500 Z",
-    dots: make_dots(20, 4, 605, 358, 20, 22),
-    lx: 636, ly: 458,
+    path: quad_path(GOLD_R_QUAD, 4, 6),
+    dots: quad_dots(GOLD_R_QUAD, 4, 3, 0.20),
+    lx: 622, ly: 428,
   },
-  // ── GENERAL ADMISSION (green, bottom arc) ───────────────────────
   {
     section_id: "sec_ga_5",
     label: "GENERAL ADMISSION",
     color: "#22C55E",
-    path: "M205,505 Q300,552 400,562 Q500,552 595,505 L582,572 Q400,615 218,572 Z",
-    dots: make_dots(48, 12, 222, 515, 31, 18),
-    lx: 400, ly: 548,
+    path: quad_path(GA_QUAD, 20, 8),
+    dots: quad_dots(GA_QUAD, 3, 12, 0.08),
+    lx: 400, ly: 528,
   },
-  // ── SEC GA 6 (sold out placeholder, hidden visually) ────────────
-  {
-    section_id: "sec_ga_6",
-    label: "",
-    color: "#CBD5E1",
-    path: "",
-    dots: [],
-    lx: 0, ly: 0,
-  },
-  {
-    section_id: "sec_ga_7",
-    label: "",
-    color: "#CBD5E1",
-    path: "",
-    dots: [],
-    lx: 0, ly: 0,
-  },
-  {
-    section_id: "sec_ga_8",
-    label: "",
-    color: "#CBD5E1",
-    path: "",
-    dots: [],
-    lx: 0, ly: 0,
-  },
+  // Placeholder sections (hidden)
+  { section_id: "sec_ga_6", label: "", color: "#CBD5E1", path: "", dots: [], lx: 0, ly: 0 },
+  { section_id: "sec_ga_7", label: "", color: "#CBD5E1", path: "", dots: [], lx: 0, ly: 0 },
+  { section_id: "sec_ga_8", label: "", color: "#CBD5E1", path: "", dots: [], lx: 0, ly: 0 },
 ];
 
 interface TooltipState {
@@ -204,43 +274,34 @@ export function VenueMapCanvas({
           style={{ overflow: "visible" }}
         >
           {/* ── Arena shell ── */}
-          {/* Outer glow ring */}
-          <ellipse cx="400" cy="430" rx="362" ry="272"
-            fill="none" stroke="#E2E8F0" strokeWidth="18" opacity="0.6" />
-          {/* Main arena floor */}
-          <ellipse cx="400" cy="428" rx="352" ry="264"
+          <ellipse cx="400" cy="420" rx="350" ry="260"
+            fill="none" stroke="#E2E8F0" strokeWidth="18" opacity="0.5" />
+          <ellipse cx="400" cy="418" rx="340" ry="250"
             fill="#EEF0F4" stroke="#DDE1E8" strokeWidth="2" />
-          {/* Inner floor */}
-          <ellipse cx="400" cy="418" rx="300" ry="218"
+          <ellipse cx="400" cy="412" rx="290" ry="210"
             fill="#E8EBF0" stroke="#D5DAE3" strokeWidth="1" />
 
           {/* ── Stage ── */}
-          {/* Stage structure */}
-          <path d="M278,135 Q400,88 522,135 L505,215 Q400,188 295,215 Z"
+          <path d="M288,140 Q400,95 512,140 L500,212 Q400,190 300,212 Z"
             fill="#0F172A" />
-          {/* Stage front lip */}
-          <path d="M290,210 Q400,190 510,210 L515,225 Q400,205 285,225 Z"
+          <path d="M296,208 Q400,190 504,208 L507,222 Q400,202 293,222 Z"
             fill="#1E293B" />
-          {/* Stage scaffolding left */}
-          <rect x="285" y="148" width="8" height="62" fill="#334155" rx="2" />
-          {/* Stage scaffolding right */}
-          <rect x="507" y="148" width="8" height="62" fill="#334155" rx="2" />
-          {/* Stage lights */}
+          <rect x="292" y="150" width="6" height="56" fill="#334155" rx="2" />
+          <rect x="502" y="150" width="6" height="56" fill="#334155" rx="2" />
           <defs>
             <radialGradient id="spotlight" cx="50%" cy="0%" r="100%">
               <stop offset="0%" stopColor="#93C5FD" stopOpacity="0.6" />
               <stop offset="100%" stopColor="#3B82F6" stopOpacity="0" />
             </radialGradient>
           </defs>
-          {[330, 358, 400, 442, 470].map((x, i) => (
-            <g key={i}>
-              <ellipse cx={x} cy="190" rx="8" ry="4" fill="#60A5FA" opacity="0.9" />
-              <ellipse cx={x} cy="195" rx="5" ry="3" fill="white" opacity="0.6" />
+          {[340, 370, 400, 430, 460].map((x, i) => (
+            <g key={`light-${i}`}>
+              <ellipse cx={x} cy="190" rx="7" ry="3.5" fill="#60A5FA" opacity="0.9" />
+              <ellipse cx={x} cy="194" rx="4" ry="2.5" fill="white" opacity="0.55" />
             </g>
           ))}
-          {/* Stage label */}
           <text x="400" y="178" textAnchor="middle" fill="white"
-            fontSize="15" fontWeight="800" letterSpacing="6" opacity="0.95">
+            fontSize="14" fontWeight="800" letterSpacing="6" opacity="0.95">
             STAGE
           </text>
 
@@ -271,7 +332,7 @@ export function VenueMapCanvas({
                 <path
                   d={section.path}
                   fill={section.color}
-                  fillOpacity={is_sold ? 0.15 : is_active ? 0.85 : 0.38}
+                  fillOpacity={is_sold ? 0.15 : is_active ? 0.92 : 0.42}
                   stroke={section.color}
                   strokeWidth={is_active ? 2.5 : 1}
                   strokeOpacity={is_active ? 1 : 0.5}
@@ -283,22 +344,16 @@ export function VenueMapCanvas({
                     key={i}
                     cx={dot.cx}
                     cy={dot.cy}
-                    r={is_active ? 4.5 : 4}
+                    r={is_active ? 4.2 : 3.6}
                     fill={is_sold ? "#94A3B8" : is_active ? "white" : section.color}
                     fillOpacity={is_sold ? 0.3 : is_active ? 0.95 : 0.82}
                     className="transition-all duration-200"
                   />
                 ))}
-                {/* Selected checkmark dot */}
+                {/* Active indicator */}
                 {is_active && (
-                  <circle
-                    cx={section.lx}
-                    cy={section.ly - 22}
-                    r="10"
-                    fill={section.color}
-                    stroke="white"
-                    strokeWidth="2"
-                  />
+                  <circle cx={section.lx} cy={section.ly - 22}
+                    r="10" fill={section.color} stroke="white" strokeWidth="2" />
                 )}
                 {/* Section label */}
                 {section.label && section.label.split("\n").map((line, i) => (
@@ -321,14 +376,14 @@ export function VenueMapCanvas({
             );
           })}
 
-          {/* ── Entrance markers (green walking person) ── */}
+          {/* ── Entrance markers ── */}
           {[
-            { x: 140, y: 375, label: "" },
-            { x: 660, y: 375, label: "" },
-            { x: 280, y: 612, label: "" },
-            { x: 520, y: 612, label: "" },
+            { x: 148, y: 365 },
+            { x: 652, y: 365 },
+            { x: 290, y: 590 },
+            { x: 510, y: 590 },
           ].map((m, i) => (
-            <g key={i}>
+            <g key={`entrance-${i}`}>
               <rect x={m.x - 13} y={m.y - 13} width="26" height="26" rx="5"
                 fill="#22C55E" opacity="0.9" />
               <text x={m.x} y={m.y + 6} textAnchor="middle"
@@ -338,13 +393,13 @@ export function VenueMapCanvas({
 
           {/* ── Restroom markers ── */}
           {[
-            { x: 248, y: 210 },
-            { x: 552, y: 210 },
-            { x: 200, y: 640 },
-            { x: 600, y: 640 },
-            { x: 740, y: 490 },
+            { x: 255, y: 214 },
+            { x: 545, y: 214 },
+            { x: 198, y: 618 },
+            { x: 602, y: 618 },
+            { x: 728, y: 478 },
           ].map((m, i) => (
-            <g key={i}>
+            <g key={`restroom-${i}`}>
               <rect x={m.x - 14} y={m.y - 13} width="28" height="26" rx="4"
                 fill="#E2E8F0" stroke="#CBD5E1" strokeWidth="1" />
               <text x={m.x} y={m.y + 6} textAnchor="middle"
@@ -352,13 +407,13 @@ export function VenueMapCanvas({
             </g>
           ))}
 
-          {/* ── Food & Drinks marker (right side) ── */}
+          {/* ── Food & Drinks marker ── */}
           <g>
-            <rect x="734" y="598" width="48" height="38" rx="5"
+            <rect x="720" y="582" width="48" height="38" rx="5"
               fill="#FEF3C7" stroke="#FCD34D" strokeWidth="1" />
-            <text x="758" y="614" textAnchor="middle" fontSize="9"
+            <text x="744" y="598" textAnchor="middle" fontSize="9"
               fill="#92400E" fontWeight="600" className="pointer-events-none">Food &</text>
-            <text x="758" y="626" textAnchor="middle" fontSize="9"
+            <text x="744" y="610" textAnchor="middle" fontSize="9"
               fill="#92400E" fontWeight="600" className="pointer-events-none">Drinks</text>
           </g>
         </svg>

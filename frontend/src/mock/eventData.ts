@@ -250,9 +250,9 @@ export const mockSeatSections: SeatSection[] = [
     label: "VIP L",
     ticket_category_id: "tc_001_vip_experience",
     is_sold_out: false,
-    rows: ["A", "B", "C", "D", "E", "F"],
-    seats_per_row: 10,
-    sold_seat_codes: ["A3", "A4", "B1", "B2"],
+    rows: ["A", "B", "C", "D"], // 4 rows
+    seats_per_row: 5,           // 5 cols
+    sold_seat_codes: ["A3", "A4", "B1"],
   },
   {
     section_id: "sec_vip_c",
@@ -260,9 +260,9 @@ export const mockSeatSections: SeatSection[] = [
     label: "VIP C",
     ticket_category_id: "tc_001_vip_experience",
     is_sold_out: false,
-    rows: ["A", "B", "C", "D", "E", "F"],
-    seats_per_row: 10,
-    sold_seat_codes: ["C8", "D5", "D6"],
+    rows: ["A", "B", "C", "D", "E"], // 5 rows
+    seats_per_row: 7,                // 7 cols
+    sold_seat_codes: ["C5", "D2", "D6"],
   },
   {
     section_id: "sec_vip_r",
@@ -270,24 +270,90 @@ export const mockSeatSections: SeatSection[] = [
     label: "VIP R",
     ticket_category_id: "tc_001_vip_experience",
     is_sold_out: false,
-    rows: ["A", "B", "C", "D", "E", "F"],
-    seats_per_row: 10,
-    sold_seat_codes: ["E10", "F1"],
+    rows: ["A", "B", "C", "D"], // 4 rows
+    seats_per_row: 5,           // 5 cols
+    sold_seat_codes: ["C4", "D1"],
   },
-  ...Array.from({ length: 8 }, (_, index) => {
-    const section_number = index + 1;
-    const is_sold_out = section_number === 3 || section_number === 6;
-    return {
-      section_id: `sec_ga_${section_number}`,
-      event_id: "evt_001_soundscape_festival_2026",
-      label: `Sec ${section_number}`,
-      ticket_category_id: "tc_003_single_day",
-      is_sold_out,
-      rows: is_sold_out ? [] : ["A", "B", "C", "D", "E", "F"],
-      seats_per_row: 10,
-      sold_seat_codes: is_sold_out ? [] : ["A1", "B5"],
-    } satisfies SeatSection;
-  }),
+  {
+    section_id: "sec_ga_1",
+    event_id: "evt_001_soundscape_festival_2026",
+    label: "VIP C LEFT",
+    ticket_category_id: "tc_001_vip_experience",
+    is_sold_out: false,
+    rows: ["A", "B", "C"], // 3 rows
+    seats_per_row: 4,      // 4 cols
+    sold_seat_codes: ["A1", "B2"],
+  },
+  {
+    section_id: "sec_ga_2",
+    event_id: "evt_001_soundscape_festival_2026",
+    label: "VIP C RIGHT",
+    ticket_category_id: "tc_001_vip_experience",
+    is_sold_out: false,
+    rows: ["A", "B", "C"], // 3 rows
+    seats_per_row: 4,      // 4 cols
+    sold_seat_codes: ["B3", "C4"],
+  },
+  {
+    section_id: "sec_ga_3",
+    event_id: "evt_001_soundscape_festival_2026",
+    label: "GOLD LEFT",
+    ticket_category_id: "tc_003_single_day",
+    is_sold_out: true,
+    rows: [],
+    seats_per_row: 3,
+    sold_seat_codes: [],
+  },
+  {
+    section_id: "sec_ga_4",
+    event_id: "evt_001_soundscape_festival_2026",
+    label: "GOLD RIGHT",
+    ticket_category_id: "tc_003_single_day",
+    is_sold_out: false,
+    rows: ["A", "B", "C", "D"], // 4 rows
+    seats_per_row: 3,           // 3 cols
+    sold_seat_codes: ["A2", "D1"],
+  },
+  {
+    section_id: "sec_ga_5",
+    event_id: "evt_001_soundscape_festival_2026",
+    label: "GENERAL ADMISSION",
+    ticket_category_id: "tc_003_single_day",
+    is_sold_out: false,
+    rows: ["A", "B", "C"], // 3 rows
+    seats_per_row: 12,     // 12 cols
+    sold_seat_codes: ["A1", "B5", "C10"],
+  },
+  {
+    section_id: "sec_ga_6",
+    event_id: "evt_001_soundscape_festival_2026",
+    label: "SOLD OUT 1",
+    ticket_category_id: "tc_003_single_day",
+    is_sold_out: true,
+    rows: [],
+    seats_per_row: 0,
+    sold_seat_codes: [],
+  },
+  {
+    section_id: "sec_ga_7",
+    event_id: "evt_001_soundscape_festival_2026",
+    label: "SOLD OUT 2",
+    ticket_category_id: "tc_003_single_day",
+    is_sold_out: true,
+    rows: [],
+    seats_per_row: 0,
+    sold_seat_codes: [],
+  },
+  {
+    section_id: "sec_ga_8",
+    event_id: "evt_001_soundscape_festival_2026",
+    label: "SOLD OUT 3",
+    ticket_category_id: "tc_003_single_day",
+    is_sold_out: true,
+    rows: [],
+    seats_per_row: 0,
+    sold_seat_codes: [],
+  },
 ];
 
 /** Mock successful order, used to drive the "Your Ticket" purchase-success page. */

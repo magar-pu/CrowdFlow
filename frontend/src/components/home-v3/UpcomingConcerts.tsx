@@ -56,7 +56,7 @@ export function UpcomingConcerts() {
         {EVENTS.map((event, index) => (
           <Link 
             key={index}
-            href={`/events/${index}`}
+            href={`/events/${index + 1}`}
             className="bg-surface-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border border-border-subtle group cursor-pointer flex flex-col"
           >
             <div className="relative w-full aspect-[4/3] overflow-hidden">
