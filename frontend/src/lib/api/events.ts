@@ -15,7 +15,7 @@ export async function listEvents(limit?: number, offset?: number): Promise<ApiRe
   });
 }
 
-export async function getEvent(id: number): Promise<ApiResponse<Event>> {
+export async function getEvent(id: number | string): Promise<ApiResponse<Event>> {
   return apiRequest<Event>(`/api/events/${id}`, {
     method: "GET",
   });

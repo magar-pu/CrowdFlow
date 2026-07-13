@@ -39,12 +39,7 @@ export default function EventDetailPage() {
 
   useEffect(() => {
     if (!event_id) return;
-    const id = parseInt(event_id as string, 10);
-    if (isNaN(id)) {
-      setError("ID Event tidak valid");
-      setLoading(false);
-      return;
-    }
+    const id = event_id as string;
 
     getEvent(id)
       .then((res) => {
@@ -52,12 +47,12 @@ export default function EventDetailPage() {
           setEvent(res.data);
         } else {
           // Fallback to mock data if not found in DB
-          setEvent({ ...mockEvent, event_id: String(id) });
+          setEvent({ ...mockEvent, event_id: id });
         }
       })
       .catch(() => {
         // Fallback to mock data on API error
-        setEvent({ ...mockEvent, event_id: String(id) });
+        setEvent({ ...mockEvent, event_id: id });
       })
       .finally(() => {
         setLoading(false);
