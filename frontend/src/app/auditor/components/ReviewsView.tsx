@@ -5,9 +5,14 @@ import SubmissionDetailModal from './SubmissionDetailModal';
 
 interface ReviewsViewProps {
   submissions: EventSubmission[];
+  selectedSubmission: EventSubmission | null;
+  setSelectedSubmission: (sub: EventSubmission | null) => void;
   onApprove: (id: string) => void;
   onReject: (id: string, reason: string) => void;
   onRequestChanges: (id: string, notes: string) => void;
+  onVerifyDocument: (submissionId: string, docName: string) => void;
+  onRejectDocument: (submissionId: string, docName: string) => void;
+  onViewDocument: (doc: { name: string; category: string; status: string }) => void;
 }
 
 const FILTERS = ['All', 'Pending', 'Changes Requested', 'Approved', 'Rejected'] as const;
@@ -18,10 +23,19 @@ const statusStyle = (status: EventSubmission['status']) =>
   status === 'Rejected' ? 'bg-danger/10 text-danger border-danger/20' :
   'bg-warning/10 text-warning border-warning/20';
 
-export default function ReviewsView({ submissions, onApprove, onReject, onRequestChanges }: ReviewsViewProps) {
+export default function ReviewsView({ 
+  submissions, 
+  selectedSubmission,
+  setSelectedSubmission,
+  onApprove,
+  onReject,
+  onRequestChanges,
+  onVerifyDocument,
+  onRejectDocument,
+  onViewDocument
+}: ReviewsViewProps) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<typeof FILTERS[number]>('Pending');
-  const [selected, setSelected] = useState<EventSubmission | null>(null);
 
   const filtered = submissions.filter((s) => {
     const matchesFilter = filter === 'All' || s.status === filter;
@@ -66,7 +80,7 @@ export default function ReviewsView({ submissions, onApprove, onReject, onReques
         {filtered.map((sub) => (
           <button
             key={sub.id}
-            onClick={() => setSelected(sub)}
+            onClick={() => setSelectedSubmission(sub)}
             className="text-left bg-white border border-border-subtle rounded-xl p-5 soft-shadow flex flex-col justify-between hover:border-outline transition-colors cursor-pointer"
           >
             <div className="space-y-3">
@@ -109,13 +123,16 @@ export default function ReviewsView({ submissions, onApprove, onReject, onReques
         )}
       </div>
 
-      {selected && (
+      {selectedSubmission && (
         <SubmissionDetailModal
-          submission={selected}
-          onClose={() => setSelected(null)}
+          submission={selectedSubmission}
+          onClose={() => setSelectedSubmission(null)}
           onApprove={onApprove}
           onReject={onReject}
           onRequestChanges={onRequestChanges}
+          onVerifyDocument={onVerifyDocument}
+          onRejectDocument={onRejectDocument}
+          onViewDocument={onViewDocument}
         />
       )}
     </div>

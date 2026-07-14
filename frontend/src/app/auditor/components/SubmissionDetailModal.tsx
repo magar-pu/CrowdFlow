@@ -8,11 +8,23 @@ interface SubmissionDetailModalProps {
   onApprove: (id: string) => void;
   onReject: (id: string, reason: string) => void;
   onRequestChanges: (id: string, notes: string) => void;
+  onVerifyDocument: (submissionId: string, docName: string) => void;
+  onRejectDocument: (submissionId: string, docName: string) => void;
+  onViewDocument: (doc: { name: string; category: string; status: string }) => void;
 }
 
 const TIMELINE_STAGES = ['Submitted', 'Document Verification', 'Event Validation', 'Final Approval'] as const;
 
-export default function SubmissionDetailModal({ submission, onClose, onApprove, onReject, onRequestChanges }: SubmissionDetailModalProps) {
+export default function SubmissionDetailModal({ 
+  submission, 
+  onClose, 
+  onApprove, 
+  onReject, 
+  onRequestChanges,
+  onVerifyDocument,
+  onRejectDocument,
+  onViewDocument
+}: SubmissionDetailModalProps) {
   const [reason, setReason] = useState('');
   const [mode, setMode] = useState<'view' | 'reject' | 'changes'>('view');
 
@@ -101,9 +113,13 @@ export default function SubmissionDetailModal({ submission, onClose, onApprove, 
 
           {/* Documents */}
           <div className="space-y-2">
-            <p className="text-[10px] font-mono font-bold text-text-secondary uppercase">Required Documents</p>
+            <p className="text-[10px] font-mono font-bold text-text-secondary uppercase">Required Documents (Click to view)</p>
             {submission.documents.map((doc, idx) => (
-              <div key={idx} className="flex justify-between items-center text-xs px-3 py-2 bg-surface-container-low border border-border-subtle rounded-lg">
+              <div 
+                key={idx} 
+                onClick={() => onViewDocument({ name: doc.name, category: doc.category, status: doc.status })}
+                className="flex justify-between items-center text-xs px-3 py-2 bg-surface-container-low border border-border-subtle rounded-lg hover:border-slate-400 cursor-pointer transition-colors"
+              >
                 <div className="flex items-center gap-2 min-w-0">
                   <FileText className="w-3.5 h-3.5 text-on-surface-variant shrink-0" />
                   <div className="min-w-0">
@@ -111,13 +127,31 @@ export default function SubmissionDetailModal({ submission, onClose, onApprove, 
                     <span className="text-[9px] text-on-surface-variant font-mono">{doc.category}</span>
                   </div>
                 </div>
-                <span className={`px-2 py-0.5 rounded-full font-mono text-[8px] font-bold shrink-0 ${
-                  doc.status === 'VERIFIED' ? 'bg-success/10 text-success' :
-                  doc.status === 'REJECTED' ? 'bg-danger/10 text-danger' :
-                  'bg-secondary/10 text-secondary'
-                }`}>
-                  {doc.status}
-                </span>
+                
+                <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  {doc.status !== 'VERIFIED' && doc.status !== 'REJECTED' ? (
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() => onVerifyDocument(submission.id, doc.name)}
+                        className="bg-success/10 hover:bg-success hover:text-white border border-success/20 text-success text-[10px] font-bold px-2 py-0.5 rounded transition-all cursor-pointer"
+                      >
+                        Verify
+                      </button>
+                      <button
+                        onClick={() => onRejectDocument(submission.id, doc.name)}
+                        className="bg-danger/10 hover:bg-danger hover:text-white border border-danger/20 text-danger text-[10px] font-bold px-2 py-0.5 rounded transition-all cursor-pointer"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  ) : (
+                    <span className={`px-2 py-0.5 rounded-full font-mono text-[8px] font-bold ${
+                      doc.status === 'VERIFIED' ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'
+                    }`}>
+                      {doc.status}
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
           </div>

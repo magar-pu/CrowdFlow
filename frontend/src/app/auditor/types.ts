@@ -1,4 +1,4 @@
-export type AuditorView = 'dashboard' | 'reviews' | 'documents' | 'settings';
+export type AuditorView = 'dashboard' | 'reviews' | 'documents' | 'settings' | 'view-document';
 
 export type ReviewStage = 'Submitted' | 'Document Verification' | 'Event Validation' | 'Final Approval';
 

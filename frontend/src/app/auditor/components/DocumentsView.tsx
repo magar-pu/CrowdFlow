@@ -6,6 +6,7 @@ interface DocumentsViewProps {
   documents: DocumentReview[];
   onVerify: (id: string) => void;
   onReject: (id: string) => void;
+  onViewDocument: (doc: DocumentReview) => void;
 }
 
 const FILTERS = ['All', 'WAITING REVIEW', 'READY', 'VERIFIED', 'REJECTED'] as const;
@@ -15,7 +16,7 @@ const statusStyle = (status: DocumentReview['status']) =>
   status === 'REJECTED' ? 'bg-danger/10 text-danger border-danger/20' :
   'bg-secondary/10 text-secondary border-secondary/20';
 
-export default function DocumentsView({ documents, onVerify, onReject }: DocumentsViewProps) {
+export default function DocumentsView({ documents, onVerify, onReject, onViewDocument }: DocumentsViewProps) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<typeof FILTERS[number]>('WAITING REVIEW');
 
@@ -74,10 +75,10 @@ export default function DocumentsView({ documents, onVerify, onReject }: Documen
             <tbody className="font-sans text-xs text-text-primary">
               {filtered.map((doc) => (
                 <tr key={doc.id} className="border-b border-border-subtle last:border-0 hover:bg-surface-container-low transition-colors">
-                  <td className="p-4">
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-3.5 h-3.5 text-on-surface-variant shrink-0" />
-                      <span className="font-bold text-text-primary">{doc.fileName}</span>
+                  <td className="p-4 cursor-pointer" onClick={() => onViewDocument(doc)}>
+                    <div className="flex items-center gap-2 group">
+                      <FileText className="w-3.5 h-3.5 text-on-surface-variant group-hover:text-blue-600 shrink-0 transition-colors" />
+                      <span className="font-bold text-text-primary group-hover:text-blue-600 border-b border-transparent group-hover:border-blue-600 transition-all">{doc.fileName}</span>
                     </div>
                   </td>
                   <td className="p-4 text-text-secondary">{doc.category}</td>
@@ -97,13 +98,13 @@ export default function DocumentsView({ documents, onVerify, onReject }: Documen
                           onClick={() => onVerify(doc.id)}
                           className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-success/20 bg-success/5 hover:bg-success hover:text-white text-success text-[10px] font-bold transition-colors cursor-pointer"
                         >
-                          <CheckCircle2 className="w-3 h-3" /> Verify
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Verify
                         </button>
                         <button
                           onClick={() => onReject(doc.id)}
                           className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-danger/20 bg-danger/5 hover:bg-danger hover:text-white text-danger text-[10px] font-bold transition-colors cursor-pointer"
                         >
-                          <XCircle className="w-3 h-3" /> Reject
+                          <XCircle className="w-3.5 h-3.5" /> Reject
                         </button>
                       </div>
                     )}
@@ -117,6 +118,7 @@ export default function DocumentsView({ documents, onVerify, onReject }: Documen
           </table>
         </div>
       </div>
+
     </div>
   );
 }

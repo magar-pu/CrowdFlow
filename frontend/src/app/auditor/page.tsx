@@ -11,12 +11,14 @@ import DashboardView from "./components/DashboardView";
 import ReviewsView from "./components/ReviewsView";
 import DocumentsView from "./components/DocumentsView";
 import SettingsView from "./components/SettingsView";
+import DocumentDetailView from "./components/DocumentDetailView";
 
 const VIEW_TITLES: Record<AuditorView, string> = {
   dashboard: 'Dashboard',
   reviews: 'Reviews',
   documents: 'Documents',
   settings: 'Settings',
+  'view-document': 'Document Verification',
 };
 
 export default function AuditorPage() {
@@ -27,6 +29,18 @@ export default function AuditorPage() {
 
   const [submissions, setSubmissions] = useState<EventSubmission[]>(INITIAL_SUBMISSIONS);
   const [documents, setDocuments] = useState<DocumentReview[]>(INITIAL_DOCUMENT_REVIEWS);
+  
+  const [selectedSubmission, setSelectedSubmission] = useState<EventSubmission | null>(null);
+  const [viewingDocument, setViewingDocument] = useState<{
+    id: string;
+    fileName: string;
+    category: string;
+    status: string;
+    eventName: string;
+    organizerName: string;
+    fromView: 'reviews' | 'documents';
+    submissionId?: string;
+  } | null>(null);
 
   const pendingReviewsCount = submissions.filter(s => s.status === 'Pending').length;
   const pendingDocumentsCount = documents.filter(d => d.status === 'WAITING REVIEW').length;
@@ -49,6 +63,33 @@ export default function AuditorPage() {
 
   const handleRejectDocument = (id: string) => {
     setDocuments(prev => prev.map(d => d.id === id ? { ...d, status: 'REJECTED' } : d));
+  };
+
+  const handleVerifySubmissionDocument = (submissionId: string, docName: string) => {
+    setSubmissions(prev => prev.map(s => {
+      if (s.id === submissionId) {
+        const updatedDocs = s.documents.map(d => d.name === docName ? { ...d, status: 'VERIFIED' as const } : d);
+        const allVerified = updatedDocs.every(d => d.status === 'VERIFIED');
+        const updatedChecklist = s.checklist.map(c => 
+          c.label === 'Document Verification' ? { ...c, done: allVerified } : c
+        );
+        return { ...s, documents: updatedDocs, checklist: updatedChecklist };
+      }
+      return s;
+    }));
+  };
+
+  const handleRejectSubmissionDocument = (submissionId: string, docName: string) => {
+    setSubmissions(prev => prev.map(s => {
+      if (s.id === submissionId) {
+        const updatedDocs = s.documents.map(d => d.name === docName ? { ...d, status: 'REJECTED' as const } : d);
+        const updatedChecklist = s.checklist.map(c => 
+          c.label === 'Document Verification' ? { ...c, done: false } : c
+        );
+        return { ...s, documents: updatedDocs, checklist: updatedChecklist };
+      }
+      return s;
+    }));
   };
 
   return (
@@ -98,9 +139,26 @@ export default function AuditorPage() {
           {currentView === 'reviews' && (
             <ReviewsView
               submissions={submissions}
+              selectedSubmission={selectedSubmission}
+              setSelectedSubmission={setSelectedSubmission}
               onApprove={handleApprove}
               onReject={handleReject}
               onRequestChanges={handleRequestChanges}
+              onVerifyDocument={handleVerifySubmissionDocument}
+              onRejectDocument={handleRejectSubmissionDocument}
+              onViewDocument={(doc) => {
+                setViewingDocument({
+                  id: doc.name,
+                  fileName: doc.name,
+                  category: doc.category,
+                  status: doc.status,
+                  eventName: selectedSubmission?.eventName || '',
+                  organizerName: selectedSubmission?.organizerName || '',
+                  fromView: 'reviews',
+                  submissionId: selectedSubmission?.id
+                });
+                setCurrentView('view-document');
+              }}
             />
           )}
           {currentView === 'documents' && (
@@ -108,9 +166,64 @@ export default function AuditorPage() {
               documents={documents}
               onVerify={handleVerifyDocument}
               onReject={handleRejectDocument}
+              onViewDocument={(doc) => {
+                setViewingDocument({
+                  id: doc.id,
+                  fileName: doc.fileName,
+                  category: doc.category,
+                  status: doc.status,
+                  eventName: doc.eventName,
+                  organizerName: doc.organizerName,
+                  fromView: 'documents'
+                });
+                setCurrentView('view-document');
+              }}
             />
           )}
           {currentView === 'settings' && <SettingsView />}
+          {currentView === 'view-document' && viewingDocument && (
+            <DocumentDetailView
+              document={viewingDocument}
+              onBack={() => {
+                setCurrentView(viewingDocument.fromView);
+              }}
+              onVerify={() => {
+                if (viewingDocument.fromView === 'reviews' && viewingDocument.submissionId) {
+                  handleVerifySubmissionDocument(viewingDocument.submissionId, viewingDocument.fileName);
+                  setViewingDocument(prev => prev ? { ...prev, status: 'VERIFIED' } : null);
+                  setSelectedSubmission(prev => {
+                    if (!prev) return null;
+                    const updatedDocs = prev.documents.map(d => d.name === viewingDocument.fileName ? { ...d, status: 'VERIFIED' as const } : d);
+                    const allVerified = updatedDocs.every(d => d.status === 'VERIFIED');
+                    const updatedChecklist = prev.checklist.map(c => 
+                      c.label === 'Document Verification' ? { ...c, done: allVerified } : c
+                    );
+                    return { ...prev, documents: updatedDocs, checklist: updatedChecklist };
+                  });
+                } else {
+                  handleVerifyDocument(viewingDocument.id);
+                  setViewingDocument(prev => prev ? { ...prev, status: 'VERIFIED' } : null);
+                }
+              }}
+              onReject={() => {
+                if (viewingDocument.fromView === 'reviews' && viewingDocument.submissionId) {
+                  handleRejectSubmissionDocument(viewingDocument.submissionId, viewingDocument.fileName);
+                  setViewingDocument(prev => prev ? { ...prev, status: 'REJECTED' } : null);
+                  setSelectedSubmission(prev => {
+                    if (!prev) return null;
+                    const updatedDocs = prev.documents.map(d => d.name === viewingDocument.fileName ? { ...d, status: 'REJECTED' as const } : d);
+                    const updatedChecklist = prev.checklist.map(c => 
+                      c.label === 'Document Verification' ? { ...c, done: false } : c
+                    );
+                    return { ...prev, documents: updatedDocs, checklist: updatedChecklist };
+                  });
+                } else {
+                  handleRejectDocument(viewingDocument.id);
+                  setViewingDocument(prev => prev ? { ...prev, status: 'REJECTED' } : null);
+                }
+              }}
+            />
+          )}
         </main>
       </div>
     </div>
