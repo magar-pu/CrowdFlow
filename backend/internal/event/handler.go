@@ -285,7 +285,7 @@ func (h *Handler) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 		objectKey := fmt.Sprintf("events/covers/%d%s", time.Now().UnixNano(), ext)
 
 		// Upload file to storage
-		if err := h.storage.UploadFile(r.Context(), objectKey, file, contentType); err != nil {
+		if err := h.storage.UploadPublicFile(r.Context(), objectKey, file, contentType); err != nil {
 			response.Error(w, http.StatusInternalServerError, "UPLOAD_FAILED", "Failed to upload cover image: "+err.Error())
 			return
 		}

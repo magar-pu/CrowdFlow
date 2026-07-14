@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -15,16 +16,19 @@ import (
 )
 
 type S3Storage struct {
-	client     *s3.Client
-	bucketName string
-	publicBase string
+	client        *s3.Client
+	presignClient *s3.PresignClient
+	publicBucket  string
+	privateBucket string
+	publicBase    string
 }
 
 func NewS3Storage() (*S3Storage, error) {
 	endpoint := os.Getenv("S3_ENDPOINT")
 	accessKey := os.Getenv("S3_ACCESS_KEY_ID")
 	secretKey := os.Getenv("S3_SECRET_ACCESS_KEY")
-	bucketName := os.Getenv("S3_BUCKET_NAME")
+	publicBucket := os.Getenv("S3_PUBLIC_BUCKET_NAME")
+	privateBucket := os.Getenv("S3_PRIVATE_BUCKET_NAME")
 	region := os.Getenv("S3_REGION")
 	if region == "" {
 		region = "auto"
@@ -55,9 +59,11 @@ func NewS3Storage() (*S3Storage, error) {
 	})
 
 	return &S3Storage{
-		client:     client,
-		bucketName: bucketName,
-		publicBase: publicBase,
+		client:        client,
+		presignClient: s3.NewPresignClient(client),
+		publicBucket:  publicBucket,
+		privateBucket: privateBucket,
+		publicBase:    publicBase,
 	}, nil
 }
 
@@ -99,10 +105,10 @@ func ValidateImage(file io.ReadSeeker, maxBytes int64) (string, error) {
 	return contentType, nil
 }
 
-// UploadFile uploads a file stream to S3/R2 bucket with cache controls
-func (s *S3Storage) UploadFile(ctx context.Context, key string, file io.Reader, contentType string) error {
+// UploadPublicFile uploads a file stream to the public S3/R2 bucket with aggressive cache controls
+func (s *S3Storage) UploadPublicFile(ctx context.Context, key string, file io.Reader, contentType string) error {
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:       aws.String(s.bucketName),
+		Bucket:       aws.String(s.publicBucket),
 		Key:          aws.String(key),
 		Body:         file,
 		ContentType:  aws.String(contentType),
@@ -111,7 +117,19 @@ func (s *S3Storage) UploadFile(ctx context.Context, key string, file io.Reader, 
 	return err
 }
 
-// GetPublicURL returns the accessible edge CDN URL for a given object key
+// UploadPrivateFile uploads a file stream to the private S3/R2 bucket. No cache-control is set;
+// objects here are only ever reachable via a short-lived presigned URL, never a public CDN path.
+func (s *S3Storage) UploadPrivateFile(ctx context.Context, key string, file io.Reader, contentType string) error {
+	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(s.privateBucket),
+		Key:         aws.String(key),
+		Body:        file,
+		ContentType: aws.String(contentType),
+	})
+	return err
+}
+
+// GetPublicURL returns the accessible edge CDN URL for a given object key in the public bucket
 func (s *S3Storage) GetPublicURL(key string) string {
 	if s.publicBase != "" {
 		base := strings.TrimSuffix(s.publicBase, "/")
@@ -119,6 +137,19 @@ func (s *S3Storage) GetPublicURL(key string) string {
 	}
 	// Fallback/Dev URL path style
 	endpoint := strings.TrimSuffix(os.Getenv("S3_ENDPOINT"), "/")
-	return endpoint + "/" + s.bucketName + "/" + strings.TrimPrefix(key, "/")
+	return endpoint + "/" + s.publicBucket + "/" + strings.TrimPrefix(key, "/")
+}
+
+// GetPresignedURL returns a short-lived signed URL granting temporary read access to an object
+// in the private bucket. Use this for sensitive documents (KTP, permits, etc.) instead of GetPublicURL.
+func (s *S3Storage) GetPresignedURL(ctx context.Context, key string, expiry time.Duration) (string, error) {
+	req, err := s.presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.privateBucket),
+		Key:    aws.String(key),
+	}, s3.WithPresignExpires(expiry))
+	if err != nil {
+		return "", err
+	}
+	return req.URL, nil
 }
 

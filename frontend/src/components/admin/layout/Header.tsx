@@ -31,6 +31,7 @@ export default function Header({
     role: "super_admin" as const,
     avatar_url: "",
   };
+  const userAvatar = display_user.avatar_url ?? null;
   const userName = display_user.full_name;
   const userRole = format_role_label(display_user.role);
   const initials = get_initials(userName);
