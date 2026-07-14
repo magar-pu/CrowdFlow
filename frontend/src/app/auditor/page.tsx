@@ -12,6 +12,8 @@ import ReviewsView from "./components/ReviewsView";
 import DocumentsView from "./components/DocumentsView";
 import SettingsView from "./components/SettingsView";
 import DocumentDetailView from "./components/DocumentDetailView";
+import ReviewDetailView from "./components/ReviewDetailView";
+import { ReviewStage } from "./types";
 
 const VIEW_TITLES: Record<AuditorView, string> = {
   dashboard: 'Dashboard',
@@ -19,6 +21,7 @@ const VIEW_TITLES: Record<AuditorView, string> = {
   documents: 'Documents',
   settings: 'Settings',
   'view-document': 'Document Verification',
+  'view-review': 'Event Submission Audit',
 };
 
 export default function AuditorPage() {
@@ -38,7 +41,7 @@ export default function AuditorPage() {
     status: string;
     eventName: string;
     organizerName: string;
-    fromView: 'reviews' | 'documents';
+    fromView: 'reviews' | 'documents' | 'view-review';
     submissionId?: string;
   } | null>(null);
 
@@ -92,6 +95,11 @@ export default function AuditorPage() {
     }));
   };
 
+  const handleChangeSubmissionStage = (submissionId: string, stage: ReviewStage) => {
+    setSubmissions(prev => prev.map(s => s.id === submissionId ? { ...s, stage } : s));
+    setSelectedSubmission(prev => prev && prev.id === submissionId ? { ...prev, stage } : prev);
+  };
+
   return (
     <div id="crowdflow-auditor" className="min-h-screen bg-surface text-text-primary flex font-sans select-none antialiased w-full">
       <Sidebar
@@ -139,25 +147,9 @@ export default function AuditorPage() {
           {currentView === 'reviews' && (
             <ReviewsView
               submissions={submissions}
-              selectedSubmission={selectedSubmission}
-              setSelectedSubmission={setSelectedSubmission}
-              onApprove={handleApprove}
-              onReject={handleReject}
-              onRequestChanges={handleRequestChanges}
-              onVerifyDocument={handleVerifySubmissionDocument}
-              onRejectDocument={handleRejectSubmissionDocument}
-              onViewDocument={(doc) => {
-                setViewingDocument({
-                  id: doc.name,
-                  fileName: doc.name,
-                  category: doc.category,
-                  status: doc.status,
-                  eventName: selectedSubmission?.eventName || '',
-                  organizerName: selectedSubmission?.organizerName || '',
-                  fromView: 'reviews',
-                  submissionId: selectedSubmission?.id
-                });
-                setCurrentView('view-document');
+              onSelectSubmission={(sub) => {
+                setSelectedSubmission(sub);
+                setCurrentView('view-review');
               }}
             />
           )}
@@ -181,6 +173,34 @@ export default function AuditorPage() {
             />
           )}
           {currentView === 'settings' && <SettingsView />}
+          {currentView === 'view-review' && selectedSubmission && (
+            <ReviewDetailView
+              submission={selectedSubmission}
+              onBack={() => {
+                setCurrentView('reviews');
+                setSelectedSubmission(null);
+              }}
+              onApprove={handleApprove}
+              onReject={handleReject}
+              onRequestChanges={handleRequestChanges}
+              onVerifyDocument={handleVerifySubmissionDocument}
+              onRejectDocument={handleRejectSubmissionDocument}
+              onViewDocument={(doc) => {
+                setViewingDocument({
+                  id: doc.name,
+                  fileName: doc.name,
+                  category: doc.category,
+                  status: doc.status,
+                  eventName: selectedSubmission.eventName,
+                  organizerName: selectedSubmission.organizerName,
+                  fromView: 'view-review',
+                  submissionId: selectedSubmission.id
+                });
+                setCurrentView('view-document');
+              }}
+              onChangeStage={handleChangeSubmissionStage}
+            />
+          )}
           {currentView === 'view-document' && viewingDocument && (
             <DocumentDetailView
               document={viewingDocument}
@@ -188,7 +208,7 @@ export default function AuditorPage() {
                 setCurrentView(viewingDocument.fromView);
               }}
               onVerify={() => {
-                if (viewingDocument.fromView === 'reviews' && viewingDocument.submissionId) {
+                if (viewingDocument.fromView === 'view-review' && viewingDocument.submissionId) {
                   handleVerifySubmissionDocument(viewingDocument.submissionId, viewingDocument.fileName);
                   setViewingDocument(prev => prev ? { ...prev, status: 'VERIFIED' } : null);
                   setSelectedSubmission(prev => {
@@ -206,7 +226,7 @@ export default function AuditorPage() {
                 }
               }}
               onReject={() => {
-                if (viewingDocument.fromView === 'reviews' && viewingDocument.submissionId) {
+                if (viewingDocument.fromView === 'view-review' && viewingDocument.submissionId) {
                   handleRejectSubmissionDocument(viewingDocument.submissionId, viewingDocument.fileName);
                   setViewingDocument(prev => prev ? { ...prev, status: 'REJECTED' } : null);
                   setSelectedSubmission(prev => {
