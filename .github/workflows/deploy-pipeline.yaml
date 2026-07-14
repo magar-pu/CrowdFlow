@@ -32,4 +32,4 @@ jobs:
             bash deploy-dev.sh
 
       - name: Summary
-        run: echo "Deployed **${{ steps.config.outputs.env }}**
+        run: echo "Deployed **${{ steps.config.outputs.env }}**"
