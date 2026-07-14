@@ -418,3 +418,116 @@ export interface TrendingEventCard {
   review_count: number;
   starting_price: number; // whole IDR, lowest tier price
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Venue Editor (VenueMaster Pro)
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Active tool in the VenueMaster Pro sidebar. */
+export type VenueEditorTool =
+  | "seat_mapper"
+  | "section_zone"
+  | "facility_icons"
+  | "layer_manager";
+
+/** Active tool in the Seat Mapper floating toolbar. */
+export type CanvasDrawingMode = "select" | "pan" | "add_shape" | "add_seat" | "paint";
+
+/** A single seat on the venue canvas. */
+export interface VenueSeat {
+  seat_id: string;
+  section_id: string;
+  row: string;
+  number: number;
+  x: number;
+  y: number;
+  status: "available" | "reserved" | "sold" | "locked" | "unavailable" | "accessible";
+  is_locked?: boolean;
+  tier_id?: string;
+}
+
+/** A geometric shape representing a section zone or stage on the canvas. */
+export interface VenueShape {
+  type: "rectangle" | "rounded-rectangle" | "ellipse" | "polygon";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  points?: { x: number; y: number }[]; // For polygons
+  is_locked?: boolean;
+}
+
+/** A section/zone on the venue map (e.g. "VIP Pit", "Gold Circle"). */
+export interface VenueSection {
+  section_id: string;
+  label: string;
+  color: string;
+  section_code: string; // e.g. "A1", "B1-B2", "Lawn"
+  seats: VenueSeat[];
+  shape?: VenueShape;
+  is_locked?: boolean;
+}
+
+export interface TicketConfig {
+  section_id: string;
+  section_label: string;
+  section_color: string;
+  section_code: string;
+  ticket_type_name: string;
+  price: number;
+  initial_quota: number;
+  tiers: TicketTier[];
+}
+
+/** Global Pricing Tier for Paint Bucket mode */
+export interface PricingTier {
+  tier_id: string;
+  name: string;
+  price: number;
+  color: string;
+  quota: number;        // Max tickets available for this tier
+  description?: string; // Tier benefits/description (e.g. "Includes meet & greet")
+}
+
+export interface TicketTier {
+  tier_id: string;
+  name: string;
+  price: number;
+  quota: number;
+}
+
+/** Available facility icon types */
+export type FacilityIconType = "restroom" | "food" | "medical" | "exit" | "info" | "merch";
+
+/** A facility icon placed on the venue map. */
+export interface VenueFacility {
+  id: string;
+  type: FacilityIconType;
+  x: number;
+  y: number;
+  label?: string;
+}
+
+export interface VenueBlueprint {
+  image_url: string;
+  opacity: number;
+  scale: number;
+  offset_x: number;
+  offset_y: number;
+}
+
+/** Top-level state for the venue editor page. */
+export interface VenueEditorState {
+  event_id: string;
+  event_title: string;
+  venue_name: string;
+  venues: { venue_id: string; name: string }[];
+  selected_venue_id: string;
+  base_currency: string;
+  tax_rate: number;
+  sections: VenueSection[];
+  facilities: VenueFacility[];
+  pricing_tiers: PricingTier[];
+  stage_shape: VenueShape;
+  blueprint?: VenueBlueprint;
+}

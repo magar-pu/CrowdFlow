@@ -32,9 +32,9 @@ import { useAuthStore } from "@/lib/store/authStore";
 const NAV_LINKS = [
   { label: "Home", href: "/" },
   { label: "Events", href: "/events" },
-  { label: "Categories", href: "/categories" },
   { label: "Resale Marketplace", href: "/resale" },
   { label: "Business", href: "/business" },
+  { label: "Venue Editor", href: "/venue-editor-preview" },
 ];
 
 const PROFILE_MENU = [
@@ -129,7 +129,12 @@ export function Navbar({ active_href = "/", is_authenticated: override, isTransp
             CrowdFlow
           </Link>
           <div className="ml-8 hidden items-center gap-1 md:flex">
-            {NAV_LINKS.map((link) => (
+            {NAV_LINKS.filter(link => {
+              if (link.label === "Venue Editor") {
+                return (display_user.role as string) === "super_admin" || display_user.role === "verified_organizer";
+              }
+              return true;
+            }).map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -288,7 +293,12 @@ export function Navbar({ active_href = "/", is_authenticated: override, isTransp
       {mobile_menu_open && (
         <div className="border-t border-border-subtle bg-surface-white px-margin-mobile py-4 md:hidden">
           <div className="flex flex-col gap-1">
-            {NAV_LINKS.map((link) => (
+            {NAV_LINKS.filter(link => {
+              if (link.label === "Venue Editor") {
+                return (display_user.role as string) === "super_admin" || display_user.role === "verified_organizer";
+              }
+              return true;
+            }).map((link) => (
               <Link key={link.href} href={link.href}
                 onClick={() => set_mobile_menu_open(false)}
                 className={cn(
