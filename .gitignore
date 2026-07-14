@@ -69,3 +69,5 @@ docker-compose-minio.yml
 # Local Dev Scripts
 seed_events.sh
 create_event.sh
+
+.claude.json
