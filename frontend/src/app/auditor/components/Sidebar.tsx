@@ -1,6 +1,6 @@
 import React from 'react';
 import { AuditorView } from '../types';
-import { LayoutDashboard, ClipboardCheck, FileCheck2, Settings, ShieldCheck, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, ClipboardCheck, FileCheck2, Settings, ShieldCheck, ChevronLeft, ChevronRight, Users2, DollarSign } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 interface SidebarProps {
@@ -10,12 +10,15 @@ interface SidebarProps {
   setIsCollapsed: (collapsed: boolean) => void;
   pendingReviewsCount: number;
   pendingDocumentsCount: number;
+  pendingOrganizersCount?: number;
 }
 
 const NAV_ITEMS: { view: AuditorView; label: string; icon: LucideIcon }[] = [
   { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { view: 'reviews', label: 'Reviews', icon: ClipboardCheck },
   { view: 'documents', label: 'Documents', icon: FileCheck2 },
+  { view: 'organizers', label: 'Organizers', icon: Users2 },
+  { view: 'payouts', label: 'Payouts', icon: DollarSign },
   { view: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -26,10 +29,12 @@ export default function Sidebar({
   setIsCollapsed,
   pendingReviewsCount,
   pendingDocumentsCount,
+  pendingOrganizersCount,
 }: SidebarProps) {
   const badgeFor = (view: AuditorView) => {
     if (view === 'reviews') return pendingReviewsCount > 0 ? pendingReviewsCount : undefined;
     if (view === 'documents') return pendingDocumentsCount > 0 ? pendingDocumentsCount : undefined;
+    if (view === 'organizers') return pendingOrganizersCount && pendingOrganizersCount > 0 ? pendingOrganizersCount : undefined;
     return undefined;
   };
 

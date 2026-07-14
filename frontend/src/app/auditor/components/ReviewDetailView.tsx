@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { EventSubmission, ReviewStage, RiskLevel } from '../types';
+import { EventSubmission, ReviewStage, RiskLevel, RevisionEntry } from '../types';
 import {
   ArrowLeft, CheckCircle2, FileText, MapPin, CalendarDays, Users2,
   Send, AlertTriangle, Ban, Building2, Truck, DollarSign, Clock,
@@ -49,6 +49,7 @@ interface Props {
   onRejectDocument: (submissionId: string, docName: string) => void;
   onViewDocument: (doc: { name: string; category: string; status: string }) => void;
   onChangeStage: (submissionId: string, stage: ReviewStage) => void;
+  onAddRevision: (submissionId: string, revision: RevisionEntry) => void;
 }
 
 function ScoreBadge({ score }: { score: number }) {
@@ -223,13 +224,66 @@ function TabOverview({ sub }: { sub: EventSubmission }) {
 }
 
 // ─── TAB: DOCUMENTS ───────────────────────────────────────────────────────────
-function TabDocuments({ sub, onVerify, onReject, onView }: {
+function TabDocuments({ sub, onVerify, onReject, onView, onAddRevision }: {
   sub: EventSubmission;
   onVerify: (name: string) => void;
   onReject: (name: string) => void;
   onView: (doc: { name: string; category: string; status: string }) => void;
+  onAddRevision: (submissionId: string, revision: RevisionEntry) => void;
 }) {
   const [notes, setNotes] = useState('');
+  const [revisingDocName, setRevisingDocName] = useState<string | null>(null);
+  const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
+  const [customReason, setCustomReason] = useState('');
+  const [priority, setPriority] = useState<RevisionPriority>('High');
+  const [deadline, setDeadline] = useState('');
+
+  const toggleReason = (reason: string) => {
+    setSelectedReasons(prev => prev.includes(reason) ? prev.filter(r => r !== reason) : [...prev, reason]);
+  };
+
+  const handleSendDocRevision = (doc: any) => {
+    if (selectedReasons.length === 0 && !customReason.trim()) return;
+
+    const reasonsText = selectedReasons
+      .map(r => r === 'Lainnya' ? `Lainnya: ${customReason}` : r)
+      .join(', ');
+
+    const newRevision: RevisionEntry = {
+      id: `REV-DOC-${Math.floor(1000 + Math.random() * 9000)}`,
+      category: 'Documents' as const,
+      affectedSection: doc.category,
+      priority: priority,
+      status: 'Sent' as const,
+      requestedBy: 'Priya Nair',
+      requestDate: new Date().toISOString().split('T')[0],
+      deadline: deadline || new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      title: `Revision requested: ${doc.name}`,
+      description: `Issues identified with document: ${reasonsText}`,
+      requiredAction: `Please upload a corrected version of the document "${doc.name}" matching compliance guidelines. Specific issues: ${reasonsText}`,
+      severity: priority === 'Critical' || priority === 'High' ? ('Critical' as const) : ('Medium' as const),
+      area: 'Document' as const,
+      revisionTimeline: [
+        {
+          id: `rt-${Math.random()}`,
+          actor: 'Priya Nair',
+          role: 'Auditor',
+          action: 'Revision Created',
+          timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16)
+        }
+      ]
+    };
+
+    onAddRevision(sub.id, newRevision);
+    onReject(doc.name); // Updates document status to REJECTED
+
+    // Reset Form
+    setRevisingDocName(null);
+    setSelectedReasons([]);
+    setCustomReason('');
+    setDeadline('');
+  };
+
   const verified = sub.documents.filter(d => d.status === 'VERIFIED').length;
   const needReview = sub.documents.filter(d => d.status === 'WAITING REVIEW' || d.status === 'READY').length;
   const rejected = sub.documents.filter(d => d.status === 'REJECTED').length;
@@ -252,7 +306,7 @@ function TabDocuments({ sub, onVerify, onReject, onView }: {
             ].map(s => (
               <div key={s.label} className="text-center">
                 <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
-                <p className="text-[10px] text-text-secondary font-mono uppercase">{s.label}</p>
+                <p className="text-[10px] text-text-secondary font-mono uppercase mt-0.5">{s.label}</p>
               </div>
             ))}
           </div>
@@ -262,39 +316,137 @@ function TabDocuments({ sub, onVerify, onReject, onView }: {
       {/* Document Repository */}
       <SectionCard title="Document Repository">
         <div className="space-y-2.5">
-          {sub.documents.map((doc, i) => (
-            <div key={i} className={`flex items-center justify-between gap-3 p-3.5 rounded-lg border transition-colors ${doc.status === 'MISSING' ? 'bg-slate-50 border-dashed border-slate-200 opacity-60' : 'bg-white border-border-subtle hover:border-slate-400 cursor-pointer'}`}>
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="p-1.5 bg-surface-container-low border border-border-subtle rounded">
-                  <FileText className="w-4 h-4 text-on-surface-variant" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-bold text-text-primary truncate">{doc.name}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[9px] font-mono text-text-secondary">{doc.category}</span>
-                    {doc.uploadDate && <span className="text-[9px] text-text-secondary">· Uploaded {doc.uploadDate}</span>}
-                    {doc.expiredDate && <span className="text-[9px] text-orange-500 font-medium">· Exp. {doc.expiredDate}</span>}
+          {sub.documents.map((doc, i) => {
+            const isRevising = revisingDocName === doc.name;
+            const hasActiveRevision = sub.revisions.some(
+              r => r.category === 'Documents' && r.affectedSection === doc.category && r.status !== 'Resolved' && r.status !== 'Rejected'
+            );
+
+            return (
+              <div key={i} className="border border-border-subtle rounded-xl overflow-hidden bg-white">
+                <div className={`flex items-center justify-between gap-3 p-3.5 transition-colors ${doc.status === 'MISSING' ? 'bg-slate-50 border-dashed opacity-60' : 'bg-white'}`}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="p-1.5 bg-surface-container-low border border-border-subtle rounded shrink-0">
+                      <FileText className="w-4 h-4 text-on-surface-variant" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-text-primary truncate">{doc.name}</p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <span className="text-[9px] font-mono text-text-secondary">{doc.category}</span>
+                        {doc.uploadDate && <span className="text-[9px] text-text-secondary">· Uploaded {doc.uploadDate}</span>}
+                        {doc.expiredDate && <span className="text-[9px] text-orange-500 font-medium">· Exp. {doc.expiredDate}</span>}
+                        {hasActiveRevision && (
+                          <span className="bg-warning/10 text-warning border border-warning/20 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider">
+                            Revision Requested
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {doc.status !== 'MISSING' && (
+                      <>
+                        <button onClick={() => onView({ name: doc.name, category: doc.category, status: doc.status })} className="p-1.5 text-text-secondary hover:text-primary hover:bg-surface-container-low rounded transition-colors cursor-pointer" title="Preview"><Eye className="w-3.5 h-3.5" /></button>
+                        <button className="p-1.5 text-text-secondary hover:text-primary hover:bg-surface-container-low rounded transition-colors cursor-pointer" title="Download"><Download className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => setRevisingDocName(isRevising ? null : doc.name)} className={`p-1.5 rounded transition-colors cursor-pointer ${isRevising ? 'bg-warning text-white' : 'text-text-secondary hover:text-warning hover:bg-surface-container-low'}`} title="Request Revision"><RefreshCw className="w-3.5 h-3.5" /></button>
+                      </>
+                    )}
+                    {doc.status !== 'VERIFIED' && doc.status !== 'REJECTED' && doc.status !== 'MISSING' ? (
+                      <div className="flex gap-1.5">
+                        <button onClick={() => onVerify(doc.name)} className="bg-success/10 hover:bg-success hover:text-white border border-success/20 text-success text-[10px] font-bold px-2.5 py-1 rounded transition-all cursor-pointer">Verify</button>
+                        <button onClick={() => onReject(doc.name)} className="bg-danger/10 hover:bg-danger hover:text-white border border-danger/20 text-danger text-[10px] font-bold px-2.5 py-1 rounded transition-all cursor-pointer">Reject</button>
+                      </div>
+                    ) : (
+                      <span className={`px-2.5 py-0.5 rounded-full font-mono text-[9px] font-bold border ${statusColor(doc.status)}`}>{doc.status}</span>
+                    )}
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {doc.status !== 'MISSING' && (
-                  <>
-                    <button onClick={() => onView({ name: doc.name, category: doc.category, status: doc.status })} className="p-1.5 text-text-secondary hover:text-primary hover:bg-surface-container-low rounded transition-colors cursor-pointer" title="Preview"><Eye className="w-3.5 h-3.5" /></button>
-                    <button className="p-1.5 text-text-secondary hover:text-primary hover:bg-surface-container-low rounded transition-colors cursor-pointer" title="Download"><Download className="w-3.5 h-3.5" /></button>
-                  </>
-                )}
-                {doc.status !== 'VERIFIED' && doc.status !== 'REJECTED' && doc.status !== 'MISSING' ? (
-                  <div className="flex gap-1.5">
-                    <button onClick={() => onVerify(doc.name)} className="bg-success/10 hover:bg-success hover:text-white border border-success/20 text-success text-[10px] font-bold px-2.5 py-1 rounded transition-all cursor-pointer">Verify</button>
-                    <button onClick={() => onReject(doc.name)} className="bg-danger/10 hover:bg-danger hover:text-white border border-danger/20 text-danger text-[10px] font-bold px-2.5 py-1 rounded transition-all cursor-pointer">Reject</button>
+
+                {/* Inline Document Revision Request Form */}
+                {isRevising && (
+                  <div className="border-t border-border-subtle bg-surface-container-low/40 p-4 space-y-4">
+                    <p className="text-xs font-bold text-text-primary">Configure Revision Request for "{doc.name}"</p>
+
+                    {/* Rejection reasons checklist */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Select Compliance Issues</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        {DOCUMENT_REJECTION_REASONS.map(reason => (
+                          <button
+                            key={reason}
+                            onClick={() => toggleReason(reason)}
+                            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-xs text-left transition-colors cursor-pointer ${selectedReasons.includes(reason) ? 'bg-secondary/10 border-secondary/30 text-secondary font-semibold' : 'bg-white border-border-subtle text-text-secondary hover:border-slate-400'}`}
+                          >
+                            <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${selectedReasons.includes(reason) ? 'bg-secondary border-secondary' : 'border-slate-300'}`}>
+                              {selectedReasons.includes(reason) && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
+                            </div>
+                            {reason}
+                          </button>
+                        ))}
+                      </div>
+                      {selectedReasons.includes('Lainnya') && (
+                        <input
+                          value={customReason}
+                          onChange={e => setCustomReason(e.target.value)}
+                          placeholder="Describe other custom reason..."
+                          className="w-full mt-2 px-3 py-2 border border-border-subtle rounded-lg text-xs bg-white outline-none placeholder:text-text-secondary focus:border-secondary focus:ring-1 focus:ring-secondary/20"
+                        />
+                      )}
+                    </div>
+
+                    {/* Priority & SLA */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Priority & SLA</label>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {(['Low', 'Medium', 'High', 'Critical'] as RevisionPriority[]).map(p => (
+                          <button
+                            key={p}
+                            onClick={() => setPriority(p)}
+                            className={`flex flex-col items-center py-2 px-3 rounded-lg border text-xs font-bold transition-all cursor-pointer ${priority === p ? (p === 'Critical' ? 'bg-danger text-white border-danger' : p === 'High' ? 'bg-orange-500 text-white border-orange-500' : p === 'Medium' ? 'bg-warning text-white border-warning' : 'bg-success text-white border-success') : 'bg-white border-border-subtle text-text-secondary hover:border-slate-400'}`}
+                          >
+                            <span>{p}</span>
+                            <span className={`text-[9px] mt-0.5 font-mono ${priority === p ? 'opacity-80' : 'text-text-secondary'}`}>{REVISION_SLA[p]}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Deadline */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Deadline</label>
+                      <input
+                        type="date"
+                        value={deadline}
+                        onChange={e => setDeadline(e.target.value)}
+                        className="w-full px-3 py-2 border border-border-subtle rounded-lg text-xs bg-white outline-none focus:border-secondary focus:ring-1 focus:ring-secondary/20"
+                      />
+                    </div>
+
+                    {/* Form Buttons */}
+                    <div className="flex gap-2 justify-end pt-2">
+                      <button
+                        onClick={() => {
+                          setRevisingDocName(null);
+                          setSelectedReasons([]);
+                          setCustomReason('');
+                        }}
+                        className="px-3 py-1.5 border border-border-subtle text-text-secondary rounded-lg text-xs font-bold hover:bg-surface-container-low transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        disabled={selectedReasons.length === 0 && !customReason.trim()}
+                        onClick={() => handleSendDocRevision(doc)}
+                        className="px-4 py-1.5 bg-secondary hover:bg-secondary/90 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                      >
+                        Send Revision Request
+                      </button>
+                    </div>
                   </div>
-                ) : (
-                  <span className={`px-2.5 py-0.5 rounded-full font-mono text-[9px] font-bold border ${statusColor(doc.status)}`}>{doc.status}</span>
                 )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </SectionCard>
 
@@ -649,87 +801,369 @@ function TabHistory({ sub }: { sub: EventSubmission }) {
 }
 
 // ─── TAB: REVISION ────────────────────────────────────────────────────────────
+import {
+  REVISION_SLA, DOCUMENT_SECTIONS, VENUE_SECTIONS, ORGANIZER_SECTIONS,
+  FINANCE_SECTIONS, LOGISTICS_SECTIONS, DOCUMENT_REJECTION_REASONS,
+  RevisionCategory, RevisionPriority, RevisionStatus
+} from '../types';
+
+type SectionOptions = readonly string[];
+
+const CATEGORY_SECTIONS: Record<RevisionCategory, SectionOptions> = {
+  Documents: DOCUMENT_SECTIONS,
+  Venue: VENUE_SECTIONS,
+  Organizer: ORGANIZER_SECTIONS,
+  Finance: FINANCE_SECTIONS,
+  Logistics: LOGISTICS_SECTIONS,
+  Other: ['Custom Revision'],
+};
+
+const PRIORITY_COLORS: Record<RevisionPriority, string> = {
+  Low: 'bg-success/10 text-success border-success/20',
+  Medium: 'bg-warning/10 text-warning border-warning/20',
+  High: 'bg-orange-100 text-orange-600 border-orange-200',
+  Critical: 'bg-danger/10 text-danger border-danger/20',
+};
+
+const STATUS_COLORS: Record<RevisionStatus, string> = {
+  Draft: 'bg-slate-100 text-slate-500 border-slate-200',
+  Sent: 'bg-secondary/10 text-secondary border-secondary/20',
+  Viewed: 'bg-sky-100 text-sky-600 border-sky-200',
+  'In Progress': 'bg-warning/10 text-warning border-warning/20',
+  Resubmitted: 'bg-purple-100 text-purple-600 border-purple-200',
+  Verified: 'bg-teal-100 text-teal-600 border-teal-200',
+  Resolved: 'bg-success/10 text-success border-success/20',
+  Rejected: 'bg-danger/10 text-danger border-danger/20',
+  Expired: 'bg-slate-200 text-slate-500 border-slate-300',
+};
+
 function TabRevision({ sub }: { sub: EventSubmission }) {
-  const [area, setArea] = useState<'Document' | 'Venue' | 'Finance' | 'Organizer' | 'Logistics'>('Document');
+  const revisions = sub.revisions;
+
+  // Dashboard stats
+  const stats = {
+    total: revisions.length,
+    open: revisions.filter(r => ['Sent', 'Viewed', 'In Progress', 'Draft'].includes(r.status)).length,
+    inProgress: revisions.filter(r => r.status === 'In Progress').length,
+    resolved: revisions.filter(r => r.status === 'Resolved').length,
+    rejected: revisions.filter(r => r.status === 'Rejected').length,
+    critical: revisions.filter(r => r.priority === 'Critical').length,
+  };
+
+  // Add revision form state
+  const [category, setCategory] = useState<RevisionCategory>('Documents');
+  const [affectedSection, setAffectedSection] = useState('');
+  const [priority, setPriority] = useState<RevisionPriority>('High');
   const [title, setTitle] = useState('');
-  const [desc, setDesc] = useState('');
-  const [severity, setSeverity] = useState<'Minor' | 'Medium' | 'Critical'>('Minor');
-  const severityColor = (s: string) => s === 'Critical' ? 'bg-danger/10 text-danger border-danger/20' : s === 'Medium' ? 'bg-warning/10 text-warning border-warning/20' : 'bg-success/10 text-success border-success/20';
-  const statusColor2 = (s: string) => s === 'Resolved' ? 'bg-success/10 text-success border-success/20' : s === 'In Progress' ? 'bg-secondary/10 text-secondary border-secondary/20' : 'bg-warning/10 text-warning border-warning/20';
+  const [description, setDescription] = useState('');
+  const [requiredAction, setRequiredAction] = useState('');
+  const [deadline, setDeadline] = useState('');
+  const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
+  const [customReason, setCustomReason] = useState('');
+  const [expandedRevision, setExpandedRevision] = useState<string | null>(null);
+
+  const toggleReason = (r: string) => {
+    setSelectedReasons(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]);
+  };
+
+  const sectionOptions = CATEGORY_SECTIONS[category];
+
   return (
     <div className="space-y-6">
-      {/* Existing Revisions */}
-      <SectionCard title={`Revision History (${sub.revisions.length})`}>
-        {sub.revisions.length === 0 ? (
-          <div className="text-center py-6 text-xs text-text-secondary">No revisions requested for this event.</div>
+
+      {/* ── Revision Dashboard ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {[
+          { label: 'Total', value: stats.total, color: 'text-text-primary' },
+          { label: 'Open', value: stats.open, color: 'text-secondary' },
+          { label: 'In Progress', value: stats.inProgress, color: 'text-warning' },
+          { label: 'Resolved', value: stats.resolved, color: 'text-success' },
+          { label: 'Rejected', value: stats.rejected, color: 'text-danger' },
+          { label: 'Critical', value: stats.critical, color: 'text-danger' },
+        ].map(s => (
+          <div key={s.label} className="bg-white border border-border-subtle rounded-xl p-3 soft-shadow text-center">
+            <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+            <p className="text-[9px] font-mono text-text-secondary uppercase mt-0.5">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Existing Revision Items ── */}
+      <SectionCard title={`Revision Items (${revisions.length})`}>
+        {revisions.length === 0 ? (
+          <div className="text-center py-8 text-xs text-text-secondary">
+            <RefreshCw className="w-8 h-8 mx-auto mb-2 text-border-subtle" />
+            No revision items yet for this event.
+          </div>
         ) : (
           <div className="space-y-3">
-            {sub.revisions.map(r => (
-              <div key={r.id} className="p-4 bg-white border border-border-subtle rounded-lg space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${severityColor(r.severity)}`}>{r.severity}</span>
-                    <span className="text-xs font-bold text-text-primary">{r.title}</span>
-                    <span className="text-[9px] text-text-secondary font-mono px-1.5 py-0.5 bg-surface-container-low rounded border border-border-subtle">{r.area}</span>
+            {revisions.map(r => (
+              <div key={r.id} className="border border-border-subtle rounded-xl overflow-hidden">
+                {/* Revision Item Header */}
+                <button
+                  onClick={() => setExpandedRevision(expandedRevision === r.id ? null : r.id)}
+                  className="w-full flex items-start justify-between gap-3 p-4 hover:bg-surface-container-low transition-colors cursor-pointer text-left"
+                >
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    <div className="flex flex-col gap-1.5 shrink-0">
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${PRIORITY_COLORS[r.priority]}`}>{r.priority}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${STATUS_COLORS[r.status]}`}>{r.status}</span>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                        <span className="text-xs font-bold text-text-primary">{r.title}</span>
+                        <span className="text-[9px] font-mono text-text-secondary px-1.5 py-0.5 bg-surface-container-low rounded border border-border-subtle">{r.category}</span>
+                        <span className="text-[9px] font-mono text-text-secondary">· {r.affectedSection}</span>
+                      </div>
+                      <p className="text-[10px] text-text-secondary font-mono">
+                        {r.id} · By {r.requestedBy} · {r.requestDate}
+                        <span className="text-danger ml-2">SLA: {REVISION_SLA[r.priority]} · Deadline: {r.deadline}</span>
+                      </p>
+                    </div>
                   </div>
-                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${statusColor2(r.status)}`}>{r.status}</span>
-                </div>
-                <p className="text-xs text-text-secondary leading-relaxed">{r.description}</p>
-                <div className="flex items-center gap-3 text-[10px] text-text-secondary font-mono">
-                  <span>By: {r.requestedBy}</span>
-                  <span>·</span>
-                  <span>Requested: {r.requestDate}</span>
-                  <span>·</span>
-                  <span className="text-danger">Deadline: {r.deadline}</span>
-                </div>
+                  <ChevronRight className={`w-4 h-4 text-text-secondary shrink-0 transition-transform mt-0.5 ${expandedRevision === r.id ? 'rotate-90' : ''}`} />
+                </button>
+
+                {/* Expanded Detail */}
+                {expandedRevision === r.id && (
+                  <div className="border-t border-border-subtle bg-surface-container-low/40 p-4 space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <p className="text-[9px] font-mono font-bold text-text-secondary uppercase">Issue Description</p>
+                        <p className="text-xs text-text-primary leading-relaxed">{r.description}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[9px] font-mono font-bold text-text-secondary uppercase">Required Action</p>
+                        <p className="text-xs text-text-primary leading-relaxed">{r.requiredAction}</p>
+                      </div>
+                    </div>
+
+                    {/* Organizer Response */}
+                    {r.organizerResponse && (
+                      <div className="bg-secondary/5 border border-secondary/15 rounded-lg p-3 space-y-2">
+                        <p className="text-[9px] font-mono font-bold text-secondary uppercase">Organizer Response</p>
+                        <p className="text-xs text-text-primary">{r.organizerResponse.comment}</p>
+                        {r.organizerResponse.uploadedFiles.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {r.organizerResponse.uploadedFiles.map(f => (
+                              <span key={f} className="flex items-center gap-1 text-[10px] text-secondary bg-secondary/10 px-2 py-0.5 rounded border border-secondary/20">
+                                <FileText className="w-3 h-3" />{f}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-[9px] font-mono text-text-secondary">Responded: {r.organizerResponse.respondedAt}</p>
+                      </div>
+                    )}
+
+                    {/* Revision Timeline */}
+                    <div>
+                      <p className="text-[9px] font-mono font-bold text-text-secondary uppercase mb-2">Revision Timeline</p>
+                      <div className="space-y-2">
+                        {r.revisionTimeline.map((t, i) => (
+                          <div key={t.id} className="flex gap-2.5 items-start">
+                            <div className="flex flex-col items-center">
+                              <div className="w-5 h-5 rounded-full bg-white border-2 border-border-subtle flex items-center justify-center shrink-0">
+                                <div className="w-1.5 h-1.5 rounded-full bg-secondary" />
+                              </div>
+                              {i < r.revisionTimeline.length - 1 && <div className="w-px h-4 bg-border-subtle" />}
+                            </div>
+                            <div className="pb-1">
+                              <p className="text-[10px] font-semibold text-text-primary">{t.action}</p>
+                              <p className="text-[9px] text-text-secondary font-mono">{t.actor} · {t.role} · {t.timestamp}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Auditor Verification Actions */}
+                    {['Resubmitted', 'Viewed', 'In Progress'].includes(r.status) && (
+                      <div className="flex gap-2 flex-wrap pt-2 border-t border-border-subtle">
+                        <p className="w-full text-[9px] font-mono font-bold text-text-secondary uppercase">Auditor Verification</p>
+                        <button className="flex items-center gap-1.5 px-3 py-2 bg-success/10 hover:bg-success text-success hover:text-white border border-success/20 rounded-lg text-xs font-bold transition-colors cursor-pointer">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Accept Revision
+                        </button>
+                        <button className="flex items-center gap-1.5 px-3 py-2 bg-warning/10 hover:bg-warning text-warning hover:text-white border border-warning/20 rounded-lg text-xs font-bold transition-colors cursor-pointer">
+                          <RefreshCw className="w-3.5 h-3.5" /> Request Additional Changes
+                        </button>
+                        <button className="flex items-center gap-1.5 px-3 py-2 bg-danger/10 hover:bg-danger text-danger hover:text-white border border-danger/20 rounded-lg text-xs font-bold transition-colors cursor-pointer">
+                          <Ban className="w-3.5 h-3.5" /> Reject Revision
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
         )}
       </SectionCard>
 
-      {/* New Revision Form */}
-      <SectionCard title="Request New Revision">
-        <div className="space-y-4">
-          {/* Area selector */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Area</label>
-            <div className="flex flex-wrap gap-2">
-              {(['Document', 'Venue', 'Finance', 'Organizer', 'Logistics'] as const).map(a => (
-                <button key={a} onClick={() => setArea(a)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${area === a ? 'bg-secondary text-white border-secondary' : 'bg-white border-border-subtle text-text-secondary hover:border-secondary/50'}`}>{a}</button>
+      {/* ── Add Revision Item Form ── */}
+      <SectionCard title="Add Revision Item">
+        <div className="space-y-5">
+
+          {/* Category */}
+          <div className="space-y-2">
+            <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Category</label>
+            <div className="flex flex-wrap gap-1.5">
+              {(['Documents', 'Venue', 'Organizer', 'Finance', 'Logistics', 'Other'] as RevisionCategory[]).map(c => (
+                <button
+                  key={c}
+                  onClick={() => { setCategory(c); setAffectedSection(''); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${category === c ? 'bg-primary text-white border-primary' : 'bg-white border-border-subtle text-text-secondary hover:border-primary/50'}`}
+                >
+                  {c}
+                </button>
               ))}
             </div>
           </div>
 
+          {/* Affected Section */}
+          <div className="space-y-2">
+            <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Affected Section</label>
+            <div className="flex flex-wrap gap-1.5">
+              {sectionOptions.map(s => (
+                <button
+                  key={s}
+                  onClick={() => setAffectedSection(s)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${affectedSection === s ? 'bg-secondary text-white border-secondary' : 'bg-white border-border-subtle text-text-secondary hover:border-secondary/50'}`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Priority with SLA */}
+          <div className="space-y-2">
+            <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Priority & SLA</label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {(['Low', 'Medium', 'High', 'Critical'] as RevisionPriority[]).map(p => (
+                <button
+                  key={p}
+                  onClick={() => setPriority(p)}
+                  className={`flex flex-col items-center py-2.5 px-3 rounded-lg border text-xs font-bold transition-all cursor-pointer ${priority === p ? (p === 'Critical' ? 'bg-danger text-white border-danger' : p === 'High' ? 'bg-orange-500 text-white border-orange-500' : p === 'Medium' ? 'bg-warning text-white border-warning' : 'bg-success text-white border-success') : 'bg-white border-border-subtle text-text-secondary hover:border-slate-400'}`}
+                >
+                  <span>{p}</span>
+                  <span className={`text-[9px] mt-0.5 font-mono ${priority === p ? 'opacity-80' : 'text-text-secondary'}`}>{REVISION_SLA[p]}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Title */}
           <div className="space-y-1.5">
             <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Title</label>
-            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Brief revision title..." className="w-full px-3 py-2.5 border border-border-subtle rounded-lg text-xs bg-white outline-none placeholder:text-text-secondary focus:border-secondary focus:ring-1 focus:ring-secondary/20" />
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="Brief revision title..."
+              className="w-full px-3 py-2.5 border border-border-subtle rounded-lg text-xs bg-white outline-none placeholder:text-text-secondary focus:border-secondary focus:ring-1 focus:ring-secondary/20"
+            />
           </div>
 
+          {/* Issue Description */}
           <div className="space-y-1.5">
-            <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Description</label>
-            <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={3} placeholder="Detailed description of what needs to be revised..." className="w-full p-3 border border-border-subtle rounded-lg text-xs bg-white outline-none resize-none placeholder:text-text-secondary focus:border-secondary focus:ring-1 focus:ring-secondary/20" />
+            <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Issue Description</label>
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              rows={3}
+              placeholder="Describe the issue found in detail..."
+              className="w-full p-3 border border-border-subtle rounded-lg text-xs bg-white outline-none resize-none placeholder:text-text-secondary focus:border-secondary focus:ring-1 focus:ring-secondary/20"
+            />
           </div>
 
-          {/* Severity */}
+          {/* Required Action */}
           <div className="space-y-1.5">
-            <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Severity</label>
-            <div className="flex gap-2">
-              {(['Minor', 'Medium', 'Critical'] as const).map(s => (
-                <button key={s} onClick={() => setSeverity(s)} className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all cursor-pointer ${severity === s ? (s === 'Critical' ? 'bg-danger text-white border-danger' : s === 'Medium' ? 'bg-warning text-white border-warning' : 'bg-success text-white border-success') : 'bg-white border-border-subtle text-text-secondary hover:border-slate-400'}`}>{s}</button>
-              ))}
+            <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Required Action</label>
+            <textarea
+              value={requiredAction}
+              onChange={e => setRequiredAction(e.target.value)}
+              rows={2}
+              placeholder="What steps must the organizer take to resolve this..."
+              className="w-full p-3 border border-border-subtle rounded-lg text-xs bg-white outline-none resize-none placeholder:text-text-secondary focus:border-secondary focus:ring-1 focus:ring-secondary/20"
+            />
+          </div>
+
+          {/* Document Rejection Reasons — only for Documents category */}
+          {category === 'Documents' && (
+            <div className="space-y-2">
+              <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Document Rejection Reasons</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {DOCUMENT_REJECTION_REASONS.map(reason => (
+                  <button
+                    key={reason}
+                    onClick={() => toggleReason(reason)}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-xs text-left transition-colors cursor-pointer ${selectedReasons.includes(reason) ? 'bg-secondary/10 border-secondary/30 text-secondary font-semibold' : 'bg-white border-border-subtle text-text-secondary hover:border-slate-400'}`}
+                  >
+                    <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${selectedReasons.includes(reason) ? 'bg-secondary border-secondary' : 'border-slate-300'}`}>
+                      {selectedReasons.includes(reason) && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
+                    </div>
+                    {reason}
+                  </button>
+                ))}
+              </div>
+              {selectedReasons.includes('Lainnya') && (
+                <input
+                  value={customReason}
+                  onChange={e => setCustomReason(e.target.value)}
+                  placeholder="Tuliskan alasan lainnya..."
+                  className="w-full mt-2 px-3 py-2.5 border border-border-subtle rounded-lg text-xs bg-white outline-none placeholder:text-text-secondary focus:border-secondary focus:ring-1 focus:ring-secondary/20"
+                />
+              )}
+            </div>
+          )}
+
+          {/* Deadline */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">
+              Deadline <span className="text-text-secondary normal-case font-normal">(SLA for {priority}: {REVISION_SLA[priority]})</span>
+            </label>
+            <input
+              type="date"
+              value={deadline}
+              onChange={e => setDeadline(e.target.value)}
+              className="w-full px-3 py-2.5 border border-border-subtle rounded-lg text-xs bg-white outline-none focus:border-secondary focus:ring-1 focus:ring-secondary/20"
+            />
+          </div>
+
+          {/* Attachment */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Attachment (Optional)</label>
+            <div className="border-2 border-dashed border-border-subtle rounded-lg p-4 text-center hover:border-secondary/50 transition-colors cursor-pointer">
+              <FileText className="w-5 h-5 text-text-secondary mx-auto mb-1" />
+              <p className="text-xs text-text-secondary">Click to upload screenshot or supporting evidence</p>
+              <p className="text-[9px] text-text-secondary font-mono mt-0.5">PNG, JPG, PDF up to 10MB</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 text-[10px] p-3 bg-warning/5 border border-warning/15 rounded-lg text-warning">
-            <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-            Organizer will be notified to make corrections before resubmission.
+          {/* Notification info */}
+          <div className="flex items-start gap-2 text-[10px] p-3 bg-warning/5 border border-warning/15 rounded-lg text-warning">
+            <MessageSquare className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>Organizer will receive an automatic notification when this revision is sent. Deadline reminders will be sent automatically based on SLA.</span>
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-2 flex-wrap pt-1">
+            <button className="flex items-center gap-1.5 px-4 py-2.5 border border-border-subtle text-text-secondary rounded-lg text-xs font-bold hover:bg-surface-container-low transition-colors cursor-pointer">
+              <Save className="w-3.5 h-3.5" /> Save Draft
+            </button>
+            <button
+              disabled={!title.trim() || !affectedSection || !deadline}
+              className="flex items-center gap-1.5 px-5 py-2.5 bg-secondary hover:bg-secondary/90 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+            >
+              <Send className="w-3.5 h-3.5" /> Send Revision
+            </button>
           </div>
         </div>
       </SectionCard>
     </div>
   );
 }
+
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function ReviewDetailView({
@@ -742,6 +1176,7 @@ export default function ReviewDetailView({
   onRejectDocument,
   onViewDocument,
   onChangeStage,
+  onAddRevision,
 }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [mode, setMode] = useState<'view' | 'reject' | 'changes'>('view');
@@ -796,6 +1231,7 @@ export default function ReviewDetailView({
             onVerify={(name) => onVerifyDocument(submission.id, name)}
             onReject={(name) => onRejectDocument(submission.id, name)}
             onView={onViewDocument}
+            onAddRevision={onAddRevision}
           />
         )}
         {activeTab === 'venue' && <TabVenue sub={submission} />}

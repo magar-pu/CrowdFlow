@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { AuditorView, EventSubmission, DocumentReview } from "./types";
-import { INITIAL_SUBMISSIONS, INITIAL_DOCUMENT_REVIEWS, ACTIVITY_LOG } from "./data";
+import { AuditorView, EventSubmission, DocumentReview, RevisionEntry, OrganizerVerification, PayoutRequest, OrganizerStatus, PayoutStatus } from "./types";
+import { INITIAL_SUBMISSIONS, INITIAL_DOCUMENT_REVIEWS, ACTIVITY_LOG, INITIAL_ORGANIZERS, INITIAL_PAYOUTS } from "./data";
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
 import MobileNavDrawer from "./components/MobileNavDrawer";
@@ -13,6 +13,8 @@ import DocumentsView from "./components/DocumentsView";
 import SettingsView from "./components/SettingsView";
 import DocumentDetailView from "./components/DocumentDetailView";
 import ReviewDetailView from "./components/ReviewDetailView";
+import OrganizersView from "./components/OrganizersView";
+import PayoutsView from "./components/PayoutsView";
 import { ReviewStage } from "./types";
 
 const VIEW_TITLES: Record<AuditorView, string> = {
@@ -22,6 +24,10 @@ const VIEW_TITLES: Record<AuditorView, string> = {
   settings: 'Settings',
   'view-document': 'Document Verification',
   'view-review': 'Event Submission Audit',
+  organizers: 'Organizer Verification',
+  payouts: 'Payout Verification',
+  'view-organizer': 'Organizer Audit',
+  'view-payout': 'Payout Audit',
 };
 
 export default function AuditorPage() {
@@ -32,6 +38,8 @@ export default function AuditorPage() {
 
   const [submissions, setSubmissions] = useState<EventSubmission[]>(INITIAL_SUBMISSIONS);
   const [documents, setDocuments] = useState<DocumentReview[]>(INITIAL_DOCUMENT_REVIEWS);
+  const [organizers, setOrganizers] = useState<OrganizerVerification[]>(INITIAL_ORGANIZERS);
+  const [payouts, setPayouts] = useState<PayoutRequest[]>(INITIAL_PAYOUTS);
   
   const [selectedSubmission, setSelectedSubmission] = useState<EventSubmission | null>(null);
   const [viewingDocument, setViewingDocument] = useState<{
@@ -47,6 +55,7 @@ export default function AuditorPage() {
 
   const pendingReviewsCount = submissions.filter(s => s.status === 'Pending').length;
   const pendingDocumentsCount = documents.filter(d => d.status === 'WAITING REVIEW').length;
+  const pendingOrganizersCount = organizers.filter(o => o.status === 'Pending').length;
 
   const handleApprove = (id: string) => {
     setSubmissions(prev => prev.map(s => s.id === id ? { ...s, status: 'Approved', stage: 'Final Approval' } : s));
@@ -100,6 +109,71 @@ export default function AuditorPage() {
     setSelectedSubmission(prev => prev && prev.id === submissionId ? { ...prev, stage } : prev);
   };
 
+  const handleAddRevision = (submissionId: string, revision: RevisionEntry) => {
+    setSubmissions(prev => prev.map(s => {
+      if (s.id === submissionId) {
+        return { ...s, revisions: [...s.revisions, revision] };
+      }
+      return s;
+    }));
+    setSelectedSubmission(prev => {
+      if (prev && prev.id === submissionId) {
+        return { ...prev, revisions: [...prev.revisions, revision] };
+      }
+      return prev;
+    });
+  };
+
+  const handleUpdateOrganizerStatus = (id: string, status: OrganizerStatus, notes: string, feedback: string) => {
+    setOrganizers(prev => prev.map(o => {
+      if (o.id === id) {
+        const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 16);
+        return {
+          ...o,
+          status,
+          internalNotes: notes,
+          organizerFeedback: feedback,
+          history: [
+            ...o.history,
+            { action: `Status Updated to ${status}`, actor: 'Priya Nair', timestamp, details: feedback || `Internal notes updated: ${notes}` }
+          ]
+        };
+      }
+      return o;
+    }));
+  };
+
+  const handleUpdateOrganizerChecklist = (id: string, checklist: OrganizerVerification['checklist']) => {
+    setOrganizers(prev => prev.map(o => o.id === id ? { ...o, checklist } : o));
+  };
+
+  const handleUpdatePayoutStatus = (id: string, status: PayoutStatus, notes: string, financeNotes: string) => {
+    setPayouts(prev => prev.map(p => {
+      if (p.id === id) {
+        const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 16);
+        return {
+          ...p,
+          status,
+          internalNotes: notes,
+          financeNotes,
+          timeline: [
+            ...p.timeline,
+            { stage: `Status Updated to ${status}`, actor: 'Priya Nair', timestamp, details: financeNotes || `Internal notes: ${notes}` }
+          ]
+        };
+      }
+      return p;
+    }));
+  };
+
+  const handleUpdatePayoutChecklists = (
+    id: string,
+    financialChecklist: PayoutRequest['financialChecklist'],
+    complianceChecklist: PayoutRequest['complianceChecklist']
+  ) => {
+    setPayouts(prev => prev.map(p => p.id === id ? { ...p, financialChecklist, complianceChecklist } : p));
+  };
+
   return (
     <div id="crowdflow-auditor" className="min-h-screen bg-surface text-text-primary flex font-sans select-none antialiased w-full">
       <Sidebar
@@ -109,6 +183,7 @@ export default function AuditorPage() {
         setIsCollapsed={setIsSidebarCollapsed}
         pendingReviewsCount={pendingReviewsCount}
         pendingDocumentsCount={pendingDocumentsCount}
+        pendingOrganizersCount={pendingOrganizersCount}
       />
 
       <MobileNavDrawer
@@ -118,9 +193,15 @@ export default function AuditorPage() {
         setView={setCurrentView}
         pendingReviewsCount={pendingReviewsCount}
         pendingDocumentsCount={pendingDocumentsCount}
+        pendingOrganizersCount={pendingOrganizersCount}
       />
 
-      <MobileBottomNav currentView={currentView} setView={setCurrentView} pendingReviewsCount={pendingReviewsCount} />
+      <MobileBottomNav 
+        currentView={currentView} 
+        setView={setCurrentView} 
+        pendingReviewsCount={pendingReviewsCount} 
+        pendingOrganizersCount={pendingOrganizersCount} 
+      />
 
       <div
         className={`flex min-h-screen w-full flex-1 flex-col bg-surface transition-[padding] duration-300 ${
@@ -173,6 +254,20 @@ export default function AuditorPage() {
             />
           )}
           {currentView === 'settings' && <SettingsView />}
+          {currentView === 'organizers' && (
+            <OrganizersView
+              organizers={organizers}
+              onUpdateOrganizerStatus={handleUpdateOrganizerStatus}
+              onUpdateOrganizerChecklist={handleUpdateOrganizerChecklist}
+            />
+          )}
+          {currentView === 'payouts' && (
+            <PayoutsView
+              payouts={payouts}
+              onUpdatePayoutStatus={handleUpdatePayoutStatus}
+              onUpdatePayoutChecklists={handleUpdatePayoutChecklists}
+            />
+          )}
           {currentView === 'view-review' && selectedSubmission && (
             <ReviewDetailView
               submission={selectedSubmission}
@@ -199,6 +294,7 @@ export default function AuditorPage() {
                 setCurrentView('view-document');
               }}
               onChangeStage={handleChangeSubmissionStage}
+              onAddRevision={handleAddRevision}
             />
           )}
           {currentView === 'view-document' && viewingDocument && (

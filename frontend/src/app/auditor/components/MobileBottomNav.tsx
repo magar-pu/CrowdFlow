@@ -1,22 +1,23 @@
 import React from 'react';
 import { AuditorView } from '../types';
-import { LayoutDashboard, ClipboardCheck, FileCheck2, Settings } from 'lucide-react';
+import { LayoutDashboard, ClipboardCheck, Users2, DollarSign } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 interface MobileBottomNavProps {
   currentView: AuditorView;
   setView: (view: AuditorView) => void;
   pendingReviewsCount: number;
+  pendingOrganizersCount?: number;
 }
 
 const ITEMS: { view: AuditorView; label: string; icon: LucideIcon }[] = [
   { view: 'dashboard', label: 'Home', icon: LayoutDashboard },
   { view: 'reviews', label: 'Reviews', icon: ClipboardCheck },
-  { view: 'documents', label: 'Documents', icon: FileCheck2 },
-  { view: 'settings', label: 'Settings', icon: Settings },
+  { view: 'organizers', label: 'Organizers', icon: Users2 },
+  { view: 'payouts', label: 'Payouts', icon: DollarSign },
 ];
 
-export default function MobileBottomNav({ currentView, setView, pendingReviewsCount }: MobileBottomNavProps) {
+export default function MobileBottomNav({ currentView, setView, pendingReviewsCount, pendingOrganizersCount }: MobileBottomNavProps) {
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-40 border-t border-border-subtle bg-surface-white/95 px-1 pb-[calc(env(safe-area-inset-bottom)+6px)] pt-2 shadow-overlay backdrop-blur-md md:hidden"
@@ -26,7 +27,9 @@ export default function MobileBottomNav({ currentView, setView, pendingReviewsCo
         {ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = currentView === item.view;
-          const badge = item.view === 'reviews' && pendingReviewsCount > 0 ? pendingReviewsCount : undefined;
+          const badge = item.view === 'reviews' && pendingReviewsCount > 0 ? pendingReviewsCount 
+            : item.view === 'organizers' && pendingOrganizersCount && pendingOrganizersCount > 0 ? pendingOrganizersCount 
+            : undefined;
           return (
             <button
               key={item.view}

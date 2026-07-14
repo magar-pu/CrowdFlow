@@ -1,6 +1,6 @@
 import React from 'react';
 import { AuditorView } from '../types';
-import { LayoutDashboard, ClipboardCheck, FileCheck2, Settings, ShieldCheck, X } from 'lucide-react';
+import { LayoutDashboard, ClipboardCheck, FileCheck2, Settings, ShieldCheck, X, Users2, DollarSign } from 'lucide-react';
 
 interface MobileNavDrawerProps {
   isOpen: boolean;
@@ -9,19 +9,23 @@ interface MobileNavDrawerProps {
   setView: (view: AuditorView) => void;
   pendingReviewsCount: number;
   pendingDocumentsCount: number;
+  pendingOrganizersCount?: number;
 }
 
 const NAV_ITEMS = [
   { view: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
   { view: 'reviews' as const, label: 'Reviews', icon: ClipboardCheck },
   { view: 'documents' as const, label: 'Documents', icon: FileCheck2 },
+  { view: 'organizers' as const, label: 'Organizers', icon: Users2 },
+  { view: 'payouts' as const, label: 'Payouts', icon: DollarSign },
   { view: 'settings' as const, label: 'Settings', icon: Settings },
 ];
 
-export default function MobileNavDrawer({ isOpen, onClose, currentView, setView, pendingReviewsCount, pendingDocumentsCount }: MobileNavDrawerProps) {
+export default function MobileNavDrawer({ isOpen, onClose, currentView, setView, pendingReviewsCount, pendingDocumentsCount, pendingOrganizersCount }: MobileNavDrawerProps) {
   const badgeFor = (view: AuditorView) => {
     if (view === 'reviews') return pendingReviewsCount > 0 ? pendingReviewsCount : undefined;
     if (view === 'documents') return pendingDocumentsCount > 0 ? pendingDocumentsCount : undefined;
+    if (view === 'organizers') return pendingOrganizersCount && pendingOrganizersCount > 0 ? pendingOrganizersCount : undefined;
     return undefined;
   };
 
