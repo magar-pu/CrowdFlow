@@ -100,6 +100,7 @@ export type PayoutStatus =
 
 export interface PayoutRequest {
   id: string;
+  invoiceNumber: string;
   organizerName: string;
   organizerEmail: string;
   eventName: string;
@@ -111,7 +112,20 @@ export interface PayoutRequest {
   requestedAmount: number;
   requestDate: string;
   status: PayoutStatus;
-  
+  riskLevel: RiskLevel;
+  riskScore: number; // 0-100
+  currentAuditor: string;
+
+  // Organizer profile (denormalized from Organizer Verification module)
+  organizerCompany: string;
+  organizerPhone: string;
+  organizerBusinessLicense: string;
+  organizerStatus: OrganizerStatus;
+  organizerPreviousViolations: number;
+
+  // Event details
+  ticketCapacity: number;
+
   // Sales summary
   salesSummary: {
     ticketsSold: number;
@@ -122,9 +136,10 @@ export interface PayoutRequest {
     vat: number;
     refundAmount: number;
     chargebackAmount: number;
+    otherAdjustments: number;
     netRevenue: number;
   };
-  
+
   // Checklists
   financialChecklist: {
     revenueMatch: boolean;
@@ -135,7 +150,7 @@ export interface PayoutRequest {
     taxCorrect: boolean;
     netRevenueCorrect: boolean;
   };
-  
+
   complianceChecklist: {
     eventApproved: boolean;
     organizerVerified: boolean;
@@ -143,13 +158,14 @@ export interface PayoutRequest {
     noActiveInvestigation: boolean;
     noPendingRevision: boolean;
   };
-  
+
   // Bank details
   bankName: string;
   bankAccountNumber: string;
   bankAccountHolder: string;
+  swiftCode: string;
   bankVerificationStatus: 'Verified' | 'Pending' | 'Unverified';
-  
+
   // Fraud checks
   fraudDetection: {
     duplicatePayout: boolean;
@@ -161,18 +177,40 @@ export interface PayoutRequest {
     hasAlert: boolean;
     alertMessage?: string;
   };
-  
+
   internalNotes: string;
   financeNotes: string;
-  
-  // Timeline
+
+  // Activity Log (chronological free-form entries)
   timeline: {
     stage: string;
     actor: string;
     timestamp: string;
     details: string;
   }[];
+
+  // Revision History (populated only if the payout was ever sent back for revision)
+  revisionHistory: {
+    date: string;
+    reason: string;
+    status: string;
+    resolvedBy: string;
+  }[];
+
+  attachments: {
+    name: string;
+    type: 'Invoice' | 'Revenue Report' | 'Settlement Report' | 'Tax Report' | 'Supporting Document';
+  }[];
 }
+
+export const PAYOUT_REJECTION_REASONS = [
+  'Revenue mismatch',
+  'Fraud detected',
+  'Invalid bank account',
+  'Missing documents',
+  'Duplicate request',
+  'Other',
+] as const;
 
 export type ReviewStage = 'Submitted' | 'Document Verification' | 'Event Validation' | 'Final Approval';
 

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { AuthGuard } from '@/components/auth/AuthGuard';
+import AuditorShell from './components/AuditorShell';
 
 export const metadata: Metadata = {
   title: 'CrowdFlow Auditor Console',
@@ -13,7 +14,9 @@ export default function AuditorLayout({
 }>) {
   return (
     <div className='w-full min-h-screen bg-surface text-text-primary'>
-      <AuthGuard requiredRole="auditor">{children}</AuthGuard>
+      <AuthGuard requiredRole="auditor">
+        <AuditorShell>{children}</AuditorShell>
+      </AuthGuard>
     </div>
   );
 }

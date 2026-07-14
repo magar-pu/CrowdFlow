@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { AuthGuard } from '@/components/auth/AuthGuard';
+import EorganizerShell from './components/EorganizerShell';
 
 export const metadata: Metadata = {
   title: 'CrowdFlow Organizer Portal',
@@ -13,7 +14,9 @@ export default function EorganizerLayout({
 }>) {
   return (
     <div className='w-full min-h-screen bg-surface text-text-primary'>
-      <AuthGuard requiredRole="verified_organizer">{children}</AuthGuard>
+      <AuthGuard requiredRole="verified_organizer">
+        <EorganizerShell>{children}</EorganizerShell>
+      </AuthGuard>
     </div>
   );
 }

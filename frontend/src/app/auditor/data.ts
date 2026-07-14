@@ -906,6 +906,7 @@ export const INITIAL_ORGANIZERS: OrganizerVerification[] = [
 export const INITIAL_PAYOUTS: PayoutRequest[] = [
   {
     id: "PAY-9001",
+    invoiceNumber: "INV-2026-9001",
     organizerName: "Aurora Live Events",
     organizerEmail: "marcus@auroralive.com",
     eventName: "Neon Nights Festival",
@@ -917,6 +918,15 @@ export const INITIAL_PAYOUTS: PayoutRequest[] = [
     requestedAmount: 772800,
     requestDate: "2026-09-13",
     status: "Pending",
+    riskLevel: "Low",
+    riskScore: 12,
+    currentAuditor: "Priya Nair",
+    organizerCompany: "Aurora Live Events LLC",
+    organizerPhone: "+1 (512) 390-4820",
+    organizerBusinessLicense: "BL-2024-TX-00492",
+    organizerStatus: "Verified",
+    organizerPreviousViolations: 0,
+    ticketCapacity: 2000,
     salesSummary: {
       ticketsSold: 1840,
       grossRevenue: 920000,
@@ -926,6 +936,7 @@ export const INITIAL_PAYOUTS: PayoutRequest[] = [
       vat: 0,
       refundAmount: 0,
       chargebackAmount: 0,
+      otherAdjustments: 0,
       netRevenue: 772800
     },
     financialChecklist: {
@@ -947,6 +958,7 @@ export const INITIAL_PAYOUTS: PayoutRequest[] = [
     bankName: "JP Morgan Chase",
     bankAccountNumber: "****4821",
     bankAccountHolder: "Aurora Live Events LLC",
+    swiftCode: "CHASUS33",
     bankVerificationStatus: "Verified",
     fraudDetection: {
       duplicatePayout: false,
@@ -962,10 +974,17 @@ export const INITIAL_PAYOUTS: PayoutRequest[] = [
     timeline: [
       { stage: "Request Submitted", actor: "Marcus Chen", timestamp: "2026-09-13 09:00", details: "Payout request for $772,800 generated automatically upon event completion." },
       { stage: "Finance Validation", actor: "System", timestamp: "2026-09-13 09:05", details: "Gateway audit records verified against platform ticketing tables." }
+    ],
+    revisionHistory: [],
+    attachments: [
+      { name: "invoice-pay-9001.pdf", type: "Invoice" },
+      { name: "revenue-report-neon-nights.pdf", type: "Revenue Report" },
+      { name: "tax-report-austin-tx.pdf", type: "Tax Report" },
     ]
   },
   {
     id: "PAY-9002",
+    invoiceNumber: "INV-2026-9002",
     organizerName: "Nightfall Presents",
     organizerEmail: "dj@nightfallpresents.com",
     eventName: "Riverside Jazz Weekend",
@@ -977,6 +996,15 @@ export const INITIAL_PAYOUTS: PayoutRequest[] = [
     requestedAmount: 93744,
     requestDate: "2026-08-23",
     status: "On Hold",
+    riskLevel: "High",
+    riskScore: 68,
+    currentAuditor: "Priya Nair",
+    organizerCompany: "Nightfall Presents Co.",
+    organizerPhone: "+1 (503) 721-0044",
+    organizerBusinessLicense: "BL-2022-OR-00881",
+    organizerStatus: "Need Revision",
+    organizerPreviousViolations: 2,
+    ticketCapacity: 1500,
     salesSummary: {
       ticketsSold: 620,
       grossRevenue: 111600,
@@ -986,6 +1014,7 @@ export const INITIAL_PAYOUTS: PayoutRequest[] = [
       vat: 0,
       refundAmount: 0,
       chargebackAmount: 22000,
+      otherAdjustments: 0,
       netRevenue: 71744
     },
     financialChecklist: {
@@ -1007,6 +1036,7 @@ export const INITIAL_PAYOUTS: PayoutRequest[] = [
     bankName: "Wells Fargo",
     bankAccountNumber: "****3309",
     bankAccountHolder: "Nightfall Presents Co.",
+    swiftCode: "WFBIUS6S",
     bankVerificationStatus: "Verified",
     fraudDetection: {
       duplicatePayout: false,
@@ -1023,6 +1053,14 @@ export const INITIAL_PAYOUTS: PayoutRequest[] = [
     timeline: [
       { stage: "Request Submitted", actor: "DJ Reyes", timestamp: "2026-08-23 10:00", details: "Payout request generated." },
       { stage: "Placed On Hold", actor: "Priya Nair", timestamp: "2026-08-24 11:00", details: "Auditor placed payout on hold due to chargeback triggers." }
+    ],
+    revisionHistory: [
+      { date: "2026-08-24", reason: "High chargeback rate requires finance investigation before payout release.", status: "In Progress", resolvedBy: "-" }
+    ],
+    attachments: [
+      { name: "invoice-pay-9002.pdf", type: "Invoice" },
+      { name: "settlement-report-riverside.pdf", type: "Settlement Report" },
+      { name: "chargeback-dispute-summary.pdf", type: "Supporting Document" },
     ]
   }
 ];
