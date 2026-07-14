@@ -70,10 +70,22 @@ export async function deleteScanner(eventId: string, scannerId: string): Promise
   });
 }
 
+export async function getTicketTiers(eventId: string): Promise<ApiResponse<TicketTier[]>> {
+  return apiRequest<TicketTier[]>(`/api/v1/events/${eventId}/ticket-tiers`, {
+    method: "GET",
+  });
+}
+
 export async function updateTicketTiers(eventId: string, tiers: TicketTier[]): Promise<ApiResponse<void>> {
   return apiRequest<void>(`/api/v1/events/${eventId}/ticket-tiers`, {
     method: "PUT",
     body: JSON.stringify(tiers),
+  });
+}
+
+export async function getVenueSections(eventId: string): Promise<ApiResponse<VenueSection[]>> {
+  return apiRequest<VenueSection[]>(`/api/v1/events/${eventId}/venue-sections`, {
+    method: "GET",
   });
 }
 

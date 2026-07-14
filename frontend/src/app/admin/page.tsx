@@ -1,11 +1,9 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   initialScanners,
   initialSecurityAlerts,
-  initialTicketTiers,
-  initialVenueSections
 } from '@/lib/mock/admin';
 import { Event, EventType, User, Scanner, Transaction, Payout, VerificationApplication, SecurityAlert, Activity, TicketTier, VenueSection } from '@/types/admin';
 import {
@@ -15,7 +13,13 @@ import {
   approveVerification,
   rejectVerification,
 } from '@/lib/api/admin/userService';
-import { listEvents, listEventTypes } from '@/lib/api/admin/eventService';
+import {
+  listEvents,
+  listEventTypes,
+  getTicketTiers,
+  updateTicketTiers,
+  getVenueSections,
+} from '@/lib/api/admin/eventService';
 import {
   listTransactions,
   listPayouts,
@@ -36,6 +40,18 @@ import EventWorkspaceView from '@/components/admin/workspace/EventWorkspaceView'
 import UserManagementView from '@/components/admin/users/UserManagementView';
 import FinanceView from '@/components/admin/finance/FinanceView';
 import SettingsView from '@/components/admin/finance/SettingsView';
+
+// Backend ticket_tiers/venue_sections rows don't carry a display color (it's
+// UI-only, never persisted - see repository.go), so real fetched rows are
+// assigned one client-side by cycling through the same palette the old mock
+// data used, rather than rendering with no color at all.
+const TIER_COLORS = [
+  'border-pink-500 bg-pink-500/10 text-pink-400 hover:bg-pink-500/20',
+  'border-cyan-500 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20',
+  'border-indigo-500 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20',
+  'border-amber-500 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20',
+];
+const SECTION_COLORS = ['bg-pink-500', 'bg-cyan-500', 'bg-indigo-500', 'bg-purple-500', 'bg-amber-500'];
 
 export default function AdminPage() {
   const [currentView, setCurrentView] = useState<'dashboard' | 'analytics' | 'events' | 'users' | 'finance' | 'settings' | 'workspace' | 'create-event'>('dashboard');
@@ -102,8 +118,64 @@ export default function AdminPage() {
     refreshActivities();
   }, [refreshActivities]);
 
-  const [ticketTiers, setTicketTiers] = useState<TicketTier[]>(initialTicketTiers);
-  const [venueSections, setVenueSections] = useState<VenueSection[]>(initialVenueSections);
+  // Ticket tiers and venue sections are backed by the real
+  // /api/v1/events/{id}/ticket-tiers and /venue-sections endpoints, fetched
+  // per event when its workspace is opened (see refreshWorkspaceData below).
+  const [ticketTiers, setTicketTiers] = useState<TicketTier[]>([]);
+  const [venueSections, setVenueSections] = useState<VenueSection[]>([]);
+  const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+
+  // Tracks which event's data was most recently requested, so a slow
+  // response for an event the user has since navigated away from can't land
+  // late and overwrite the currently-open event's tiers/sections (network
+  // responses aren't guaranteed to resolve in request order).
+  const latestWorkspaceEventIdRef = useRef<string | null>(null);
+
+  const refreshWorkspaceData = useCallback(async (eventId: string) => {
+    latestWorkspaceEventIdRef.current = eventId;
+    setWorkspaceLoading(true);
+    setWorkspaceError(null);
+
+    const [tiersRes, sectionsRes] = await Promise.all([getTicketTiers(eventId), getVenueSections(eventId)]);
+
+    if (latestWorkspaceEventIdRef.current !== eventId) return;
+
+    if (tiersRes.success && tiersRes.data) {
+      setTicketTiers(tiersRes.data.map((t, i) => ({ ...t, color: TIER_COLORS[i % TIER_COLORS.length] })));
+    } else {
+      setWorkspaceError(tiersRes.error?.message ?? 'Failed to load ticket tiers');
+    }
+
+    if (sectionsRes.success && sectionsRes.data) {
+      setVenueSections(sectionsRes.data.map((s, i) => ({ ...s, color: SECTION_COLORS[i % SECTION_COLORS.length] })));
+    } else {
+      setWorkspaceError((prev) => prev ?? sectionsRes.error?.message ?? 'Failed to load venue sections');
+    }
+
+    setWorkspaceLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (selectedEventId) {
+      refreshWorkspaceData(selectedEventId);
+    }
+  }, [selectedEventId, refreshWorkspaceData]);
+
+  // Venue sections have no editable field in the current UI - "occupied" is
+  // an interactive block/simulate-entries demo, not a persisted column (see
+  // repository.go: VenueSection.Occupied is always 0 from the backend). So
+  // onUpdateSections stays a local-only setter; only ticket tier edits are
+  // wired to a real mutation below.
+  const handleUpdateTiers = async (updatedTiers: TicketTier[]) => {
+    if (!selectedEventId) return;
+    const result = await updateTicketTiers(selectedEventId, updatedTiers);
+    if (result.success) {
+      await refreshWorkspaceData(selectedEventId);
+    } else {
+      alert(result.error?.message ?? 'Failed to save ticket tiers');
+    }
+  };
 
   // Users + verifications are backed by the real /api/v1/users* endpoints.
   const [users, setUsers] = useState<User[]>([]);
@@ -325,22 +397,33 @@ export default function AdminPage() {
           )}
 
           {currentView === 'workspace' && selectedEvent && (
-            <EventWorkspaceView 
-              event={selectedEvent}
-              scanners={scanners}
-              ticketTiers={ticketTiers}
-              venueSections={venueSections}
-              transactions={transactions}
-              onBack={() => {
-                setCurrentView('events');
-                setSelectedEventId(null);
-              }}
-              onAddScanner={handleAddScanner}
-              onDeleteScanner={handleDeleteScanner}
-              onUpdateSections={setVenueSections}
-              onUpdateTiers={setTicketTiers}
-              onUpdateScanners={setScanners}
-            />
+            <div className="space-y-4">
+              {workspaceError && (
+                <div className="rounded-lg border border-danger/20 bg-danger/5 px-4 py-3 text-xs font-semibold text-danger">
+                  {workspaceError}
+                </div>
+              )}
+              {workspaceLoading ? (
+                <div className="py-24 text-center text-sm text-text-secondary">Loading event workspace...</div>
+              ) : (
+                <EventWorkspaceView
+                  event={selectedEvent}
+                  scanners={scanners}
+                  ticketTiers={ticketTiers}
+                  venueSections={venueSections}
+                  transactions={transactions}
+                  onBack={() => {
+                    setCurrentView('events');
+                    setSelectedEventId(null);
+                  }}
+                  onAddScanner={handleAddScanner}
+                  onDeleteScanner={handleDeleteScanner}
+                  onUpdateSections={setVenueSections}
+                  onUpdateTiers={handleUpdateTiers}
+                  onUpdateScanners={setScanners}
+                />
+              )}
+            </div>
           )}
 
           {currentView === 'users' && (

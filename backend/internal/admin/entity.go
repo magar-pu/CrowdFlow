@@ -102,13 +102,14 @@ type Activity struct {
 }
 
 type TicketTier struct {
-	ID       string  `json:"id"`
-	Name     string  `json:"name"`
-	Price    float64 `json:"price"`
-	Capacity int     `json:"capacity"`
-	Sold     int     `json:"sold"`
-	PriceCap float64 `json:"priceCap"` // not modeled in DB yet - see repository.go note
-	Color    string  `json:"color"`    // UI-only, not persisted
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	Price       float64 `json:"price"`
+	Capacity    int     `json:"capacity"`
+	Sold        int     `json:"sold"`
+	PriceCap    float64 `json:"priceCap"` // not modeled in DB yet - see repository.go note
+	Color       string  `json:"color"`    // UI-only, not persisted
 }
 
 type VenueSection struct {

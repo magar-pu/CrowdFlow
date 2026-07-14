@@ -102,6 +102,7 @@ export interface Activity {
 export interface TicketTier {
   id: string;
   name: string;
+  description: string;
   price: number;
   capacity: number;
   sold: number;

@@ -269,7 +269,7 @@ func (r *PostgresRepository) ListTransactions(limit, offset int) ([]*Transaction
 
 func (r *PostgresRepository) GetTicketTiers(eventID int) ([]*TicketTier, error) {
 	rows, err := r.db.Query(`
-		SELECT id, name, price, allocation_limit, tickets_sold
+		SELECT id, name, COALESCE(description, ''), price, allocation_limit, tickets_sold
 		FROM ticket_tiers
 		WHERE event_id = $1
 		ORDER BY price ASC
@@ -279,23 +279,30 @@ func (r *PostgresRepository) GetTicketTiers(eventID int) ([]*TicketTier, error) 
 	}
 	defer rows.Close()
 
-	var tiers []*TicketTier
+	// A nil slice marshals to JSON `null`, not `[]` - which the frontend's
+	// `if (result.success && result.data)` truthy check treats as "no data"
+	// (falling into its error branch) rather than "empty list", leaving
+	// whatever tiers were already in state from a previously viewed event
+	// displayed under this one. Starting from a non-nil empty slice keeps an
+	// event with zero tiers an honest `[]`.
+	tiers := []*TicketTier{}
 	for rows.Next() {
 		var id int
-		var name string
+		var name, description string
 		var price float64
 		var capacity, sold int
-		if err := rows.Scan(&id, &name, &price, &capacity, &sold); err != nil {
+		if err := rows.Scan(&id, &name, &description, &price, &capacity, &sold); err != nil {
 			return nil, err
 		}
 		tiers = append(tiers, &TicketTier{
-			ID:       strconv.Itoa(id),
-			Name:     name,
-			Price:    price,
-			Capacity: capacity,
-			Sold:     sold,
-			PriceCap: 0, // TODO: anti-scalping price cap (.agents/02) has no column yet
-			Color:    "",
+			ID:          strconv.Itoa(id),
+			Name:        name,
+			Description: description,
+			Price:       price,
+			Capacity:    capacity,
+			Sold:        sold,
+			PriceCap:    0, // TODO: anti-scalping price cap (.agents/02) has no column yet
+			Color:       "",
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -304,21 +311,37 @@ func (r *PostgresRepository) GetTicketTiers(eventID int) ([]*TicketTier, error) 
 	return tiers, nil
 }
 
-// UpdateTicketTiers updates name/price/allocation_limit for existing tiers
-// (matched by ID) belonging to eventID. Tiers without a valid numeric ID are
-// skipped - creating brand new tiers requires sales_start/sales_end/
-// max_ticket_per_user which the admin frontend's TicketTier type doesn't
-// carry, so that's left as a follow-up rather than guessing defaults.
+// UpdateTicketTiers updates name/description/price/allocation_limit for existing tiers
+// (matched by a valid numeric ID) belonging to eventID, and inserts a new row
+// for any tier without one (the admin frontend assigns new tiers a synthetic
+// "TIER-<timestamp>" ID client-side). ticket_tiers requires sales_start/
+// sales_end, which the admin frontend's TicketTier type doesn't carry -
+// new rows default to "on sale now through the event's end", the only
+// sensible default without a real per-tier sales-window UI.
+// max_ticket_per_user/visibility fall back to their DB column defaults.
 func (r *PostgresRepository) UpdateTicketTiers(eventID int, tiers []*TicketTier) error {
+	var eventEnd time.Time
+
 	for _, t := range tiers {
 		id, err := strconv.Atoi(t.ID)
 		if err != nil {
+			if eventEnd.IsZero() {
+				if err := r.db.QueryRow(`SELECT event_end FROM events WHERE id = $1`, eventID).Scan(&eventEnd); err != nil {
+					return err
+				}
+			}
+			if _, err := r.db.Exec(`
+				INSERT INTO ticket_tiers (event_id, name, description, price, allocation_limit, sales_start, sales_end)
+				VALUES ($1, $2, NULLIF($3, ''), $4, $5, now(), $6)
+			`, eventID, t.Name, t.Description, t.Price, t.Capacity, eventEnd); err != nil {
+				return err
+			}
 			continue
 		}
 		if _, err := r.db.Exec(`
-			UPDATE ticket_tiers SET name = $1, price = $2, allocation_limit = $3, updated_at = now()
-			WHERE id = $4 AND event_id = $5
-		`, t.Name, t.Price, t.Capacity, id, eventID); err != nil {
+			UPDATE ticket_tiers SET name = $1, description = NULLIF($2, ''), price = $3, allocation_limit = $4, updated_at = now()
+			WHERE id = $5 AND event_id = $6
+		`, t.Name, t.Description, t.Price, t.Capacity, id, eventID); err != nil {
 			return err
 		}
 	}
@@ -338,7 +361,8 @@ func (r *PostgresRepository) GetVenueSections(eventID int) ([]*VenueSection, err
 	}
 	defer rows.Close()
 
-	var sections []*VenueSection
+	// Same nil-vs-empty-slice reasoning as GetTicketTiers above.
+	sections := []*VenueSection{}
 	for rows.Next() {
 		var id int
 		var name string
