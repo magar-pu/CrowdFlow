@@ -99,7 +99,10 @@ func (r *PostgresRepository) ListEvents(limit, offset int) ([]*Event, error) {
 	}
 	defer rows.Close()
 
-	var events []*Event
+	// Non-nil so an empty result marshals as `[]`, not `null` - the frontend's
+	// `result.success && result.data` check treats `null` as an error. Same
+	// reasoning as GetTicketTiers below; applies to every list query here.
+	events := []*Event{}
 	for rows.Next() {
 		var id int
 		var name string
@@ -163,7 +166,7 @@ func (r *PostgresRepository) ListUsers(limit, offset int) ([]*User, error) {
 	}
 	defer rows.Close()
 
-	var users []*User
+	users := []*User{}
 	for rows.Next() {
 		var id int
 		var fullName, email, verificationStatus, avatarPic, platformRole string
@@ -241,7 +244,7 @@ func (r *PostgresRepository) ListTransactions(limit, offset int) ([]*Transaction
 	}
 	defer rows.Close()
 
-	var transactions []*Transaction
+	transactions := []*Transaction{}
 	for rows.Next() {
 		var id, customerName, eventName, dbMethod, dbStatus string
 		var amount float64
@@ -509,7 +512,7 @@ func (r *PostgresRepository) ListVerifications(limit, offset int) ([]*Verificati
 	}
 	defer rows.Close()
 
-	var verifications []*VerificationApplication
+	verifications := []*VerificationApplication{}
 	for rows.Next() {
 		var id int
 		var fullName, email string
@@ -577,7 +580,7 @@ func (r *PostgresRepository) ListActivities() ([]*Activity, error) {
 	}
 	defer rows.Close()
 
-	var activities []*Activity
+	activities := []*Activity{}
 	for rows.Next() {
 		var id int
 		var userName, action, detail string
@@ -652,7 +655,7 @@ func (r *PostgresRepository) ListPayouts(limit, offset int) ([]*Payout, error) {
 	}
 	defer rows.Close()
 
-	var payouts []*Payout
+	payouts := []*Payout{}
 	for rows.Next() {
 		var id, organizerName, eventName, dbStatus string
 		var amount float64
