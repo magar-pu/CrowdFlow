@@ -13,10 +13,10 @@ jobs:
         id: config
         run: |
           if [ "${{ github.ref_name }}" = "main"]; then
-            echo "path=/var/www/yourdomain-production/app" >> "$GITHUB_OUTPUT"
+            echo "path=/var/www/crowdflow-production/app" >> "$GITHUB_OUTPUT"
             echo "env=production" >> "$GITHUB_OUTPUT"
           else
-            echo "path=/var/www/yourdomain-sandbox/app" >> "$GITHUB_OUTPUT"
+            echo "path=/var/www/crowdflow-sandbox/app" >> "$GITHUB_OUTPUT"
             echo "env=sandbox" >> "$GITHUB_OUTPUT"
           fi
 
@@ -29,7 +29,7 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             cd ${{ steps.config.outputs.path }}
-            bash deploy.sh
+            bash deploy-dev.sh
 
       - name: Summary
         run: echo "Deployed **${{ steps.config.outputs.env }}**
