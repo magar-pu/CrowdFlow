@@ -1,8 +1,10 @@
 package event
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"time"
 )
 
 type PostgresRepository struct {
@@ -173,21 +175,91 @@ func (r *PostgresRepository) Create(event *Event) error {
 		event.Status = "draft"
 	}
 
-	err := r.db.QueryRow(`
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// 1. Begin Database Transaction
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() // Rollback is ignored if transaction is committed
+	// 2. Insert into events table
+	eventQuery := `
 		INSERT INTO events (
-			venue_id, organizer_id, event_name, description, event_start, event_end, 
-			entertainment_tax_rate, entertainment_tax_passed_to_buyer, status, 
+			venue_id, organizer_id, event_name, description, event_start, event_end,
+			entertainment_tax_rate, entertainment_tax_passed_to_buyer, status,
 			event_type_id, cover_image_url
-		) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
-		RETURNING id, created_at, updated_at
-	`, 
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		RETURNING id, created_at, updated_at`
+	err = tx.QueryRowContext(ctx, eventQuery,
 		event.VenueID, event.OrganizerID, event.EventName, event.Description, event.EventStart, event.EventEnd,
 		event.EntertainmentTaxRate, event.EntertainmentTaxPassedToBuyer, event.Status,
 		eventTypeID, event.CoverImageURL,
 	).Scan(&event.ID, &event.CreatedAt, &event.UpdatedAt)
-	
-	return err
+	if err != nil {
+		return err
+	}
+	// 3. Grant the creator the Event Organizer role (role_id = 3) scoped to this event
+	roleQuery := `
+		INSERT INTO user_roles (user_id, event_id, role_id)
+		VALUES ($1, $2, 3)`
+	_, err = tx.ExecContext(ctx, roleQuery, event.OrganizerID, event.ID)
+	if err != nil {
+		return err
+	}
+	// 4. Commit transaction
+	return tx.Commit()
+}
+
+func (r *PostgresRepository) ListVenues() ([]*Venue, error) {
+	rows, err := r.db.Query(`
+		SELECT id, name, address, city, province, total_capacity
+		FROM venues
+		ORDER BY name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var venues []*Venue
+	for rows.Next() {
+		var v Venue
+		if err := rows.Scan(&v.ID, &v.Name, &v.Address, &v.City, &v.Province, &v.TotalCapacity); err != nil {
+			return nil, err
+		}
+		venues = append(venues, &v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return venues, nil
+}
+
+func (r *PostgresRepository) ListEventTypes() ([]*EventType, error) {
+	rows, err := r.db.Query(`
+		SELECT id, event_type
+		FROM event_types
+		ORDER BY id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var eventTypes []*EventType
+	for rows.Next() {
+		var t EventType
+		if err := rows.Scan(&t.ID, &t.EventType); err != nil {
+			return nil, err
+		}
+		eventTypes = append(eventTypes, &t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return eventTypes, nil
 }
 
 

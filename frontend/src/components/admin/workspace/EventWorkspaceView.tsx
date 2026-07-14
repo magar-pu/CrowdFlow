@@ -162,7 +162,11 @@ export default function EventWorkspaceView({
 
       {/* Content tabs rendering */}
       {activeTab === 'overview' && (
-        <WorkspaceLiveTrackerTab event={event} scanners={scanners} transactions={transactions} />
+        <WorkspaceLiveTrackerTab
+          event={event}
+          scanners={scanners}
+          transactions={transactions.filter((tx) => tx.eventName === event.name)}
+        />
       )}
       {activeTab === 'tickets' && (
         <WorkspaceTicketTiersTab ticketTiers={ticketTiers} onUpdateTiers={onUpdateTiers} />

@@ -13,6 +13,24 @@ export interface Event {
   description: string;
 }
 
+// Venue and EventType intentionally use snake_case keys (unlike every other
+// type in this file) because they come straight from the `event` package's
+// GET /api/venues and GET /api/event-types routes, not the admin package's
+// camelCase /api/v1/* routes. Don't "fix" the casing here — it'll break parsing.
+export interface Venue {
+  venue_id: number;
+  name: string;
+  address: string;
+  city: string;
+  province: string;
+  total_capacity: number;
+}
+
+export interface EventType {
+  event_type_id: number;
+  event_type: string;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -84,6 +102,7 @@ export interface Activity {
 export interface TicketTier {
   id: string;
   name: string;
+  description: string;
   price: number;
   capacity: number;
   sold: number;

@@ -1,5 +1,16 @@
 package admin
 
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+// ErrValidation marks input-validation failures so handlers can map them to
+// a 422 with the message intact, instead of the generic 500 used for
+// repository/DB errors (whose raw text must not reach the client).
+var ErrValidation = errors.New("validation failed")
+
 type AdminService struct {
 	repo Repository
 }
@@ -19,12 +30,18 @@ func (s *AdminService) ListEvents(limit, offset int) ([]*Event, error) {
 	return s.repo.ListEvents(limit, offset)
 }
 
-func (s *AdminService) ListUsers() ([]*User, error) {
-	return s.repo.ListUsers()
+func (s *AdminService) ListUsers(limit, offset int) ([]*User, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.repo.ListUsers(limit, offset)
 }
 
-func (s *AdminService) ListTransactions() ([]*Transaction, error) {
-	return s.repo.ListTransactions()
+func (s *AdminService) ListTransactions(limit, offset int) ([]*Transaction, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.repo.ListTransactions(limit, offset)
 }
 
 func (s *AdminService) GetTicketTiers(eventID int) ([]*TicketTier, error) {
@@ -32,6 +49,19 @@ func (s *AdminService) GetTicketTiers(eventID int) ([]*TicketTier, error) {
 }
 
 func (s *AdminService) UpdateTicketTiers(eventID int, tiers []*TicketTier) error {
+	for _, t := range tiers {
+		name := strings.TrimSpace(t.Name)
+		switch {
+		case name == "":
+			return fmt.Errorf("%w: tier name is required", ErrValidation)
+		case len(name) > 100: // ticket_tiers.name is varchar(100)
+			return fmt.Errorf("%w: tier name %q exceeds 100 characters", ErrValidation, name)
+		case t.Price < 0:
+			return fmt.Errorf("%w: tier %q cannot have a negative price", ErrValidation, name)
+		case t.Capacity <= 0:
+			return fmt.Errorf("%w: tier %q must have a capacity of at least 1", ErrValidation, name)
+		}
+	}
 	return s.repo.UpdateTicketTiers(eventID, tiers)
 }
 
@@ -43,31 +73,52 @@ func (s *AdminService) UpdateVenueSections(eventID int, sections []*VenueSection
 	return s.repo.UpdateVenueSections(eventID, sections)
 }
 
-func (s *AdminService) UpdateUserStatus(userID int, status string) error {
-	return s.repo.UpdateUserStatus(userID, status)
+func (s *AdminService) UpdateUserStatus(userID int, status string, actorID int) error {
+	return s.repo.UpdateUserStatus(userID, status, actorID)
 }
 
-func (s *AdminService) UpdateTransactionStatus(orderID string, status string) error {
-	return s.repo.UpdateTransactionStatus(orderID, status)
+func (s *AdminService) GrantUserRole(userID int, roleID int, eventID *int, actorID int) error {
+	return s.repo.GrantUserRole(userID, roleID, eventID, actorID)
+}
+
+func (s *AdminService) UpdateTransactionStatus(orderID string, status string, actorID int) error {
+	return s.repo.UpdateTransactionStatus(orderID, status, actorID)
 }
 
 // ListVerifications is real - derived from users.verification_status in
 // repository.go (no separate applications table exists; see the comment
 // there). Approve/reject reuse UpdateUserStatus above.
-func (s *AdminService) ListVerifications() ([]*VerificationApplication, error) {
-	return s.repo.ListVerifications()
+func (s *AdminService) ListVerifications(limit, offset int) ([]*VerificationApplication, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.repo.ListVerifications(limit, offset)
+}
+
+func (s *AdminService) ListPayouts(limit, offset int) ([]*Payout, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.repo.ListPayouts(limit, offset)
+}
+
+func (s *AdminService) ProcessPayout(payoutID string, actorID int) error {
+	return s.repo.ProcessPayout(payoutID, actorID)
+}
+
+func (s *AdminService) RejectPayout(payoutID string, actorID int) error {
+	return s.repo.RejectPayout(payoutID, actorID)
+}
+
+func (s *AdminService) ListActivities() ([]*Activity, error) {
+	return s.repo.ListActivities()
 }
 
 // ---------------------------------------------------------------------------
 // PLACEHOLDERS - no backing tables exist yet for the features below.
 //
-// Each one is documented in the audit as a genuinely missing feature, not
-// just a missing endpoint:
-//   - Payouts:        organizer payout requests/settlement have no table.
 //   - Scanners:       check-in device registry has no table.
 //   - SecurityAlerts: fraud/anomaly detection has no table.
-//   - Activities:     admin action audit trail has no table (event_approval_log
-//                      exists but only covers event approve/reject decisions).
 //
 // These return empty slices (correct envelope, zero data) rather than
 // fabricated rows, so the frontend can safely switch from local mock state to
@@ -75,18 +126,10 @@ func (s *AdminService) ListVerifications() ([]*VerificationApplication, error) {
 // repository method once its table is designed and migrated.
 // ---------------------------------------------------------------------------
 
-func (s *AdminService) ListPayouts() ([]*Payout, error) {
-	return []*Payout{}, nil
-}
-
 func (s *AdminService) ListScanners(eventID int) ([]*Scanner, error) {
 	return []*Scanner{}, nil
 }
 
 func (s *AdminService) ListSecurityAlerts() ([]*SecurityAlert, error) {
 	return []*SecurityAlert{}, nil
-}
-
-func (s *AdminService) ListActivities() ([]*Activity, error) {
-	return []*Activity{}, nil
 }

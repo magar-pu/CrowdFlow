@@ -44,3 +44,11 @@ func (s *EventService) PublishEvent(id int) error {
 	return nil
 }
 
+func (s *EventService) ListVenues() ([]*Venue, error) {
+	return s.repo.ListVenues()
+}
+
+func (s *EventService) ListEventTypes() ([]*EventType, error) {
+	return s.repo.ListEventTypes()
+}
+

@@ -62,8 +62,8 @@ function SignInPageContent() {
         
         // Redirect dynamically based on user platform role
         const role = result.data.role as any;
-        if (role === "Event Organizer" || role === "Super Admin" || role === "verified_organizer" || role === "super_admin") {
-          router.push("/dashboard");
+        if (role === "Super Admin" || role === "super_admin") {
+          router.push("/admin");
         } else {
           router.push("/");
         }

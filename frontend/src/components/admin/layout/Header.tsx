@@ -1,28 +1,56 @@
 "use client";
 
-import React, { useState } from 'react';
-import { Search, Bell, HelpCircle, CheckCircle, ShieldAlert, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Search, Bell, HelpCircle, CheckCircle, ShieldAlert, X, ChevronDown, LogOut } from 'lucide-react';
 import { SecurityAlert } from '@/types/admin';
+import { useAuthStore } from '@/lib/store/authStore';
+import { format_role_label, get_initials } from '@/lib/utils/user-display';
 
 interface HeaderProps {
   alerts: SecurityAlert[];
   onSearch?: (query: string) => void;
   onClearAlert?: (id: string) => void;
-  userName?: string;
-  userRole?: string;
-  userAvatar?: string;
 }
 
-export default function Header({ 
-  alerts, 
-  onSearch, 
+export default function Header({
+  alerts,
+  onSearch,
   onClearAlert,
-  userName = "Richie M.",
-  userRole = "Platform Admin",
-  userAvatar = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop"
 }: HeaderProps) {
+  const router = useRouter();
+  const { user, logout } = useAuthStore();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [searchVal, setSearchVal] = useState('');
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  const display_user = user ?? {
+    full_name: "Admin",
+    email: "",
+    role: "super_admin" as const,
+    avatar_url: "",
+  };
+  const userAvatar = display_user.avatar_url ?? null;
+  const userName = display_user.full_name;
+  const userRole = format_role_label(display_user.role);
+  const initials = get_initials(userName);
+
+  useEffect(() => {
+    function handleOutside(e: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, []);
+
+  const handleLogout = async () => {
+    setProfileOpen(false);
+    await logout();
+    router.push('/login');
+  };
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -39,9 +67,9 @@ export default function Header({
   };
 
   return (
-    <header className="sticky top-0 z-10 flex w-full flex-col gap-3 border-b border-border-subtle bg-surface-white/95 px-4 py-3 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between sm:px-6 md:min-h-[72px]">
+    <header className="sticky top-0 z-10 flex min-h-[72px] w-full items-center justify-between gap-3 border-b border-border-subtle bg-surface-white/95 px-4 py-3 backdrop-blur-md sm:px-6">
       {/* Search Bar */}
-      <div className="flex w-full flex-1 items-center sm:max-w-lg">
+      <div className="flex flex-1 items-center max-w-[180px] xs:max-w-xs sm:max-w-md md:max-w-lg">
         <div className="relative w-full">
           <Search className="absolute top-3 left-3.5 h-4.5 w-4.5 text-text-secondary" />
           <input
@@ -56,7 +84,7 @@ export default function Header({
       </div>
 
       {/* Right Side Tools */}
-      <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end sm:gap-4">
+      <div className="flex items-center gap-2 sm:gap-4 shrink-0">
         {/* System Health Status */}
         <div className="hidden items-center gap-1.5 rounded-full border border-success/20 bg-success/5 px-3 py-1 text-xs font-medium text-success sm:flex">
           <CheckCircle className="h-3.5 w-3.5" />
@@ -139,17 +167,17 @@ export default function Header({
         </div>
 
         {/* Profile Identity Banner */}
-        <div className="hidden items-center gap-3 border-l border-border-subtle pl-4 sm:flex">
-          <div className="hidden text-right md:block">
-            <span className="block text-sm font-medium text-text-primary">{userName}</span>
-            <span className="block text-xs text-text-secondary">{userRole}</span>
+        <div className="flex items-center gap-3 border-l border-border-subtle pl-3 sm:pl-4">
+          <div className="hidden md:block text-right">
+            <span className="block text-sm font-medium text-text-primary leading-tight">{userName}</span>
+            <span className="block text-xs text-text-secondary leading-none mt-1">{userRole}</span>
           </div>
           <img 
             id="admin-profile-avatar"
             src={userAvatar} 
             alt={userName} 
             referrerPolicy="no-referrer"
-            className="h-9 w-9 rounded-full border border-border-subtle object-cover"
+            className="h-9 w-9 rounded-full border border-border-subtle object-cover shadow-xs"
           />
         </div>
       </div>
