@@ -1,5 +1,16 @@
 package admin
 
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+// ErrValidation marks input-validation failures so handlers can map them to
+// a 422 with the message intact, instead of the generic 500 used for
+// repository/DB errors (whose raw text must not reach the client).
+var ErrValidation = errors.New("validation failed")
+
 type AdminService struct {
 	repo Repository
 }
@@ -38,6 +49,19 @@ func (s *AdminService) GetTicketTiers(eventID int) ([]*TicketTier, error) {
 }
 
 func (s *AdminService) UpdateTicketTiers(eventID int, tiers []*TicketTier) error {
+	for _, t := range tiers {
+		name := strings.TrimSpace(t.Name)
+		switch {
+		case name == "":
+			return fmt.Errorf("%w: tier name is required", ErrValidation)
+		case len(name) > 100: // ticket_tiers.name is varchar(100)
+			return fmt.Errorf("%w: tier name %q exceeds 100 characters", ErrValidation, name)
+		case t.Price < 0:
+			return fmt.Errorf("%w: tier %q cannot have a negative price", ErrValidation, name)
+		case t.Capacity <= 0:
+			return fmt.Errorf("%w: tier %q must have a capacity of at least 1", ErrValidation, name)
+		}
+	}
 	return s.repo.UpdateTicketTiers(eventID, tiers)
 }
 

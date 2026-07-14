@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -187,6 +188,10 @@ func (h *Handler) handleUpdateTicketTiers(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := h.service.UpdateTicketTiers(eventID, tiers); err != nil {
+		if errors.Is(err, ErrValidation) {
+			response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update ticket tiers")
 		return
 	}
