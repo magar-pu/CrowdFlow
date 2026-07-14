@@ -22,7 +22,6 @@ services:
       - ./backend/.env
     environment:
       - GOOGLE_CLIENT_ID=91716845059-1l96nahbcu7nb39k1sa9r4ev8p2nitdu.apps.googleusercontent.com
-      - S3_ENDPOINT=http://minio:9000
       - DEV_MODE=false
       - REDIS_ADDR=redis:6379
     depends_on:
