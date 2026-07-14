@@ -39,9 +39,9 @@ export default function Header({
   };
 
   return (
-    <header className="sticky top-0 z-10 flex w-full flex-col gap-3 border-b border-border-subtle bg-surface-white/95 px-4 py-3 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between sm:px-6 md:min-h-[72px]">
+    <header className="sticky top-0 z-10 flex min-h-[72px] w-full items-center justify-between gap-3 border-b border-border-subtle bg-surface-white/95 px-4 py-3 backdrop-blur-md sm:px-6">
       {/* Search Bar */}
-      <div className="flex w-full flex-1 items-center sm:max-w-lg">
+      <div className="flex flex-1 items-center max-w-[180px] xs:max-w-xs sm:max-w-md md:max-w-lg">
         <div className="relative w-full">
           <Search className="absolute top-3 left-3.5 h-4.5 w-4.5 text-text-secondary" />
           <input
@@ -56,7 +56,7 @@ export default function Header({
       </div>
 
       {/* Right Side Tools */}
-      <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end sm:gap-4">
+      <div className="flex items-center gap-2 sm:gap-4 shrink-0">
         {/* System Health Status */}
         <div className="hidden items-center gap-1.5 rounded-full border border-success/20 bg-success/5 px-3 py-1 text-xs font-medium text-success sm:flex">
           <CheckCircle className="h-3.5 w-3.5" />
@@ -139,17 +139,17 @@ export default function Header({
         </div>
 
         {/* Profile Identity Banner */}
-        <div className="hidden items-center gap-3 border-l border-border-subtle pl-4 sm:flex">
-          <div className="hidden text-right md:block">
-            <span className="block text-sm font-medium text-text-primary">{userName}</span>
-            <span className="block text-xs text-text-secondary">{userRole}</span>
+        <div className="flex items-center gap-3 border-l border-border-subtle pl-3 sm:pl-4">
+          <div className="hidden md:block text-right">
+            <span className="block text-sm font-medium text-text-primary leading-tight">{userName}</span>
+            <span className="block text-xs text-text-secondary leading-none mt-1">{userRole}</span>
           </div>
           <img 
             id="admin-profile-avatar"
             src={userAvatar} 
             alt={userName} 
             referrerPolicy="no-referrer"
-            className="h-9 w-9 rounded-full border border-border-subtle object-cover"
+            className="h-9 w-9 rounded-full border border-border-subtle object-cover shadow-xs"
           />
         </div>
       </div>
