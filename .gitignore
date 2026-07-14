@@ -67,4 +67,5 @@ DEVELOPER.md
 docker-compose-minio.yml
 
 # Local Dev Scripts
-*.sh
+seed_events.sh
+create_event.sh

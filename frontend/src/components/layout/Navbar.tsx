@@ -32,7 +32,6 @@ import { useAuthStore } from "@/lib/store/authStore";
 const NAV_LINKS = [
   { label: "Home", href: "/" },
   { label: "Events", href: "/events" },
-  { label: "Categories", href: "/categories" },
   { label: "Resale Marketplace", href: "/resale" },
   { label: "Business", href: "/business" },
 ];
