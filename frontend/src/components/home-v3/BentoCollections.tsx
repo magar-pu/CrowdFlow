@@ -38,11 +38,11 @@ export function BentoCollections() {
         </div>
         
         {/* Wide Image */}
-        <div className="col-span-2 rounded-xl overflow-hidden relative group h-48 md:h-auto">
+        <div className="col-span-2 rounded-xl overflow-hidden relative group h-48 md:h-60">
           <img 
             alt="Olahraga" 
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
-            src="https://images.unsplash.com/photo-1546519638-68e109498ffd?q=80&w=1200&auto=format&fit=crop" 
+            src="https://images.unsplash.com/photo-1504450758481-7338eba7524a?q=80&w=1200&auto=format&fit=crop" 
           />
           <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/30 to-transparent"></div>
           <div className="absolute top-6 left-6">

@@ -1,10 +1,30 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Music, MapPin, Calendar, Search } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export function SearchBar() {
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsVisible(window.scrollY > 50);
+    };
+    handleScroll();
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   return (
-    <div className="relative z-30 px-6 lg:px-16 mb-16 -mt-8">
+    <div 
+      className={cn(
+        "relative z-30 px-6 lg:px-16 mb-4 transition-all duration-700 ease-out",
+        isVisible 
+          ? "opacity-100 transform -translate-y-1/2" 
+          : "opacity-0 transform translate-y-4 pointer-events-none"
+      )}
+    >
       <div className="bg-surface-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] p-2 flex items-center w-full max-w-5xl mx-auto border border-border-subtle">
         
         {/* Search Field 1 */}

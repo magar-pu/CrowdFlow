@@ -54,7 +54,13 @@ export async function apiRequest<T>(
       try {
         return JSON.parse(text) as ApiResponse<T>;
       } catch (e) {
-        throw new Error("Invalid JSON: " + text.substring(0, 50));
+        return {
+          success: false,
+          error: {
+            code: "SERVER_ERROR",
+            message: "Invalid JSON from server: " + text.substring(0, 50),
+          },
+        } as ApiResponse<T>;
       }
     }
 

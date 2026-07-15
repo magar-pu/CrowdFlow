@@ -51,31 +51,33 @@ export function HeroSlider() {
               src={slide.image} 
             />
             <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/20 to-black/70 z-10" />
-            <div className="absolute bottom-1/4 left-0 p-8 lg:px-24 w-full max-w-7xl mx-auto flex items-end justify-between z-20">
-              <div>
-                <h1 className="text-white font-display text-5xl md:text-7xl font-bold mb-4 tracking-tight uppercase max-w-3xl leading-tight">
-                  {slide.title}
-                </h1>
-                <p className="text-white/90 text-lg mb-8 max-w-xl">
-                  {slide.description}
-                </p>
-                <button className="bg-accent-blue text-white px-8 py-3 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-accent-blue/90 transition-all shadow-lg">
-                  Beli Tiket <ArrowRight size={18} />
-                </button>
-              </div>
-              
-              {/* Floating Image Cards */}
-              <div className="hidden lg:flex gap-6 relative right-[-100px]">
-                <div className="w-64 h-80 rounded-2xl overflow-hidden relative shadow-2xl transform rotate-[-2deg]">
-                  <img alt="Card 1" className="w-full h-full object-cover" src={slide.card1} />
-                  <div className="absolute top-4 right-4 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow">
-                    <Bookmark size={14} className="text-text-primary" />
-                  </div>
+            <div className="absolute inset-0 flex items-center justify-center z-20">
+              <div className="w-full max-w-container-max px-margin-mobile md:px-margin-desktop flex items-center justify-between gap-8 lg:gap-16">
+                <div className="flex-1 max-w-2xl">
+                  <h1 className="text-white font-display text-5xl md:text-7xl font-bold mb-4 tracking-tight uppercase leading-tight">
+                    {slide.title}
+                  </h1>
+                  <p className="text-white/90 text-lg mb-8 max-w-lg">
+                    {slide.description}
+                  </p>
+                  <button className="bg-accent-blue text-white px-8 py-3 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-accent-blue/90 transition-all shadow-lg">
+                    Beli Tiket <ArrowRight size={18} />
+                  </button>
                 </div>
-                <div className="w-64 h-80 rounded-2xl overflow-hidden relative shadow-2xl transform rotate-[2deg] translate-y-12">
-                  <img alt="Card 2" className="w-full h-full object-cover" src={slide.card2} />
-                  <div className="absolute top-4 right-4 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow">
-                    <Bookmark size={14} className="text-text-primary" />
+                
+                {/* Floating Image Cards */}
+                <div className="hidden lg:flex gap-6 relative right-0 shrink-0">
+                  <div className="w-64 h-80 rounded-2xl overflow-hidden relative shadow-2xl transform rotate-[-2deg]">
+                    <img alt="Card 1" className="w-full h-full object-cover" src={slide.card1} />
+                    <div className="absolute top-4 right-4 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow">
+                      <Bookmark size={14} className="text-text-primary" />
+                    </div>
+                  </div>
+                  <div className="w-64 h-80 rounded-2xl overflow-hidden relative shadow-2xl transform rotate-[2deg] translate-y-12">
+                    <img alt="Card 2" className="w-full h-full object-cover" src={slide.card2} />
+                    <div className="absolute top-4 right-4 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow">
+                      <Bookmark size={14} className="text-text-primary" />
+                    </div>
                   </div>
                 </div>
               </div>
