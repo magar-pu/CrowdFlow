@@ -5,6 +5,7 @@ import { User, VerificationApplication } from '@/types/admin';
 import UserDirectoryTable from './UserDirectoryTable';
 import VerificationQueue from './VerificationQueue';
 import UserDetailDrawer from './UserDetailDrawer';
+import Pagination from '@/components/admin/shared/Pagination';
 
 interface UserManagementViewProps {
   users: User[];
@@ -12,6 +13,10 @@ interface UserManagementViewProps {
   onApproveVerification: (id: string) => void;
   onRejectVerification: (id: string) => void;
   onToggleUserStatus: (userId: string, newStatus: 'Verified' | 'Suspended') => void;
+  page: number;
+  hasNextPage: boolean;
+  onPrevPage: () => void;
+  onNextPage: () => void;
 }
 
 export default function UserManagementView({
@@ -19,7 +24,11 @@ export default function UserManagementView({
   verifications,
   onApproveVerification,
   onRejectVerification,
-  onToggleUserStatus
+  onToggleUserStatus,
+  page,
+  hasNextPage,
+  onPrevPage,
+  onNextPage
 }: UserManagementViewProps) {
   const [activeSubTab, setActiveSubTab] = useState<'directory' | 'queue'>('directory');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -74,7 +83,10 @@ export default function UserManagementView({
 
       {/* Directory Tab Content */}
       {activeSubTab === 'directory' && (
-        <UserDirectoryTable users={users} onInspectUser={handleInspectUser} />
+        <>
+          <UserDirectoryTable users={users} onInspectUser={handleInspectUser} />
+          <Pagination page={page} hasNext={hasNextPage} onPrev={onPrevPage} onNext={onNextPage} />
+        </>
       )}
 
       {/* Verification Queue Tab */}

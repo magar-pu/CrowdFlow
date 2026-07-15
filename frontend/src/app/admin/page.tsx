@@ -18,7 +18,11 @@ import {
   listEventTypes,
   getTicketTiers,
   updateTicketTiers,
+  deleteTicketTier,
   getVenueSections,
+  approveEvent,
+  rejectEvent,
+  setEventStatus,
 } from '@/lib/api/admin/eventService';
 import {
   listTransactions,
@@ -53,6 +57,13 @@ const TIER_COLORS = [
 ];
 const SECTION_COLORS = ['bg-pink-500', 'bg-cyan-500', 'bg-indigo-500', 'bg-purple-500', 'bg-amber-500'];
 
+// Page sizes mirror each endpoint's backend default (see the 2026-07-13
+// pagination audit) - offset = page * size.
+const EVENTS_PAGE_SIZE = 20;
+const USERS_PAGE_SIZE = 50;
+const TRANSACTIONS_PAGE_SIZE = 50;
+const PAYOUTS_PAGE_SIZE = 50;
+
 export default function AdminPage() {
   const [currentView, setCurrentView] = useState<'dashboard' | 'analytics' | 'events' | 'users' | 'finance' | 'settings' | 'workspace' | 'create-event'>('dashboard');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -61,6 +72,8 @@ export default function AdminPage() {
   const [events, setEvents] = useState<Event[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
+  const [eventsPage, setEventsPage] = useState(0);
+  const [eventsHasNext, setEventsHasNext] = useState(false);
   const [eventTypes, setEventTypes] = useState<EventType[]>([]);
   const [scanners, setScanners] = useState<Scanner[]>(initialScanners);
   const [securityAlerts, setSecurityAlerts] = useState<SecurityAlert[]>(initialSecurityAlerts);
@@ -70,22 +83,27 @@ export default function AdminPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transactionsLoading, setTransactionsLoading] = useState(true);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
+  const [transactionsPage, setTransactionsPage] = useState(0);
+  const [transactionsHasNext, setTransactionsHasNext] = useState(false);
   const [payouts, setPayouts] = useState<Payout[]>([]);
   const [payoutsLoading, setPayoutsLoading] = useState(true);
   const [payoutsError, setPayoutsError] = useState<string | null>(null);
+  const [payoutsPage, setPayoutsPage] = useState(0);
+  const [payoutsHasNext, setPayoutsHasNext] = useState(false);
   const [activities, setActivities] = useState<Activity[]>([]);
 
   const refreshTransactions = useCallback(async () => {
     setTransactionsLoading(true);
     setTransactionsError(null);
-    const result = await listTransactions();
+    const result = await listTransactions(TRANSACTIONS_PAGE_SIZE, transactionsPage * TRANSACTIONS_PAGE_SIZE);
     if (result.success && result.data) {
       setTransactions(result.data);
+      setTransactionsHasNext(result.data.length === TRANSACTIONS_PAGE_SIZE);
     } else {
       setTransactionsError(result.error?.message ?? 'Failed to load transactions');
     }
     setTransactionsLoading(false);
-  }, []);
+  }, [transactionsPage]);
 
   useEffect(() => {
     refreshTransactions();
@@ -94,14 +112,15 @@ export default function AdminPage() {
   const refreshPayouts = useCallback(async () => {
     setPayoutsLoading(true);
     setPayoutsError(null);
-    const result = await listPayouts();
+    const result = await listPayouts(PAYOUTS_PAGE_SIZE, payoutsPage * PAYOUTS_PAGE_SIZE);
     if (result.success && result.data) {
       setPayouts(result.data);
+      setPayoutsHasNext(result.data.length === PAYOUTS_PAGE_SIZE);
     } else {
       setPayoutsError(result.error?.message ?? 'Failed to load payouts');
     }
     setPayoutsLoading(false);
-  }, []);
+  }, [payoutsPage]);
 
   useEffect(() => {
     refreshPayouts();
@@ -177,20 +196,36 @@ export default function AdminPage() {
     }
   };
 
+  const handleDeleteTier = async (tierId: string) => {
+    if (!selectedEventId) return;
+    const result = await deleteTicketTier(selectedEventId, tierId);
+    if (result.success) {
+      await refreshWorkspaceData(selectedEventId);
+    } else {
+      alert(result.error?.message ?? 'Failed to delete ticket tier');
+    }
+  };
+
   // Users + verifications are backed by the real /api/v1/users* endpoints.
   const [users, setUsers] = useState<User[]>([]);
   const [verifications, setVerifications] = useState<VerificationApplication[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
   const [usersError, setUsersError] = useState<string | null>(null);
+  const [usersPage, setUsersPage] = useState(0);
+  const [usersHasNext, setUsersHasNext] = useState(false);
 
   const refreshUsers = useCallback(async () => {
     setUsersLoading(true);
     setUsersError(null);
 
-    const [usersRes, verificationsRes] = await Promise.all([listUsers(), listVerifications()]);
+    const [usersRes, verificationsRes] = await Promise.all([
+      listUsers(USERS_PAGE_SIZE, usersPage * USERS_PAGE_SIZE),
+      listVerifications(),
+    ]);
 
     if (usersRes.success && usersRes.data) {
       setUsers(usersRes.data);
+      setUsersHasNext(usersRes.data.length === USERS_PAGE_SIZE);
     } else {
       setUsersError(usersRes.error?.message ?? 'Failed to load users');
     }
@@ -200,7 +235,7 @@ export default function AdminPage() {
     }
 
     setUsersLoading(false);
-  }, []);
+  }, [usersPage]);
 
   useEffect(() => {
     refreshUsers();
@@ -212,19 +247,31 @@ export default function AdminPage() {
     setEventsLoading(true);
     setEventsError(null);
 
-    const result = await listEvents();
+    const result = await listEvents(EVENTS_PAGE_SIZE, eventsPage * EVENTS_PAGE_SIZE);
     if (result.success && result.data) {
       setEvents(result.data);
+      setEventsHasNext(result.data.length === EVENTS_PAGE_SIZE);
     } else {
       setEventsError(result.error?.message ?? 'Failed to load events');
     }
 
     setEventsLoading(false);
-  }, []);
+  }, [eventsPage]);
 
   useEffect(() => {
     refreshEvents();
   }, [refreshEvents]);
+
+  // Reset each list back to its first page whenever its tab is opened, so a
+  // deep page from a prior visit doesn't linger.
+  useEffect(() => {
+    if (currentView === 'events') setEventsPage(0);
+    if (currentView === 'users') setUsersPage(0);
+    if (currentView === 'finance') {
+      setTransactionsPage(0);
+      setPayoutsPage(0);
+    }
+  }, [currentView]);
 
   // Event types back the category filter/picker — fetched once, rarely changes.
   useEffect(() => {
@@ -251,6 +298,42 @@ export default function AdminPage() {
       await refreshUsers();
     } else {
       setUsersError(result.error?.message ?? 'Failed to reject verification');
+    }
+  };
+
+  const handleApproveEvent = async (eventId: string) => {
+    const result = await approveEvent(eventId);
+    if (result.success) {
+      await Promise.all([refreshEvents(), refreshActivities()]);
+    } else {
+      setEventsError(result.error?.message ?? 'Failed to approve event');
+    }
+  };
+
+  const handleRejectEvent = async (eventId: string, notes: string) => {
+    const result = await rejectEvent(eventId, notes);
+    if (result.success) {
+      await Promise.all([refreshEvents(), refreshActivities()]);
+    } else {
+      setEventsError(result.error?.message ?? 'Failed to reject event');
+    }
+  };
+
+  const handleSetEventDraft = async (eventId: string) => {
+    const result = await setEventStatus(eventId, 'draft');
+    if (result.success) {
+      await Promise.all([refreshEvents(), refreshActivities()]);
+    } else {
+      setEventsError(result.error?.message ?? 'Failed to set event to draft');
+    }
+  };
+
+  const handleSetEventPendingReview = async (eventId: string) => {
+    const result = await setEventStatus(eventId, 'pending_review');
+    if (result.success) {
+      await Promise.all([refreshEvents(), refreshActivities()]);
+    } else {
+      setEventsError(result.error?.message ?? 'Failed to set event to pending review');
     }
   };
 
@@ -381,6 +464,12 @@ export default function AdminPage() {
                     setSelectedEventId(id);
                     setCurrentView('workspace');
                   }}
+                  onApproveEvent={handleApproveEvent}
+                  onRejectEvent={handleRejectEvent}
+                  page={eventsPage}
+                  hasNextPage={eventsHasNext}
+                  onPrevPage={() => setEventsPage((p) => Math.max(0, p - 1))}
+                  onNextPage={() => setEventsPage((p) => p + 1)}
                 />
               )}
             </div>
@@ -420,7 +509,13 @@ export default function AdminPage() {
                   onDeleteScanner={handleDeleteScanner}
                   onUpdateSections={setVenueSections}
                   onUpdateTiers={handleUpdateTiers}
+                  onDeleteTier={handleDeleteTier}
                   onUpdateScanners={setScanners}
+                  onSetDraft={handleSetEventDraft}
+                  onSetPendingReview={handleSetEventPendingReview}
+                  onApproveEvent={handleApproveEvent}
+                  onRejectEvent={handleRejectEvent}
+                  onDetailsSaved={refreshEvents}
                 />
               )}
             </div>
@@ -442,6 +537,10 @@ export default function AdminPage() {
                   onApproveVerification={handleApproveVerification}
                   onRejectVerification={handleRejectVerification}
                   onToggleUserStatus={handleToggleUserStatus}
+                  page={usersPage}
+                  hasNextPage={usersHasNext}
+                  onPrevPage={() => setUsersPage((p) => Math.max(0, p - 1))}
+                  onNextPage={() => setUsersPage((p) => p + 1)}
                 />
               )}
             </div>
@@ -463,6 +562,14 @@ export default function AdminPage() {
                   onProcessPayout={handleProcessPayout}
                   onRejectPayout={handleRejectPayout}
                   onUpdateTransactionStatus={handleUpdateTransactionStatus}
+                  transactionsPage={transactionsPage}
+                  transactionsHasNext={transactionsHasNext}
+                  onPrevTransactionsPage={() => setTransactionsPage((p) => Math.max(0, p - 1))}
+                  onNextTransactionsPage={() => setTransactionsPage((p) => p + 1)}
+                  payoutsPage={payoutsPage}
+                  payoutsHasNext={payoutsHasNext}
+                  onPrevPayoutsPage={() => setPayoutsPage((p) => Math.max(0, p - 1))}
+                  onNextPayoutsPage={() => setPayoutsPage((p) => p + 1)}
                 />
               )}
             </div>

@@ -1,18 +1,27 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Plus, Calendar, MapPin, Search, Filter, ChevronRight } from 'lucide-react';
+import { Plus, Calendar, MapPin, Search, Filter, ChevronRight, Check, X } from 'lucide-react';
 import { Event, EventType } from '@/types/admin';
+import RejectReasonModal from '@/components/admin/shared/RejectReasonModal';
+import Pagination from '@/components/admin/shared/Pagination';
 
 interface EventManagementViewProps {
   events: Event[];
   eventTypes: EventType[];
   onCreateEvent: () => void;
   onSelectEvent: (id: string) => void;
+  onApproveEvent: (id: string) => void;
+  onRejectEvent: (id: string, notes: string) => void;
+  page: number;
+  hasNextPage: boolean;
+  onPrevPage: () => void;
+  onNextPage: () => void;
 }
 
-export default function EventManagementView({ events, eventTypes, onCreateEvent, onSelectEvent }: EventManagementViewProps) {
+export default function EventManagementView({ events, eventTypes, onCreateEvent, onSelectEvent, onApproveEvent, onRejectEvent, page, hasNextPage, onPrevPage, onNextPage }: EventManagementViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [rejectingEventId, setRejectingEventId] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
 
@@ -88,6 +97,8 @@ export default function EventManagementView({ events, eventTypes, onCreateEvent,
             <option value="All">All Statuses</option>
             <option value="Active">Active</option>
             <option value="Draft">Draft</option>
+            <option value="In Review">In Review</option>
+            <option value="Rejected">Rejected</option>
             <option value="Completed">Completed</option>
           </select>
 
@@ -135,10 +146,14 @@ export default function EventManagementView({ events, eventTypes, onCreateEvent,
                   {/* Status Overlay Badge */}
                   <div className="absolute top-3 right-3">
                     <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[9px] font-bold uppercase border tracking-widest ${
-                      event.status === 'Active' 
-                        ? 'bg-success/10 text-success border-success/20' 
-                        : event.status === 'Draft' 
-                        ? 'bg-surface text-text-secondary border-border-subtle' 
+                      event.status === 'Active'
+                        ? 'bg-success/10 text-success border-success/20'
+                        : event.status === 'Draft'
+                        ? 'bg-surface text-text-secondary border-border-subtle'
+                        : event.status === 'In Review'
+                        ? 'bg-warning/10 text-warning border-warning/20'
+                        : event.status === 'Rejected'
+                        ? 'bg-danger/10 text-danger border-danger/20'
                         : 'bg-secondary/10 text-secondary border-secondary/20'
                     }`}>
                       {event.status === 'Active' && <span className="h-1.5 w-1.5 rounded-full bg-success" />}
@@ -193,7 +208,25 @@ export default function EventManagementView({ events, eventTypes, onCreateEvent,
                 </div>
 
                 {/* Event Action Panel */}
-                <div className="flex gap-2 border-t border-border-subtle bg-surface p-3">
+                <div className="flex flex-col gap-2 border-t border-border-subtle bg-surface p-3">
+                  {event.status === 'In Review' && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => onApproveEvent(event.id)}
+                        className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-success/20 bg-success/5 py-2 text-xs font-semibold text-success transition-all hover:bg-success hover:text-on-primary cursor-pointer"
+                      >
+                        <Check className="h-4 w-4" />
+                        <span>Approve</span>
+                      </button>
+                      <button
+                        onClick={() => setRejectingEventId(event.id)}
+                        className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-danger/20 bg-danger/5 py-2 text-xs font-semibold text-danger transition-all hover:bg-danger hover:text-on-primary cursor-pointer"
+                      >
+                        <X className="h-4 w-4" />
+                        <span>Reject</span>
+                      </button>
+                    </div>
+                  )}
                   <button
                     onClick={() => onSelectEvent(event.id)}
                     className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-secondary/20 bg-secondary/5 py-2 text-xs font-semibold text-secondary transition-all hover:bg-secondary hover:text-on-secondary cursor-pointer"
@@ -207,6 +240,19 @@ export default function EventManagementView({ events, eventTypes, onCreateEvent,
           })
         )}
       </div>
+
+      <Pagination page={page} hasNext={hasNextPage} onPrev={onPrevPage} onNext={onNextPage} />
+
+      {rejectingEventId && (
+        <RejectReasonModal
+          title="Reject Event"
+          onCancel={() => setRejectingEventId(null)}
+          onConfirm={(notes) => {
+            onRejectEvent(rejectingEventId, notes);
+            setRejectingEventId(null);
+          }}
+        />
+      )}
     </div>
   );
 }
