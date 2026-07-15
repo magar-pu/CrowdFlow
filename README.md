@@ -87,10 +87,10 @@ If you wish to run the frontend and backend services outside of Docker container
 
 ## Local Object Storage (MinIO Setup)
 
-For local development, the platform uses **MinIO** as an S3-compatible service to mimic Cloudflare R2 object storage for cover banners.
+For local development, the platform uses **MinIO** as an S3-compatible service to mimic Cloudflare R2 object storage. Two buckets are provisioned: `crowdflow-public` (cover images and other CDN-served assets — anonymously readable) and `crowdflow-private` (sensitive documents such as KTP/NPWP — no anonymous access, read only via short-lived presigned URLs).
 
 ### 1. Start the MinIO Server
-You can run the standalone MinIO storage service and automatically create the default `crowdflow-uploads` bucket by starting the local storage stack:
+You can run the standalone MinIO storage service and automatically create both buckets by starting the local storage stack:
 ```bash
 docker compose -f docker-compose-minio.yml up -d
 ```
@@ -105,12 +105,26 @@ Make sure the following variables are set in your local git-ignored `backend/.en
 S3_ENDPOINT=http://localhost:9000
 S3_ACCESS_KEY_ID=minioadmin
 S3_SECRET_ACCESS_KEY=minioadminpassword
-S3_BUCKET_NAME=crowdflow-uploads
+S3_PUBLIC_BUCKET_NAME=crowdflow-public
+S3_PRIVATE_BUCKET_NAME=crowdflow-private
 S3_REGION=us-east-1
 S3_PUBLIC_BASE_URL=
 ```
 
 *(Note: When running within the main `docker-compose.yml` network, the backend container communicates internally via `http://minio:9000` which is managed automatically by the environment configuration).*
+
+---
+
+## Production / Sandbox Object Storage (Cloudflare R2)
+
+Prod and sandbox deployments use **Cloudflare R2** instead of MinIO, addressed through the same `S3_*` env vars (R2 is S3-API-compatible). Each deployment gets its own bucket pair so sandbox testing never touches prod data:
+
+| Environment | Public bucket | Private bucket |
+|---|---|---|
+| Production | `crowdflow-public` | `crowdflow-private` |
+| Sandbox (dev branch) | `crowdflow-dev-public` | `crowdflow-dev-private` |
+
+Both pairs live in the same R2 account/endpoint — only the bucket name differs, so `S3_ENDPOINT`/credentials stay the same across prod and sandbox `backend/.env` files, and only `S3_PUBLIC_BUCKET_NAME`/`S3_PRIVATE_BUCKET_NAME` change.
 
 ---
 

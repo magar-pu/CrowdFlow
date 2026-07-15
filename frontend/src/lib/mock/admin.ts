@@ -349,6 +349,7 @@ export const initialTicketTiers: TicketTier[] = [
   {
     id: 'TIER-1',
     name: 'VIP All-Access Pass',
+    description: 'Full venue access including backstage lounge, priority entry, and complimentary merchandise.',
     price: 350,
     priceCap: 420,
     capacity: 1500,
@@ -358,6 +359,7 @@ export const initialTicketTiers: TicketTier[] = [
   {
     id: 'TIER-2',
     name: 'General Admission - Early Bird',
+    description: 'Discounted standing access for early purchasers. Limited allocation.',
     price: 120,
     priceCap: 144,
     capacity: 4000,
@@ -367,6 +369,7 @@ export const initialTicketTiers: TicketTier[] = [
   {
     id: 'TIER-3',
     name: 'General Admission - Phase 2',
+    description: 'Standard standing access, released after the Early Bird allocation sold out.',
     price: 150,
     priceCap: 180,
     capacity: 7500,
@@ -376,6 +379,7 @@ export const initialTicketTiers: TicketTier[] = [
   {
     id: 'TIER-4',
     name: 'Behind The Scenes Package',
+    description: 'Guided pre-show tour, soundcheck access, and a meet-and-greet with the crew.',
     price: 750,
     priceCap: 900,
     capacity: 200,
