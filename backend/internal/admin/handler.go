@@ -69,6 +69,10 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /api/v1/dashboard/activities", admin(h.handleListActivities))
 
 	mux.Handle("GET /api/v1/events", admin(h.handleListEvents))
+	mux.Handle("POST /api/v1/events/{id}/approve", admin(h.handleApproveEvent))
+	mux.Handle("POST /api/v1/events/{id}/reject", admin(h.handleRejectEvent))
+	mux.Handle("POST /api/v1/events/{id}/status", admin(h.handleSetEventStatus))
+	mux.Handle("GET /api/v1/events/{id}/status-log", admin(h.handleListEventStatusLog))
 	// NOTE: event creation and publishing are deliberately NOT duplicated here.
 	// backend/internal/event already exposes POST /api/events and
 	// PATCH /api/events/{id}/publish, and Super Admin already bypasses their
@@ -85,6 +89,7 @@ func (h *Handler) RegisterRoutes(
 	// included so a future "load current tiers/sections" fetch has somewhere to go.
 	mux.Handle("GET /api/v1/events/{id}/ticket-tiers", admin(h.handleGetTicketTiers))
 	mux.Handle("PUT /api/v1/events/{id}/ticket-tiers", admin(h.handleUpdateTicketTiers))
+	mux.Handle("DELETE /api/v1/events/{id}/ticket-tiers/{tierId}", admin(h.handleDeleteTicketTier))
 	mux.Handle("GET /api/v1/events/{id}/venue-sections", admin(h.handleGetVenueSections))
 	mux.Handle("PUT /api/v1/events/{id}/venue-sections", admin(h.handleUpdateVenueSections))
 
@@ -148,6 +153,106 @@ func (h *Handler) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, events)
 }
 
+type eventDecisionRequest struct {
+	Notes string `json:"notes"`
+}
+
+func (h *Handler) handleApproveEvent(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := actorIDFromRequest(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
+		return
+	}
+	eventID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+	var req eventDecisionRequest
+	_ = json.NewDecoder(r.Body).Decode(&req) // body is optional for approve
+
+	if err := h.service.ApproveEvent(eventID, actorID, req.Notes); err != nil {
+		if errors.Is(err, ErrValidation) {
+			response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to approve event")
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Event approved"})
+}
+
+func (h *Handler) handleRejectEvent(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := actorIDFromRequest(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
+		return
+	}
+	eventID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+	var req eventDecisionRequest
+	_ = json.NewDecoder(r.Body).Decode(&req) // empty body falls through to the "notes required" validation error below
+
+	if err := h.service.RejectEvent(eventID, actorID, req.Notes); err != nil {
+		if errors.Is(err, ErrValidation) {
+			response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to reject event")
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Event rejected"})
+}
+
+type eventStatusRequest struct {
+	Status string `json:"status"`
+}
+
+func (h *Handler) handleSetEventStatus(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := actorIDFromRequest(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
+		return
+	}
+	eventID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+	var req eventStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_BODY", "Request body must be valid JSON")
+		return
+	}
+
+	if err := h.service.SetEventStatus(eventID, req.Status, actorID); err != nil {
+		if errors.Is(err, ErrValidation) {
+			response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update event status")
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Event status updated"})
+}
+
+func (h *Handler) handleListEventStatusLog(w http.ResponseWriter, r *http.Request) {
+	eventID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+	entries, err := h.service.ListEventStatusLog(eventID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load event status log")
+		return
+	}
+	response.JSON(w, http.StatusOK, entries)
+}
+
 func (h *Handler) handleListScanners(w http.ResponseWriter, r *http.Request) {
 	eventID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
@@ -196,6 +301,28 @@ func (h *Handler) handleUpdateTicketTiers(w http.ResponseWriter, r *http.Request
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Ticket tiers updated"})
+}
+
+func (h *Handler) handleDeleteTicketTier(w http.ResponseWriter, r *http.Request) {
+	eventID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+	tierID, err := strconv.Atoi(r.PathValue("tierId"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Tier ID must be a valid integer")
+		return
+	}
+	if err := h.service.DeleteTicketTier(eventID, tierID); err != nil {
+		if errors.Is(err, ErrValidation) {
+			response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete ticket tier")
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Ticket tier deleted"})
 }
 
 func (h *Handler) handleGetVenueSections(w http.ResponseWriter, r *http.Request) {

@@ -30,6 +30,31 @@ func (s *AdminService) ListEvents(limit, offset int) ([]*Event, error) {
 	return s.repo.ListEvents(limit, offset)
 }
 
+// RejectEvent requires notes so the organizer has something actionable to
+// see; ApproveEvent leaves notes optional (same asymmetry as verification
+// approve/reject, which doesn't ask for a reason to approve).
+func (s *AdminService) ApproveEvent(eventID, auditorID int, notes string) error {
+	return s.repo.ApproveEvent(eventID, auditorID, notes)
+}
+
+func (s *AdminService) RejectEvent(eventID, auditorID int, notes string) error {
+	if strings.TrimSpace(notes) == "" {
+		return fmt.Errorf("%w: rejection notes are required", ErrValidation)
+	}
+	return s.repo.RejectEvent(eventID, auditorID, notes)
+}
+
+func (s *AdminService) SetEventStatus(eventID int, status string, actorID int) error {
+	if status != "draft" && status != "pending_review" {
+		return fmt.Errorf("%w: status must be draft or pending_review (use approve/reject for approved/rejected)", ErrValidation)
+	}
+	return s.repo.SetEventStatus(eventID, status, actorID)
+}
+
+func (s *AdminService) ListEventStatusLog(eventID int) ([]*EventStatusLogEntry, error) {
+	return s.repo.ListEventStatusLog(eventID)
+}
+
 func (s *AdminService) ListUsers(limit, offset int) ([]*User, error) {
 	if limit <= 0 {
 		limit = 50
@@ -63,6 +88,10 @@ func (s *AdminService) UpdateTicketTiers(eventID int, tiers []*TicketTier) error
 		}
 	}
 	return s.repo.UpdateTicketTiers(eventID, tiers)
+}
+
+func (s *AdminService) DeleteTicketTier(eventID, tierID int) error {
+	return s.repo.DeleteTicketTier(eventID, tierID)
 }
 
 func (s *AdminService) GetVenueSections(eventID int) ([]*VenueSection, error) {

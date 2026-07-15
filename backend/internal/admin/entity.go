@@ -120,13 +120,27 @@ type VenueSection struct {
 	Color    string `json:"color"`    // UI-only, not persisted
 }
 
+type EventStatusLogEntry struct {
+	ID         string `json:"id"`
+	ActorName  string `json:"actorName"`
+	FromStatus string `json:"fromStatus"`
+	ToStatus   string `json:"toStatus"`
+	Notes      string `json:"notes"`
+	CreatedAt  string `json:"createdAt"`
+}
+
 type Repository interface {
 	GetDashboardStats() (*DashboardStats, error)
 	ListEvents(limit, offset int) ([]*Event, error)
+	ApproveEvent(eventID, auditorID int, notes string) error
+	RejectEvent(eventID, auditorID int, notes string) error
+	SetEventStatus(eventID int, status string, actorID int) error
+	ListEventStatusLog(eventID int) ([]*EventStatusLogEntry, error)
 	ListUsers(limit, offset int) ([]*User, error)
 	ListTransactions(limit, offset int) ([]*Transaction, error)
 	GetTicketTiers(eventID int) ([]*TicketTier, error)
 	UpdateTicketTiers(eventID int, tiers []*TicketTier) error
+	DeleteTicketTier(eventID, tierID int) error
 	GetVenueSections(eventID int) ([]*VenueSection, error)
 	UpdateVenueSections(eventID int, sections []*VenueSection) error
 	UpdateUserStatus(userID int, status string, actorID int) error
@@ -143,10 +157,15 @@ type Repository interface {
 type Service interface {
 	GetDashboardStats() (*DashboardStats, error)
 	ListEvents(limit, offset int) ([]*Event, error)
+	ApproveEvent(eventID, auditorID int, notes string) error
+	RejectEvent(eventID, auditorID int, notes string) error
+	SetEventStatus(eventID int, status string, actorID int) error
+	ListEventStatusLog(eventID int) ([]*EventStatusLogEntry, error)
 	ListUsers(limit, offset int) ([]*User, error)
 	ListTransactions(limit, offset int) ([]*Transaction, error)
 	GetTicketTiers(eventID int) ([]*TicketTier, error)
 	UpdateTicketTiers(eventID int, tiers []*TicketTier) error
+	DeleteTicketTier(eventID, tierID int) error
 	GetVenueSections(eventID int) ([]*VenueSection, error)
 	UpdateVenueSections(eventID int, sections []*VenueSection) error
 	UpdateUserStatus(userID int, status string, actorID int) error
