@@ -52,7 +52,7 @@ export function HeroSlider() {
             />
             <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/20 to-black/70 z-10" />
             <div className="absolute inset-0 flex items-center justify-center z-20">
-              <div className="w-full max-w-container-max px-margin-mobile md:px-margin-desktop flex items-center justify-between gap-8 lg:gap-16">
+              <div className="w-full max-w-7xl px-margin-mobile md:px-margin-desktop flex items-center justify-between gap-8 lg:gap-16">
                 <div className="flex-1 max-w-2xl">
                   <h1 className="text-white font-display text-5xl md:text-7xl font-bold mb-4 tracking-tight uppercase leading-tight">
                     {slide.title}

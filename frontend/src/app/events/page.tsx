@@ -128,6 +128,12 @@ export default function EventsDiscoveryPage() {
     set_active_quick_filter("All");
   }
 
+  const [visible_count, set_visible_count] = useState(6);
+
+  useEffect(() => {
+    set_visible_count(6);
+  }, [selected_cities, max_price, availability, sort_by]);
+
   const filtered_events = useMemo(() => {
     let events = displayEvents.filter(
       (event) => event.starting_price <= max_price
@@ -163,8 +169,8 @@ export default function EventsDiscoveryPage() {
         {featuredEvents.length > 0 && <FeaturedCarousel events={featuredEvents} />}
         <CategoryIconsGrid />
 
-        <section className="bg-background px-margin-mobile py-section-gap md:px-margin-desktop">
-          <div className="mx-auto max-w-container-max">
+        <section className="bg-background py-section-gap">
+          <div className="mx-auto max-w-7xl w-full px-margin-mobile md:px-margin-desktop">
             <div className="mb-10 flex flex-col gap-6">
               <QuickFilterBar
                 active_filter={active_quick_filter}
@@ -189,7 +195,7 @@ export default function EventsDiscoveryPage() {
 
                 {filtered_events.length > 0 ? (
                   <div className="grid grid-cols-1 gap-gutter md:grid-cols-2 xl:grid-cols-3">
-                    {filtered_events.map((event) => (
+                    {filtered_events.slice(0, visible_count).map((event) => (
                       <EventListingCard key={event.event_id} event={event} />
                     ))}
                   </div>
@@ -201,10 +207,11 @@ export default function EventsDiscoveryPage() {
                   </div>
                 )}
 
-                {filtered_events.length > 0 && (
+                {filtered_events.length > visible_count && (
                   <div className="mt-12 text-center">
                     <button
                       type="button"
+                      onClick={() => set_visible_count(prev => prev + 6)}
                       className="rounded-full border-2 border-border-subtle px-12 py-4 font-bold text-text-primary transition-all hover:border-secondary hover:text-secondary"
                     >
                       Load More

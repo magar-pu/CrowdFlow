@@ -34,8 +34,8 @@ export function FeaturedCarousel({ events }: FeaturedCarouselProps) {
   }
 
   return (
-    <section className="overflow-hidden px-margin-mobile py-section-gap md:px-margin-desktop">
-      <div className="mx-auto max-w-container-max">
+    <section className="overflow-hidden py-section-gap">
+      <div className="mx-auto max-w-7xl w-full px-margin-mobile md:px-margin-desktop">
         <div className="mb-8 flex items-end justify-between">
           <div>
             <span className="mb-2 block font-label-md text-label-md uppercase tracking-widest text-secondary">

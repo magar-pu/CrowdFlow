@@ -116,7 +116,7 @@ export function Navbar({ active_href = "/", is_authenticated: override, isTransp
         : "border-b border-border-subtle bg-surface-white/90 backdrop-blur-xl shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1),0_2px_4px_-1px_rgba(0,0,0,0.06)]"
     )}>
       <div className={cn(
-        "mx-auto flex w-full max-w-container-max items-center justify-between px-margin-mobile md:px-margin-desktop transition-all duration-300",
+        "mx-auto flex w-full max-w-7xl items-center justify-between px-margin-mobile md:px-margin-desktop transition-all duration-300",
         is_transparent ? "py-6" : "py-4"
       )}>
 

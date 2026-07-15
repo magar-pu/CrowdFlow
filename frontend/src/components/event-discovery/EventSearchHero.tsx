@@ -26,8 +26,8 @@ export function EventSearchHero() {
   }
 
   return (
-    <section className="border-b border-border-subtle bg-surface-white px-margin-mobile py-stack-lg md:px-margin-desktop">
-      <div className="mx-auto flex max-w-container-max flex-col gap-8">
+    <section className="border-b border-border-subtle bg-surface-white py-stack-lg">
+      <div className="mx-auto flex max-w-7xl w-full px-margin-mobile md:px-margin-desktop flex-col gap-8">
         <div className="max-w-2xl">
           <h1 className="mb-2 font-headline-xl text-headline-xl text-text-primary">
             Find Your Next Exciting Event

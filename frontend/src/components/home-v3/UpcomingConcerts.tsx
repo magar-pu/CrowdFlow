@@ -59,7 +59,7 @@ export function UpcomingConcerts() {
             href={`/events/${index + 1}`}
             className="bg-surface-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border border-border-subtle group cursor-pointer flex flex-col"
           >
-            <div className="relative w-full aspect-[4/3] overflow-hidden">
+            <div className="relative w-full aspect-[16/9] overflow-hidden">
               <img 
                 alt={event.title} 
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-in-out" 
