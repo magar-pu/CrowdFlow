@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, Bookmark } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
 const SLIDES = [
   {
@@ -69,15 +69,9 @@ export function HeroSlider() {
                 <div className="hidden lg:flex gap-6 relative right-0 shrink-0">
                   <div className="w-64 h-80 rounded-2xl overflow-hidden relative shadow-2xl transform rotate-[-2deg]">
                     <img alt="Card 1" className="w-full h-full object-cover" src={slide.card1} />
-                    <div className="absolute top-4 right-4 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow">
-                      <Bookmark size={14} className="text-text-primary" />
-                    </div>
                   </div>
                   <div className="w-64 h-80 rounded-2xl overflow-hidden relative shadow-2xl transform rotate-[2deg] translate-y-12">
                     <img alt="Card 2" className="w-full h-full object-cover" src={slide.card2} />
-                    <div className="absolute top-4 right-4 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow">
-                      <Bookmark size={14} className="text-text-primary" />
-                    </div>
                   </div>
                 </div>
               </div>
