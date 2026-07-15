@@ -14,6 +14,8 @@ import { mockTrendingCardStats } from "@/mock/homeV2Data";
 
 const FALLBACK_COVER =
   "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=600&auto=format&fit=crop";
+import { TrendingEvents } from "@/components/home-v3/TrendingEvents";
+import { FlashSaleEvents } from "@/components/home-v3/FlashSaleEvents";
 
 export default function HomePage() {
   const [trendingEvents, setTrendingEvents] = useState<TrendingEventCard[]>([]);
@@ -53,6 +55,8 @@ export default function HomePage() {
           <div className="px-6 lg:px-16 max-w-7xl mx-auto">
             {/* API data available as 'trendingEvents' when you need to pass it to components */}
             <UpcomingConcerts />
+            <TrendingEvents />
+            <FlashSaleEvents />
             <StatsBanner />
             <BentoCollections />
           </div>
