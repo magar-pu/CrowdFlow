@@ -5,6 +5,7 @@ import { Transaction, Payout } from '@/types/admin';
 import FinanceStatsGrid from './FinanceStatsGrid';
 import PayoutRequestTable from './PayoutRequestTable';
 import TransactionHistory from './TransactionHistory';
+import Pagination from '@/components/admin/shared/Pagination';
 
 interface FinanceViewProps {
   transactions: Transaction[];
@@ -12,6 +13,14 @@ interface FinanceViewProps {
   onProcessPayout: (id: string) => void;
   onRejectPayout: (id: string) => void;
   onUpdateTransactionStatus: (id: string, newStatus: 'Success' | 'Refunded') => void;
+  transactionsPage: number;
+  transactionsHasNext: boolean;
+  onPrevTransactionsPage: () => void;
+  onNextTransactionsPage: () => void;
+  payoutsPage: number;
+  payoutsHasNext: boolean;
+  onPrevPayoutsPage: () => void;
+  onNextPayoutsPage: () => void;
 }
 
 export default function FinanceView({
@@ -19,7 +28,15 @@ export default function FinanceView({
   payouts,
   onProcessPayout,
   onRejectPayout,
-  onUpdateTransactionStatus
+  onUpdateTransactionStatus,
+  transactionsPage,
+  transactionsHasNext,
+  onPrevTransactionsPage,
+  onNextTransactionsPage,
+  payoutsPage,
+  payoutsHasNext,
+  onPrevPayoutsPage,
+  onNextPayoutsPage
 }: FinanceViewProps) {
   const totalVolume = transactions.reduce((sum, t) => sum + t.amount, 0) + 6350000;
 
@@ -51,9 +68,11 @@ export default function FinanceView({
         onUpdateTransactionStatus={onUpdateTransactionStatus}
         totalVolume={totalVolume}
       />
+      <Pagination page={payoutsPage} hasNext={payoutsHasNext} onPrev={onPrevPayoutsPage} onNext={onNextPayoutsPage} />
 
       {/* Master Transaction Log */}
       <TransactionHistory transactions={transactions} />
+      <Pagination page={transactionsPage} hasNext={transactionsHasNext} onPrev={onPrevTransactionsPage} onNext={onNextTransactionsPage} />
     </div>
   );
 }

@@ -47,6 +47,7 @@ type Repository interface {
 	GetAll(limit, offset int) ([]*Event, error)
 	GetByID(id int) (*Event, error)
 	Create(event *Event) error
+	Update(event *Event) error
 	ListVenues() ([]*Venue, error)
 	ListEventTypes() ([]*EventType, error)
 }
@@ -55,6 +56,7 @@ type Service interface {
 	ListEvents(limit, offset int) ([]*Event, error)
 	GetEventDetails(id int) (*Event, error)
 	CreateEvent(event *Event) error
+	UpdateEvent(event *Event) error
 	PublishEvent(id int) error
 	ListVenues() ([]*Venue, error)
 	ListEventTypes() ([]*EventType, error)

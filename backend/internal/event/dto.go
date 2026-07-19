@@ -18,6 +18,20 @@ type CreateEventRequest struct {
 	EventTypeID                   int       `json:"event_type_id"`
 }
 
+// UpdateEventRequest holds incoming payload data for editing an existing
+// event's core details. No OrganizerID (ownership doesn't change) and no
+// cover image (still multipart-only, unchanged by this JSON endpoint).
+type UpdateEventRequest struct {
+	VenueID                       int       `json:"venue_id"`
+	EventName                     string    `json:"title"`
+	Description                   string    `json:"description"`
+	EventStart                    time.Time `json:"starts_at"`
+	EventEnd                      time.Time `json:"ends_at"`
+	EntertainmentTaxRate          float64   `json:"entertainment_tax_rate"`
+	EntertainmentTaxPassedToBuyer bool      `json:"entertainment_tax_passed_to_buyer"`
+	EventTypeID                   int       `json:"event_type_id"`
+}
+
 // VenueResponse defines a cleaned venue data payload for API outputs (hides raw audit timestamps)
 type VenueResponse struct {
 	ID            int    `json:"venue_id"`
@@ -61,7 +75,9 @@ type EventDetailResponse struct {
 	Description                   string             `json:"description"`
 	EventStart                    time.Time          `json:"starts_at"`
 	EventEnd                      time.Time          `json:"ends_at"`
-	Category      string             `json:"category"`
+	Category                      string             `json:"category"`
+	EventTypeID                   int                `json:"event_type_id"` // real FK, unlike Category which is a lossy display string
+	Status                        string             `json:"status"`
 	EntertainmentTaxRate          float64            `json:"entertainment_tax_rate"`
 	EntertainmentTaxPassedToBuyer bool               `json:"entertainment_tax_passed_to_buyer"`
 	CoverImageURL                 string             `json:"cover_image_url"`
@@ -137,6 +153,8 @@ func MapEventToDetail(e *Event) *EventDetailResponse {
 		EventStart:                    e.EventStart,
 		EventEnd:                      e.EventEnd,
 		Category:                      mapCategory(e.EventTypeID),
+		EventTypeID:                   e.EventTypeID,
+		Status:                        e.Status,
 		EntertainmentTaxRate:          e.EntertainmentTaxRate,
 		EntertainmentTaxPassedToBuyer: e.EntertainmentTaxPassedToBuyer,
 		CoverImageURL:                 e.CoverImageURL,
