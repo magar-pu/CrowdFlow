@@ -114,6 +114,22 @@ export default function EventsView({ events, onCreateEvent, onOpenWorkspace }: E
             </div>
           );
         })}
+        {events.length === 0 && (
+          <div className="col-span-full py-16 text-center text-sm text-text-secondary border border-dashed border-border-subtle rounded-xl bg-white soft-shadow max-w-lg mx-auto w-full flex flex-col items-center justify-center">
+            <CalendarDays className="w-8 h-8 text-on-surface-variant mb-3 animate-pulse" />
+            <div className="font-bold text-text-primary mb-1 text-sm">No Deployments Registered</div>
+            <p className="text-xs text-on-surface-variant max-w-xs mb-4">
+              You haven&apos;t created any events yet. Deploy your first ticketed event to begin sales operations.
+            </p>
+            <button
+              onClick={onCreateEvent}
+              className="bg-primary text-on-primary hover:bg-primary/90 rounded-lg px-4 py-2 font-sans font-semibold text-xs shadow-md transition-colors cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5 text-white" />
+              Create First Event
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

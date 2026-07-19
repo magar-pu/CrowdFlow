@@ -8,6 +8,7 @@ import {
   INITIAL_EVENTS, INITIAL_TICKET_TIERS, INITIAL_GATES, INITIAL_DEVICES,
   STAFF_MEMBERS, INITIAL_VENUE_SECTIONS, RECENT_TRANSACTIONS, ACTIVITY_LOGS,
 } from "./data";
+import { listOrganizerEvents, getDashboardData, DashboardResponse, createOrganizerEvent, publishOrganizerEvent, updateOrganizerEvent } from "@/lib/api/eorganizer";
 
 interface Toast {
   message: string;
@@ -16,6 +17,9 @@ interface Toast {
 
 interface EorganizerDataValue {
   events: EventItem[];
+  dashboardData: DashboardResponse | null;
+  isLoading: boolean;
+  fetchData: () => Promise<void>;
   ticketTiers: TicketTier[];
   gates: Gate[];
   devices: ScannerDevice[];
@@ -55,11 +59,51 @@ export function EorganizerDataProvider({ children }: { children: React.ReactNode
   const [adminName, setAdminName] = useState('Alex Rivera');
   const [adminRole, setAdminRole] = useState('Event Admin');
 
-  const [events, setEvents] = useState<EventItem[]>(() => {
-    if (typeof window === "undefined") return INITIAL_EVENTS;
-    const saved = localStorage.getItem("cf_events");
-    return saved ? JSON.parse(saved) : INITIAL_EVENTS;
-  });
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [dashboardData, setDashboardData] = useState<DashboardResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    const [eventsRes, dashRes] = await Promise.all([
+      listOrganizerEvents(),
+      getDashboardData(),
+    ]);
+
+    if (eventsRes.success && eventsRes.data) {
+      const mappedEvents: EventItem[] = eventsRes.data.map(e => ({
+        id: e.id,
+        name: e.name,
+        category: e.category,
+        description: e.description,
+        date: e.date,
+        startDate: e.startDate,
+        startTime: e.startTime,
+        endDate: e.endDate,
+        endTime: e.endTime,
+        locationType: e.locationType === "virtual" ? "virtual" : "physical",
+        location: e.location,
+        locationAddress: e.locationAddress,
+        venueName: e.venueName,
+        capacity: e.capacity,
+        sold: e.sold,
+        revenue: e.revenue,
+        status: e.status as "Live" | "Scheduled" | "Draft",
+        image: e.image,
+      }));
+      setEvents(mappedEvents);
+    }
+
+    if (dashRes.success && dashRes.data) {
+      setDashboardData(dashRes.data);
+    }
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
   const [ticketTiers, setTicketTiers] = useState<TicketTier[]>(() => {
     if (typeof window === "undefined") return INITIAL_TICKET_TIERS;
     const saved = localStorage.getItem("cf_ticket_tiers");
@@ -100,7 +144,6 @@ export function EorganizerDataProvider({ children }: { children: React.ReactNode
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("cf_events", JSON.stringify(events));
       localStorage.setItem("cf_ticket_tiers", JSON.stringify(ticketTiers));
       localStorage.setItem("cf_gates", JSON.stringify(gates));
       localStorage.setItem("cf_devices", JSON.stringify(devices));
@@ -109,7 +152,7 @@ export function EorganizerDataProvider({ children }: { children: React.ReactNode
       localStorage.setItem("cf_transactions", JSON.stringify(transactions));
       localStorage.setItem("cf_logs", JSON.stringify(logs));
     }
-  }, [events, ticketTiers, gates, devices, staffList, venueSections, transactions, logs]);
+  }, [ticketTiers, gates, devices, staffList, venueSections, transactions, logs]);
 
   useEffect(() => {
     if (toast) {
@@ -120,15 +163,49 @@ export function EorganizerDataProvider({ children }: { children: React.ReactNode
 
   const pushToast = (message: string, type: Toast['type'] = 'info') => setToast({ message, type });
 
-  const handleCreateEvent = (wizardEvent: Omit<EventItem, "id" | "sold" | "revenue">) => {
-    const newId = `EVT-${Date.now()}`;
-    const newEvent: EventItem = { ...wizardEvent, id: newId, sold: 0, revenue: 0 };
-    setEvents(prev => [newEvent, ...prev]);
-    pushToast(`Successfully deployed event: ${newEvent.name}`, 'success');
+  const handleCreateEvent = async (wizardEvent: Omit<EventItem, "id" | "sold" | "revenue">) => {
+    const res = await createOrganizerEvent({
+      name: wizardEvent.name,
+      category: wizardEvent.category,
+      description: wizardEvent.description,
+      date: wizardEvent.date,
+      startDate: wizardEvent.startDate,
+      startTime: wizardEvent.startTime,
+      endDate: wizardEvent.endDate,
+      endTime: wizardEvent.endTime,
+      locationType: wizardEvent.locationType,
+      location: wizardEvent.location,
+      locationAddress: wizardEvent.locationAddress,
+      venueName: wizardEvent.venueName,
+      capacity: wizardEvent.capacity,
+      status: wizardEvent.status,
+      image: wizardEvent.image,
+    } as any);
+
+    if (res.success && res.data) {
+      pushToast(`Successfully deployed event: ${wizardEvent.name}`, 'success');
+      if (wizardEvent.status === "Scheduled") {
+        await publishOrganizerEvent(Number(res.data.id));
+      }
+      await fetchData();
+    } else {
+      pushToast(`Failed to deploy event: ${res.error?.message || "Unknown error"}`, 'warning');
+    }
   };
 
-  const handleUpdateEventName = (eventId: string, newName: string) => {
-    setEvents(prev => prev.map(e => e.id === eventId ? { ...e, name: newName } : e));
+  const handleUpdateEventName = async (eventId: string, newName: string) => {
+    const idNum = Number(eventId);
+    if (!isNaN(idNum)) {
+      const res = await updateOrganizerEvent(idNum, { name: newName });
+      if (res.success) {
+        pushToast("Event name updated successfully", "success");
+        await fetchData();
+      } else {
+        pushToast(`Failed to update event name: ${res.error?.message || "Unknown error"}`, "warning");
+      }
+    } else {
+      setEvents(prev => prev.map(e => e.id === eventId ? { ...e, name: newName } : e));
+    }
   };
 
   const handleResetData = () => {
@@ -202,7 +279,7 @@ export function EorganizerDataProvider({ children }: { children: React.ReactNode
   };
 
   const value: EorganizerDataValue = {
-    events, ticketTiers, gates, devices, staffList, venueSections, transactions, logs,
+    events, dashboardData, isLoading, fetchData, ticketTiers, gates, devices, staffList, venueSections, transactions, logs,
     adminName, setAdminName, adminRole, setAdminRole,
     toast, pushToast,
     handleCreateEvent, handleUpdateEventName, handleResetData, handleTriggerLiveScan,

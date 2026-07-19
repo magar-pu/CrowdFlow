@@ -13,6 +13,7 @@ interface WorkspaceScannerProps {
   onDeleteDevice: (id: string) => void;
   onLogActivity: (log: { device: string; staff: string; gate: string; type: "scan_success" | "scan_failed"; message: string }) => void;
   onIncrementScan: (deviceId: string, gateName: string) => void;
+  onCheckIn?: (qrToken: string) => Promise<{ success: boolean; attendeeName?: string; ticketType?: string; seatNumber?: string; message: string }>;
 }
 
 export default function WorkspaceScanner({
@@ -21,7 +22,8 @@ export default function WorkspaceScanner({
   staffList,
   onAddDevice,
   onLogActivity,
-  onIncrementScan
+  onIncrementScan,
+  onCheckIn
 }: WorkspaceScannerProps) {
   const [selectedSimDevice, setSelectedSimDevice] = useState<ScannerDevice | null>(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -133,6 +135,7 @@ export default function WorkspaceScanner({
           device={selectedSimDevice}
           onClose={() => setSelectedSimDevice(null)}
           onScan={handleSimScan}
+          onCheckIn={onCheckIn}
         />
       )}
 

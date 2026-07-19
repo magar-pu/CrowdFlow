@@ -9,7 +9,7 @@ export default function EorganizerEventAnalyticsPage() {
 
   return (
     <EventWorkspaceShell eventId={params.id} activeTab="analytics">
-      <WorkspaceAnalytics />
+      <WorkspaceAnalytics eventId={params.id} />
     </EventWorkspaceShell>
   );
 }

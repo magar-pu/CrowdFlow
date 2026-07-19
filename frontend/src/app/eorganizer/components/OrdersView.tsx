@@ -1,12 +1,24 @@
-import React, { useState } from 'react';
-import { Order } from '../types';
-import { INITIAL_ORDERS } from '../data';
+import React, { useEffect, useState } from 'react';
 import { Search } from 'lucide-react';
+import { listOrders, OrganizerOrder } from '@/lib/api/eorganizer';
 
 export default function OrdersView() {
-  const [orders] = useState<Order[]>(INITIAL_ORDERS);
+  const [orders, setOrders] = useState<OrganizerOrder[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
+
+  useEffect(() => {
+    const fetchOrders = async () => {
+      setIsLoading(true);
+      const res = await listOrders();
+      if (res.success && res.data) {
+        setOrders(res.data);
+      }
+      setIsLoading(false);
+    };
+    fetchOrders();
+  }, []);
 
   const filteredOrders = orders.filter(o => {
     const matchesSearch = o.customerName.toLowerCase().includes(search.toLowerCase()) || 
@@ -63,26 +75,35 @@ export default function OrdersView() {
               </tr>
             </thead>
             <tbody className="font-sans text-xs text-text-primary">
-              {filteredOrders.length > 0 ? (
-                filteredOrders.map((order) => (
-                  <tr key={order.id} className="border-b border-border-subtle hover:bg-surface-container-low transition-colors">
-                    <td className="p-4 font-mono text-text-secondary">{order.id}</td>
-                    <td className="p-4">
-                      <div className="font-bold text-text-primary">{order.customerName}</div>
-                      <div className="text-[10px] text-on-surface-variant font-mono">{order.customerEmail}</div>
-                    </td>
-                    <td className="p-4 font-medium text-text-primary">{order.eventName}</td>
-                    <td className="p-4 text-text-secondary">{order.ticketType}</td>
-                    <td className="p-4 text-right font-semibold font-mono">${order.amount.toFixed(2)}</td>
-                    <td className="p-4">
-                      <span className={`px-2.5 py-1 rounded-full font-mono text-[9px] font-bold ${
-                        order.status === 'Paid' ? 'status-paid' : 'status-pending'
-                      }`}>
-                        {order.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))
+              {isLoading ? (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-on-surface-variant font-mono text-xs animate-pulse">
+                    Loading transactions registry...
+                  </td>
+                </tr>
+              ) : filteredOrders.length > 0 ? (
+                filteredOrders.map((order) => {
+                  const isPaid = order.status.toLowerCase() === "paid";
+                  return (
+                    <tr key={order.id} className="border-b border-border-subtle hover:bg-surface-container-low transition-colors">
+                      <td className="p-4 font-mono text-text-secondary">{order.id}</td>
+                      <td className="p-4">
+                        <div className="font-bold text-text-primary">{order.customerName}</div>
+                        <div className="text-[10px] text-on-surface-variant font-mono">{order.customerEmail}</div>
+                      </td>
+                      <td className="p-4 font-medium text-text-primary">{order.eventName}</td>
+                      <td className="p-4 text-text-secondary">{order.ticketType}</td>
+                      <td className="p-4 text-right font-semibold font-mono">${order.amount.toFixed(2)}</td>
+                      <td className="p-4">
+                        <span className={`px-2.5 py-1 rounded-full font-mono text-[9px] font-bold ${
+                          isPaid ? 'status-paid' : 'status-pending'
+                        }`}>
+                          {order.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
                   <td colSpan={6} className="p-8 text-center text-on-surface-variant font-mono text-xs">

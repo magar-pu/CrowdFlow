@@ -1,13 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bell, Search, Activity, Play, RefreshCw, Building2, ChevronsUpDown, Check, Menu, CheckCircle, HelpCircle } from 'lucide-react';
 import { LogEntry } from '../types';
+import { listNotifications, markNotificationsRead, ApiNotification } from '@/lib/api/eorganizer';
 
 const ORGANIZATIONS = ['CrowdFlow Inc.', 'Nightfall Presents', 'Summit Live Events'];
-const MOCK_NOTIFICATIONS = [
-  { id: 'n-1', title: 'Payout processed', detail: 'Your last settlement of $12,450 was deposited.', time: '2h ago' },
-  { id: 'n-2', title: 'Low ticket stock', detail: 'VIP Pass for "Neon Nights" is under 10% remaining.', time: '5h ago' },
-  { id: 'n-3', title: 'New team member', detail: 'Liam Vance accepted your Manager invite.', time: '1d ago' },
-];
 
 interface HeaderProps {
   currentTabName: string;
@@ -44,6 +40,43 @@ export default function Header({
   const [showNotifications, setShowNotifications] = useState(false);
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
   const [activeOrg, setActiveOrg] = useState(ORGANIZATIONS[0]);
+
+  const [notifications, setNotifications] = useState<ApiNotification[]>([]);
+
+  const fetchNotifications = async () => {
+    const res = await listNotifications();
+    if (res.success && res.data) {
+      setNotifications(res.data);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleToggleNotifications = async () => {
+    const nextState = !showNotifications;
+    setShowNotifications(nextState);
+    if (nextState) {
+      await markNotificationsRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    }
+  };
+
+  const unreadNotifications = notifications.filter((n) => !n.isRead);
+
+  const formatTimeAgo = (dateStr: string) => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  };
 
   return (
     <header
@@ -178,13 +211,13 @@ export default function Header({
 
         <div className="relative">
           <button
-            onClick={() => setShowNotifications(!showNotifications)}
+            onClick={handleToggleNotifications}
             className="relative p-1.5 text-text-secondary hover:text-text-primary hover:bg-surface-container-low border border-border-subtle rounded-lg cursor-pointer transition-colors"
           >
             <Bell className="w-4 h-4" />
-            {MOCK_NOTIFICATIONS.length > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[9px] font-bold text-on-error ring-2 ring-white">
-                {MOCK_NOTIFICATIONS.length}
+            {unreadNotifications.length > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[9px] font-bold text-on-error ring-2 ring-white animate-pulse">
+                {unreadNotifications.length}
               </span>
             )}
           </button>
@@ -193,15 +226,21 @@ export default function Header({
             <div className="absolute right-0 mt-3 w-80 bg-white border border-border-subtle rounded-xl shadow-xl z-30 p-4 animate-fade-in text-left">
               <h4 className="text-xs font-bold text-text-primary mb-3 border-b border-border-subtle pb-2">Notifications</h4>
               <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
-                {MOCK_NOTIFICATIONS.map((n) => (
-                  <div key={n.id} className="text-[10px] space-y-0.5 border-b border-surface-container-low pb-2 last:border-0">
-                    <div className="flex justify-between font-mono text-on-surface-variant">
-                      <span className="font-bold text-text-primary text-[11px] font-sans">{n.title}</span>
-                      <span>{n.time}</span>
+                {notifications.length > 0 ? (
+                  notifications.map((n) => (
+                    <div key={n.id} className="text-[10px] space-y-0.5 border-b border-surface-container-low pb-2 last:border-0">
+                      <div className="flex justify-between font-mono text-on-surface-variant">
+                        <span className="font-bold text-text-primary text-[11px] font-sans">{n.title}</span>
+                        <span>{formatTimeAgo(n.createdAt)}</span>
+                      </div>
+                      <p className="text-text-secondary leading-relaxed">{n.detail}</p>
                     </div>
-                    <p className="text-text-secondary leading-relaxed">{n.detail}</p>
+                  ))
+                ) : (
+                  <div className="py-6 text-center text-xs text-text-secondary font-mono">
+                    No new notifications.
                   </div>
-                ))}
+                )}
               </div>
             </div>
           )}

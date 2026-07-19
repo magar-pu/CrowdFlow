@@ -1,10 +1,30 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Globe, Mail, Share2, Tv2, ChevronRight, Download, DollarSign, Ticket, UserCheck, Timer, ArrowUpRight, ArrowDownRight, PieChart } from "lucide-react";
+import { getEventAnalytics, OrganizerAnalytics } from "@/lib/api/eorganizer";
 
-const DATE_RANGES = ['Last 7 Days', 'Last 30 Days', 'Last 90 Days', 'All Time'];
+const DATE_RANGES = [
+  { label: 'Last 7 Days', value: '7d' },
+  { label: 'Last 30 Days', value: '30d' },
+  { label: 'Last 90 Days', value: '90d' },
+];
 
-export default function WorkspaceAnalytics() {
-  const [dateRange, setDateRange] = useState('Last 30 Days');
+export default function WorkspaceAnalytics({ eventId }: { eventId?: string }) {
+  const [dateRange, setDateRange] = useState('30d');
+  const [analytics, setAnalytics] = useState<OrganizerAnalytics | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAnalytics = async () => {
+      if (!eventId) return;
+      setIsLoading(true);
+      const res = await getEventAnalytics(Number(eventId), dateRange);
+      if (res.success && res.data) {
+        setAnalytics(res.data);
+      }
+      setIsLoading(false);
+    };
+    fetchAnalytics();
+  }, [eventId, dateRange]);
 
   const channels = [
     { name: "Direct / Portal Search", icon: Globe, visitors: 4210, conversion: "43%", revenue: "$121,500" },
@@ -29,19 +49,20 @@ export default function WorkspaceAnalytics() {
     { label: 'Group Bundle', value: 9, color: 'var(--color-success)' },
   ];
 
-  const trendData = [
-    { label: 'W1', sales: 620, attendance: 58 },
-    { label: 'W2', sales: 980, attendance: 64 },
-    { label: 'W3', sales: 1240, attendance: 71 },
-    { label: 'W4', sales: 1580, attendance: 79 },
-    { label: 'W5', sales: 1842, attendance: 84 },
-  ];
+  const trendData = (analytics?.points || []).map((p) => ({
+    label: p.date.slice(5),
+    sales: p.sales,
+    attendance: p.tickets,
+  }));
+
+  const totalSales = trendData.reduce((acc, curr) => acc + curr.sales, 0);
+  const totalTickets = trendData.reduce((acc, curr) => acc + curr.attendance, 0);
 
   const performanceMetrics = [
-    { label: 'Total Revenue', value: '$284,650', delta: '+18.4%', up: true, icon: DollarSign },
-    { label: 'Tickets Sold', value: '1,842', delta: '+9.2%', up: true, icon: Ticket },
-    { label: 'Attendance Rate', value: '84.0%', delta: '+3.1%', up: true, icon: UserCheck },
-    { label: 'Avg. Scan Time', value: '1.2s', delta: '-0.3s', up: false, icon: Timer },
+    { label: 'Total Revenue', value: `$${totalSales.toLocaleString()}`, delta: 'Cumulative earnings', up: true, icon: DollarSign },
+    { label: 'Tickets Sold', value: totalTickets.toLocaleString(), delta: 'Issued credentials', up: true, icon: Ticket },
+    { label: 'Attendance Rate', value: '100.0%', delta: 'Check-in ratio', up: true, icon: UserCheck },
+    { label: 'Avg. Scan Time', value: '1.2s', delta: 'NFC/QR scanner avg', up: false, icon: Timer },
   ];
 
   const svgWidth = 560;
@@ -54,12 +75,14 @@ export default function WorkspaceAnalytics() {
   const trendWidth = 480;
   const trendHeight = 180;
   const trendPad = 24;
-  const maxSales = Math.max(...trendData.map(d => d.sales));
-  const maxAttendance = Math.max(...trendData.map(d => d.attendance));
-  const trendX = (i: number) => trendPad + (i * (trendWidth - 2 * trendPad)) / (trendData.length - 1);
+  const maxSales = Math.max(...trendData.map(d => d.sales), 1);
+  const maxAttendance = Math.max(...trendData.map(d => d.attendance), 1);
+  const trendX = (i: number) => trendPad + (i * (trendWidth - 2 * trendPad)) / Math.max(trendData.length - 1, 1);
   const trendY = (val: number, max: number) => trendHeight - trendPad - (val / max) * (trendHeight - 2 * trendPad);
-  const trendPath = (key: "sales" | "attendance") =>
-    trendData.reduce((acc, d, i) => `${acc} ${i === 0 ? "M" : "L"} ${trendX(i)} ${trendY(d[key], key === "sales" ? maxSales : maxAttendance)}`, "");
+  const trendPath = (key: "sales" | "attendance") => {
+    if (trendData.length === 0) return "";
+    return trendData.reduce((acc, d, i) => `${acc} ${i === 0 ? "M" : "L"} ${trendX(i)} ${trendY(d[key], key === "sales" ? maxSales : maxAttendance)}`, "");
+  };
 
   const donutRadius = 60;
   const donutCircumference = 2 * Math.PI * donutRadius;
@@ -75,7 +98,7 @@ export default function WorkspaceAnalytics() {
             onChange={(e) => setDateRange(e.target.value)}
             className="h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none cursor-pointer"
           >
-            {DATE_RANGES.map(r => <option key={r} value={r}>{r}</option>)}
+            {DATE_RANGES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
         </div>
         <button

@@ -13,6 +13,7 @@ import (
 	"crowdflow-backend/internal/booking"
 	"crowdflow-backend/internal/event"
 	"crowdflow-backend/internal/middleware"
+	"crowdflow-backend/internal/organizer"
 	"crowdflow-backend/internal/platform/database"
 	"crowdflow-backend/internal/platform/redisclient"
 	"crowdflow-backend/internal/response"
@@ -136,6 +137,14 @@ func main() {
 
 	// Register Booking routes
 	bookingHandler.RegisterRoutes(mux, authMounter.Authenticate)
+
+	// Initialize Organizer onboarding dependencies
+	organizerRepo := organizer.NewPostgresRepository(db)
+	organizerService := organizer.NewOrganizerService(organizerRepo, s3Storage)
+	organizerHandler := organizer.NewHandler(organizerService)
+
+	// Register Organizer routes
+	organizerHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole, authMounter.RequireEventOwnership)
 
 	fmt.Println("Starting server on :8080 with CSRF protection enabled")
 	if err := http.ListenAndServe(":8080", middleware.CSRF(mux)); err != nil {
