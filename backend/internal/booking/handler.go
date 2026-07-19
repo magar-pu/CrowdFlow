@@ -20,10 +20,10 @@ func (h *Handler) RegisterRoutes(
 	mux *http.ServeMux,
 	authenticate func(http.Handler) http.Handler,
 ) {
-	mux.Handle("GET /api/events/{id}/ticket-tiers", http.HandlerFunc(h.handleListTicketTiers))
-	mux.Handle("GET /api/events/{id}/seatmap", http.HandlerFunc(h.handleGetSeatMap))
-	mux.Handle("POST /api/booking/holds", authenticate(http.HandlerFunc(h.handleCreateHold)))
-	mux.Handle("DELETE /api/booking/holds/{token}", authenticate(http.HandlerFunc(h.handleReleaseHold)))
+	mux.Handle("GET /events/{id}/ticket-tiers", http.HandlerFunc(h.handleListTicketTiers))
+	mux.Handle("GET /events/{id}/seatmap", http.HandlerFunc(h.handleGetSeatMap))
+	mux.Handle("POST /booking/holds", authenticate(http.HandlerFunc(h.handleCreateHold)))
+	mux.Handle("DELETE /booking/holds/{token}", authenticate(http.HandlerFunc(h.handleReleaseHold)))
 }
 
 func (h *Handler) handleListTicketTiers(w http.ResponseWriter, r *http.Request) {
