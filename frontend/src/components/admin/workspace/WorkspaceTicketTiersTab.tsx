@@ -12,6 +12,7 @@ interface WorkspaceTicketTiersTabProps {
 export default function WorkspaceTicketTiersTab({ ticketTiers, onUpdateTiers }: WorkspaceTicketTiersTabProps) {
   const [showAddTier, setShowAddTier] = useState(false);
   const [newTierName, setNewTierName] = useState('');
+  const [newTierDescription, setNewTierDescription] = useState('');
   const [newTierPrice, setNewTierPrice] = useState('');
   const [newTierCap, setNewTierCap] = useState('');
   const [newTierCapacity, setNewTierCapacity] = useState('');
@@ -27,6 +28,7 @@ export default function WorkspaceTicketTiersTab({ ticketTiers, onUpdateTiers }: 
     const newTier: TicketTier = {
       id: `TIER-${Date.now().toString().slice(-3)}`,
       name: newTierName,
+      description: newTierDescription.trim(),
       price: price,
       priceCap: cap,
       capacity: capacity,
@@ -36,6 +38,7 @@ export default function WorkspaceTicketTiersTab({ ticketTiers, onUpdateTiers }: 
 
     onUpdateTiers([...ticketTiers, newTier]);
     setNewTierName('');
+    setNewTierDescription('');
     setNewTierPrice('');
     setNewTierCap('');
     setNewTierCapacity('');
@@ -71,6 +74,9 @@ export default function WorkspaceTicketTiersTab({ ticketTiers, onUpdateTiers }: 
                   <span className="text-[9px] font-mono text-slate-500">{tier.id}</span>
                 </div>
                 <h4 className="mt-3 text-xs font-bold text-text-primary">{tier.name}</h4>
+                {tier.description && (
+                  <p className="mt-1 line-clamp-2 text-[10px] text-text-muted">{tier.description}</p>
+                )}
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="text-lg font-extrabold text-text-primary">${tier.price}</span>
                   <span className="text-[10px] text-text-muted">Cap Ceiling: <span className="font-bold text-status-danger">${tier.priceCap}</span></span>
@@ -108,6 +114,16 @@ export default function WorkspaceTicketTiersTab({ ticketTiers, onUpdateTiers }: 
                   value={newTierName}
                   onChange={(e) => setNewTierName(e.target.value)}
                   className="w-full rounded-xl border border-border-subtle bg-surface-soft px-3.5 py-2.5 text-xs text-text-primary outline-none focus:border-primary"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-[10px] font-bold uppercase text-text-muted">Description</label>
+                <textarea
+                  rows={3}
+                  placeholder="What this tier includes - seating area, perks, access level..."
+                  value={newTierDescription}
+                  onChange={(e) => setNewTierDescription(e.target.value)}
+                  className="w-full resize-none rounded-xl border border-border-subtle bg-surface-soft px-3.5 py-2.5 text-xs text-text-primary outline-none focus:border-primary"
                 />
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

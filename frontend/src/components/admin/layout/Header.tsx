@@ -1,28 +1,56 @@
 "use client";
 
-import React, { useState } from 'react';
-import { Search, Bell, HelpCircle, CheckCircle, ShieldAlert, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Search, Bell, HelpCircle, CheckCircle, ShieldAlert, X, ChevronDown, LogOut } from 'lucide-react';
 import { SecurityAlert } from '@/types/admin';
+import { useAuthStore } from '@/lib/store/authStore';
+import { format_role_label, get_initials } from '@/lib/utils/user-display';
 
 interface HeaderProps {
   alerts: SecurityAlert[];
   onSearch?: (query: string) => void;
   onClearAlert?: (id: string) => void;
-  userName?: string;
-  userRole?: string;
-  userAvatar?: string;
 }
 
-export default function Header({ 
-  alerts, 
-  onSearch, 
+export default function Header({
+  alerts,
+  onSearch,
   onClearAlert,
-  userName = "Richie M.",
-  userRole = "Platform Admin",
-  userAvatar = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop"
 }: HeaderProps) {
+  const router = useRouter();
+  const { user, logout } = useAuthStore();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [searchVal, setSearchVal] = useState('');
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  const display_user = user ?? {
+    full_name: "Admin",
+    email: "",
+    role: "super_admin" as const,
+    avatar_url: "",
+  };
+  const userAvatar = display_user.avatar_url ?? null;
+  const userName = display_user.full_name;
+  const userRole = format_role_label(display_user.role);
+  const initials = get_initials(userName);
+
+  useEffect(() => {
+    function handleOutside(e: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, []);
+
+  const handleLogout = async () => {
+    setProfileOpen(false);
+    await logout();
+    router.push('/login');
+  };
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;

@@ -24,30 +24,37 @@ export function AuthGuard({
   redirectTo = "/login",
 }: AuthGuardProps) {
   const router = useRouter();
-  const { is_authenticated, user, set_user_from_api } = useAuthStore();
+  const { is_authenticated, user, set_user_from_api, logout } = useAuthStore();
   const [isHydrated, setIsHydrated] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
 
-  // 1. Handle hydration and verify session cookies
+  // 1. Handle hydration and always re-verify the session against the server.
+  // Persisted Zustand state (is_authenticated/role) is client-controlled and
+  // can be edited in devtools/localStorage, so it must never be trusted for a
+  // role check on its own - only skip verification when getMe() genuinely
+  // can't be reached (network failure), falling back to persisted state.
   useEffect(() => {
     setIsHydrated(true);
 
     async function verifySession() {
-      if (!is_authenticated) {
-        try {
-          const result = await getMe();
-          if (result.success && result.data) {
-            set_user_from_api(result.data);
-          }
-        } catch {
-          // ignore network failure
+      try {
+        const result = await getMe();
+        if (result.success && result.data) {
+          set_user_from_api(result.data);
+        } else if (is_authenticated) {
+          // Server says the session is no longer valid but local state
+          // still claims otherwise - clear it rather than trusting the stale copy.
+          await logout();
         }
+      } catch {
+        // Network failure: fall back to whatever was persisted locally.
       }
       setCheckingSession(false);
     }
 
     verifySession();
-  }, [is_authenticated, set_user_from_api]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 2. Perform authentication and role checks once session is verified
   useEffect(() => {

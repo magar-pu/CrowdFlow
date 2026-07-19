@@ -2,45 +2,50 @@
 
 import React from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  LayoutDashboard, 
-  BarChart3, 
-  CalendarRange, 
-  Users2, 
-  DollarSign, 
-  Settings2, 
+import {
+  LayoutDashboard,
+  BarChart3,
+  CalendarRange,
+  Users2,
+  DollarSign,
+  Settings2,
   LogOut,
   Sparkles,
   PanelLeftClose,
   PanelLeftOpen
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useAuthStore } from '@/lib/store/authStore';
+import { format_role_label, get_initials } from '@/lib/utils/user-display';
 
 
 interface SidebarProps {
   currentView: string;
   onViewChange: (view: 'dashboard' | 'analytics' | 'events' | 'users' | 'finance' | 'settings' | 'workspace') => void;
   pendingVerificationsCount: number;
-  userName?: string;
-  userRole?: string;
-  userAvatar?: string;
-  onLogout?: () => void;
   isCollapsed?: boolean;
   onToggleCollapsed?: () => void;
 }
 
-export default function Sidebar({ 
-  currentView, 
-  onViewChange, 
+export default function Sidebar({
+  currentView,
+  onViewChange,
   pendingVerificationsCount,
-  userName = "Richie M.",
-  userRole = "Platform Administrator",
-  userAvatar = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop",
-  onLogout,
   isCollapsed = false,
   onToggleCollapsed
 }: SidebarProps) {
   const router = useRouter();
+  const { user, logout } = useAuthStore();
+
+  const display_user = user ?? {
+    full_name: "Admin",
+    email: "",
+    role: "super_admin" as const,
+    avatar_url: "",
+  };
+  const userName = display_user.full_name;
+  const userRole = format_role_label(display_user.role);
+  const initials = get_initials(userName);
 
   interface MenuItem {
     readonly id: 'dashboard' | 'analytics' | 'events' | 'users' | 'finance' | 'settings';
@@ -63,12 +68,9 @@ export default function Sidebar({
     { id: 'settings', name: 'Global Settings', icon: Settings2 },
   ];
 
-  const handleExit = () => {
-    if (onLogout) {
-      onLogout();
-    } else {
-      router.push('/login');
-    }
+  const handleExit = async () => {
+    await logout();
+    router.push('/login');
   };
 
   return (
@@ -147,13 +149,23 @@ export default function Sidebar({
       {/* Admin Profile Footer */}
       <div className={`border-t border-border-subtle bg-surface p-4 ${isCollapsed ? "flex flex-col items-center" : ""}`}>
         <div className={`flex items-center gap-3 rounded-lg border border-border-subtle bg-surface-white p-2 ${isCollapsed ? "justify-center border-transparent bg-transparent" : ""}`}>
-          <img 
-            id="admin-avatar-footer"
-            src={userAvatar} 
-            alt={`${userName} Admin`} 
-            referrerPolicy="no-referrer"
-            className="h-10 w-10 rounded-full border border-border-subtle object-cover"
-          />
+          {display_user.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              id="admin-avatar-footer"
+              src={display_user.avatar_url}
+              alt={`${userName} Admin`}
+              referrerPolicy="no-referrer"
+              className="h-10 w-10 rounded-full border border-border-subtle object-cover"
+            />
+          ) : (
+            <div
+              id="admin-avatar-footer"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary text-xs font-bold text-white"
+            >
+              {initials}
+            </div>
+          )}
           <div className={isCollapsed ? "hidden" : "flex-1 overflow-hidden"}>
             <h4 className="truncate text-sm font-semibold text-text-primary">{userName}</h4>
             <p className="truncate text-xs text-text-secondary">{userRole}</p>

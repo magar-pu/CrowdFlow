@@ -1,14 +1,28 @@
 import { apiRequest } from '@/utils/api';
 import { ApiResponse, Transaction, Payout } from '@/types/admin';
 
-export async function listTransactions(): Promise<ApiResponse<Transaction[]>> {
-  return apiRequest<Transaction[]>("/api/v1/finance/transactions", {
+export async function listTransactions(limit?: number, offset?: number): Promise<ApiResponse<Transaction[]>> {
+  let query = "";
+  const params = [];
+  if (limit !== undefined) params.push(`limit=${limit}`);
+  if (offset !== undefined) params.push(`offset=${offset}`);
+  if (params.length > 0) {
+    query = "?" + params.join("&");
+  }
+  return apiRequest<Transaction[]>(`/api/v1/finance/transactions${query}`, {
     method: "GET",
   });
 }
 
-export async function listPayouts(): Promise<ApiResponse<Payout[]>> {
-  return apiRequest<Payout[]>("/api/v1/finance/payouts", {
+export async function listPayouts(limit?: number, offset?: number): Promise<ApiResponse<Payout[]>> {
+  let query = "";
+  const params = [];
+  if (limit !== undefined) params.push(`limit=${limit}`);
+  if (offset !== undefined) params.push(`offset=${offset}`);
+  if (params.length > 0) {
+    query = "?" + params.join("&");
+  }
+  return apiRequest<Payout[]>(`/api/v1/finance/payouts${query}`, {
     method: "GET",
   });
 }
