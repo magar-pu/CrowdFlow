@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   output: 'standalone',
+  serverExternalPackages: [],
+  allowedDevOrigins: ['172.17.224.1'],
   async rewrites() {
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8080';
     return [

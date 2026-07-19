@@ -4,7 +4,7 @@ import Link from "next/link";
 const EVENTS = [
   {
     title: "Tulus: Tur Manusia",
-    date: "12 Des • 19:00 WIB",
+    date: "12 Dec • 19:00 WIB",
     original_price: "Rp 650.000",
     price: "Rp 325.000",
     discount: "50%",
@@ -28,7 +28,7 @@ const EVENTS = [
   },
   {
     title: "EDM Warehouse Party",
-    date: "31 Okt • 22:00 WIB",
+    date: "31 Oct • 22:00 WIB",
     original_price: "Rp 300.000",
     price: "Rp 150.000",
     discount: "50%",

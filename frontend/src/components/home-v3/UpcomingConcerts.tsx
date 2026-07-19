@@ -11,21 +11,21 @@ const EVENTS = [
   },
   {
     title: "IBL Finals 2026: Game 3",
-    date: "15 Ags • 18:30 WIB",
+    date: "15 Aug • 18:30 WIB",
     price: "Rp 150.000",
     rating: "4.8",
     image: "https://images.unsplash.com/photo-1504450758481-7338eba7524a?q=80&w=800&auto=format&fit=crop"
   },
   {
     title: "Indonesian Charity Gala 2026",
-    date: "21 Okt • 19:00 WIB",
+    date: "21 Oct • 19:00 WIB",
     price: "Rp 2.500.000",
     rating: "4.9",
     image: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?q=80&w=800&auto=format&fit=crop"
   },
   {
     title: "Bandung Culinary Festival 2026",
-    date: "5 Okt • 10:00 WIB",
+    date: "5 Oct • 10:00 WIB",
     price: "Rp 75.000",
     rating: "4.7",
     image: "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?q=80&w=800&auto=format&fit=crop"

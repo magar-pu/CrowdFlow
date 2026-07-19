@@ -6,21 +6,21 @@ import { ArrowRight } from "lucide-react";
 const SLIDES = [
   {
     title: "COLDPLAY: MUSIC OF THE SPHERES",
-    description: "Jangan lewatkan konser terbesar tahun ini. Bergabunglah dalam tur dunia epik dengan tata panggung spektakuler dan lagu-lagu hits terbaik.",
+    description: "Don't miss the biggest concert of the year. Join the epic world tour with spectacular stage design and the best hit songs.",
     image: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=1600&auto=format&fit=crop",
     card1: "https://images.unsplash.com/photo-1429962714451-bb934ecdc4ec?q=80&w=800&auto=format&fit=crop",
     card2: "https://images.unsplash.com/photo-1415201364774-f6f0bb35f28f?q=80&w=400&auto=format&fit=crop",
   },
   {
     title: "JAKARTA SUMMER SOUND 2026",
-    description: "Festival musik musim panas paling dinanti! Nikmati akhir pekan penuh energi dengan deretan artis papan atas lokal dan internasional.",
+    description: "The most anticipated summer music festival! Enjoy an energy-filled weekend with a lineup of top local and international artists.",
     image: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?q=80&w=1600&auto=format&fit=crop",
     card1: "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?q=80&w=800&auto=format&fit=crop",
     card2: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?q=80&w=800&auto=format&fit=crop",
   },
   {
     title: "JAZZ NIGHT: BLUE HORIZON",
-    description: "Tenggelam dalam alunan melodi lembut dan ritme penuh jiwa. Malam penampilan musik jazz premium dalam suasana yang intim dan eksklusif.",
+    description: "Immerse yourself in soft melodies and soulful rhythms. A night of premium jazz performances in an intimate and exclusive atmosphere.",
     image: "https://images.unsplash.com/photo-1415201364774-f6f0bb35f28f?q=80&w=1600&auto=format&fit=crop",
     card1: "https://images.unsplash.com/photo-1531913764164-f85c52e6e654?q=80&w=800&auto=format&fit=crop",
     card2: "https://images.unsplash.com/photo-1429962714451-bb934ecdc4ec?q=80&w=800&auto=format&fit=crop",
@@ -61,7 +61,7 @@ export function HeroSlider() {
                     {slide.description}
                   </p>
                   <button className="bg-accent-blue text-white px-8 py-3 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-accent-blue/90 transition-all shadow-lg">
-                    Beli Tiket <ArrowRight size={18} />
+                    Get Tickets <ArrowRight size={18} />
                   </button>
                 </div>
                 

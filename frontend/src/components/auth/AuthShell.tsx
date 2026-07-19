@@ -9,6 +9,8 @@
  */
 
 import { Ticket } from "lucide-react";
+import { Navbar } from "@/components/layout/Navbar";
+import { FloatingTicketsBackground } from "./FloatingTicketsBackground";
 
 interface AuthShellProps {
   children: React.ReactNode;
@@ -18,56 +20,100 @@ interface AuthShellProps {
 
 export function AuthShell({ children, footer }: AuthShellProps) {
   return (
-    <div className="flex min-h-screen flex-col bg-surface-dim">
-      <main className="relative z-10 flex flex-grow items-center justify-center px-margin-mobile py-stack-lg md:px-margin-desktop md:py-section-gap">
-        <div className="w-full max-w-[480px]">
-          {/* Brand header */}
-          <div className="mb-stack-lg text-center">
-            <div className="mb-2 inline-flex items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary shadow-md">
-                <Ticket size={20} className="text-on-primary" />
-              </div>
-              <span className="font-headline-md text-headline-md font-bold tracking-tight text-primary">
-                CrowdFlow
-              </span>
-            </div>
-            <p className="font-label-md text-label-md uppercase tracking-widest text-text-secondary">
-              Secure Ticketing. Seamless Events.
-            </p>
-          </div>
+    <>
+      <style dangerouslySetInnerHTML={{
+        __html: `
+          @keyframes cardEntrance {
+            from {
+              opacity: 0;
+              transform: translateY(20px) scale(0.98);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0) scale(1);
+            }
+          }
+          @keyframes blobPulse {
+            0% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
+            50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.8; }
+            100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
+          }
+          @keyframes spinSlow {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+        `
+      }} />
+      <div className="relative flex min-h-screen flex-col overflow-hidden bg-surface-white bg-gradient-to-br from-surface-white via-surface-dim/20 to-surface-bright">
+        {/* Animated Background */}
+        <FloatingTicketsBackground />
 
-          {/* Auth card */}
-          <div className="overflow-hidden rounded-xl border border-border-subtle bg-surface-white shadow-[0_1px_3px_rgba(0,0,0,0.1),0_20px_25px_-5px_rgba(0,0,0,0.05),0_10px_10px_-5px_rgba(0,0,0,0.02)]">
-            {children}
-          </div>
-
-          {footer && <div className="mt-stack-lg text-center">{footer}</div>}
-
-          {/* Secondary links */}
-          <div className="mt-stack-lg flex flex-wrap items-center justify-center gap-3 sm:gap-6">
-            <a
-              href="/privacy"
-              className="font-label-sm text-label-sm text-text-secondary transition-colors hover:text-primary"
-            >
-              Privacy Policy
-            </a>
-            <span className="text-border-subtle">•</span>
-            <a
-              href="/terms"
-              className="font-label-sm text-label-sm text-text-secondary transition-colors hover:text-primary"
-            >
-              Terms of Service
-            </a>
-            <span className="text-border-subtle">•</span>
-            <a
-              href="/support"
-              className="font-label-sm text-label-sm text-text-secondary transition-colors hover:text-primary"
-            >
-              Help Center
-            </a>
-          </div>
+        {/* Top Navbar */}
+        <div className="z-50 w-full">
+          <Navbar isTransparentOnTop={false} />
         </div>
-      </main>
-    </div>
+
+        {/* Main Content */}
+        <main className="relative z-10 flex flex-grow items-center justify-center px-4 pt-24 pb-12">
+
+          <div
+            className="relative w-full max-w-[440px]"
+            style={{ animation: 'cardEntrance 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards' }}
+          >
+            {/* Glowing Blob Behind Card */}
+            <div
+              className="absolute left-1/2 top-1/2 h-[300px] w-[300px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-surface-dim blur-[80px]"
+              style={{ animation: 'blobPulse 8s ease-in-out infinite' }}
+            />
+
+            {/* The Peeking Ticket */}
+            <div className="absolute -top-8 left-1/2 -translate-x-1/2 rotate-[35deg] z-20 drop-shadow-md transition-transform duration-500 hover:rotate-[15deg] hover:scale-110">
+              <Ticket size={48} className="text-primary" fill="currentColor" />
+            </div>
+
+            {/* Auth card Wrapper with Animated Border */}
+            <div className="relative z-10 rounded-[24px] p-[1px] shadow-[0_8px_32px_rgba(0,0,0,0.08)] overflow-hidden">
+              {/* Spinning Gradient - Monochromatic Minimalist Theme */}
+              <div 
+                className="absolute inset-[-100%] z-0 opacity-100"
+                style={{
+                  background: 'conic-gradient(from 0deg, transparent 0%, rgba(15,23,42,0.1) 25%, rgba(15,23,42,0.3) 50%, rgba(15,23,42,0.1) 75%, transparent 100%)',
+                  animation: 'spinSlow 5s linear infinite'
+                }}
+              />
+              {/* Inner Auth card */}
+              <div className="relative z-10 w-full rounded-[23px] bg-white/80 backdrop-blur-3xl overflow-hidden">
+                {children}
+              </div>
+            </div>
+
+            {footer && (
+              <div
+                className="mt-6 text-center"
+                style={{ animation: 'cardEntrance 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s forwards', opacity: 0 }}
+              >
+                {footer}
+              </div>
+            )}
+
+            {/* Secondary links */}
+            <div
+              className="mt-8 flex flex-wrap items-center justify-center gap-4 text-center"
+              style={{ animation: 'cardEntrance 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.2s forwards', opacity: 0 }}
+            >
+              <a href="/privacy" className="font-label-sm text-label-sm text-text-secondary transition-all hover:text-primary hover:underline">
+                Privacy Policy
+              </a>
+              <a href="/terms" className="font-label-sm text-label-sm text-text-secondary transition-all hover:text-primary hover:underline">
+                Terms of Service
+              </a>
+              <a href="/support" className="font-label-sm text-label-sm text-text-secondary transition-all hover:text-primary hover:underline">
+                Help Center
+              </a>
+            </div>
+          </div>
+        </main>
+      </div>
+    </>
   );
 }
