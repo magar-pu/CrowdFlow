@@ -6,8 +6,8 @@ info:
 
     ### Security Architecture:
     - **Session Authentication**: JWT access token set as a secure `HttpOnly` cookie named `access_token`.
-    - **CSRF Protection**: State-changing endpoints require Double-Submit Cookie verification. The client extracts the value of the `csrf_token` cookie and submits it in the custom header `X-CSRF-Token`. Only `/api/auth/login` and `/api/auth/register` are exempt.
-    - **Admin Console**: Every `/api/v1/*` route requires the `Super Admin` platform role.
+    - **CSRF Protection**: State-changing endpoints require Double-Submit Cookie verification. The client extracts the value of the `csrf_token` cookie and submits it in the custom header `X-CSRF-Token`. Only `/api/v1/auth/login` and `/api/v1/auth/register` are exempt.
+    - **Admin Console**: Every `/api/v1/admin/*` route requires the `Super Admin` platform role.
 
     All responses (success and error) are wrapped in a standard JSON response envelope.
   version: 1.0.0
@@ -48,7 +48,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/auth/register:
+  /api/v1/auth/register:
     post:
       summary: User Registration
       description: Registers a new user native credentials.
@@ -93,7 +93,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/auth/login:
+  /api/v1/auth/login:
     post:
       summary: User Login
       description: |
@@ -163,7 +163,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/auth/google/login:
+  /api/v1/auth/google/login:
     get:
       summary: Google OAuth Redirect
       description: Initiates Google OAuth2 authorization code flow by redirecting the browser.
@@ -181,7 +181,7 @@ paths:
               schema:
                 type: string
 
-  /api/auth/google/callback:
+  /api/v1/auth/google/callback:
     get:
       summary: Google OAuth Callback
       description: Processes Google authorization code, verifies state, provisions user, and redirects the browser based on the user's platform role.
@@ -235,7 +235,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/auth/logout:
+  /api/v1/auth/logout:
     post:
       summary: User Logout
       description: Clears active user session cookies. Does not require an authenticated session, but does require CSRF verification (double-submit cookie).
@@ -269,7 +269,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/auth/me:
+  /api/v1/auth/me:
     get:
       summary: Get Current User Profile
       description: Returns the authenticated user's full profile, including stats and associated events (attended events for buyers, organized events for organizers/admins).
@@ -364,7 +364,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/events:
+  /api/v1/events:
     get:
       summary: List Events (Public Discovery)
       description: |
@@ -477,7 +477,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/events/{id}:
+  /api/v1/events/{id}:
     get:
       summary: Get Event Details
       description: |
@@ -516,7 +516,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/events/{id}/publish:
+  /api/v1/events/{id}/publish:
     patch:
       summary: Publish Event
       description: Publishes an event. Requires an event-scoped Event Organizer role for this specific event (Super Admin bypasses the check).
@@ -574,7 +574,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/events/{id}/ticket-tiers:
+  /api/v1/events/{id}/ticket-tiers:
     get:
       summary: List Ticket Tiers (Public)
       description: Returns the buyer-facing ticket tiers currently on sale for an event (public visibility, within the sales window). No authentication required.
@@ -612,7 +612,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/events/{id}/seatmap:
+  /api/v1/events/{id}/seatmap:
     get:
       summary: Get Event Seat Map
       description: Returns the live seat map for an event, grouped by section with per-seat availability state. No authentication required.
@@ -650,7 +650,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/booking/holds:
+  /api/v1/booking/holds:
     post:
       summary: Create Booking Hold
       description: |
@@ -703,7 +703,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/booking/holds/{token}:
+  /api/v1/booking/holds/{token}:
     delete:
       summary: Release Booking Hold
       description: Releases a previously acquired hold using only its token.
@@ -758,7 +758,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/venues:
+  /api/v1/venues:
     get:
       summary: List Venues
       description: Lists all venues. Requires the Event Organizer platform role (Super Admin bypasses the check).
@@ -797,7 +797,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/event-types:
+  /api/v1/event-types:
     get:
       summary: List Event Types
       description: Lists all event type categories. Requires the Event Organizer platform role (Super Admin bypasses the check).
@@ -836,7 +836,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/dashboard/stats:
+  /api/v1/admin/dashboard/stats:
     get:
       summary: Admin - Dashboard Statistics
       description: Returns platform-wide aggregate stats. Requires the Super Admin platform role.
@@ -873,7 +873,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/dashboard/alerts:
+  /api/v1/admin/dashboard/alerts:
     get:
       summary: Admin - Security Alerts
       description: |
@@ -914,7 +914,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/dashboard/activities:
+  /api/v1/admin/dashboard/activities:
     get:
       summary: Admin - Activity Log
       description: Returns the 50 most recent admin audit-trail entries (activity_log table), newest first. Requires the Super Admin platform role.
@@ -953,7 +953,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/events:
+  /api/v1/admin/events:
     get:
       summary: Admin - List Events
       description: Lists all events with sales/revenue aggregates for the admin console, newest first. Requires the Super Admin platform role.
@@ -1007,7 +1007,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/events/{id}/scanners:
+  /api/v1/admin/events/{id}/scanners:
     get:
       summary: Admin - List Event Scanners
       description: |
@@ -1093,7 +1093,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/events/{id}/scanners/{scannerId}:
+  /api/v1/admin/events/{id}/scanners/{scannerId}:
     delete:
       summary: Admin - Remove Event Scanner (Not Implemented)
       description: Requires the Super Admin platform role. No backing data model exists yet - always returns 501.
@@ -1133,7 +1133,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/events/{id}/ticket-tiers:
+  /api/v1/admin/events/{id}/ticket-tiers:
     get:
       summary: Admin - Get Event Ticket Tiers
       description: Returns all ticket tiers for an event (admin console shape, camelCase fields), ordered by price ascending. Requires the Super Admin platform role.
@@ -1252,7 +1252,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/events/{id}/venue-sections:
+  /api/v1/admin/events/{id}/venue-sections:
     get:
       summary: Admin - Get Event Venue Sections
       description: Returns the venue layout sections for an event. Requires the Super Admin platform role.
@@ -1365,7 +1365,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/finance/transactions:
+  /api/v1/admin/finance/transactions:
     get:
       summary: Admin - List Transactions
       description: Lists orders with status paid/pending/refunded, newest first. Requires the Super Admin platform role.
@@ -1419,7 +1419,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/finance/transactions/{id}/status:
+  /api/v1/admin/finance/transactions/{id}/status:
     post:
       summary: Admin - Update Transaction Status
       description: |
@@ -1488,7 +1488,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/finance/payouts:
+  /api/v1/admin/finance/payouts:
     get:
       summary: Admin - List Payouts
       description: |
@@ -1546,7 +1546,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/finance/payouts/{id}/process:
+  /api/v1/admin/finance/payouts/{id}/process:
     post:
       summary: Admin - Process Payout
       description: |
@@ -1599,7 +1599,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/finance/payouts/{id}/reject:
+  /api/v1/admin/finance/payouts/{id}/reject:
     post:
       summary: Admin - Reject Payout
       description: |
@@ -1651,7 +1651,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/users:
+  /api/v1/admin/users:
     get:
       summary: Admin - List Users
       description: Lists all users with platform role, verification status, and order counts, newest first. Requires the Super Admin platform role.
@@ -1705,7 +1705,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/users/{id}/status:
+  /api/v1/admin/users/{id}/status:
     post:
       summary: Admin - Update User Status
       description: |
@@ -1775,7 +1775,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/users/{id}/roles:
+  /api/v1/admin/users/{id}/roles:
     post:
       summary: Admin - Grant User Role
       description: |
@@ -1840,7 +1840,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/users/verifications:
+  /api/v1/admin/users/verifications:
     get:
       summary: Admin - List Verification Applications
       description: |
@@ -1899,7 +1899,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/users/verifications/{id}/approve:
+  /api/v1/admin/users/verifications/{id}/approve:
     post:
       summary: Admin - Approve Verification
       description: |
@@ -1957,7 +1957,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/users/verifications/{id}/reject:
+  /api/v1/admin/users/verifications/{id}/reject:
     post:
       summary: Admin - Reject Verification
       description: |
@@ -2215,7 +2215,7 @@ components:
 
     CreateEventRequest:
       type: object
-      description: JSON payload carried inside the `event_data` multipart form field of POST /api/events.
+      description: JSON payload carried inside the `event_data` multipart form field of POST /api/v1/events.
       required:
         - venue_id
         - title

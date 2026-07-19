@@ -79,7 +79,7 @@ export default function AdminPage() {
   const [securityAlerts, setSecurityAlerts] = useState<SecurityAlert[]>(initialSecurityAlerts);
 
   // Transactions, payouts, and activities are backed by the real
-  // /api/v1/finance* and /api/v1/dashboard/activities endpoints.
+  // /api/v1/admin/finance* and /api/v1/admin/dashboard/activities endpoints.
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transactionsLoading, setTransactionsLoading] = useState(true);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
@@ -206,7 +206,7 @@ export default function AdminPage() {
     }
   };
 
-  // Users + verifications are backed by the real /api/v1/users* endpoints.
+  // Users + verifications are backed by the real /api/v1/admin/users* endpoints.
   const [users, setUsers] = useState<User[]>([]);
   const [verifications, setVerifications] = useState<VerificationApplication[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
