@@ -48,10 +48,11 @@ type Transaction struct {
 	Date         string  `json:"date"`
 }
 
-// Payout, Scanner, VerificationApplication, SecurityAlert, and Activity have no
-// backing tables yet. Structs kept here so handler.go can return correctly
-// shaped placeholder payloads - see service.go for the TODO covering real
-// implementations once the underlying schema exists.
+// Scanner, VerificationApplication, and SecurityAlert have no backing tables
+// yet. Structs kept here so handler.go can return correctly shaped
+// placeholder payloads - see service.go for the TODO covering real
+// implementations once the underlying schema exists. Payout and Activity are
+// now backed by the payouts/activity_log tables (migrations/0001_payouts_and_activity_log.sql).
 
 type Payout struct {
 	ID            string  `json:"id"`
@@ -101,13 +102,14 @@ type Activity struct {
 }
 
 type TicketTier struct {
-	ID       string  `json:"id"`
-	Name     string  `json:"name"`
-	Price    float64 `json:"price"`
-	Capacity int     `json:"capacity"`
-	Sold     int     `json:"sold"`
-	PriceCap float64 `json:"priceCap"` // not modeled in DB yet - see repository.go note
-	Color    string  `json:"color"`    // UI-only, not persisted
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	Price       float64 `json:"price"`
+	Capacity    int     `json:"capacity"`
+	Sold        int     `json:"sold"`
+	PriceCap    float64 `json:"priceCap"` // not modeled in DB yet - see repository.go note
+	Color       string  `json:"color"`    // UI-only, not persisted
 }
 
 type VenueSection struct {
@@ -118,36 +120,65 @@ type VenueSection struct {
 	Color    string `json:"color"`    // UI-only, not persisted
 }
 
+type EventStatusLogEntry struct {
+	ID         string `json:"id"`
+	ActorName  string `json:"actorName"`
+	FromStatus string `json:"fromStatus"`
+	ToStatus   string `json:"toStatus"`
+	Notes      string `json:"notes"`
+	CreatedAt  string `json:"createdAt"`
+}
+
 type Repository interface {
 	GetDashboardStats() (*DashboardStats, error)
 	ListEvents(limit, offset int) ([]*Event, error)
-	ListUsers() ([]*User, error)
-	ListTransactions() ([]*Transaction, error)
+	ApproveEvent(eventID, auditorID int, notes string) error
+	RejectEvent(eventID, auditorID int, notes string) error
+	SetEventStatus(eventID int, status string, actorID int) error
+	ListEventStatusLog(eventID int) ([]*EventStatusLogEntry, error)
+	ListUsers(limit, offset int) ([]*User, error)
+	ListTransactions(limit, offset int) ([]*Transaction, error)
 	GetTicketTiers(eventID int) ([]*TicketTier, error)
 	UpdateTicketTiers(eventID int, tiers []*TicketTier) error
+	DeleteTicketTier(eventID, tierID int) error
 	GetVenueSections(eventID int) ([]*VenueSection, error)
 	UpdateVenueSections(eventID int, sections []*VenueSection) error
-	UpdateUserStatus(userID int, status string) error
-	UpdateTransactionStatus(orderID string, status string) error
-	ListVerifications() ([]*VerificationApplication, error)
+	UpdateUserStatus(userID int, status string, actorID int) error
+	GrantUserRole(userID int, roleID int, eventID *int, actorID int) error
+	UpdateTransactionStatus(orderID string, status string, actorID int) error
+	ListVerifications(limit, offset int) ([]*VerificationApplication, error)
+
+	ListPayouts(limit, offset int) ([]*Payout, error)
+	ProcessPayout(payoutID string, actorID int) error
+	RejectPayout(payoutID string, actorID int) error
+	ListActivities() ([]*Activity, error)
 }
 
 type Service interface {
 	GetDashboardStats() (*DashboardStats, error)
 	ListEvents(limit, offset int) ([]*Event, error)
-	ListUsers() ([]*User, error)
-	ListTransactions() ([]*Transaction, error)
+	ApproveEvent(eventID, auditorID int, notes string) error
+	RejectEvent(eventID, auditorID int, notes string) error
+	SetEventStatus(eventID int, status string, actorID int) error
+	ListEventStatusLog(eventID int) ([]*EventStatusLogEntry, error)
+	ListUsers(limit, offset int) ([]*User, error)
+	ListTransactions(limit, offset int) ([]*Transaction, error)
 	GetTicketTiers(eventID int) ([]*TicketTier, error)
 	UpdateTicketTiers(eventID int, tiers []*TicketTier) error
+	DeleteTicketTier(eventID, tierID int) error
 	GetVenueSections(eventID int) ([]*VenueSection, error)
 	UpdateVenueSections(eventID int, sections []*VenueSection) error
-	UpdateUserStatus(userID int, status string) error
-	UpdateTransactionStatus(orderID string, status string) error
-	ListVerifications() ([]*VerificationApplication, error)
+	UpdateUserStatus(userID int, status string, actorID int) error
+	GrantUserRole(userID int, roleID int, eventID *int, actorID int) error
+	UpdateTransactionStatus(orderID string, status string, actorID int) error
+	ListVerifications(limit, offset int) ([]*VerificationApplication, error)
+
+	ListPayouts(limit, offset int) ([]*Payout, error)
+	ProcessPayout(payoutID string, actorID int) error
+	RejectPayout(payoutID string, actorID int) error
+	ListActivities() ([]*Activity, error)
 
 	// Placeholder-backed - see service.go
-	ListPayouts() ([]*Payout, error)
 	ListScanners(eventID int) ([]*Scanner, error)
 	ListSecurityAlerts() ([]*SecurityAlert, error)
-	ListActivities() ([]*Activity, error)
 }

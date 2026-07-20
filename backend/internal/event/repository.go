@@ -1,8 +1,9 @@
 package event
 
 import (
+	"context"
 	"database/sql"
-	"errors"
+	"time"
 )
 
 type PostgresRepository struct {
@@ -14,7 +15,10 @@ func NewPostgresRepository(db *sql.DB) *PostgresRepository {
 }
 
 func (r *PostgresRepository) GetAll(limit, offset int) ([]*Event, error) {
-	rows, err := r.db.Query(`
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	rows, err := r.db.QueryContext(ctx, `
 		SELECT 
 			e.id, e.venue_id, e.organizer_id, e.event_name, COALESCE(e.description, ''), e.event_start, e.event_end, 
 			e.entertainment_tax_rate, e.entertainment_tax_passed_to_buyer, e.status, e.created_at, e.updated_at, 
@@ -95,6 +99,9 @@ func (r *PostgresRepository) GetAll(limit, offset int) ([]*Event, error) {
 }
 
 func (r *PostgresRepository) GetByID(id int) (*Event, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
 	var e Event
 	var eventTypeID sql.NullInt64
 	var coverImageURL sql.NullString
@@ -110,10 +117,10 @@ func (r *PostgresRepository) GetByID(id int) (*Event, error) {
 	var oName sql.NullString
 	var oAvatar sql.NullString
 
-	err := r.db.QueryRow(`
-		SELECT 
-			e.id, e.venue_id, e.organizer_id, e.event_name, COALESCE(e.description, ''), e.event_start, e.event_end, 
-			e.entertainment_tax_rate, e.entertainment_tax_passed_to_buyer, e.status, e.created_at, e.updated_at, 
+	err := r.db.QueryRowContext(ctx, `
+		SELECT
+			e.id, e.venue_id, e.organizer_id, e.event_name, COALESCE(e.description, ''), e.event_start, e.event_end,
+			e.entertainment_tax_rate, e.entertainment_tax_passed_to_buyer, e.status, e.created_at, e.updated_at,
 			e.event_type_id, COALESCE(e.cover_image_url, ''),
 			v.id, COALESCE(v.name, ''), COALESCE(v.address, ''), COALESCE(v.city, ''), COALESCE(v.province, ''), COALESCE(v.total_capacity, 0),
 			u.id, COALESCE(up.full_name, ''), COALESCE(up.avatar_pic, '')
@@ -131,7 +138,7 @@ func (r *PostgresRepository) GetByID(id int) (*Event, error) {
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, errors.New("event not found")
+			return nil, ErrEventNotFound
 		}
 		return nil, err
 	}
@@ -173,21 +180,145 @@ func (r *PostgresRepository) Create(event *Event) error {
 		event.Status = "draft"
 	}
 
-	err := r.db.QueryRow(`
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// 1. Begin Database Transaction
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() // Rollback is ignored if transaction is committed
+	// 2. Insert into events table
+	eventQuery := `
 		INSERT INTO events (
-			venue_id, organizer_id, event_name, description, event_start, event_end, 
-			entertainment_tax_rate, entertainment_tax_passed_to_buyer, status, 
+			venue_id, organizer_id, event_name, description, event_start, event_end,
+			entertainment_tax_rate, entertainment_tax_passed_to_buyer, status,
 			event_type_id, cover_image_url
-		) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
-		RETURNING id, created_at, updated_at
-	`, 
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		RETURNING id, created_at, updated_at`
+	err = tx.QueryRowContext(ctx, eventQuery,
 		event.VenueID, event.OrganizerID, event.EventName, event.Description, event.EventStart, event.EventEnd,
 		event.EntertainmentTaxRate, event.EntertainmentTaxPassedToBuyer, event.Status,
 		eventTypeID, event.CoverImageURL,
 	).Scan(&event.ID, &event.CreatedAt, &event.UpdatedAt)
-	
-	return err
+	if err != nil {
+		return err
+	}
+	// 3. Grant the creator the Event Organizer role (role_id = 3) scoped to this event
+	roleQuery := `
+		INSERT INTO user_roles (user_id, event_id, role_id)
+		VALUES ($1, $2, 3)`
+	_, err = tx.ExecContext(ctx, roleQuery, event.OrganizerID, event.ID)
+	if err != nil {
+		return err
+	}
+	// 4. Commit transaction
+	return tx.Commit()
+}
+
+// Update edits an existing event's core details. Guarded at the SQL level so
+// a pending_review event (awaiting an approve/reject decision) can't be
+// edited out from under an auditor mid-review - the WHERE clause excludes it
+// atomically rather than checking-then-updating, which would race against a
+// concurrent status change.
+func (r *PostgresRepository) Update(event *Event) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var eventTypeID *int
+	if event.EventTypeID > 0 {
+		eventTypeID = &event.EventTypeID
+	}
+
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE events SET
+			event_name = $1, description = $2, event_start = $3, event_end = $4,
+			entertainment_tax_rate = $5, entertainment_tax_passed_to_buyer = $6,
+			event_type_id = $7, venue_id = $8, updated_at = now()
+		WHERE id = $9 AND status != 'pending_review'
+	`, event.EventName, event.Description, event.EventStart, event.EventEnd,
+		event.EntertainmentTaxRate, event.EntertainmentTaxPassedToBuyer,
+		eventTypeID, event.VenueID, event.ID)
+	if err != nil {
+		return err
+	}
+
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected > 0 {
+		return nil
+	}
+
+	var status string
+	if err := r.db.QueryRowContext(ctx, `SELECT status FROM events WHERE id = $1`, event.ID).Scan(&status); err != nil {
+		if err == sql.ErrNoRows {
+			return ErrEventNotFound
+		}
+		return err
+	}
+	if status == "pending_review" {
+		return ErrEventLocked
+	}
+	return ErrEventNotFound
+}
+
+func (r *PostgresRepository) ListVenues() ([]*Venue, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, name, address, city, province, total_capacity
+		FROM venues
+		ORDER BY name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var venues []*Venue
+	for rows.Next() {
+		var v Venue
+		if err := rows.Scan(&v.ID, &v.Name, &v.Address, &v.City, &v.Province, &v.TotalCapacity); err != nil {
+			return nil, err
+		}
+		venues = append(venues, &v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return venues, nil
+}
+
+func (r *PostgresRepository) ListEventTypes() ([]*EventType, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, event_type
+		FROM event_types
+		ORDER BY id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var eventTypes []*EventType
+	for rows.Next() {
+		var t EventType
+		if err := rows.Scan(&t.ID, &t.EventType); err != nil {
+			return nil, err
+		}
+		eventTypes = append(eventTypes, &t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return eventTypes, nil
 }
 
 

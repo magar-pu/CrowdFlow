@@ -25,12 +25,18 @@ services:
     entrypoint: >
       /bin/sh -c "
       until /usr/bin/mc alias set localminio http://minio:9000 minioadmin minioadminpassword; do echo 'Waiting for MinIO...'; sleep 1; done;
-      if ! /usr/bin/mc ls localminio/crowdflow-uploads > /dev/null 2>&1; then
-        /usr/bin/mc mb localminio/crowdflow-uploads;
-        /usr/bin/mc anonymous set public localminio/crowdflow-uploads;
-        echo 'Bucket crowdflow-uploads created successfully';
+      if ! /usr/bin/mc ls localminio/crowdflow-public > /dev/null 2>&1; then
+        /usr/bin/mc mb localminio/crowdflow-public;
+        /usr/bin/mc anonymous set public localminio/crowdflow-public;
+        echo 'Bucket crowdflow-public created successfully';
       else
-        echo 'Bucket crowdflow-uploads already exists';
+        echo 'Bucket crowdflow-public already exists';
+      fi;
+      if ! /usr/bin/mc ls localminio/crowdflow-private > /dev/null 2>&1; then
+        /usr/bin/mc mb localminio/crowdflow-private;
+        echo 'Bucket crowdflow-private created successfully';
+      else
+        echo 'Bucket crowdflow-private already exists';
       fi;
       "
 

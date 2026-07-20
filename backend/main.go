@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"crowdflow-backend/internal/admin"
+	"crowdflow-backend/internal/auditor"
 	"crowdflow-backend/internal/auth"
 	"crowdflow-backend/internal/booking"
 	"crowdflow-backend/internal/event"
 	"crowdflow-backend/internal/middleware"
+	"crowdflow-backend/internal/organizer"
 	"crowdflow-backend/internal/platform/database"
 	"crowdflow-backend/internal/platform/redisclient"
 	"crowdflow-backend/internal/resale"
@@ -70,7 +72,14 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// Register global system health route
+	// Versioned API sub-routers. Feature handlers register bare paths
+	// (e.g. "GET /events"); the /api/v1 (and /api/v1/admin) prefix is applied
+	// once at mount time below, so every endpoint lives under a single version
+	// segment and a future v2 becomes a one-line change.
+	apiV1 := http.NewServeMux()   // public + EO + auth + booking -> /api/v1/*
+	adminV1 := http.NewServeMux() // Super Admin console          -> /api/v1/admin/*
+
+	// Register global system health route (intentionally unversioned)
 	mux.HandleFunc("GET /api/health", healthCheck(db))
 	// Initialize Configuration for JWT & Google Client ID
 	jwtSecret := os.Getenv("JWT_SECRET")
@@ -84,7 +93,7 @@ func main() {
 	googleClientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
 	googleRedirectURI := os.Getenv("GOOGLE_REDIRECT_URI")
 	if googleRedirectURI == "" {
-		googleRedirectURI = "http://localhost/api/auth/google/callback"
+		googleRedirectURI = "http://localhost/api/v1/auth/google/callback"
 	}
 
 	oauthConfig := &oauth2.Config{
@@ -109,7 +118,7 @@ func main() {
 	eventHandler := event.NewHandler(eventService, s3Storage)
 
 	// Register feature routes
-	eventHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.OptionalAuthenticate, authMounter.RequirePlatformRole, authMounter.RequireEventRole)
+	eventHandler.RegisterRoutes(apiV1, authMounter.Authenticate, authMounter.OptionalAuthenticate, authMounter.RequirePlatformRole, authMounter.RequireEventRole)
 
 	// Initialize Authentication dependencies
 	authRepo := auth.NewPostgresRepository(db)
@@ -117,8 +126,11 @@ func main() {
 	isSecure := os.Getenv("DEV_MODE") != "true"
 	authHandler := auth.NewHandler(authService, isSecure)
 
+	// Rate limit login attempts per IP to slow brute-force/credential-stuffing
+	loginRateLimit := middleware.RateLimit(redisClient, "login", 10, 15*time.Minute)
+
 	// Register Authentication routes
-	authHandler.RegisterRoutes(mux, authMounter.Authenticate)
+	authHandler.RegisterRoutes(apiV1, authMounter.Authenticate, loginRateLimit)
 
 	// Initialize Admin console dependencies
 	adminRepo := admin.NewPostgresRepository(db)
@@ -126,7 +138,7 @@ func main() {
 	adminHandler := admin.NewHandler(adminService)
 
 	// Register Admin console routes (Super Admin only)
-	adminHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole)
+	adminHandler.RegisterRoutes(adminV1, authMounter.Authenticate, authMounter.RequirePlatformRole)
 
 	// Initialize Booking dependencies (ticket tiers, seat map, seat/GA holds)
 	bookingRepo := booking.NewPostgresRedisRepository(db, redisClient)
@@ -134,7 +146,29 @@ func main() {
 	bookingHandler := booking.NewHandler(bookingService)
 
 	// Register Booking routes
-	bookingHandler.RegisterRoutes(mux, authMounter.Authenticate)
+	bookingHandler.RegisterRoutes(apiV1, authMounter.Authenticate)
+
+	// Mount the versioned sub-routers onto the root mux. ServeMux matches the
+	// more specific /api/v1/admin/ pattern ahead of /api/v1/, so admin console
+	// routes never collide with the public/EO event routes.
+	mux.Handle("/api/v1/admin/", http.StripPrefix("/api/v1/admin", adminV1))
+	mux.Handle("/api/v1/", http.StripPrefix("/api/v1", apiV1))
+
+	// Initialize Organizer onboarding dependencies
+	organizerRepo := organizer.NewPostgresRepository(db)
+	organizerService := organizer.NewOrganizerService(organizerRepo, s3Storage)
+	organizerHandler := organizer.NewHandler(organizerService)
+
+	// Register Organizer routes
+	organizerHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole, authMounter.RequireEventOwnership)
+
+	// Initialize Auditor portal dependencies
+	auditorRepo := auditor.NewPostgresRepository(db)
+	auditorService := auditor.NewAuditorService(auditorRepo)
+	auditorHandler := auditor.NewHandler(auditorService)
+
+	// Register Auditor routes (Auditor + Super Admin roles)
+	auditorHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole)
 
 	// Initialize User dependencies
 	userRepo := user.NewBankAccountRepository(db)

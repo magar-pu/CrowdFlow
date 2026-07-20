@@ -62,8 +62,8 @@ function SignInPageContent() {
         
         // Redirect dynamically based on user platform role
         const role = result.data.role as any;
-        if (role === "Event Organizer" || role === "Super Admin" || role === "verified_organizer" || role === "super_admin") {
-          router.push("/dashboard");
+        if (role === "Super Admin" || role === "super_admin") {
+          router.push("/admin");
         } else {
           router.push("/");
         }
@@ -86,7 +86,7 @@ function SignInPageContent() {
     set_error_message("");
     set_success_message("");
     try {
-      const res = await fetch("/api/auth/google", {
+      const res = await fetch("/api/v1/auth/google", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),

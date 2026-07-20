@@ -3,11 +3,12 @@ info:
   title: CrowdFlow Event Ticketing API
   description: |
     API documentation for the CrowdFlow Venue and Event Management platform.
-    
+
     ### Security Architecture:
     - **Session Authentication**: JWT access token set as a secure `HttpOnly` cookie named `access_token`.
-    - **CSRF Protection**: State-changing endpoints require Double-Submit Cookie verification. The client extracts the value of the `csrf_token` cookie and submits it in the custom header `X-CSRF-Token`.
-    
+    - **CSRF Protection**: State-changing endpoints require Double-Submit Cookie verification. The client extracts the value of the `csrf_token` cookie and submits it in the custom header `X-CSRF-Token`. Only `/api/v1/auth/login` and `/api/v1/auth/register` are exempt.
+    - **Admin Console**: Every `/api/v1/admin/*` route requires the `Super Admin` platform role.
+
     All responses (success and error) are wrapped in a standard JSON response envelope.
   version: 1.0.0
 servers:
@@ -41,13 +42,13 @@ paths:
                             type: string
                             example: CrowdFlow API is running
         '500':
-          description: Database or server connectivity error.
+          description: Database or server connectivity error (`DATABASE_UNREACHABLE`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/auth/register:
+  /api/v1/auth/register:
     post:
       summary: User Registration
       description: Registers a new user native credentials.
@@ -74,28 +75,32 @@ paths:
                             type: string
                             example: User registered successfully
         '400':
-          description: Invalid request body.
+          description: Invalid request body (`BAD_REQUEST`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: Validation failed (missing required fields).
+          description: Validation failed - missing required fields (`VALIDATION_FAILED`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: Conflict (email already exists).
+          description: Conflict - email already exists (`EMAIL_ALREADY_REGISTERED`) or other registration failure (`REGISTRATION_FAILED`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/auth/login:
+  /api/v1/auth/login:
     post:
       summary: User Login
-      description: Native credentials login. Generates access session cookies.
+      description: |
+        Native credentials login. Generates access session cookies.
+
+        Rate limited per client IP: at most 10 attempts per 15-minute window
+        (fixed-window counter in Redis; fails open on Redis outage).
       requestBody:
         required: true
         content:
@@ -124,29 +129,47 @@ paths:
                       data:
                         type: object
                         properties:
-                          message:
+                          user_id:
                             type: string
-                            example: Logged in successfully
+                            example: "12"
+                          email:
+                            type: string
+                            format: email
+                            example: admin@crowdflow.com
+                          full_name:
+                            type: string
+                            example: Richie Obhasa
+                          role:
+                            type: string
+                            description: Highest-privilege platform-wide role held by the user.
+                            enum: [User, Event Organizer, Super Admin]
+                            example: Super Admin
         '400':
-          description: Invalid JSON body.
+          description: Invalid JSON body (`BAD_REQUEST`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Unauthorized (invalid credentials).
+          description: Unauthorized - invalid credentials (`AUTHENTICATION_FAILED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded - more than 10 login attempts from this IP within 15 minutes (`RATE_LIMITED`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/auth/google/login:
+  /api/v1/auth/google/login:
     get:
       summary: Google OAuth Redirect
       description: Initiates Google OAuth2 authorization code flow by redirecting the browser.
       responses:
-        '302':
-          description: Temporary redirect to Google's consent screen. Sets `oauth_state` cookie.
+        '307':
+          description: Temporary redirect to Google's consent screen. Sets `oauth_state` cookie (5 minute expiry).
           headers:
             Location:
               description: Google Authorization URL.
@@ -158,10 +181,10 @@ paths:
               schema:
                 type: string
 
-  /api/auth/google/callback:
+  /api/v1/auth/google/callback:
     get:
       summary: Google OAuth Callback
-      description: Processes Google authorization code, verifies state, provisions user, and redirects to dashboard.
+      description: Processes Google authorization code, verifies state, provisions user, and redirects the browser based on the user's platform role.
       parameters:
         - name: state
           in: query
@@ -178,38 +201,45 @@ paths:
       security:
         - StateCookie: []
       responses:
-        '302':
-          description: Successful login. Clears `oauth_state` cookie, sets `access_token` and `csrf_token` session cookies, and redirects to `/dashboard`.
+        '307':
+          description: |
+            Redirect outcome. On successful login the `oauth_state` cookie is cleared, `access_token` and
+            `csrf_token` session cookies are set, and the browser is redirected by platform role:
+            - `Event Organizer` → `/dashboard`
+            - `Super Admin` → `/admin`
+            - everyone else → `/`
+
+            If the email is already registered with native credentials, no session is created and the browser
+            is redirected to `/login?error=PROVIDER_MISMATCH&provider=native`.
           headers:
             Location:
               schema:
                 type: string
                 example: /dashboard
         '400':
-          description: State verification cookie missing or auth code missing.
+          description: State verification cookie missing or auth code missing (`BAD_REQUEST`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: State token verification mismatch.
+          description: State token verification mismatch (`FORBIDDEN`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Authentication code exchange failed.
+          description: Authentication code exchange failed (`AUTHENTICATION_FAILED`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/auth/logout:
+  /api/v1/auth/logout:
     post:
       summary: User Logout
-      description: Clears active user session. Requires CSRF verification.
+      description: Clears active user session cookies. Does not require an authenticated session, but does require CSRF verification (double-submit cookie).
       security:
-        - CookieAuth: []
         - CSRFToken: []
       responses:
         '200':
@@ -233,16 +263,128 @@ paths:
                             type: string
                             example: Logged out successfully
         '403':
-          description: CSRF verification missing or failed.
+          description: CSRF verification missing or failed (`CSRF_TOKEN_MISSING`, `CSRF_HEADER_MISSING`, `CSRF_TOKEN_MISMATCH`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/events:
+  /api/v1/auth/me:
     get:
-      summary: List Events
-      description: Retrieves a list of all venue events.
+      summary: Get Current User Profile
+      description: Returns the authenticated user's full profile, including stats and associated events (attended events for buyers, organized events for organizers/admins).
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Profile retrieved successfully.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UserProfileResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Authenticated user no longer exists (`NOT_FOUND`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to load profile stats or associated events (`INTERNAL_SERVER_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: Update Current User Profile
+      description: Updates the authenticated user's editable profile fields.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Profile updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Profile updated successfully
+        '400':
+          description: Invalid JSON body or payload over 1MB (`BAD_REQUEST`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF verification missing or failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 'Validation failed (`VALIDATION_FAILED`): full_name required and ≤255 chars, phone_number ≤50, location ≤255, bio ≤2000.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Database update failed (`INTERNAL_SERVER_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/events:
+    get:
+      summary: List Events (Public Discovery)
+      description: |
+        Retrieves a paginated list of events. Authentication is optional and does not change the result set.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Page size. Rounded up to the nearest multiple of 10 and capped at 100 (e.g. 7→10, 101→100). Defaults to 20 when absent or non-integer.
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: offset
+          in: query
+          required: false
+          description: Row offset. Floored to the nearest multiple of 10 (e.g. 15→10); negative values clamp to 0. Defaults to 0.
+          schema:
+            type: integer
+            default: 0
       responses:
         '200':
           description: List retrieved successfully.
@@ -256,28 +398,45 @@ paths:
                       data:
                         type: array
                         items:
-                          $ref: '#/components/schemas/Event'
+                          $ref: '#/components/schemas/EventListResponse'
         '500':
-          description: Database/Internal error.
+          description: Database/Internal error (`INTERNAL_ERROR`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
     post:
       summary: Create Event
-      description: Creates a new event tier. Requires Event Organizer role.
+      description: |
+        Creates a new event from a multipart form. Requires the Event Organizer platform role
+        (Super Admin bypasses the check and may additionally set `organizer_id` in `event_data`
+        to create on behalf of another organizer; for non-admins `organizer_id` is always forced
+        to the caller's own ID).
+
+        Total request body is limited to 10MB.
       security:
         - CookieAuth: []
         - CSRFToken: []
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
-              $ref: '#/components/schemas/Event'
+              type: object
+              required:
+                - event_data
+              properties:
+                event_data:
+                  type: string
+                  description: JSON-encoded string matching the CreateEventRequest schema.
+                  example: '{"venue_id":1,"title":"Symphony Orchestra Concert","description":"An evening of classical symphonies.","starts_at":"2026-10-15T19:30:00Z","ends_at":"2026-10-15T22:00:00Z","entertainment_tax_rate":0.1,"entertainment_tax_passed_to_buyer":true,"event_type_id":1}'
+                cover_image:
+                  type: string
+                  format: binary
+                  description: Optional cover image. Validated by MIME signature sniffing; max 10MB.
       responses:
         '201':
-          description: Event created successfully.
+          description: Event created successfully (status starts as `draft`).
           content:
             application/json:
               schema:
@@ -286,43 +445,52 @@ paths:
                   - type: object
                     properties:
                       data:
-                        $ref: '#/components/schemas/Event'
+                        $ref: '#/components/schemas/EventDetailResponse'
         '400':
-          description: Invalid request payload.
+          description: Malformed multipart form, missing/invalid `event_data`, or cover image failed validation (`BAD_REQUEST`, `INVALID_FILE`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Session token is missing or expired.
+          description: Session token is missing or expired (`UNAUTHORIZED`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: Platform role check failed (Event Organizer required) or CSRF mismatch.
+          description: Platform role check failed (Event Organizer required) or CSRF mismatch (`FORBIDDEN`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: Validation of event properties failed.
+          description: Validation of event properties failed (`VALIDATION_FAILED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Cover image upload to object storage failed (`UPLOAD_FAILED`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/events/{id}:
+  /api/v1/events/{id}:
     get:
       summary: Get Event Details
-      description: Retrieves detailed parameters of a specific event.
+      description: |
+        Retrieves detailed parameters of a specific event. Authentication is optional; events that are
+        not yet `approved` are only visible to their organizer or a Super Admin - all other callers
+        receive a 404 (not a 403, to prevent draft-event ID enumeration).
       parameters:
         - name: id
           in: path
           required: true
-          description: The UUID or numeric ID of the event.
+          description: The numeric database ID of the event.
           schema:
-            type: string
+            type: integer
       responses:
         '200':
           description: Event details retrieved.
@@ -334,18 +502,24 @@ paths:
                   - type: object
                     properties:
                       data:
-                        $ref: '#/components/schemas/Event'
+                        $ref: '#/components/schemas/EventDetailResponse'
+        '400':
+          description: Event ID missing or not an integer (`INVALID_ID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: Event not found.
+          description: Event not found, or not approved and caller is not its organizer/Super Admin (`NOT_FOUND`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/events/{id}/publish:
+  /api/v1/events/{id}/publish:
     patch:
       summary: Publish Event
-      description: Publishes an event. Requires specific Event-level Event Organizer role authorization.
+      description: Publishes an event. Requires an event-scoped Event Organizer role for this specific event (Super Admin bypasses the check).
       security:
         - CookieAuth: []
         - CSRFToken: []
@@ -373,28 +547,1469 @@ paths:
                             type: string
                             example: Event published successfully
                           event_id:
-                            type: string
-                            example: "5"
+                            type: integer
+                            example: 5
         '400':
-          description: Event ID path parameter missing or malformed.
+          description: Event ID path parameter missing or malformed (`INVALID_ID`, `BAD_REQUEST`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Authentication missing.
+          description: Authentication missing (`UNAUTHORIZED`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: Event role authorization failed (User is not an event organizer of this event) or CSRF mismatch.
+          description: Event role authorization failed (user is not an Event Organizer of this event) or CSRF mismatch (`FORBIDDEN`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
-          description: Publication execution failed.
+          description: Publication execution failed (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/events/{id}/ticket-tiers:
+    get:
+      summary: List Ticket Tiers (Public)
+      description: Returns the buyer-facing ticket tiers currently on sale for an event (public visibility, within the sales window). No authentication required.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the event.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Ticket tiers retrieved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TicketTier'
+        '400':
+          description: Event ID must be a valid integer (`INVALID_ID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to load ticket tiers (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/events/{id}/seatmap:
+    get:
+      summary: Get Event Seat Map
+      description: Returns the live seat map for an event, grouped by section with per-seat availability state. No authentication required.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the event.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Seat map retrieved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SeatSection'
+        '400':
+          description: Event ID must be a valid integer (`INVALID_ID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to load seat map (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/booking/holds:
+    post:
+      summary: Create Booking Hold
+      description: |
+        Places a temporary hold on either specific seats (assigned seating) or a quantity of
+        general-admission tickets for a single ticket tier - never both in one request. The hold
+        is all-or-nothing: if any requested seat is already held/sold, nothing is held.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HoldRequest'
+      responses:
+        '201':
+          description: Hold acquired.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Hold'
+        '400':
+          description: Invalid JSON request body (`BAD_REQUEST`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF verification missing or failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Hold could not be acquired - seats already held/sold or insufficient GA capacity (`HOLD_FAILED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/booking/holds/{token}:
+    delete:
+      summary: Release Booking Hold
+      description: Releases a previously acquired hold using only its token.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          description: The hold token returned when the hold was created.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Hold released.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Hold released
+        '400':
+          description: Hold token missing (`BAD_REQUEST`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF verification missing or failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Hold not found or already expired (`NOT_FOUND`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/venues:
+    get:
+      summary: List Venues
+      description: Lists all venues. Requires the Event Organizer platform role (Super Admin bypasses the check).
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Venues retrieved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/VenueResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Event Organizer required (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Database/Internal error (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/event-types:
+    get:
+      summary: List Event Types
+      description: Lists all event type categories. Requires the Event Organizer platform role (Super Admin bypasses the check).
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Event types retrieved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/EventTypeResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Event Organizer required (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Database/Internal error (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/dashboard/stats:
+    get:
+      summary: Admin - Dashboard Statistics
+      description: Returns platform-wide aggregate stats. Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Stats retrieved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DashboardStats'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Super Admin required (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to load dashboard statistics (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/dashboard/alerts:
+    get:
+      summary: Admin - Security Alerts
+      description: |
+        Returns security alerts. Requires the Super Admin platform role.
+        **Placeholder**: no backing table exists yet - always returns an empty array.
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Alerts retrieved (currently always an empty list).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SecurityAlert'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Super Admin required (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to load security alerts (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/dashboard/activities:
+    get:
+      summary: Admin - Activity Log
+      description: Returns the 50 most recent admin audit-trail entries (activity_log table), newest first. Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Activities retrieved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Activity'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Super Admin required (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to load activity feed (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/events:
+    get:
+      summary: Admin - List Events
+      description: Lists all events with sales/revenue aggregates for the admin console, newest first. Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Page size. Defaults to 20 when absent or not a positive integer.
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          description: Row offset. Defaults to 0; negative values are ignored.
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Events retrieved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/AdminEvent'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Super Admin required (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to load events (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/events/{id}/scanners:
+    get:
+      summary: Admin - List Event Scanners
+      description: |
+        Lists check-in scanner devices for an event. Requires the Super Admin platform role.
+        **Placeholder**: no backing table exists yet - always returns an empty array.
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the event.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Scanners retrieved (currently always an empty list).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Scanner'
+        '400':
+          description: Event ID must be a valid integer (`INVALID_ID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Super Admin required (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to load scanners (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: Admin - Register Event Scanner (Not Implemented)
+      description: Requires the Super Admin platform role. No backing data model exists yet - always returns 501.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the event.
+          schema:
+            type: integer
+      responses:
+        '501':
+          description: This admin feature has no backing data model yet (`NOT_IMPLEMENTED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed (Super Admin required) or CSRF mismatch (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/events/{id}/scanners/{scannerId}:
+    delete:
+      summary: Admin - Remove Event Scanner (Not Implemented)
+      description: Requires the Super Admin platform role. No backing data model exists yet - always returns 501.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the event.
+          schema:
+            type: integer
+        - name: scannerId
+          in: path
+          required: true
+          description: The scanner device ID.
+          schema:
+            type: string
+      responses:
+        '501':
+          description: This admin feature has no backing data model yet (`NOT_IMPLEMENTED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed (Super Admin required) or CSRF mismatch (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/events/{id}/ticket-tiers:
+    get:
+      summary: Admin - Get Event Ticket Tiers
+      description: Returns all ticket tiers for an event (admin console shape, camelCase fields), ordered by price ascending. Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the event.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Ticket tiers retrieved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/AdminTicketTier'
+        '400':
+          description: Event ID must be a valid integer (`INVALID_ID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Super Admin required (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to load ticket tiers (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: Admin - Replace Event Ticket Tiers
+      description: Replaces the full set of ticket tiers for an event with the submitted array. Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the event.
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminTicketTier'
+      responses:
+        '200':
+          description: Ticket tiers updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Ticket tiers updated
+        '400':
+          description: Event ID not an integer or invalid JSON body (`INVALID_ID`, `BAD_REQUEST`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed (Super Admin required) or CSRF mismatch (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 'Tier validation failed (`VALIDATION_FAILED`): name required (after trimming) and ≤100 chars, price must not be negative, capacity must be at least 1.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to update ticket tiers (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/events/{id}/venue-sections:
+    get:
+      summary: Admin - Get Event Venue Sections
+      description: Returns the venue layout sections for an event. Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the event.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Venue sections retrieved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/VenueSection'
+        '400':
+          description: Event ID must be a valid integer (`INVALID_ID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Super Admin required (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to load venue sections (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: Admin - Replace Event Venue Sections
+      description: Replaces the venue layout sections for an event with the submitted array. Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the event.
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/VenueSection'
+      responses:
+        '200':
+          description: Venue sections updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Venue sections updated
+        '400':
+          description: Event ID not an integer or invalid JSON body (`INVALID_ID`, `BAD_REQUEST`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed (Super Admin required) or CSRF mismatch (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to update venue sections (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/finance/transactions:
+    get:
+      summary: Admin - List Transactions
+      description: Lists orders with status paid/pending/refunded, newest first. Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Page size. Defaults to 50 when absent or not a positive integer.
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          description: Row offset. Defaults to 0; negative values are ignored.
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Transactions retrieved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Transaction'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Super Admin required (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to load transactions (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/finance/transactions/{id}/status:
+    post:
+      summary: Admin - Update Transaction Status
+      description: |
+        Sets an order's status using the admin console's display vocabulary
+        (`Success` → paid, `Refunded` → refunded, `Pending` → pending). Any other value is rejected.
+        The change is recorded in the admin activity log. Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The order ID.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/StatusUpdateRequest'
+                - type: object
+                  properties:
+                    status:
+                      enum: [Success, Refunded, Pending]
+      responses:
+        '200':
+          description: Transaction status updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Transaction status updated
+        '400':
+          description: Invalid JSON request body (`BAD_REQUEST`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing/invalid, or the authenticated admin could not be resolved (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed (Super Admin required) or CSRF mismatch (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Update failed - e.g. unknown status value (`VALIDATION_FAILED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/finance/payouts:
+    get:
+      summary: Admin - List Payouts
+      description: |
+        Returns payouts as a union of two kinds of rows. Requires the Super Admin platform role.
+        1. **Synthetic pending balances** with `id` of the form `PENDING-<eventID>`: live-computed
+           outstanding money owed per event (paid orders' net amount minus already-recorded payouts).
+        2. **Real historical rows** from the `payouts` table (`Processed` or `Failed`), with numeric string ids.
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Page size. Defaults to 50 when absent or not a positive integer.
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          description: Row offset. Defaults to 0; negative values are ignored.
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Payouts retrieved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Payout'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Super Admin required (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to load payouts (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/finance/payouts/{id}/process:
+    post:
+      summary: Admin - Process Payout
+      description: |
+        Settles a payout as processed and records it in the admin activity log. Requires the Super Admin
+        platform role. The `id` is either a synthetic pending balance (`PENDING-<eventID>`) or a numeric
+        `payouts` row id being retried after a prior rejection.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Payout ID - either `PENDING-<eventID>` (synthetic outstanding balance) or a numeric payouts row id.
+          schema:
+            type: string
+            example: PENDING-7
+      responses:
+        '200':
+          description: Payout processed.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Payout processed
+        '401':
+          description: Session token missing/invalid, or the authenticated admin could not be resolved (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed (Super Admin required) or CSRF mismatch (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Settlement failed - e.g. invalid payout id, no outstanding balance (`VALIDATION_FAILED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/finance/payouts/{id}/reject:
+    post:
+      summary: Admin - Reject Payout
+      description: |
+        Settles a payout as failed/rejected and records it in the admin activity log. Requires the Super
+        Admin platform role. Accepts the same `id` forms as the process endpoint.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Payout ID - either `PENDING-<eventID>` (synthetic outstanding balance) or a numeric payouts row id.
+          schema:
+            type: string
+            example: PENDING-7
+      responses:
+        '200':
+          description: Payout rejected.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Payout rejected
+        '401':
+          description: Session token missing/invalid, or the authenticated admin could not be resolved (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed (Super Admin required) or CSRF mismatch (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Settlement failed - e.g. invalid payout id, no outstanding balance (`VALIDATION_FAILED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/users:
+    get:
+      summary: Admin - List Users
+      description: Lists all users with platform role, verification status, and order counts, newest first. Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Page size. Defaults to 50 when absent or not a positive integer.
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          description: Row offset. Defaults to 0; negative values are ignored.
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Users retrieved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/AdminUser'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Super Admin required (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to load users (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/users/{id}/status:
+    post:
+      summary: Admin - Update User Status
+      description: |
+        Sets a user's verification status using the admin console's display vocabulary
+        (`Verified` → verified, `Suspended` → rejected, `Pending` → pending_verification).
+        Any other value is rejected. The change is recorded in the admin activity log.
+        Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the user.
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/StatusUpdateRequest'
+                - type: object
+                  properties:
+                    status:
+                      enum: [Verified, Suspended, Pending]
+      responses:
+        '200':
+          description: User status updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: User status updated
+        '400':
+          description: User ID not an integer or invalid JSON body (`INVALID_ID`, `BAD_REQUEST`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing/invalid, or the authenticated admin could not be resolved (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed (Super Admin required) or CSRF mismatch (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Update failed - e.g. unknown status value or user not found (`VALIDATION_FAILED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/users/{id}/roles:
+    post:
+      summary: Admin - Grant User Role
+      description: |
+        Grants a role to a user: platform-wide when `event_id` is omitted/null (e.g. Event Organizer
+        everywhere), or scoped to one event when `event_id` is set (e.g. Auditor on event 42).
+        Only verified users may be granted a role; duplicate grants are rejected. The grant is
+        recorded in the admin activity log. Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the target user.
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantRoleRequest'
+      responses:
+        '201':
+          description: Role granted.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Role granted
+        '400':
+          description: User ID not an integer or invalid JSON body (`INVALID_ID`, `BAD_REQUEST`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing/invalid, or the authenticated admin could not be resolved (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed (Super Admin required) or CSRF mismatch (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Grant failed - user not found, user not verified, or user already has this role assignment (`VALIDATION_FAILED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/users/verifications:
+    get:
+      summary: Admin - List Verification Applications
+      description: |
+        Returns the verification queue, derived directly from users with
+        `verification_status = 'pending_verification'` (there is no separate applications table -
+        the application `id` is the user's own ID). `businessType`/`documentType` are placeholder
+        fields until a real KYC application table exists. Ordered oldest first.
+        Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Page size. Defaults to 50 when absent or not a positive integer.
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          description: Row offset. Defaults to 0; negative values are ignored.
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Verification applications retrieved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/VerificationApplication'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Super Admin required (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to load verification applications (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/users/verifications/{id}/approve:
+    post:
+      summary: Admin - Approve Verification
+      description: |
+        Approves a verification application by setting the applicant's status to `Verified`. The `id`
+        is the applicant user's own ID (see list endpoint). Recorded in the admin activity log.
+        Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The applicant's user ID.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Verification approved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Verification approved
+        '400':
+          description: Applicant ID must be a valid integer (`INVALID_ID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing/invalid, or the authenticated admin could not be resolved (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed (Super Admin required) or CSRF mismatch (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Status update failed - e.g. user not found (`VALIDATION_FAILED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/users/verifications/{id}/reject:
+    post:
+      summary: Admin - Reject Verification
+      description: |
+        Rejects a verification application by setting the applicant's status to `Suspended`
+        (stored as `rejected`). The `id` is the applicant user's own ID. Recorded in the admin
+        activity log. Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The applicant's user ID.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Verification rejected.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Verification rejected
+        '400':
+          description: Applicant ID must be a valid integer (`INVALID_ID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing/invalid, or the authenticated admin could not be resolved (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed (Super Admin required) or CSRF mismatch (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Status update failed - e.g. user not found (`VALIDATION_FAILED`).
           content:
             application/json:
               schema:
@@ -493,32 +2108,705 @@ components:
           format: password
           example: admin123
 
-    Event:
+    UpdateProfileRequest:
       type: object
       required:
-        - title
-        - description
-        - venue_name
-        - total_seats
-        - event_date
+        - full_name
       properties:
-        id:
+        full_name:
           type: string
-          description: Event ID (UUID format or auto-incrementing id)
-          example: "5"
+          maxLength: 255
+          example: Richie Obhasa
+        phone_number:
+          type: string
+          maxLength: 50
+          example: "+62 812 3456 7890"
+        location:
+          type: string
+          maxLength: 255
+          example: Jakarta, Indonesia
+        bio:
+          type: string
+          maxLength: 2000
+          example: Live music enthusiast.
+
+    ProfileStats:
+      type: object
+      properties:
+        total_tickets:
+          type: integer
+          example: 4
+        events_attended:
+          type: integer
+          example: 2
+        saved_events:
+          type: integer
+          description: Stubbed to 0 for future development.
+          example: 0
+        total_orders:
+          type: integer
+          example: 3
+
+    ProfileEventSummary:
+      type: object
+      properties:
+        event_id:
+          type: integer
+          example: 5
         title:
           type: string
-          example: "Symphony Orchestra Concert"
-        description:
-          type: string
-          example: "An evening featuring classical symphonies from Mozart and Beethoven."
-        venue_name:
-          type: string
-          example: "Jakarta Concert Hall"
-        total_seats:
-          type: integer
-          example: 500
-        event_date:
+          example: Symphony Orchestra Concert
+        starts_at:
           type: string
           format: date-time
           example: "2026-10-15T19:30:00Z"
+        ends_at:
+          type: string
+          format: date-time
+          example: "2026-10-15T22:00:00Z"
+        cover_image_url:
+          type: string
+          example: https://cdn.crowdflow.example/events/covers/1720000000000000000.jpg
+        status:
+          type: string
+          example: approved
+
+    UserProfileResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          example: "12"
+        email:
+          type: string
+          format: email
+          example: richie@crowdflow.com
+        full_name:
+          type: string
+          example: Richie Obhasa
+        phone_number:
+          type: string
+          example: "+62 812 3456 7890"
+        location:
+          type: string
+          example: Jakarta, Indonesia
+        bio:
+          type: string
+          example: Live music enthusiast.
+        avatar_url:
+          type: string
+          example: https://cdn.crowdflow.example/avatars/12.jpg
+        role:
+          type: string
+          description: Highest-privilege platform-wide role held by the user.
+          enum: [User, Event Organizer, Super Admin]
+          example: User
+        member_since:
+          type: string
+          description: Month and year the account was created.
+          example: July 2026
+        stats:
+          $ref: '#/components/schemas/ProfileStats'
+        events:
+          type: array
+          description: Attended events for buyers; organized events for organizers/admins. Empty array when none.
+          items:
+            $ref: '#/components/schemas/ProfileEventSummary'
+
+    CreateEventRequest:
+      type: object
+      description: JSON payload carried inside the `event_data` multipart form field of POST /api/v1/events.
+      required:
+        - venue_id
+        - title
+        - starts_at
+        - ends_at
+        - event_type_id
+      properties:
+        venue_id:
+          type: integer
+          example: 1
+        organizer_id:
+          type: integer
+          description: Ignored for regular organizers (forced to the caller's ID); only honored when the caller is a Super Admin.
+          example: 12
+        title:
+          type: string
+          example: Symphony Orchestra Concert
+        description:
+          type: string
+          example: An evening featuring classical symphonies from Mozart and Beethoven.
+        starts_at:
+          type: string
+          format: date-time
+          example: "2026-10-15T19:30:00Z"
+        ends_at:
+          type: string
+          format: date-time
+          example: "2026-10-15T22:00:00Z"
+        entertainment_tax_rate:
+          type: number
+          format: double
+          example: 0.1
+        entertainment_tax_passed_to_buyer:
+          type: boolean
+          example: true
+        event_type_id:
+          type: integer
+          example: 1
+
+    VenueResponse:
+      type: object
+      properties:
+        venue_id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Jakarta Concert Hall
+        address:
+          type: string
+          example: Jl. Sudirman No. 1
+        city:
+          type: string
+          example: Jakarta
+        province:
+          type: string
+          example: DKI Jakarta
+        total_capacity:
+          type: integer
+          example: 500
+
+    EventTypeResponse:
+      type: object
+      properties:
+        event_type_id:
+          type: integer
+          example: 1
+        event_type:
+          type: string
+          example: Concert
+
+    OrganizerResponse:
+      type: object
+      properties:
+        organizer_id:
+          type: integer
+          example: 12
+        name:
+          type: string
+          example: Richie Obhasa
+        avatar_url:
+          type: string
+          example: https://cdn.crowdflow.example/avatars/12.jpg
+        profile_url:
+          type: string
+          example: /organizers/12
+
+    EventListResponse:
+      type: object
+      properties:
+        event_id:
+          type: integer
+          example: 5
+        title:
+          type: string
+          example: Symphony Orchestra Concert
+        starts_at:
+          type: string
+          format: date-time
+          example: "2026-10-15T19:30:00Z"
+        ends_at:
+          type: string
+          format: date-time
+          example: "2026-10-15T22:00:00Z"
+        category:
+          type: string
+          enum: [concert, festival, sport, conference, exhibition, community, workshop_seminar, other]
+          example: concert
+        cover_image_url:
+          type: string
+          example: https://cdn.crowdflow.example/events/covers/1720000000000000000.jpg
+        venue:
+          $ref: '#/components/schemas/VenueResponse'
+        organizer:
+          $ref: '#/components/schemas/OrganizerResponse'
+
+    EventDetailResponse:
+      type: object
+      properties:
+        event_id:
+          type: integer
+          example: 5
+        title:
+          type: string
+          example: Symphony Orchestra Concert
+        description:
+          type: string
+          example: An evening featuring classical symphonies from Mozart and Beethoven.
+        starts_at:
+          type: string
+          format: date-time
+          example: "2026-10-15T19:30:00Z"
+        ends_at:
+          type: string
+          format: date-time
+          example: "2026-10-15T22:00:00Z"
+        category:
+          type: string
+          enum: [concert, festival, sport, conference, exhibition, community, workshop_seminar, other]
+          example: concert
+        entertainment_tax_rate:
+          type: number
+          format: double
+          example: 0.1
+        entertainment_tax_passed_to_buyer:
+          type: boolean
+          example: true
+        cover_image_url:
+          type: string
+          example: https://cdn.crowdflow.example/events/covers/1720000000000000000.jpg
+        venue:
+          $ref: '#/components/schemas/VenueResponse'
+        organizer:
+          $ref: '#/components/schemas/OrganizerResponse'
+
+    TicketTier:
+      type: object
+      description: Buyer-facing ticket tier (booking API). Only tiers currently on sale are returned.
+      properties:
+        ticket_tier_id:
+          type: integer
+          example: 3
+        event_id:
+          type: integer
+          example: 5
+        name:
+          type: string
+          example: VIP
+        description:
+          type: string
+          example: Front-row seating with lounge access.
+        price:
+          type: number
+          format: double
+          example: 750000
+        quota_remaining:
+          type: integer
+          example: 42
+        max_per_transaction:
+          type: integer
+          example: 4
+
+    Seat:
+      type: object
+      properties:
+        seat_id:
+          type: integer
+          example: 101
+        row:
+          type: string
+          example: A
+        number:
+          type: string
+          example: "12"
+        status:
+          type: string
+          enum: [available, sold, held, blocked]
+          example: available
+
+    SeatSection:
+      type: object
+      properties:
+        event_section_id:
+          type: integer
+          example: 2
+        name:
+          type: string
+          example: Orchestra Left
+        ticket_tier_id:
+          type: integer
+          example: 3
+        price:
+          type: number
+          format: double
+          example: 750000
+        seats:
+          type: array
+          items:
+            $ref: '#/components/schemas/Seat'
+
+    HoldRequest:
+      type: object
+      description: Provide either `seat_ids` (assigned seating) or `quantity` (general admission) - never both.
+      required:
+        - event_id
+        - ticket_tier_id
+      properties:
+        event_id:
+          type: integer
+          example: 5
+        ticket_tier_id:
+          type: integer
+          example: 3
+        seat_ids:
+          type: array
+          items:
+            type: integer
+          example: [101, 102]
+        quantity:
+          type: integer
+          example: 2
+
+    Hold:
+      type: object
+      properties:
+        hold_token:
+          type: string
+          example: 9f2c1a7e4b8d3f6a5c0e2d1b4a7f8c3e
+        expires_at:
+          type: string
+          format: date-time
+          example: "2026-07-14T12:10:00Z"
+
+    DashboardStats:
+      type: object
+      description: Admin console platform aggregates. Fields use camelCase to mirror the admin frontend types.
+      properties:
+        totalEvents:
+          type: integer
+          example: 24
+        totalUsers:
+          type: integer
+          example: 1520
+        totalRevenue:
+          type: number
+          format: double
+          example: 152500000
+        ticketsSold:
+          type: integer
+          example: 4310
+
+    AdminEvent:
+      type: object
+      description: Admin console event row with sales aggregates. Fields use camelCase to mirror the admin frontend types.
+      properties:
+        id:
+          type: string
+          example: "5"
+        name:
+          type: string
+          example: Symphony Orchestra Concert
+        date:
+          type: string
+          description: Event start date (YYYY-MM-DD).
+          example: "2026-10-15"
+        venue:
+          type: string
+          example: Jakarta Concert Hall
+        location:
+          type: string
+          example: Jakarta, DKI Jakarta
+        status:
+          type: string
+          enum: [Active, Draft, Completed]
+          example: Active
+        image:
+          type: string
+          example: https://cdn.crowdflow.example/events/covers/1720000000000000000.jpg
+        capacity:
+          type: integer
+          example: 500
+        ticketsSold:
+          type: integer
+          example: 320
+        totalRevenue:
+          type: number
+          format: double
+          example: 240000000
+        category:
+          type: string
+          example: Concert
+        description:
+          type: string
+          example: An evening featuring classical symphonies from Mozart and Beethoven.
+
+    AdminUser:
+      type: object
+      description: Admin console user row. Fields use camelCase to mirror the admin frontend types.
+      properties:
+        id:
+          type: string
+          example: "12"
+        name:
+          type: string
+          example: Richie Obhasa
+        email:
+          type: string
+          format: email
+          example: richie@crowdflow.com
+        role:
+          type: string
+          description: Lossy display mapping of platform roles ("Event Organizer"→Organizer, "Super Admin"→Admin, everything else→Buyer).
+          enum: [Buyer, Seller, Organizer, Admin]
+          example: Organizer
+        status:
+          type: string
+          description: Display mapping of users.verification_status (verified→Verified, rejected→Suspended, pending_verification→Pending).
+          enum: [Verified, Pending, Suspended]
+          example: Verified
+        joinedAt:
+          type: string
+          description: Account creation date (YYYY-MM-DD).
+          example: "2026-05-02"
+        transactionsCount:
+          type: integer
+          example: 3
+        profilePic:
+          type: string
+          example: https://cdn.crowdflow.example/avatars/12.jpg
+
+    Transaction:
+      type: object
+      description: Admin console transaction (order) row. Fields use camelCase to mirror the admin frontend types.
+      properties:
+        id:
+          type: string
+          example: "1042"
+        customerName:
+          type: string
+          example: Richie Obhasa
+        eventName:
+          type: string
+          example: Symphony Orchestra Concert
+        amount:
+          type: number
+          format: double
+          example: 1500000
+        method:
+          type: string
+          description: Display mapping of the raw payment method value from the orders table.
+          example: Bank Transfer
+        status:
+          type: string
+          enum: [Success, Pending, Refunded]
+          example: Success
+        date:
+          type: string
+          description: Order creation date (YYYY-MM-DD).
+          example: "2026-07-10"
+
+    Payout:
+      type: object
+      description: Admin console payout row. Fields use camelCase to mirror the admin frontend types.
+      properties:
+        id:
+          type: string
+          description: Either `PENDING-<eventID>` for a synthetic live-computed outstanding balance, or a numeric payouts table row id.
+          example: PENDING-7
+        organizerName:
+          type: string
+          example: Richie Obhasa
+        eventName:
+          type: string
+          example: Symphony Orchestra Concert
+        amount:
+          type: number
+          format: double
+          example: 12500000
+        status:
+          type: string
+          enum: [Pending, Processed, Failed]
+          example: Pending
+        requestedDate:
+          type: string
+          description: Last paid-order activity date for synthetic rows, or requested_at for real rows (YYYY-MM-DD).
+          example: "2026-07-12"
+
+    Scanner:
+      type: object
+      description: Admin console scanner device row (placeholder - no backing table yet, list is always empty). Fields use camelCase to mirror the admin frontend types.
+      properties:
+        id:
+          type: string
+          example: "1"
+        name:
+          type: string
+          example: Gate A Scanner
+        deviceName:
+          type: string
+          example: Zebra TC21
+        status:
+          type: string
+          example: Online
+        scansCount:
+          type: integer
+          example: 0
+        lastSync:
+          type: string
+          example: ""
+        batteryLevel:
+          type: integer
+          example: 0
+        assignedSection:
+          type: string
+          example: ""
+
+    VerificationApplication:
+      type: object
+      description: |
+        Admin console verification queue row, derived from users pending verification - the `id` is
+        the applicant user's own ID. businessType/documentType are placeholders until a real KYC
+        application table exists. Fields use camelCase to mirror the admin frontend types.
+      properties:
+        id:
+          type: string
+          example: "18"
+        name:
+          type: string
+          example: Richie Obhasa
+        email:
+          type: string
+          format: email
+          example: richie@crowdflow.com
+        businessType:
+          type: string
+          example: ""
+        documentType:
+          type: string
+          example: ""
+        submittedAt:
+          type: string
+          description: Account creation date (YYYY-MM-DD).
+          example: "2026-07-01"
+        status:
+          type: string
+          example: Pending
+
+    SecurityAlert:
+      type: object
+      description: Admin console security alert row (placeholder - no backing table yet, list is always empty). Fields use camelCase to mirror the admin frontend types.
+      properties:
+        id:
+          type: string
+          example: "1"
+        title:
+          type: string
+          example: Multiple failed logins
+        type:
+          type: string
+          example: auth
+        description:
+          type: string
+          example: ""
+        severity:
+          type: string
+          example: high
+        timestamp:
+          type: string
+          example: ""
+
+    Activity:
+      type: object
+      description: Admin console audit-trail entry (activity_log table). Fields use camelCase to mirror the admin frontend types.
+      properties:
+        id:
+          type: string
+          example: "37"
+        userName:
+          type: string
+          description: Acting admin's full name; falls back to "Admin" when no profile exists.
+          example: Richie Obhasa
+        action:
+          type: string
+          example: Granted Role
+        detail:
+          type: string
+          example: Granted "Jane Doe" the Event Organizer role.
+        timestamp:
+          type: string
+          description: Formatted as YYYY-MM-DD HH:MM.
+          example: "2026-07-12 14:30"
+
+    AdminTicketTier:
+      type: object
+      description: Admin console ticket tier shape (camelCase, mirrors the admin frontend types). `priceCap` is not modeled in the DB yet and `color` is UI-only - both are accepted but not persisted.
+      properties:
+        id:
+          type: string
+          example: "3"
+        name:
+          type: string
+          maxLength: 100
+          example: VIP
+        description:
+          type: string
+          example: Front-row seating with lounge access.
+        price:
+          type: number
+          format: double
+          minimum: 0
+          example: 750000
+        capacity:
+          type: integer
+          minimum: 1
+          example: 100
+        sold:
+          type: integer
+          example: 58
+        priceCap:
+          type: number
+          format: double
+          description: Not persisted - no DB column yet.
+          example: 0
+        color:
+          type: string
+          description: UI-only, not persisted.
+          example: "#8b5cf6"
+
+    VenueSection:
+      type: object
+      description: Admin console venue layout section (camelCase, mirrors the admin frontend types). `occupied` is not computed yet and `color` is UI-only.
+      properties:
+        id:
+          type: string
+          example: "2"
+        name:
+          type: string
+          example: Orchestra Left
+        capacity:
+          type: integer
+          example: 150
+        occupied:
+          type: integer
+          description: Not computed yet - always 0.
+          example: 0
+        color:
+          type: string
+          description: UI-only, not persisted.
+          example: "#22c55e"
+
+    StatusUpdateRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          description: Display-vocabulary status value; the accepted set depends on the endpoint (see each route).
+          example: Verified
+
+    GrantRoleRequest:
+      type: object
+      required:
+        - role_id
+      properties:
+        role_id:
+          type: integer
+          description: ID from the roles table.
+          example: 2
+        event_id:
+          type: integer
+          nullable: true
+          description: Omit or set null for a platform-wide grant; set to an event ID for an event-scoped grant.
+          example: null

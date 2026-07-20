@@ -62,6 +62,7 @@ backend/.env
 
 # Local Documentation
 DEVELOPER.md
+*.md
 
 # UI Materials
 bahan ui/
@@ -71,3 +72,5 @@ docker-compose-minio.yml
 
 # Local Dev Scripts
 *.sh
+.claude.json
+*.png

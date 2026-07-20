@@ -236,3 +236,56 @@ func (m *AuthMiddleware) RequireEventRole(roleName string) func(http.Handler) ht
 		})
 	}
 }
+
+// RequireEventOwnership checks if the event specified by the "id" path parameter belongs to the authenticated organizer (or if the user is Super Admin)
+func (m *AuthMiddleware) RequireEventOwnership(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := GetClaims(r.Context())
+		if !ok {
+			response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User is not authenticated")
+			return
+		}
+
+		// Super Admin automatically bypasses all ownership checks
+		for _, rName := range claims.Roles {
+			if rName == "Super Admin" {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		eventIDStr := r.PathValue("id")
+		if eventIDStr == "" {
+			response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Event ID path parameter is missing")
+			return
+		}
+
+		eventID, err := strconv.Atoi(eventIDStr)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Event ID must be an integer")
+			return
+		}
+
+		userID, err := strconv.Atoi(claims.UserID)
+		if err != nil {
+			response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in token claims")
+			return
+		}
+
+		query := `SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND organizer_id = $2)`
+		var exists bool
+		err = m.db.QueryRowContext(r.Context(), query, eventID, userID).Scan(&exists)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to verify event ownership")
+			return
+		}
+
+		if !exists {
+			response.Error(w, http.StatusForbidden, "FORBIDDEN", "You do not own this event resource")
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+

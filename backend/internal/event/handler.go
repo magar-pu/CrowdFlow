@@ -2,7 +2,9 @@ package event
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -59,10 +61,83 @@ func (h *Handler) RegisterRoutes(
 	requirePlatformRole func(allowedRoles ...string) func(http.Handler) http.Handler,
 	requireEventRole func(roleName string) func(http.Handler) http.Handler,
 ) {
-	mux.Handle("GET /api/events", optionalAuthenticate(http.HandlerFunc(h.handleListEvents)))
-	mux.Handle("GET /api/events/{id}", optionalAuthenticate(http.HandlerFunc(h.handleGetEvent)))
-	mux.Handle("POST /api/events", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleCreateEvent))))
-	mux.Handle("PATCH /api/events/{id}/publish", authenticate(requireEventRole("Event Organizer")(http.HandlerFunc(h.handlePublishEvent))))
+	mux.Handle("GET /events", optionalAuthenticate(http.HandlerFunc(h.handleListEvents)))
+	mux.Handle("GET /events/{id}", optionalAuthenticate(http.HandlerFunc(h.handleGetEvent)))
+	mux.Handle("POST /events", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleCreateEvent))))
+	mux.Handle("PUT /events/{id}", authenticate(requireEventRole("Event Organizer")(http.HandlerFunc(h.handleUpdateEvent))))
+	mux.Handle("PATCH /events/{id}/publish", authenticate(requireEventRole("Event Organizer")(http.HandlerFunc(h.handlePublishEvent))))
+	mux.Handle("GET /venues", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleListVenues))))
+	mux.Handle("GET /event-types", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleListEventTypes))))
+}
+
+func (h *Handler) handleListVenues(w http.ResponseWriter, r *http.Request) {
+	venues, err := h.service.ListVenues()
+	if err != nil {
+		log.Printf("ListVenues error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load venues")
+		return
+	}
+
+	res := make([]*VenueResponse, len(venues))
+	for i, v := range venues {
+		res[i] = MapVenue(v)
+	}
+	response.JSON(w, http.StatusOK, res)
+}
+
+func (h *Handler) handleListEventTypes(w http.ResponseWriter, r *http.Request) {
+	eventTypes, err := h.service.ListEventTypes()
+	if err != nil {
+		log.Printf("ListEventTypes error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load event types")
+		return
+	}
+
+	res := make([]*EventTypeResponse, len(eventTypes))
+	for i, t := range eventTypes {
+		res[i] = MapEventType(t)
+	}
+	response.JSON(w, http.StatusOK, res)
+}
+
+func (h *Handler) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req UpdateEventRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+		return
+	}
+
+	eventModel := &Event{
+		ID:                            id,
+		VenueID:                       req.VenueID,
+		EventName:                     req.EventName,
+		Description:                   req.Description,
+		EventStart:                    req.EventStart,
+		EventEnd:                      req.EventEnd,
+		EntertainmentTaxRate:          req.EntertainmentTaxRate,
+		EntertainmentTaxPassedToBuyer: req.EntertainmentTaxPassedToBuyer,
+		EventTypeID:                   req.EventTypeID,
+	}
+
+	if err := h.service.UpdateEvent(eventModel); err != nil {
+		switch {
+		case errors.Is(err, ErrEventLocked):
+			response.Error(w, http.StatusConflict, "EVENT_LOCKED", "Event details cannot be changed while the event is pending review")
+		case errors.Is(err, ErrEventNotFound):
+			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Event not found")
+		default:
+			response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+		}
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Event updated"})
 }
 
 func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +154,8 @@ func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.PublishEvent(id); err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		log.Printf("PublishEvent error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to publish event")
 		return
 	}
 
@@ -111,7 +187,8 @@ func (h *Handler) handleListEvents(w http.ResponseWriter, r *http.Request) {
 
 	events, err := h.service.ListEvents(limit, offset)
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		log.Printf("ListEvents error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load events")
 		return
 	}
 
@@ -137,7 +214,12 @@ func (h *Handler) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 
 	evt, err := h.service.GetEventDetails(id)
 	if err != nil {
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+		if errors.Is(err, ErrEventNotFound) {
+			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Event not found")
+			return
+		}
+		log.Printf("GetEventDetails error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load event")
 		return
 	}
 
@@ -255,7 +337,7 @@ func (h *Handler) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 		objectKey := fmt.Sprintf("events/covers/%d%s", time.Now().UnixNano(), ext)
 
 		// Upload file to storage
-		if err := h.storage.UploadFile(r.Context(), objectKey, file, contentType); err != nil {
+		if err := h.storage.UploadPublicFile(r.Context(), objectKey, file, contentType); err != nil {
 			response.Error(w, http.StatusInternalServerError, "UPLOAD_FAILED", "Failed to upload cover image: "+err.Error())
 			return
 		}

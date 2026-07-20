@@ -4,13 +4,70 @@ export interface Event {
   date: string;
   venue: string;
   location: string;
-  status: 'Active' | 'Draft' | 'Completed';
+  status: 'Active' | 'Draft' | 'In Review' | 'Rejected' | 'Completed';
   image: string;
   capacity: number;
   ticketsSold: number;
   totalRevenue: number;
   category: string;
   description: string;
+}
+
+// Venue and EventType intentionally use snake_case keys (unlike every other
+// type in this file) because they come straight from the `event` package's
+// GET /api/venues and GET /api/event-types routes, not the admin package's
+// camelCase /api/v1/* routes. Don't "fix" the casing here — it'll break parsing.
+export interface Venue {
+  venue_id: number;
+  name: string;
+  address: string;
+  city: string;
+  province: string;
+  total_capacity: number;
+}
+
+export interface EventType {
+  event_type_id: number;
+  event_type: string;
+}
+
+// EventDetail is the raw event-package shape (snake_case, real FKs) used to
+// pre-fill and submit the workspace's editable Details tab - distinct from
+// the display-mapped Event above, which has no venue_id/event_type_id/raw
+// dates to round-trip through a form. Comes from GET /api/events/{id}.
+export interface EventDetail {
+  event_id: number;
+  title: string;
+  description: string;
+  starts_at: string;
+  ends_at: string;
+  category: string;
+  event_type_id: number;
+  status: 'draft' | 'pending_review' | 'approved' | 'rejected';
+  entertainment_tax_rate: number;
+  entertainment_tax_passed_to_buyer: boolean;
+  cover_image_url: string;
+  venue?: Venue;
+}
+
+export interface UpdateEventPayload {
+  title: string;
+  description: string;
+  venue_id: number;
+  event_type_id: number;
+  starts_at: string;
+  ends_at: string;
+  entertainment_tax_rate: number;
+  entertainment_tax_passed_to_buyer: boolean;
+}
+
+export interface EventStatusLogEntry {
+  id: string;
+  actorName: string;
+  fromStatus: 'draft' | 'pending_review' | 'approved' | 'rejected';
+  toStatus: 'draft' | 'pending_review' | 'approved' | 'rejected';
+  notes: string;
+  createdAt: string;
 }
 
 export interface User {
@@ -84,6 +141,7 @@ export interface Activity {
 export interface TicketTier {
   id: string;
   name: string;
+  description: string;
   price: number;
   capacity: number;
   sold: number;

@@ -18,6 +18,20 @@ type CreateEventRequest struct {
 	EventTypeID                   int       `json:"event_type_id"`
 }
 
+// UpdateEventRequest holds incoming payload data for editing an existing
+// event's core details. No OrganizerID (ownership doesn't change) and no
+// cover image (still multipart-only, unchanged by this JSON endpoint).
+type UpdateEventRequest struct {
+	VenueID                       int       `json:"venue_id"`
+	EventName                     string    `json:"title"`
+	Description                   string    `json:"description"`
+	EventStart                    time.Time `json:"starts_at"`
+	EventEnd                      time.Time `json:"ends_at"`
+	EntertainmentTaxRate          float64   `json:"entertainment_tax_rate"`
+	EntertainmentTaxPassedToBuyer bool      `json:"entertainment_tax_passed_to_buyer"`
+	EventTypeID                   int       `json:"event_type_id"`
+}
+
 // VenueResponse defines a cleaned venue data payload for API outputs (hides raw audit timestamps)
 type VenueResponse struct {
 	ID            int    `json:"venue_id"`
@@ -26,6 +40,12 @@ type VenueResponse struct {
 	City          string `json:"city"`
 	Province      string `json:"province"`
 	TotalCapacity int    `json:"total_capacity"`
+}
+
+// EventTypeResponse defines a cleaned event-type payload for API outputs
+type EventTypeResponse struct {
+	ID        int    `json:"event_type_id"`
+	EventType string `json:"event_type"`
 }
 
 // OrganizerResponse defines a cleaned organizer payload for API outputs
@@ -55,7 +75,9 @@ type EventDetailResponse struct {
 	Description                   string             `json:"description"`
 	EventStart                    time.Time          `json:"starts_at"`
 	EventEnd                      time.Time          `json:"ends_at"`
-	Category      string             `json:"category"`
+	Category                      string             `json:"category"`
+	EventTypeID                   int                `json:"event_type_id"` // real FK, unlike Category which is a lossy display string
+	Status                        string             `json:"status"`
 	EntertainmentTaxRate          float64            `json:"entertainment_tax_rate"`
 	EntertainmentTaxPassedToBuyer bool               `json:"entertainment_tax_passed_to_buyer"`
 	CoverImageURL                 string             `json:"cover_image_url"`
@@ -91,6 +113,17 @@ func MapOrganizer(o *Organizer) *OrganizerResponse {
 	}
 }
 
+// MapEventType translates standard EventType domain entity to EventTypeResponse DTO
+func MapEventType(t *EventType) *EventTypeResponse {
+	if t == nil {
+		return nil
+	}
+	return &EventTypeResponse{
+		ID:        t.ID,
+		EventType: t.EventType,
+	}
+}
+
 // MapEventToList translates standard Event domain entity to EventListResponse DTO
 func MapEventToList(e *Event) *EventListResponse {
 	if e == nil {
@@ -120,6 +153,8 @@ func MapEventToDetail(e *Event) *EventDetailResponse {
 		EventStart:                    e.EventStart,
 		EventEnd:                      e.EventEnd,
 		Category:                      mapCategory(e.EventTypeID),
+		EventTypeID:                   e.EventTypeID,
+		Status:                        e.Status,
 		EntertainmentTaxRate:          e.EntertainmentTaxRate,
 		EntertainmentTaxPassedToBuyer: e.EntertainmentTaxPassedToBuyer,
 		CoverImageURL:                 e.CoverImageURL,

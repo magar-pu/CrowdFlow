@@ -7,11 +7,12 @@ export function middleware(request: NextRequest) {
 
   // 1. Define path groupings
   const isProtectedPath =
-    pathname.startsWith("/dashboard") ||
     pathname.startsWith("/profile") ||
     pathname.startsWith("/orders") ||
     pathname.startsWith("/checkout") ||
-    pathname.startsWith("/admin");
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/auditor") ||
+    pathname.startsWith("/organizer");
 
   const isAuthPath = pathname === "/login" || pathname === "/register";
 
@@ -23,9 +24,9 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // 3. If user is already authenticated and visits login/register, redirect to dashboard
+  // 3. If user is already authenticated and visits login/register, redirect to home
   if (isAuthPath && token) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   return NextResponse.next();
@@ -34,11 +35,12 @@ export function middleware(request: NextRequest) {
 // Limit the middleware to run only on relevant routes to maintain high edge performance
 export const config = {
   matcher: [
-    "/dashboard/:path*",
     "/profile/:path*",
     "/orders/:path*",
     "/checkout/:path*",
     "/admin/:path*",
+    "/auditor/:path*",
+    "/organizer/:path*",
     "/login",
     "/register",
   ],
