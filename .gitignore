@@ -62,6 +62,7 @@ backend/.env
 
 # Local Documentation
 DEVELOPER.md
+*.md
 
 # Local Dev Storage Compose
 docker-compose-minio.yml
@@ -71,3 +72,5 @@ seed_events.sh
 create_event.sh
 
 .claude.json
+
+*.png

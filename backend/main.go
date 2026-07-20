@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"crowdflow-backend/internal/admin"
+	"crowdflow-backend/internal/auditor"
 	"crowdflow-backend/internal/auth"
 	"crowdflow-backend/internal/booking"
 	"crowdflow-backend/internal/event"
 	"crowdflow-backend/internal/middleware"
+	"crowdflow-backend/internal/organizer"
 	"crowdflow-backend/internal/platform/database"
 	"crowdflow-backend/internal/platform/redisclient"
 	"crowdflow-backend/internal/response"
@@ -149,6 +151,22 @@ func main() {
 	// routes never collide with the public/EO event routes.
 	mux.Handle("/api/v1/admin/", http.StripPrefix("/api/v1/admin", adminV1))
 	mux.Handle("/api/v1/", http.StripPrefix("/api/v1", apiV1))
+
+	// Initialize Organizer onboarding dependencies
+	organizerRepo := organizer.NewPostgresRepository(db)
+	organizerService := organizer.NewOrganizerService(organizerRepo, s3Storage)
+	organizerHandler := organizer.NewHandler(organizerService)
+
+	// Register Organizer routes
+	organizerHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole, authMounter.RequireEventOwnership)
+
+	// Initialize Auditor portal dependencies
+	auditorRepo := auditor.NewPostgresRepository(db)
+	auditorService := auditor.NewAuditorService(auditorRepo)
+	auditorHandler := auditor.NewHandler(auditorService)
+
+	// Register Auditor routes (Auditor + Super Admin roles)
+	auditorHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole)
 
 	fmt.Println("Starting server on :8080 with CSRF protection enabled")
 	if err := http.ListenAndServe(":8080", middleware.CSRF(mux)); err != nil {
