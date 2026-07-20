@@ -37,7 +37,10 @@ function generate_seats(
   return seats;
 }
 
-// ── Sections ─────────────────────────────────────────────────────────────
+// ── Seats (flat — the venue's physical seats, independent of any section) ─
+export const mockVenueSeats: VenueSeat[] = [];
+
+// ── Sections (event-level grouping tags applied over seats) ──────────────
 export const mockVenueSections: VenueSection[] = [];
 
 // ── Pricing Tiers ────────────────────────────────────────────────────────
@@ -60,6 +63,7 @@ export const mockVenueEditorState: VenueEditorState = {
   selected_venue_id: "ven_1",
   base_currency: "IDR",
   tax_rate: 0.11,
+  seats: mockVenueSeats,
   sections: mockVenueSections,
   facilities: [],
   pricing_tiers: mockPricingTiers,

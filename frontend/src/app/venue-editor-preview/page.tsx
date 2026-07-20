@@ -18,6 +18,7 @@ import { FacilityIconsPanel } from "@/components/venue-editor/FacilityIconsPanel
 import { FloatingToolbar } from "@/components/venue-editor/FloatingToolbar";
 import { SeatMapperCanvas } from "@/components/venue-editor/SeatMapperCanvas";
 import { SeatPropertiesPanel } from "@/components/venue-editor/SeatPropertiesPanel";
+import { SeatArrangePanel } from "@/components/venue-editor/SeatArrangePanel";
 import { useVenueEditorStore } from "@/lib/store/venueEditorStore";
 
 export default function VenueEditorPreviewPage() {
@@ -26,6 +27,7 @@ export default function VenueEditorPreviewPage() {
     set_active_tool,
     sections,
     selected_seat,
+    multi_selected_seat_ids,
     select_seat,
     update_seat,
     zoom_level,
@@ -121,7 +123,14 @@ export default function VenueEditorPreviewPage() {
             </div>
             
             {active_tool === "seat_mapper" && (
-              <SeatPropertiesPanel seat={selected_seat} on_update={update_seat} />
+              <>
+                {/* Multi-seat selection takes over the right sidebar; a single
+                    selected seat falls back to its properties. */}
+                <SeatArrangePanel />
+                {multi_selected_seat_ids.length < 2 && (
+                  <SeatPropertiesPanel seat={selected_seat} on_update={update_seat} />
+                )}
+              </>
             )}
           </>
         )}

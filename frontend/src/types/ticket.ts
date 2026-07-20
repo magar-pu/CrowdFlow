@@ -430,13 +430,21 @@ export type VenueEditorTool =
   | "facility_icons"
   | "layer_manager";
 
+/** Layout form a group of selected seats can be arranged into. */
+export type SeatArrangeForm = "grid" | "arc" | "diagonal" | "ellipse";
+
 /** Active tool in the Seat Mapper floating toolbar. */
-export type CanvasDrawingMode = "select" | "pan" | "add_shape" | "add_seat" | "paint";
+export type CanvasDrawingMode = "select" | "pan" | "add_shape" | "add_seat" | "seat_array" | "paint";
 
 /** A single seat on the venue canvas. */
 export interface VenueSeat {
   seat_id: string;
-  section_id: string;
+  /**
+   * Optional event-level grouping tag. Seats are physical and belong to the
+   * venue; sections are commercial zones each event draws over them, so a seat
+   * can exist with no section at all.
+   */
+  section_id?: string | null;
   row: string;
   number: number;
   x: number;
@@ -463,7 +471,6 @@ export interface VenueSection {
   label: string;
   color: string;
   section_code: string; // e.g. "A1", "B1-B2", "Lawn"
-  seats: VenueSeat[];
   shape?: VenueShape;
   is_locked?: boolean;
 }
@@ -525,6 +532,7 @@ export interface VenueEditorState {
   selected_venue_id: string;
   base_currency: string;
   tax_rate: number;
+  seats: VenueSeat[];
   sections: VenueSection[];
   facilities: VenueFacility[];
   pricing_tiers: PricingTier[];

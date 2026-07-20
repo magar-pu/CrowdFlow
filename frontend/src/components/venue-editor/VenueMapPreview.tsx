@@ -12,6 +12,7 @@
 import { useState, useMemo } from "react";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import type { VenueSection, VenueShape, PricingTier } from "@/types/ticket";
+import { useVenueEditorStore } from "@/lib/store/venueEditorStore";
 
 interface VenueMapPreviewProps {
   event_title: string;
@@ -35,6 +36,7 @@ export function VenueMapPreview({
   pricing_tiers,
 }: VenueMapPreviewProps) {
   const [preview_zoom, set_preview_zoom] = useState(100);
+  const seats = useVenueEditorStore((s) => s.seats);
 
   // Compute SVG viewBox to fit all content
   const viewBox = useMemo(() => {
@@ -50,12 +52,13 @@ export function VenueMapPreview({
         max_x = Math.max(max_x, s.shape.x + s.shape.width);
         max_y = Math.max(max_y, s.shape.y + s.shape.height);
       }
-      s.seats.forEach((seat) => {
-        min_x = Math.min(min_x, seat.x - 10);
-        min_y = Math.min(min_y, seat.y - 10);
-        max_x = Math.max(max_x, seat.x + 10);
-        max_y = Math.max(max_y, seat.y + 10);
-      });
+    });
+
+    seats.forEach((seat) => {
+      min_x = Math.min(min_x, seat.x - 10);
+      min_y = Math.min(min_y, seat.y - 10);
+      max_x = Math.max(max_x, seat.x + 10);
+      max_y = Math.max(max_y, seat.y + 10);
     });
 
     const padding = 80;
@@ -65,19 +68,19 @@ export function VenueMapPreview({
       width: max_x - min_x + padding * 2,
       height: max_y - min_y + padding * 2,
     };
-  }, [sections, stage_shape]);
+  }, [sections, seats, stage_shape]);
 
   // Build legend from pricing tiers
   const active_tier_ids = useMemo(() => {
     const ids = new Set<string>();
-    sections.forEach((s) => s.seats.forEach((seat) => {
+    seats.forEach((seat) => {
       if (seat.tier_id) ids.add(seat.tier_id);
-    }));
+    });
     return ids;
-  }, [sections]);
+  }, [seats]);
 
   const legend_items = pricing_tiers.filter((t) => active_tier_ids.has(t.tier_id));
-  const has_unassigned = sections.some((s) => s.seats.some((seat) => !seat.tier_id));
+  const has_unassigned = seats.some((seat) => !seat.tier_id);
 
   const scale = preview_zoom / 100;
 
@@ -243,25 +246,26 @@ export function VenueMapPreview({
                   </>
                 )}
 
-                {/* Seats */}
-                {section.seats.map((seat) => {
-                  const tier = pricing_tiers.find((t) => t.tier_id === seat.tier_id);
-                  const color = tier ? tier.color : "#cbd5e1";
-                  const is_unavailable = seat.status === "unavailable";
-                  return (
-                    <circle
-                      key={seat.seat_id}
-                      cx={seat.x}
-                      cy={seat.y}
-                      r={4}
-                      fill={color}
-                      opacity={is_unavailable ? 0.25 : 0.85}
-                      className="transition-opacity"
-                    />
-                  );
-                })}
               </g>
             ))}
+
+            {/* Seats — flat, so untagged seats render too */}
+            {seats.map((seat) => {
+              const tier = pricing_tiers.find((t) => t.tier_id === seat.tier_id);
+              const color = tier ? tier.color : "#cbd5e1";
+              const is_unavailable = seat.status === "unavailable";
+              return (
+                <circle
+                  key={seat.seat_id}
+                  cx={seat.x}
+                  cy={seat.y}
+                  r={4}
+                  fill={color}
+                  opacity={is_unavailable ? 0.25 : 0.85}
+                  className="transition-opacity"
+                />
+              );
+            })}
           </svg>
         )}
       </div>
