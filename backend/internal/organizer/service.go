@@ -430,3 +430,17 @@ func (s *OrganizerService) MarkNotificationsRead(ctx context.Context, userID int
 	}
 	return s.repo.MarkNotificationsRead(ctx, userID, notificationIDs)
 }
+
+func (s *OrganizerService) GetEventRevisions(ctx context.Context, eventID int, organizerID int) (*EventRevisionFeedback, error) {
+	if eventID <= 0 || organizerID <= 0 {
+		return nil, fmt.Errorf("%w: invalid parameters", ErrValidation)
+	}
+	return s.repo.GetEventRevisions(ctx, eventID, organizerID)
+}
+
+func (s *OrganizerService) RespondToEventRevision(ctx context.Context, eventID, revID, organizerID int, req RespondRevisionRequest) error {
+	if eventID <= 0 || revID <= 0 || organizerID <= 0 {
+		return fmt.Errorf("%w: invalid parameters", ErrValidation)
+	}
+	return s.repo.RespondToEventRevision(ctx, eventID, revID, organizerID, req)
+}

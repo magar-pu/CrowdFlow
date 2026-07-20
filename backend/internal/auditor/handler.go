@@ -43,6 +43,7 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("POST /api/v1/auditor/reviews/{id}/request-changes", auditor(http.HandlerFunc(h.handleRequestEventChanges)))
 	mux.Handle("PATCH /api/v1/auditor/reviews/{id}/stage", auditor(http.HandlerFunc(h.handleUpdateEventReviewStage)))
 	mux.Handle("POST /api/v1/auditor/reviews/{id}/revisions", auditor(http.HandlerFunc(h.handleAddEventRevision)))
+	mux.Handle("PUT /api/v1/auditor/revisions/{revId}/status", auditor(http.HandlerFunc(h.handleUpdateRevisionStatus)))
 	mux.Handle("GET /api/v1/auditor/reviews/{id}/revisions", auditor(http.HandlerFunc(h.handleListEventRevisions)))
 	mux.Handle("PATCH /api/v1/auditor/reviews/{id}/documents/{docId}/verify", auditor(http.HandlerFunc(h.handleVerifyReviewDocument)))
 	mux.Handle("PATCH /api/v1/auditor/reviews/{id}/documents/{docId}/reject", auditor(http.HandlerFunc(h.handleRejectReviewDocument)))
@@ -292,6 +293,29 @@ func (h *Handler) handleAddEventRevision(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	response.JSON(w, http.StatusCreated, map[string]string{"message": "Revision added"})
+}
+
+func (h *Handler) handleUpdateRevisionStatus(w http.ResponseWriter, r *http.Request) {
+	revID, ok := pathIntParam(r, "revId")
+	if !ok {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Revision ID must be a positive integer")
+		return
+	}
+	actorID, ok := h.actorID(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	var req UpdateRevisionStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON payload")
+		return
+	}
+	if err := h.service.UpdateRevisionStatus(r.Context(), revID, actorID, req.Status); err != nil {
+		handleServiceError(w, "handleUpdateRevisionStatus", err)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Revision status updated successfully"})
 }
 
 func (h *Handler) handleListEventRevisions(w http.ResponseWriter, r *http.Request) {

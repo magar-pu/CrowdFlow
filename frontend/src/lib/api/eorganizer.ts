@@ -354,3 +354,49 @@ export async function markNotificationsRead(notificationIds?: number[]): Promise
     body: notificationIds ? JSON.stringify({ notificationIds }) : undefined,
   });
 }
+
+export interface EventRevisionFeedback {
+  eventId: number;
+  eventStatus: string;
+  auditorNotes?: string;
+  assignedAuditorName?: string;
+  stage?: string;
+  revisions?: Array<{
+    id: number;
+    category: string;
+    title: string;
+    description: string;
+    requiredAction: string;
+    priority: string;
+    status: string;
+    organizerComment?: string;
+    organizerActionTaken?: string;
+    organizerFile?: string;
+    respondedAt?: string;
+  }>;
+  statusLogs?: Array<{
+    fromStatus: string;
+    toStatus: string;
+    notes?: string;
+    createdAt: string;
+  }>;
+}
+
+export async function getEventRevisions(eventId: number): Promise<ApiResponse<EventRevisionFeedback>> {
+  return apiRequest<EventRevisionFeedback>(`/api/organizer/events/${eventId}/revisions`, {
+    method: "GET",
+  });
+}
+
+export async function respondToEventRevision(
+  eventId: number,
+  revId: number,
+  comment: string,
+  actionTaken: string,
+  proofFile?: string
+): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/revisions/${revId}/respond`, {
+    method: "POST",
+    body: JSON.stringify({ comment, actionTaken, proofFile }),
+  });
+}

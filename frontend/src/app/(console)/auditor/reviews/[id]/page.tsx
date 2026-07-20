@@ -16,6 +16,20 @@ import {
   addEventRevision
 } from "@/lib/api/auditor";
 import { EventSubmission } from "../../types";
+import { CheckCircle2, AlertTriangle, X } from "lucide-react";
+
+// Map backend lowercase status to frontend uppercase status
+function mapDocStatus(backendStatus: string): "VERIFIED" | "WAITING REVIEW" | "READY" | "REJECTED" | "MISSING" {
+  switch (backendStatus?.toLowerCase()) {
+    case 'verified': return 'VERIFIED';
+    case 'rejected': return 'REJECTED';
+    case 'missing': return 'MISSING';
+    case 'pending':
+    case 'pending_verification':
+      return 'WAITING REVIEW';
+    default: return 'READY';
+  }
+}
 
 export default function AuditorReviewDetailPage() {
   const params = useParams<{ id: string }>();
@@ -58,7 +72,7 @@ export default function AuditorReviewDetailPage() {
             name: doc.name || "document.pdf",
             category: doc.category || "Supporting Documents",
             uploadDate: doc.uploadDate || "2026-07-20",
-            status: doc.status || "READY",
+            status: mapDocStatus(doc.status),
             fileUrl: doc.fileUrl || "",
           })),
           venue: raw.venue || "Default Venue",
@@ -205,17 +219,17 @@ export default function AuditorReviewDetailPage() {
           revisions: (raw.revisions || []).map((r: any) => ({
             id: String(r.id),
             category: (r.category || "Other") as any,
-            affectedSection: "General Details",
-            priority: "Medium" as any,
+            affectedSection: r.requiredAction || "General Details",
+            priority: (r.priority || "Medium") as any,
             status: (r.status || "Draft") as any,
-            requestedBy: "Priya Nair",
+            requestedBy: r.requestedBy || "Auditor",
             requestDate: r.createdAt || "Just now",
             deadline: r.deadline || "3 Days",
             title: r.title || "",
             description: r.description || "",
             requiredAction: r.requiredAction || "",
-            severity: "Medium" as any,
-            area: "Document" as any,
+            severity: (r.priority || "Medium") as any,
+            area: (r.category || "Document") as any,
             revisionTimeline: [],
           })),
           complianceHistory: raw.complianceHistory || {
@@ -268,36 +282,61 @@ export default function AuditorReviewDetailPage() {
     }
   };
 
-  const handleVerifySubmissionDocAction = async (submissionId: string, docName: string) => {
-    const doc = submission?.documents.find(d => d.name === docName);
-    if (!doc?.id) return;
-    const res = await verifyReviewDocument(submissionId, doc.id);
+  const handleVerifySubmissionDocAction = async (submissionId: string, docIdOrName: string) => {
+    const doc = submission?.documents.find(d => d.id === docIdOrName || d.name === docIdOrName);
+    const targetDocId = doc?.id || docIdOrName;
+    if (!targetDocId) return;
+
+    const res = await verifyReviewDocument(submissionId, targetDocId);
     if (res.success) {
+      setSubmission((prev) => {
+        if (!prev) return null;
+        const updatedDocs = prev.documents.map((d) =>
+          d.id === targetDocId || d.name === docIdOrName ? { ...d, status: "VERIFIED" as const } : d
+        );
+        return { ...prev, documents: updatedDocs };
+      });
+      setToast({ message: "Dokumen berhasil diverifikasi!", type: "success" });
       await loadDetail();
     } else {
-      alert("Failed to verify document: " + (res.error?.message || "unknown error"));
+      setToast({ message: "Gagal verifikasi dokumen: " + (res.error?.message || "terjadi kesalahan"), type: "error" });
     }
   };
 
-  const handleRejectSubmissionDocAction = async (submissionId: string, docName: string, reason: string = "Invalid document details") => {
-    const doc = submission?.documents.find(d => d.name === docName);
-    if (!doc?.id) return;
-    const res = await rejectReviewDocument(submissionId, doc.id, reason);
+  const handleRejectSubmissionDocAction = async (submissionId: string, docIdOrName: string, reason: string = "Invalid document details") => {
+    const doc = submission?.documents.find(d => d.id === docIdOrName || d.name === docIdOrName);
+    const targetDocId = doc?.id || docIdOrName;
+    if (!targetDocId) return;
+
+    const res = await rejectReviewDocument(submissionId, targetDocId, reason);
     if (res.success) {
+      setSubmission((prev) => {
+        if (!prev) return null;
+        const updatedDocs = prev.documents.map((d) =>
+          d.id === targetDocId || d.name === docIdOrName ? { ...d, status: "REJECTED" as const } : d
+        );
+        return { ...prev, documents: updatedDocs };
+      });
+      setToast({ message: "Dokumen ditolak!", type: "error" });
       await loadDetail();
     } else {
-      alert("Failed to reject document: " + (res.error?.message || "unknown error"));
+      setToast({ message: "Gagal menolak dokumen: " + (res.error?.message || "terjadi kesalahan"), type: "error" });
     }
   };
 
   const handleChangeSubmissionStageAction = async (submissionId: string, stage: any) => {
     const res = await updateEventReviewStage(submissionId, stage);
     if (res.success) {
+      setToast({ message: `Stage updated to "${stage}"`, type: "success" });
+      setTimeout(() => setToast(null), 3000);
       await loadDetail();
     } else {
-      alert("Failed to update stage: " + (res.error?.message || "unknown error"));
+      setToast({ message: "Failed to update stage: " + (res.error?.message || "unknown error"), type: "error" });
+      setTimeout(() => setToast(null), 4000);
     }
   };
+
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   const handleAddRevisionAction = async (submissionId: string, revision: any) => {
     const res = await addEventRevision(submissionId, {
@@ -308,10 +347,28 @@ export default function AuditorReviewDetailPage() {
       priority: revision.priority,
       deadline: revision.deadline
     });
+
     if (res.success) {
-      await loadDetail();
+      // Instantly update local submission state so the top revision items list auto-updates live!
+      setSubmission((prev) => {
+        if (!prev) return null;
+        const exists = prev.revisions.some((r) => r.id === revision.id);
+        const newRevisions = exists ? prev.revisions : [revision, ...prev.revisions];
+        return {
+          ...prev,
+          status: "Changes Requested",
+          revisions: newRevisions
+        };
+      });
+
+      // Reload fresh data from backend
+      loadDetail();
+
+      setToast({ message: "Revision Request Sent to Organizer Successfully!", type: "success" });
+      setTimeout(() => setToast(null), 4000);
     } else {
-      alert("Failed to add revision: " + (res.error?.message || "unknown error"));
+      setToast({ message: `Failed to add revision: ${res.error?.message || "Unknown error"}`, type: "error" });
+      setTimeout(() => setToast(null), 4000);
     }
   };
 
@@ -364,17 +421,38 @@ export default function AuditorReviewDetailPage() {
   }
 
   return (
-    <ReviewDetailView
-      submission={submission}
-      onBack={() => router.push('/auditor/reviews')}
-      onApprove={handleApproveAction}
-      onReject={handleRejectAction}
-      onRequestChanges={handleRequestChangesAction}
-      onVerifyDocument={handleVerifySubmissionDocAction}
-      onRejectDocument={handleRejectSubmissionDocAction}
-      onViewDocument={(doc) => setViewingDoc(doc)}
-      onChangeStage={handleChangeSubmissionStageAction}
-      onAddRevision={handleAddRevisionAction}
-    />
+    <>
+      {toast && (
+        <div className={`fixed top-5 right-5 z-50 p-4 rounded-2xl shadow-2xl border font-bold text-xs flex items-center gap-3 animate-scale-in ${
+          toast.type === "success"
+            ? "bg-slate-900 text-white border-slate-700"
+            : "bg-rose-950 text-white border-rose-800"
+        }`}>
+          {toast.type === "success" ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-rose-400" />
+          )}
+          <span>{toast.message}</span>
+          <button onClick={() => setToast(null)} className="ml-2 text-slate-400 hover:text-white cursor-pointer">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      <ReviewDetailView
+        submission={submission}
+        onBack={() => router.push('/auditor/reviews')}
+        onApprove={handleApproveAction}
+        onReject={handleRejectAction}
+        onRequestChanges={handleRequestChangesAction}
+        onVerifyDocument={handleVerifySubmissionDocAction}
+        onRejectDocument={handleRejectSubmissionDocAction}
+        onViewDocument={(doc) => setViewingDoc(doc)}
+        onChangeStage={handleChangeSubmissionStageAction}
+        onAddRevision={handleAddRevisionAction}
+        onRefresh={loadDetail}
+      />
+    </>
   );
 }
