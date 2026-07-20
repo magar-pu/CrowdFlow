@@ -27,6 +27,12 @@ import {
   mockPricingTiers,
   mockVenueEditorState,
 } from "@/mock/venueEditorData";
+import {
+  buildSaveLayoutRequest,
+  reconcileSavedIds,
+  layoutDetailToEditorState,
+} from "@/lib/venueLayout/mapping";
+import type { SaveLayoutRequest, LayoutDetail } from "@/lib/api/venueLayouts";
 
 /** Settings driving how a multi-seat selection is laid out. */
 export interface ArrangeSettings {
@@ -261,6 +267,12 @@ interface VenueEditorStore {
   tax_rate: number;
   blueprint?: VenueBlueprint;
 
+  // ── Persisted-layout identity (backend venuelayout) ───────────────────
+  /** DB id of the saved layout this editor is bound to; null until first save. */
+  layout_id: number | null;
+  /** updated_at the layout was last loaded/saved at — the optimistic-lock token. */
+  layout_updated_at: string | null;
+
   // ── Actions ───────────────────────────────────────────────────────────
   set_active_tool: (tool: VenueEditorTool) => void;
   set_drawing_mode: (mode: CanvasDrawingMode) => void;
@@ -342,6 +354,19 @@ interface VenueEditorStore {
   reset_layout: () => void;
   validate_for_publish: () => ValidationError[];
 
+  // ── Backend persistence (venuelayout) ─────────────────────────────────
+  /** Serialise the current editor state into a SaveLayoutRequest DTO. */
+  build_save_request: () => SaveLayoutRequest;
+  /** Stamp real DB ids onto newly-inserted seats/sections after a save. */
+  apply_saved_ids: (
+    seat_id_map: Record<string, number>,
+    section_id_map: Record<string, number>
+  ) => void;
+  /** Record the layout id + optimistic-lock token (after create or save). */
+  set_layout_meta: (layout_id: number, updated_at: string) => void;
+  /** Replace editor state with a layout loaded from the server. */
+  load_layout_detail: (detail: LayoutDetail) => void;
+
   // ── Keyboard Actions ────────────────────────────────────────────────────
   move_selected_elements: (dx: number, dy: number, save_to_history?: boolean) => void;
 
@@ -377,6 +402,8 @@ export const useVenueEditorStore = create<VenueEditorStore>()(
   show_grid: true,
   snap_threshold: 0,
   last_saved_at: null,
+  layout_id: null,
+  layout_updated_at: null,
   past: [],
   future: [],
 
@@ -1197,6 +1224,53 @@ export const useVenueEditorStore = create<VenueEditorStore>()(
       return state;
     });
   },
+
+  build_save_request: () => {
+    const s = get();
+    return buildSaveLayoutRequest({
+      name: s.venue_name,
+      visibility: "public",
+      expectedUpdatedAt: s.layout_updated_at ?? "",
+      stage_shape: s.stage_shape,
+      facilities: s.facilities,
+      blueprint: s.blueprint,
+      sections: s.sections,
+      seats: s.seats,
+    });
+  },
+
+  apply_saved_ids: (seat_id_map, section_id_map) => {
+    set((state) => {
+      const { seats, sections } = reconcileSavedIds(
+        state.seats,
+        state.sections,
+        seat_id_map,
+        section_id_map
+      );
+      return { seats, sections, last_saved_at: Date.now() };
+    });
+  },
+
+  set_layout_meta: (layout_id, updated_at) => {
+    set({ layout_id, layout_updated_at: updated_at });
+  },
+
+  load_layout_detail: (detail) => {
+    const h = layoutDetailToEditorState(detail);
+    set((state) => ({
+      layout_id: h.layoutId,
+      layout_updated_at: h.layoutUpdatedAt,
+      seats: h.seats,
+      sections: h.sections,
+      stage_shape: h.stage_shape ?? state.stage_shape,
+      facilities: h.facilities ?? state.facilities,
+      blueprint: h.blueprint ?? state.blueprint,
+      past: [],
+      future: [],
+      selected_seat: null,
+      multi_selected_seat_ids: [],
+    }));
+  },
 }),
 {
   // v5: seats moved out of sections into a flat top-level list. The old key is
@@ -1213,6 +1287,8 @@ export const useVenueEditorStore = create<VenueEditorStore>()(
     venue_name: state.venue_name,
     base_currency: state.base_currency,
     tax_rate: state.tax_rate,
+    layout_id: state.layout_id,
+    layout_updated_at: state.layout_updated_at,
   }),
 }
 ));

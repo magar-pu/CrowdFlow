@@ -440,6 +440,12 @@ export type CanvasDrawingMode = "select" | "pan" | "add_shape" | "add_seat" | "s
 export interface VenueSeat {
   seat_id: string;
   /**
+   * Persisted DB id (integer) once the seat has been saved to the backend.
+   * Absent/null = new & unsaved; this is what drives insert-vs-update when the
+   * layout is saved. `seat_id` stays the stable client key throughout.
+   */
+  db_id?: number | null;
+  /**
    * Optional event-level grouping tag. Seats are physical and belong to the
    * venue; sections are commercial zones each event draws over them, so a seat
    * can exist with no section at all.
@@ -468,6 +474,8 @@ export interface VenueShape {
 /** A section/zone on the venue map (e.g. "VIP Pit", "Gold Circle"). */
 export interface VenueSection {
   section_id: string;
+  /** Persisted DB id (integer) once saved; absent/null = new. Mirrors VenueSeat.db_id. */
+  db_id?: number | null;
   label: string;
   color: string;
   section_code: string; // e.g. "A1", "B1-B2", "Lawn"
