@@ -10,8 +10,12 @@ import (
 // Sentinel errors let the service signal HTTP-meaningful outcomes without the
 // handler having to know about SQL or ownership rules.
 var (
-	ErrNotFound  = errors.New("venue layout not found")
-	ErrForbidden = errors.New("not allowed to access this venue layout")
+	ErrNotFound     = errors.New("venue layout not found")
+	ErrForbidden    = errors.New("not allowed to access this venue layout")
+	ErrStale        = errors.New("venue layout was modified since it was loaded")
+	ErrSeatInUse    = errors.New("cannot delete a seat that is already in use for an event")
+	ErrSectionInUse = errors.New("cannot delete a section that is already in use for an event")
+	ErrInvalidInput = errors.New("invalid venue layout payload")
 )
 
 // Layout is one saved seat-map plan for a venue. The decorative geometry
@@ -59,9 +63,20 @@ type Repository interface {
 	// GetLayout loads a single layout with its seats and sections, or
 	// ErrNotFound if no such layout exists. Access is enforced in the service.
 	GetLayout(ctx context.Context, layoutID int) (*LayoutDetail, error)
+
+	// CreateLayout inserts a new empty layout owned by ownerUserID.
+	CreateLayout(ctx context.Context, venueID, ownerUserID int, req CreateLayoutRequest) (*Layout, error)
+
+	// SaveLayout persists the whole editor state in one transaction: it locks
+	// the layout, enforces ownership and the optimistic-lock check, then diffs
+	// sections and seats (insert/update/delete) and returns the id maps. It may
+	// return ErrNotFound, ErrForbidden, ErrStale, ErrSeatInUse or ErrSectionInUse.
+	SaveLayout(ctx context.Context, venueID, layoutID, userID int, req SaveLayoutRequest) (*SaveLayoutResponse, error)
 }
 
 type Service interface {
 	ListLayouts(ctx context.Context, venueID, userID int) ([]*Layout, error)
 	GetLayout(ctx context.Context, layoutID, userID int) (*LayoutDetail, error)
+	CreateLayout(ctx context.Context, venueID, ownerUserID int, req CreateLayoutRequest) (*Layout, error)
+	SaveLayout(ctx context.Context, venueID, layoutID, userID int, req SaveLayoutRequest) (*SaveLayoutResponse, error)
 }
