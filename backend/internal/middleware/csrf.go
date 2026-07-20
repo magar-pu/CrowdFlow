@@ -17,7 +17,7 @@ func CSRF(next http.Handler) http.Handler {
 
 		// Bypass validation for authentication bootstrap endpoints
 		path := r.URL.Path
-		if path == "/api/auth/login" || path == "/api/auth/register" || path == "/api/auth/google" {
+		if path == "/api/v1/auth/login" || path == "/api/v1/auth/register" || path == "/api/v1/auth/google" {
 			next.ServeHTTP(w, r)
 			return
 		}

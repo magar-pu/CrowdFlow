@@ -8,7 +8,7 @@ interface GoogleLoginProps {
 export default function GoogleLogin({ onSuccess, onError }: GoogleLoginProps) {
     return (
         <a
-            href="/api/auth/google/login"
+            href="/api/v1/auth/google/login"
             className="w-[320px] h-[40px] mx-auto flex items-center justify-center gap-3 border border-outline-variant bg-surface-white hover:bg-surface-container-low text-on-surface font-body-md text-body-md font-medium rounded-lg shadow-sm transition-colors select-none text-decoration-none"
         >
             {/* Google "G" Icon */}

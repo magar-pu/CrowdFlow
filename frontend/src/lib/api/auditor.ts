@@ -1,6 +1,6 @@
 import { apiRequest } from "@/utils/api";
 import { ApiResponse } from "@/types/api";
-import { EventSubmission, AuditorActivity, OrganizerVerification } from "@/app/auditor/types";
+import { EventSubmission, AuditorActivity, OrganizerVerification } from "@/app/(console)/auditor/types";
 
 export interface DashboardStats {
   pendingReviews: number;
