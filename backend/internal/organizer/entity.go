@@ -210,6 +210,44 @@ type MarkReadRequest struct {
 	NotificationIDs []int `json:"notificationIds"`
 }
 
+type EventRevisionFeedback struct {
+	EventID             int                    `json:"eventId"`
+	EventStatus         string                 `json:"eventStatus"`
+	AuditorNotes        string                 `json:"auditorNotes,omitempty"`
+	AssignedAuditorName string                 `json:"assignedAuditorName,omitempty"`
+	Stage               string                 `json:"stage,omitempty"`
+	Revisions           []*AuditorRevisionItem `json:"revisions"`
+	StatusLogs          []*EventStatusLogItem  `json:"statusLogs"`
+}
+
+type RespondRevisionRequest struct {
+	Comment     string `json:"comment"`
+	ActionTaken string `json:"actionTaken"`
+	ProofFile   string `json:"proofFile"`
+}
+
+type AuditorRevisionItem struct {
+	ID                   int       `json:"id"`
+	Category             string    `json:"category"`
+	Title                string    `json:"title"`
+	Description          string    `json:"description"`
+	RequiredAction       string    `json:"requiredAction"`
+	Priority             string    `json:"priority"`
+	Status               string    `json:"status"`
+	CreatedAt            time.Time `json:"createdAt"`
+	OrganizerComment     string    `json:"organizerComment,omitempty"`
+	OrganizerActionTaken string    `json:"organizerActionTaken,omitempty"`
+	OrganizerFile        string    `json:"organizerFile,omitempty"`
+	RespondedAt          string    `json:"respondedAt,omitempty"`
+}
+
+type EventStatusLogItem struct {
+	FromStatus string    `json:"fromStatus"`
+	ToStatus   string    `json:"toStatus"`
+	Notes      string    `json:"notes,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
 // Organizer Order model
 type OrganizerOrder struct {
 	ID            string  `json:"id"`
@@ -315,6 +353,8 @@ type Repository interface {
 	CheckInAttendee(ctx context.Context, eventID int, organizerID int, qrToken string) (*CheckInResponse, error)
 	ListNotifications(ctx context.Context, userID int) ([]*Notification, error)
 	MarkNotificationsRead(ctx context.Context, userID int, notificationIDs []int) error
+	GetEventRevisions(ctx context.Context, eventID int, organizerID int) (*EventRevisionFeedback, error)
+	RespondToEventRevision(ctx context.Context, eventID, revID, organizerID int, req RespondRevisionRequest) error
 }
 
 type Service interface {
@@ -350,6 +390,8 @@ type Service interface {
 	CreatePayoutRequest(ctx context.Context, eventID int, organizerID int, amount float64) error
 	GetAnalytics(ctx context.Context, organizerID int, dateRange string) (*OrganizerAnalytics, error)
 	GetEventAnalytics(ctx context.Context, eventID int, organizerID int, dateRange string) (*OrganizerAnalytics, error)
+	GetEventRevisions(ctx context.Context, eventID int, organizerID int) (*EventRevisionFeedback, error)
+	RespondToEventRevision(ctx context.Context, eventID, revID, organizerID int, req RespondRevisionRequest) error
 	ListNotifications(ctx context.Context, userID int) ([]*Notification, error)
 	MarkNotificationsRead(ctx context.Context, userID int, notificationIDs []int) error
 }

@@ -54,6 +54,8 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("DELETE /api/organizer/events/{id}/venue/{secId}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleDeleteVenueSection)))))
 	mux.Handle("POST /api/organizer/events/{id}/checkin", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleCheckInAttendee)))))
 	mux.Handle("GET /api/organizer/events/{id}/analytics", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetEventAnalytics)))))
+	mux.Handle("GET /api/organizer/events/{id}/revisions", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetEventRevisions)))))
+	mux.Handle("POST /api/organizer/events/{id}/revisions/{revId}/respond", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleRespondEventRevision)))))
 
 	// Ticket Tiers Management
 	mux.Handle("GET /api/organizer/events/{id}/ticket-tiers", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleListTicketTiers)))))
@@ -1092,4 +1094,71 @@ func (h *Handler) handleMarkNotificationsRead(w http.ResponseWriter, r *http.Req
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Notifications updated successfully"})
+}
+
+func (h *Handler) handleGetEventRevisions(w http.ResponseWriter, r *http.Request) {
+	eventIDStr := r.PathValue("id")
+	eventID, err := strconv.Atoi(eventIDStr)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid event ID")
+		return
+	}
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
+		return
+	}
+
+	feedback, err := h.service.GetEventRevisions(r.Context(), eventID, userID)
+	if err != nil {
+		log.Printf("GetEventRevisions error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch event revisions: "+err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, feedback)
+}
+
+func (h *Handler) handleRespondEventRevision(w http.ResponseWriter, r *http.Request) {
+	eventIDStr := r.PathValue("id")
+	eventID, err := strconv.Atoi(eventIDStr)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid event ID")
+		return
+	}
+	revIDStr := r.PathValue("revId")
+	revID, err := strconv.Atoi(revIDStr)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid revision ID")
+		return
+	}
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
+		return
+	}
+
+	var req RespondRevisionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON body: "+err.Error())
+		return
+	}
+
+	if err := h.service.RespondToEventRevision(r.Context(), eventID, revID, userID, req); err != nil {
+		log.Printf("RespondToEventRevision error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to submit revision response: "+err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Revision response submitted successfully"})
 }

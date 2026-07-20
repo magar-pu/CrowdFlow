@@ -128,6 +128,13 @@ func (s *AuditorService) AddEventRevision(ctx context.Context, eventID, actorID 
 	return s.repo.AddEventRevision(ctx, eventID, actorID, req)
 }
 
+func (s *AuditorService) UpdateRevisionStatus(ctx context.Context, revID, actorID int, status string) error {
+	if revID <= 0 || actorID <= 0 || strings.TrimSpace(status) == "" {
+		return ErrValidation
+	}
+	return s.repo.UpdateRevisionStatus(ctx, revID, actorID, status)
+}
+
 func (s *AuditorService) VerifyReviewDocument(ctx context.Context, docID, actorID int) error {
 	if docID <= 0 || actorID <= 0 {
 		return ErrValidation
