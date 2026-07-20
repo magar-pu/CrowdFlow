@@ -25,6 +25,7 @@ export default function DashboardView({
   transactions,
   verifications,
   alerts,
+  activities,
   onApproveVerification,
   onRejectVerification,
   onViewChange
@@ -177,6 +178,42 @@ export default function DashboardView({
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      {/* Recent Admin Activity */}
+      <div className="rounded-lg border border-border-subtle bg-surface-white p-6 shadow-sm">
+        <div className="border-b border-border-subtle pb-4">
+          <h2 className="text-base font-bold text-text-primary">Recent Admin Activity</h2>
+          <p className="text-xs text-text-secondary">Latest actions performed by administrators across the platform.</p>
+        </div>
+
+        <div className="mt-4 space-y-3 max-h-[300px] overflow-y-auto pr-1">
+          {activities.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border-subtle py-10 text-center text-xs text-text-secondary">
+              No admin activity recorded yet.
+            </div>
+          ) : (
+            activities.map((activity) => (
+              <div key={activity.id} className="flex items-start justify-between gap-4 rounded-lg border border-border-subtle bg-surface p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-surface-white text-xs font-bold text-secondary">
+                    {activity.userName.charAt(0)}
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-bold text-text-primary">{activity.userName}</span>
+                      <span className="rounded-full border border-secondary/20 bg-secondary/5 px-2 py-0.5 text-[9px] font-medium text-secondary">
+                        {activity.action}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[10px] text-text-secondary">{activity.detail}</p>
+                  </div>
+                </div>
+                <span className="shrink-0 text-[10px] text-text-secondary">{activity.timestamp}</span>
+              </div>
+            ))
+          )}
         </div>
       </div>
 

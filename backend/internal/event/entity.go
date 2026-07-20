@@ -19,6 +19,11 @@ type Organizer struct {
 	AvatarURL string `json:"avatar_url"`
 }
 
+type EventType struct {
+	ID        int    `json:"event_type_id"`
+	EventType string `json:"event_type"`
+}
+
 type Event struct {
 	ID                            int        `json:"event_id"`
 	VenueID                       int        `json:"venue_id"`
@@ -42,13 +47,19 @@ type Repository interface {
 	GetAll(limit, offset int) ([]*Event, error)
 	GetByID(id int) (*Event, error)
 	Create(event *Event) error
+	Update(event *Event) error
+	ListVenues() ([]*Venue, error)
+	ListEventTypes() ([]*EventType, error)
 }
 
 type Service interface {
 	ListEvents(limit, offset int) ([]*Event, error)
 	GetEventDetails(id int) (*Event, error)
 	CreateEvent(event *Event) error
+	UpdateEvent(event *Event) error
 	PublishEvent(id int) error
+	ListVenues() ([]*Venue, error)
+	ListEventTypes() ([]*EventType, error)
 }
 
 

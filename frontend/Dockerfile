@@ -31,7 +31,10 @@ USER nextjs
 
 ENV NODE_ENV=production
 ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
+# Next's standalone server.js binds to $HOSTNAME if set, and Docker sets
+# HOSTNAME to the container ID for every container - without this it only
+# listens on its own bridge IP, never on 127.0.0.1/0.0.0.0.
+ENV HOSTNAME=0.0.0.0
 
 EXPOSE 3000
 CMD ["node", "server.js"]

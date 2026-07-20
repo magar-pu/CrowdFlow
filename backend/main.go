@@ -116,8 +116,11 @@ func main() {
 	isSecure := os.Getenv("DEV_MODE") != "true"
 	authHandler := auth.NewHandler(authService, isSecure)
 
+	// Rate limit login attempts per IP to slow brute-force/credential-stuffing
+	loginRateLimit := middleware.RateLimit(redisClient, "login", 10, 15*time.Minute)
+
 	// Register Authentication routes
-	authHandler.RegisterRoutes(mux, authMounter.Authenticate)
+	authHandler.RegisterRoutes(mux, authMounter.Authenticate, loginRateLimit)
 
 	// Initialize Admin console dependencies
 	adminRepo := admin.NewPostgresRepository(db)

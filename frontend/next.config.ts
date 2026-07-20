@@ -6,7 +6,9 @@ const nextConfig: NextConfig = {
   serverExternalPackages: [],
   allowedDevOrigins: ['172.17.224.1'],
   async rewrites() {
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8080';
+    if (process.env.NODE_ENV === 'production') {
+      return [];
+    }
     return [
       {
         source: '/admin/:path*',
@@ -14,7 +16,9 @@ const nextConfig: NextConfig = {
       },
       {
         source: '/api/:path*',
-        destination: `${backendUrl}/api/:path*`,
+        destination: (process.env.NODE_ENV as string) === 'production'
+          ? 'http://backend:8080/api/:path*'
+          : 'http://localhost:8081/api/:path*',
       },
     ];
   },

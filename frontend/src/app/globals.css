@@ -223,4 +223,54 @@
   .canvas-grid {
     background-image: radial-gradient(var(--color-border-subtle) 1px, transparent 1px);
   }
+ 
+   /* laser check scanner laser effect */
+   @keyframes scanline {
+     0%, 100% {
+       transform: translateY(0);
+     }
+     50% {
+       transform: translateY(145px);
+     }
+   }
+ 
+   .animate-scanline {
+     animation: scanline 2.5s ease-in-out infinite;
+   }
+ 
+   /* staggered cards fadeIn transitions */
+   @keyframes fadeIn {
+     from { 
+       opacity: 0; 
+       transform: translateY(6px); 
+     }
+     to { 
+       opacity: 1; 
+       transform: translateY(0); 
+     }
+   }
+ 
+   .animate-fade-in {
+     animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+   }
+ 
+   .animate-spin-slow {
+     animation: spin 12s linear infinite;
+   }
+ 
+   /* Custom shadow cards */
+   .soft-shadow {
+     box-shadow: 0px 1px 2px rgba(15, 23, 42, 0.05), 0px 4px 12px rgba(15, 23, 42, 0.03);
+   }
+ 
+   .deep-shadow {
+     box-shadow: 0px 10px 25px -5px rgba(15, 23, 42, 0.08), 0px 8px 10px -6px rgba(15, 23, 42, 0.08);
+   }
+ 
+   /* Status text backgrounds */
+   .status-paid { background-color: #DCFCE7; color: #166534; }
+   .status-pending { background-color: #FEF3C7; color: #92400E; }
+   .status-failed { background-color: #FEE2E2; color: #991B1B; }
+   .status-refunded { background-color: #F1F5F9; color: #475569; }
+   .status-resale { background-color: #F3E8FF; color: #6B21A8; }
 }

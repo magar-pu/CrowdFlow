@@ -44,6 +44,181 @@ export interface ValidationError {
   message: string;
 }
 
+/** Options for the auto-numbering pass. */
+export interface RenumberOptions {
+  /** Treat spatially separated clusters as distinct blocks. Default true. */
+  detect_blocks?: boolean;
+  /** How far apart two seats can sit vertically and still count as one row. */
+  row_tolerance?: number;
+  number_direction?: "ltr" | "rtl";
+  row_direction?: "top-down" | "bottom-up";
+  row_style?: "alpha" | "numeric";
+}
+
+function row_label(index: number, style: "alpha" | "numeric"): string {
+  if (style === "numeric") return String(index + 1);
+  let s = "";
+  let n = index;
+  do {
+    s = String.fromCharCode(65 + (n % 26)) + s;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return s;
+}
+
+/** Bucket seats into a spatial hash so neighbour lookups stay near-linear. */
+function spatial_buckets(seats: VenueSeat[], cell: number) {
+  const buckets = new Map<string, number[]>();
+  seats.forEach((s, i) => {
+    const k = `${Math.floor(s.x / cell)},${Math.floor(s.y / cell)}`;
+    const arr = buckets.get(k);
+    if (arr) arr.push(i);
+    else buckets.set(k, [i]);
+  });
+  return buckets;
+}
+
+/** Median distance to the closest other seat — the natural unit for tolerances. */
+function median_neighbour_distance(seats: VenueSeat[]): number {
+  if (seats.length < 2) return 30;
+  const xs = seats.map((s) => s.x);
+  const ys = seats.map((s) => s.y);
+  const w = Math.max(1, Math.max(...xs) - Math.min(...xs));
+  const h = Math.max(1, Math.max(...ys) - Math.min(...ys));
+  const cell = Math.max(10, Math.sqrt((w * h) / seats.length) * 1.5);
+  const buckets = spatial_buckets(seats, cell);
+
+  const dists: number[] = [];
+  seats.forEach((s, i) => {
+    const cx = Math.floor(s.x / cell);
+    const cy = Math.floor(s.y / cell);
+    let best = Infinity;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const arr = buckets.get(`${cx + dx},${cy + dy}`);
+        if (!arr) continue;
+        for (const j of arr) {
+          if (j === i) continue;
+          const d = Math.hypot(seats[j].x - s.x, seats[j].y - s.y);
+          if (d < best) best = d;
+        }
+      }
+    }
+    if (Number.isFinite(best)) dists.push(best);
+  });
+  if (dists.length === 0) return 30;
+  dists.sort((a, b) => a - b);
+  return dists[Math.floor(dists.length / 2)] || 30;
+}
+
+/** Union-find over near neighbours: seats separated by an aisle fall apart. */
+function cluster_blocks(seats: VenueSeat[], threshold: number): VenueSeat[][] {
+  const parent = seats.map((_, i) => i);
+  const find = (a: number): number => {
+    while (parent[a] !== a) {
+      parent[a] = parent[parent[a]];
+      a = parent[a];
+    }
+    return a;
+  };
+  const union = (a: number, b: number) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[rb] = ra;
+  };
+
+  const cell = Math.max(10, threshold);
+  const buckets = spatial_buckets(seats, cell);
+  const t2 = threshold * threshold;
+
+  seats.forEach((s, i) => {
+    const cx = Math.floor(s.x / cell);
+    const cy = Math.floor(s.y / cell);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const arr = buckets.get(`${cx + dx},${cy + dy}`);
+        if (!arr) continue;
+        for (const j of arr) {
+          if (j <= i) continue;
+          const ddx = seats[j].x - s.x;
+          const ddy = seats[j].y - s.y;
+          if (ddx * ddx + ddy * ddy <= t2) union(i, j);
+        }
+      }
+    }
+  });
+
+  const groups = new Map<number, VenueSeat[]>();
+  seats.forEach((s, i) => {
+    const r = find(i);
+    const g = groups.get(r);
+    if (g) g.push(s);
+    else groups.set(r, [s]);
+  });
+  return [...groups.values()];
+}
+
+/**
+ * Derive row/number labels purely from where seats ended up on the canvas.
+ *
+ * Row lettering runs *continuously* across blocks (block 1 = A..E, block 2
+ * continues F..J) so no two seats in the venue can share a label — which is
+ * what produced duplicate "A-3"s when each seat array restarted at A.
+ */
+function compute_seat_labels(
+  seats: VenueSeat[],
+  opts: RenumberOptions
+): Map<string, { row: string; number: number }> {
+  const result = new Map<string, { row: string; number: number }>();
+  if (seats.length === 0) return result;
+
+  const nn = median_neighbour_distance(seats);
+  const blocks =
+    opts.detect_blocks === false ? [seats] : cluster_blocks(seats, nn * 1.8);
+
+  // Read blocks top-to-bottom, then left-to-right.
+  blocks.sort((a, b) => {
+    const ay = Math.min(...a.map((s) => s.y));
+    const by = Math.min(...b.map((s) => s.y));
+    if (Math.abs(ay - by) > nn) return ay - by;
+    return Math.min(...a.map((s) => s.x)) - Math.min(...b.map((s) => s.x));
+  });
+
+  const row_tol = opts.row_tolerance ?? nn * 0.75;
+  const style = opts.row_style ?? "alpha";
+  let row_counter = 0;
+
+  for (const block of blocks) {
+    // Group into rows by vertical proximity — tolerant of arced/staggered rows.
+    const sorted = [...block].sort((a, b) => a.y - b.y);
+    const rows: VenueSeat[][] = [];
+    let current: VenueSeat[] = [];
+    let anchor = sorted[0].y;
+
+    for (const s of sorted) {
+      if (current.length > 0 && Math.abs(s.y - anchor) > row_tol) {
+        rows.push(current);
+        current = [];
+        anchor = s.y;
+      }
+      current.push(s);
+    }
+    if (current.length > 0) rows.push(current);
+
+    if (opts.row_direction === "bottom-up") rows.reverse();
+
+    for (const row of rows) {
+      row.sort((a, b) => a.x - b.x);
+      if (opts.number_direction === "rtl") row.reverse();
+      const label = row_label(row_counter, style);
+      row.forEach((s, i) => result.set(s.seat_id, { row: label, number: i + 1 }));
+      row_counter++;
+    }
+  }
+
+  return result;
+}
+
 interface VenueEditorStore {
   // ── Editor state ──────────────────────────────────────────────────────
   active_tool: VenueEditorTool;
@@ -111,6 +286,11 @@ interface VenueEditorStore {
   translate_arrange_frame: (dx: number, dy: number) => void;
   /** Re-flow the current selection using `arrange` (+ any overrides). */
   apply_arrange: (overrides?: Partial<ArrangeSettings>, save_to_history?: boolean) => void;
+  /**
+   * Re-derive every seat's row/number from its final position on the canvas.
+   * Seat ids are left untouched — only the human-facing labels change.
+   */
+  renumber_seats: (opts?: RenumberOptions) => void;
   /** Grow or shrink a selection to `count` seats. Returns the resulting ids. */
   resize_seat_selection: (seat_ids: string[], count: number) => string[];
   arrange_seats: (
@@ -356,6 +536,19 @@ export const useVenueEditorStore = create<VenueEditorStore>()(
       seats: state.seats.filter((seat) => !ids.includes(seat.seat_id)),
       selected_seat: state.selected_seat && ids.includes(state.selected_seat.seat_id) ? null : state.selected_seat,
       multi_selected_seat_ids: state.multi_selected_seat_ids.filter((id) => !ids.includes(id)),
+    }));
+  },
+
+  renumber_seats: (opts = {}) => {
+    const { seats } = get();
+    if (seats.length === 0) return;
+    get().save_history();
+    const labels = compute_seat_labels(seats, opts);
+    set((state) => ({
+      seats: state.seats.map((s) => {
+        const next = labels.get(s.seat_id);
+        return next ? { ...s, row: next.row, number: next.number } : s;
+      }),
     }));
   },
 

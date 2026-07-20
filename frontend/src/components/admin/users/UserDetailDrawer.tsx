@@ -20,11 +20,11 @@ export default function UserDetailDrawer({ user, onClose, onToggleStatus }: User
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-primary/40 backdrop-blur-xs animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm animate-fade-in">
       {/* Backdrop exit */}
       <div className="absolute inset-0" onClick={onClose} />
       
-      <div className="relative z-10 flex h-full w-full max-w-md flex-col justify-between border-l border-border-subtle bg-surface-white p-6 shadow-overlay animate-slide-in">
+      <div className="relative z-10 flex w-full max-w-md max-h-[90vh] overflow-y-auto flex-col justify-between rounded-2xl border border-border-subtle bg-surface-white p-6 shadow-overlay animate-fade-in">
         {/* Header */}
         <div>
           <button

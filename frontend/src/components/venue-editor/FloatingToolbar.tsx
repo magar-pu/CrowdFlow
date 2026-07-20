@@ -24,6 +24,7 @@ import {
   MousePointer2,
   Grid3X3,
   LayoutGrid,
+  ListOrdered,
   Eye,
   EyeOff,
   Link2,
@@ -44,7 +45,7 @@ export function FloatingToolbar() {
     undo, redo, past, future,
     selected_seat, multi_selected_seat_ids, selected_shape_id, toggle_lock,
     seats, sections, stage_shape, zoom_level, set_zoom,
-    snap_to_grid, toggle_snap_to_grid,
+    snap_to_grid, toggle_snap_to_grid, renumber_seats,
     grid_size_x, grid_size_y, grid_link_axes, show_grid, snap_threshold,
     set_grid_size, toggle_grid_link_axes, toggle_show_grid, set_snap_threshold,
   } = useVenueEditorStore();
@@ -156,6 +157,13 @@ export function FloatingToolbar() {
         title="Paint Bucket (Pricing Mode)"
         active={drawing_mode === "paint"}
         onClick={() => set_drawing_mode("paint")}
+      />
+
+      <ToolbarButton
+        icon={<ListOrdered size={18} />}
+        title="Auto-number seats"
+        disabled={seats.length === 0}
+        onClick={() => renumber_seats()}
       />
 
       <div className="mx-1 h-5 w-px bg-border" />

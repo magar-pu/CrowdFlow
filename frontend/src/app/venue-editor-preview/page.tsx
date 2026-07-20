@@ -25,7 +25,9 @@ export default function VenueEditorPreviewPage() {
   const {
     active_tool,
     set_active_tool,
+    seats,
     sections,
+    renumber_seats,
     selected_seat,
     multi_selected_seat_ids,
     select_seat,
@@ -61,7 +63,12 @@ export default function VenueEditorPreviewPage() {
       <EditorSidebar
         active_tool={active_tool}
         on_tool_change={set_active_tool}
-        on_save={() => console.log("Save layout:", { sections, pricing_tiers })}
+        on_save={() => {
+          // Labels drift while a plan is being built (each seat array restarts
+          // at row A). Normalise from final geometry before the plan is saved.
+          renumber_seats();
+          console.log("Save layout:", { seats, sections, pricing_tiers });
+        }}
         mode="admin"
       />
 

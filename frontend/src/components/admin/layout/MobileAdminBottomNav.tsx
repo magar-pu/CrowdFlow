@@ -17,7 +17,8 @@ type AdminView =
   | "users"
   | "finance"
   | "settings"
-  | "workspace";
+  | "workspace"
+  | "create-event";
 
 interface MobileAdminBottomNavProps {
   currentView: AdminView;
