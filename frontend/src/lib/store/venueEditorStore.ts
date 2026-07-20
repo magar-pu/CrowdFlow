@@ -337,6 +337,8 @@ interface VenueEditorStore {
   update_pricing_tier: (tier_id: string, updates: Partial<PricingTier>) => void;
   remove_pricing_tier: (tier_id: string) => void;
   set_venue: (venue_id: string) => void;
+  /** Replace the selectable venues (e.g. with the real ones fetched from the API). */
+  set_venues: (venues: { venue_id: string; name: string }[]) => void;
   set_currency: (currency: string) => void;
   set_tax_rate: (rate: number) => void;
   set_blueprint: (blueprint: VenueBlueprint | undefined) => void;
@@ -975,6 +977,8 @@ export const useVenueEditorStore = create<VenueEditorStore>()(
         venue_name: venue?.name ?? state.venue_name,
       };
     }),
+
+  set_venues: (venues) => set({ venues }),
 
   set_currency: (currency) => set({ base_currency: currency }),
 

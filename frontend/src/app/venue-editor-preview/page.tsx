@@ -9,7 +9,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { EditorSidebar } from "@/components/venue-editor/EditorSidebar";
 import { VenueMapPreview } from "@/components/venue-editor/VenueMapPreview";
 import { TicketConfigPanel } from "@/components/venue-editor/TicketConfigPanel";
@@ -20,6 +20,8 @@ import { SeatMapperCanvas } from "@/components/venue-editor/SeatMapperCanvas";
 import { SeatPropertiesPanel } from "@/components/venue-editor/SeatPropertiesPanel";
 import { SeatArrangePanel } from "@/components/venue-editor/SeatArrangePanel";
 import { useVenueEditorStore } from "@/lib/store/venueEditorStore";
+import { useVenueLayoutPersistence } from "@/lib/venueLayout/useVenueLayoutPersistence";
+import { listVenues } from "@/lib/api/venues";
 
 export default function VenueEditorPreviewPage() {
   const {
@@ -39,6 +41,7 @@ export default function VenueEditorPreviewPage() {
     venues,
     selected_venue_id,
     set_venue,
+    set_venues,
     base_currency,
     tax_rate,
     set_currency,
@@ -58,16 +61,40 @@ export default function VenueEditorPreviewPage() {
     string | null
   >(null);
 
+  const persistence = useVenueLayoutPersistence();
+
+  // Load real venues so the layout saves against a real integer venue id
+  // (the store's mock venues use string ids the backend can't accept).
+  useEffect(() => {
+    let cancelled = false;
+    listVenues().then((res) => {
+      if (cancelled || !res.success || !res.data || res.data.length === 0) return;
+      set_venues(res.data.map((v) => ({ venue_id: String(v.venue_id), name: v.name })));
+      set_venue(String(res.data[0].venue_id));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [set_venues, set_venue]);
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-surface">
       <EditorSidebar
         active_tool={active_tool}
         on_tool_change={set_active_tool}
-        on_save={() => {
+        on_save={async () => {
           // Labels drift while a plan is being built (each seat array restarts
           // at row A). Normalise from final geometry before the plan is saved.
           renumber_seats();
-          console.log("Save layout:", { seats, sections, pricing_tiers });
+          const venueId = Number(selected_venue_id);
+          if (!Number.isInteger(venueId) || venueId <= 0) {
+            window.alert("Select a venue before saving.");
+            return;
+          }
+          const result = await persistence.save(venueId);
+          if (!result.ok) {
+            window.alert(result.error ?? "Failed to save layout.");
+          }
         }}
         mode="admin"
       />
