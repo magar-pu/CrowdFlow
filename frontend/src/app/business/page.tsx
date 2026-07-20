@@ -228,7 +228,7 @@ export default function BusinessPage() {
               </p>
             </div>
             <button
-              onClick={() => router.push("/eorganizer")}
+              onClick={() => router.push("/organizer")}
               className="w-full bg-secondary hover:bg-secondary/95 text-white font-semibold py-3 rounded-lg transition-all duration-200 cursor-pointer"
             >
               Enter Organizer Dashboard

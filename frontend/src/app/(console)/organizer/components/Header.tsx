@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Bell, Search, Activity, Play, RefreshCw, Building2, ChevronsUpDown, Check, Menu, CheckCircle, HelpCircle } from 'lucide-react';
 import { LogEntry } from '../types';
 import { listNotifications, markNotificationsRead, ApiNotification } from '@/lib/api/eorganizer';
+import { useRouter } from 'next/navigation';
+import { useAuthStore } from '@/lib/store/authStore';
 
 const ORGANIZATIONS = ['CrowdFlow Inc.', 'Nightfall Presents', 'Summit Live Events'];
 
@@ -30,18 +32,26 @@ export default function Header({
   recentLogs = [],
   searchQuery = '',
   setSearchQuery,
-  user = {
-    name: 'Alex Rivera',
-    role: 'Event Admin',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop',
-  },
+  user,
 }: HeaderProps) {
+  const router = useRouter();
   const [showLogsPopup, setShowLogsPopup] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
   const [activeOrg, setActiveOrg] = useState(ORGANIZATIONS[0]);
 
   const [notifications, setNotifications] = useState<ApiNotification[]>([]);
+  const { user: storeUser } = useAuthStore();
+
+  const email = storeUser?.email || 'organizer@crowdflow.my.id';
+  const fullName = storeUser?.full_name || user?.name || 'Event Organizer';
+  const displayRole = storeUser?.role ? storeUser.role.replace('_', ' ') : user?.role || 'verified organizer';
+  const displayName = fullName || email.split('@')[0];
+  const initials = displayName
+    .split(' ')
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join('') || email[0];
 
   const fetchNotifications = async () => {
     const res = await listNotifications();
@@ -59,9 +69,29 @@ export default function Header({
   const handleToggleNotifications = async () => {
     const nextState = !showNotifications;
     setShowNotifications(nextState);
-    if (nextState) {
+    if (nextState && unreadNotifications.length > 0) {
       await markNotificationsRead();
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    }
+  };
+
+  const handleNotificationClick = async (n: ApiNotification) => {
+    setShowNotifications(false);
+    if (!n.isRead) {
+      try {
+        await markNotificationsRead([n.id]);
+        fetchNotifications();
+      } catch (err) {
+        console.error("Failed to mark notification read:", err);
+      }
+    }
+
+    if (!n.resourceType || !n.resourceId) return;
+
+    if (n.resourceType === 'event') {
+      router.push(`/organizer/events/${n.resourceId}`);
+    } else if (n.resourceType === 'payout') {
+      router.push('/organizer/finance');
     }
   };
 
@@ -228,12 +258,19 @@ export default function Header({
               <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
                 {notifications.length > 0 ? (
                   notifications.map((n) => (
-                    <div key={n.id} className="text-[10px] space-y-0.5 border-b border-surface-container-low pb-2 last:border-0">
+                    <div
+                      key={n.id}
+                      onClick={() => handleNotificationClick(n)}
+                      className="text-[10px] space-y-0.5 border-b border-surface-container-low pb-2 last:border-0 cursor-pointer hover:bg-surface-container-low/40 p-1.5 rounded transition-colors"
+                    >
                       <div className="flex justify-between font-mono text-on-surface-variant">
-                        <span className="font-bold text-text-primary text-[11px] font-sans">{n.title}</span>
+                        <span className="font-bold text-text-primary text-[11px] font-sans flex items-center gap-1">
+                          {!n.isRead && <span className="h-1.5 w-1.5 rounded-full bg-primary inline-block"></span>}
+                          {n.title}
+                        </span>
                         <span>{formatTimeAgo(n.createdAt)}</span>
                       </div>
-                      <p className="text-text-secondary leading-relaxed">{n.detail}</p>
+                      <p className="text-text-secondary leading-relaxed pl-2.5">{n.detail}</p>
                     </div>
                   ))
                 ) : (
@@ -249,14 +286,12 @@ export default function Header({
         <div className="w-px h-6 bg-surface-container-high"></div>
 
         <div className="flex items-center gap-3">
-          <img
-            src={user.avatar}
-            alt={user.name}
-            className="w-9 h-9 rounded-full border border-border-subtle object-cover shadow-sm"
-          />
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/80 text-xs font-bold text-on-primary shadow-sm uppercase">
+            {initials}
+          </div>
           <div className="hidden sm:block text-left">
-            <h4 className="text-xs font-bold text-text-primary leading-tight">{user.name}</h4>
-            <p className="text-[10px] text-text-secondary leading-normal font-medium">{user.role}</p>
+            <h4 className="text-xs font-bold text-text-primary leading-tight truncate max-w-[120px]">{displayName}</h4>
+            <p className="text-[10px] text-text-secondary leading-normal font-medium capitalize">{displayRole}</p>
           </div>
         </div>
       </div>

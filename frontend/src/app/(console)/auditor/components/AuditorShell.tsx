@@ -12,7 +12,7 @@ import MobileBottomNav from "./MobileBottomNav";
 const SECTION_TITLES: Record<AuditorView, string> = {
   dashboard: 'Dashboard',
   reviews: 'Reviews',
-  documents: 'Documents',
+  documents: 'Notifications',
   settings: 'Settings',
   'view-document': 'Document Verification',
   'view-review': 'Event Submission Audit',
@@ -24,7 +24,7 @@ const SECTION_TITLES: Record<AuditorView, string> = {
 
 const DETAIL_TITLES: Partial<Record<AuditorView, string>> = {
   reviews: 'Event Submission Audit',
-  documents: 'Document Verification',
+  documents: 'Notification Center',
   organizers: 'Organizer Audit',
   payouts: 'Payout Audit',
 };

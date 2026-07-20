@@ -1,19 +1,15 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import DocumentsView from "../components/DocumentsView";
+import NotificationsView from "../components/NotificationsView";
 import { useAuditorData } from "../AuditorDataContext";
 
 export default function AuditorDocumentsPage() {
-  const router = useRouter();
-  const { documents, handleVerifyDocument, handleRejectDocument } = useAuditorData();
+  const { notifications, fetchDashboard } = useAuditorData();
 
   return (
-    <DocumentsView
-      documents={documents}
-      onVerify={handleVerifyDocument}
-      onReject={handleRejectDocument}
-      onViewDocument={(doc) => router.push(`/auditor/documents/${doc.id}`)}
+    <NotificationsView
+      notifications={notifications}
+      fetchNotifications={fetchDashboard}
     />
   );
 }

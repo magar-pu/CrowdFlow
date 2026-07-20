@@ -196,12 +196,14 @@ type CheckInResponse struct {
 }
 
 type Notification struct {
-	ID        int       `json:"id"`
-	UserID    int       `json:"userId"`
-	Title     string    `json:"title"`
-	Detail    string    `json:"detail"`
-	IsRead    bool      `json:"isRead"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID           int       `json:"id"`
+	UserID       int       `json:"userId"`
+	Title        string    `json:"title"`
+	Detail       string    `json:"detail"`
+	ResourceType string    `json:"resourceType"`
+	ResourceID   string    `json:"resourceId"`
+	IsRead       bool      `json:"isRead"`
+	CreatedAt    time.Time `json:"createdAt"`
 }
 
 type MarkReadRequest struct {

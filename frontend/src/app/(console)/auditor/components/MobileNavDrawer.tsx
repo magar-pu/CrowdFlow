@@ -1,6 +1,6 @@
 import React from 'react';
 import { AuditorView } from '../types';
-import { LayoutDashboard, ClipboardCheck, FileCheck2, Settings, ShieldCheck, X, Users2, DollarSign } from 'lucide-react';
+import { LayoutDashboard, ClipboardCheck, Bell, Settings, ShieldCheck, X, Users2, DollarSign } from 'lucide-react';
 
 interface MobileNavDrawerProps {
   isOpen: boolean;
@@ -15,7 +15,7 @@ interface MobileNavDrawerProps {
 const NAV_ITEMS = [
   { view: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
   { view: 'reviews' as const, label: 'Reviews', icon: ClipboardCheck },
-  { view: 'documents' as const, label: 'Documents', icon: FileCheck2 },
+  { view: 'documents' as const, label: 'Notifications', icon: Bell },
   { view: 'organizers' as const, label: 'Organizers', icon: Users2 },
   { view: 'payouts' as const, label: 'Payouts', icon: DollarSign },
   { view: 'settings' as const, label: 'Settings', icon: Settings },

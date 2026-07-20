@@ -2,6 +2,7 @@ package auditor
 
 import (
 	"context"
+	"fmt"
 	"strings"
 )
 
@@ -274,6 +275,33 @@ func (s *AuditorService) HoldPayout(ctx context.Context, payoutID, actorID int, 
 		return ErrValidation
 	}
 	return s.repo.HoldPayout(ctx, payoutID, actorID, req)
+}
+
+func (s *AuditorService) ListEventRevisions(ctx context.Context, eventID int) ([]Revision, error) {
+	if eventID <= 0 {
+		return nil, ErrValidation
+	}
+	review, err := s.repo.GetEventReview(ctx, eventID)
+	if err != nil {
+		return nil, err
+	}
+	return review.Revisions, nil
+}
+
+// ---- Notification Methods ----
+
+func (s *AuditorService) ListNotifications(ctx context.Context, userID int) ([]*AuditorNotification, error) {
+	if userID <= 0 {
+		return nil, fmt.Errorf("%w: invalid user ID", ErrValidation)
+	}
+	return s.repo.ListNotifications(ctx, userID)
+}
+
+func (s *AuditorService) MarkNotificationsRead(ctx context.Context, userID int, notificationIDs []int) error {
+	if userID <= 0 {
+		return fmt.Errorf("%w: invalid user ID", ErrValidation)
+	}
+	return s.repo.MarkNotificationsRead(ctx, userID, notificationIDs)
 }
 
 // ---- Slice helpers (avoid nil JSON) ----

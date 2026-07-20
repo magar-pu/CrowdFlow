@@ -25,26 +25,24 @@ const STEP_DEFS: { key: StepKey; label: string; icon: LucideIcon }[] = [
 
 export default function CreateEventWizard({ onCancel, onSubmitSuccess }: CreateEventWizardProps) {
   const [stepIndex, setStepIndex] = useState(0);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Step 1: Basic Info
-  const [eventName, setEventName] = useState('New Corporate Conference 2024');
-  const [category, setCategory] = useState('Conference');
-  const [description, setDescription] = useState('Join us for keynotes and workshop labs.');
-  const [startDate, setStartDate] = useState('2024-12-15');
-  const [startTime, setStartTime] = useState('09:00');
-  const [endDate, setEndDate] = useState('2024-12-16');
-  const [endTime, setEndTime] = useState('17:00');
+  const [eventName, setEventName] = useState('');
+  const [category, setCategory] = useState('');
+  const [description, setDescription] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [startTime, setStartTime] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [endTime, setEndTime] = useState('');
   const [locationType, setLocationType] = useState<'physical' | 'virtual'>('physical');
-  const [address, setAddress] = useState('747 Howard St, San Francisco, CA');
+  const [address, setAddress] = useState('');
   const [streamingLink, setStreamingLink] = useState('');
   const [coverImageName, setCoverImageName] = useState<string | null>(null);
-  const [documents, setDocuments] = useState<DocumentStatus[]>([
-    { name: 'venue-permit-2024.pdf', type: 'PDF', status: 'VERIFIED', category: 'Permits & Licenses' },
-    { name: 'catering-vendor-contract.pdf', type: 'PDF', status: 'READY', category: 'Vendor & Venue Contracts' },
-  ]);
+  const [documents, setDocuments] = useState<DocumentStatus[]>([]);
 
   // Step 2: Venue & Layout
-  const [venue, setVenue] = useState('Moscone Center, SF');
+  const [venue, setVenue] = useState('');
   const [savedVenues, setSavedVenues] = useState<SavedVenue[]>([
     { id: 'v-1', name: 'Moscone Center, SF', city: 'San Francisco, CA', capacity: 900 },
     { id: 'v-2', name: 'Metropolis Convention Center', city: 'New York, NY', capacity: 1200 },
@@ -57,10 +55,7 @@ export default function CreateEventWizard({ onCancel, onSubmitSuccess }: CreateE
   ]);
 
   // Step 3: Tickets
-  const [tiers, setTiers] = useState<TicketTier[]>([
-    { id: 't-1', name: 'VIP Pass', price: 299, sold: 0, capacity: 100, maxPerOrder: 4, salesStart: '2024-10-01', salesEnd: '2024-12-14', zoneId: 'el-vip', zoneName: 'VIP Zone' },
-    { id: 't-2', name: 'Standard Ticket', price: 99, sold: 0, capacity: 400, maxPerOrder: 6, salesStart: '2024-10-01', salesEnd: '2024-12-14', zoneId: 'el-ga', zoneName: 'Festival Floor' }
-  ]);
+  const [tiers, setTiers] = useState<TicketTier[]>([]);
 
   // Step 5: Review
   const [visibility, setVisibility] = useState<'public' | 'private'>('public');
@@ -77,6 +72,55 @@ export default function CreateEventWizard({ onCancel, onSubmitSuccess }: CreateE
   const currentKey = activeSteps[clampedIndex].key;
 
   const handleContinue = () => {
+    setErrorMsg(null);
+    if (currentKey === 'basic') {
+      if (!eventName.trim()) {
+        setErrorMsg("Event Name is required");
+        return;
+      }
+      if (!category.trim()) {
+        setErrorMsg("Category is required");
+        return;
+      }
+      if (!description.trim()) {
+        setErrorMsg("Description is required");
+        return;
+      }
+      if (!startDate) {
+        setErrorMsg("Start Date is required");
+        return;
+      }
+      if (!startTime) {
+        setErrorMsg("Start Time is required");
+        return;
+      }
+      if (!endDate) {
+        setErrorMsg("End Date is required");
+        return;
+      }
+      if (!endTime) {
+        setErrorMsg("End Time is required");
+        return;
+      }
+      if (locationType === 'physical' && !address.trim()) {
+        setErrorMsg("Physical Address is required");
+        return;
+      }
+      if (locationType === 'virtual' && !streamingLink.trim()) {
+        setErrorMsg("Streaming Link is required");
+        return;
+      }
+    } else if (currentKey === 'venue') {
+      if (!venue.trim()) {
+        setErrorMsg("Venue Name is required");
+        return;
+      }
+    } else if (currentKey === 'tickets') {
+      if (tiers.length === 0) {
+        setErrorMsg("At least one ticket tier is required to proceed");
+        return;
+      }
+    }
     setStepIndex(i => Math.min(activeSteps.length - 1, i + 1));
   };
 
@@ -175,6 +219,12 @@ export default function CreateEventWizard({ onCancel, onSubmitSuccess }: CreateE
           })}
         </div>
       </section>
+
+      {errorMsg && (
+        <div className="p-3 bg-danger/10 border border-danger/20 text-danger rounded-lg text-xs font-semibold mb-4 text-left">
+          {errorMsg}
+        </div>
+      )}
 
       <main className="min-h-[200px]">
         {currentKey === 'basic' && (

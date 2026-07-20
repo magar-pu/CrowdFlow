@@ -42,15 +42,16 @@ const RANGE_DATA: Record<Range, { label: string; sales: number; revenue: number 
 const RANGE_LABELS: Record<Range, string> = { '1w': '1 Week', '1m': '1 Month', all: 'All Time' };
 
 export default function WorkspaceOverview({
+  event,
   ticketTiers,
   transactions,
   logs
 }: WorkspaceOverviewProps) {
   const [range, setRange] = useState<Range>('1w');
 
-  const totalRevenue = ticketTiers.reduce((acc, curr) => acc + (curr.sold * curr.price), 0);
-  const totalTicketsSold = ticketTiers.reduce((acc, curr) => acc + curr.sold, 0);
-  const totalTicketsCapacity = ticketTiers.reduce((acc, curr) => acc + curr.capacity, 0);
+  const totalRevenue = event.revenue;
+  const totalTicketsSold = event.sold;
+  const totalTicketsCapacity = event.capacity;
   const capacityRatio = totalTicketsCapacity > 0 ? (totalTicketsSold / totalTicketsCapacity) * 100 : 0;
   const pageViews = totalTicketsSold * 18 + 4200;
   const refundsAmount = Math.round(totalRevenue * 0.021);

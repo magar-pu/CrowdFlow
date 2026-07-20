@@ -295,12 +295,15 @@ type AuditorPayout struct {
 	RiskLevel       RiskLevel      `json:"riskLevel"`
 	RiskScore       int            `json:"riskScore"`
 	SalesSummary    PayoutSales    `json:"salesSummary"`
-	BankName        string         `json:"bankName"`
-	BankAccountNum  string         `json:"bankAccountNumber"`
-	BankHolder      string         `json:"bankAccountHolder"`
-	FraudDetection  FraudSignals   `json:"fraudDetection"`
-	InternalNotes   string         `json:"internalNotes"`
-	Timeline        []Activity     `json:"timeline"`
+	BankName                  string         `json:"bankName"`
+	BankAccountNum            string         `json:"bankAccountNumber"`
+	BankHolder                string         `json:"bankAccountHolder"`
+	OrganizerPhone            string         `json:"organizerPhone"`
+	OrganizerBusinessLicense  string         `json:"organizerBusinessLicense"`
+	OrganizerStatus           string         `json:"organizerStatus"`
+	FraudDetection            FraudSignals   `json:"fraudDetection"`
+	InternalNotes             string         `json:"internalNotes"`
+	Timeline                  []Activity     `json:"timeline"`
 }
 
 type PayoutSales struct {
@@ -344,6 +347,23 @@ type HoldPayoutRequest struct {
 	Reason string `json:"reason"`
 }
 
+// ---- Notifications ----
+
+type AuditorNotification struct {
+	ID           int       `json:"id"`
+	UserID       int       `json:"userId"`
+	Title        string    `json:"title"`
+	Detail       string    `json:"detail"`
+	ResourceType string    `json:"resourceType"`
+	ResourceID   string    `json:"resourceId"`
+	IsRead       bool      `json:"isRead"`
+	CreatedAt    time.Time `json:"createdAt"`
+}
+
+type MarkNotificationsReadRequest struct {
+	NotificationIDs []int `json:"notificationIds"`
+}
+
 // ---- Repository Interface ----
 
 type Repository interface {
@@ -382,6 +402,12 @@ type Repository interface {
 	ApprovePayout(ctx context.Context, payoutID, actorID int, req ApprovePayoutRequest) error
 	RejectPayout(ctx context.Context, payoutID, actorID int, req RejectPayoutRequest) error
 	HoldPayout(ctx context.Context, payoutID, actorID int, req HoldPayoutRequest) error
+
+	// Notifications
+	ListNotifications(ctx context.Context, userID int) ([]*AuditorNotification, error)
+	MarkNotificationsRead(ctx context.Context, userID int, notificationIDs []int) error
+	CreateNotification(ctx context.Context, userID int, title, detail, resourceType, resourceID string) error
+	CreateNotificationForAuditors(ctx context.Context, title, detail, resourceType, resourceID string) error
 }
 
 // ---- Service Interface ----
@@ -399,6 +425,7 @@ type Service interface {
 	RequestEventChanges(ctx context.Context, eventID, actorID int, notes string) error
 	UpdateEventReviewStage(ctx context.Context, eventID, actorID int, stage ReviewStage) error
 	AddEventRevision(ctx context.Context, eventID, actorID int, req AddRevisionRequest) error
+	ListEventRevisions(ctx context.Context, eventID int) ([]Revision, error)
 	VerifyReviewDocument(ctx context.Context, docID, actorID int) error
 	RejectReviewDocument(ctx context.Context, docID, actorID int, reason string) error
 
@@ -421,6 +448,10 @@ type Service interface {
 	ApprovePayout(ctx context.Context, payoutID, actorID int, req ApprovePayoutRequest) error
 	RejectPayout(ctx context.Context, payoutID, actorID int, req RejectPayoutRequest) error
 	HoldPayout(ctx context.Context, payoutID, actorID int, req HoldPayoutRequest) error
+
+	// Notifications
+	ListNotifications(ctx context.Context, userID int) ([]*AuditorNotification, error)
+	MarkNotificationsRead(ctx context.Context, userID int, notificationIDs []int) error
 }
 
 // ---- Helpers ----

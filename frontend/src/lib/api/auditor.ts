@@ -24,7 +24,7 @@ export interface DashboardResponse {
  * Fetch auditor dashboard summary, including counters, recent activity, and top pending reviews.
  */
 export async function getDashboardData(): Promise<ApiResponse<DashboardResponse>> {
-  return apiRequest<DashboardResponse>("/api/auditor/dashboard", {
+  return apiRequest<DashboardResponse>("/api/v1/auditor/dashboard", {
     method: "GET",
   });
 }
@@ -33,7 +33,7 @@ export async function getDashboardData(): Promise<ApiResponse<DashboardResponse>
  * Fetch paginated list of auditor activities.
  */
 export async function listActivity(page: number = 1, limit: number = 10): Promise<ApiResponse<AuditorActivity[]>> {
-  return apiRequest<AuditorActivity[]>(`/api/auditor/activity?page=${page}&limit=${limit}`, {
+  return apiRequest<AuditorActivity[]>(`/api/v1/auditor/activity?page=${page}&limit=${limit}`, {
     method: "GET",
   });
 }
@@ -57,7 +57,7 @@ export async function listEventReviews(filters: ListEventReviewsFilters = {}): P
   if (filters.page) params.append("page", String(filters.page));
   if (filters.limit) params.append("limit", String(filters.limit));
 
-  return apiRequest<EventSubmission[]>(`/api/auditor/reviews?${params.toString()}`, {
+  return apiRequest<EventSubmission[]>(`/api/v1/auditor/reviews?${params.toString()}`, {
     method: "GET",
   });
 }
@@ -66,7 +66,7 @@ export async function listEventReviews(filters: ListEventReviewsFilters = {}): P
  * Get detailed submission review for a single event.
  */
 export async function getEventReview(id: number | string): Promise<ApiResponse<EventSubmission>> {
-  return apiRequest<EventSubmission>(`/api/auditor/reviews/${id}`, {
+  return apiRequest<EventSubmission>(`/api/v1/auditor/reviews/${id}`, {
     method: "GET",
   });
 }
@@ -75,7 +75,7 @@ export async function getEventReview(id: number | string): Promise<ApiResponse<E
  * Approve event submission.
  */
 export async function approveEventReview(id: number | string, notes: string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/auditor/reviews/${id}/approve`, {
+  return apiRequest<void>(`/api/v1/auditor/reviews/${id}/approve`, {
     method: "POST",
     body: JSON.stringify({ notes }),
   });
@@ -85,7 +85,7 @@ export async function approveEventReview(id: number | string, notes: string): Pr
  * Reject event submission.
  */
 export async function rejectEventReview(id: number | string, reason: string, notes: string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/auditor/reviews/${id}/reject`, {
+  return apiRequest<void>(`/api/v1/auditor/reviews/${id}/reject`, {
     method: "POST",
     body: JSON.stringify({ reason, notes }),
   });
@@ -95,7 +95,7 @@ export async function rejectEventReview(id: number | string, reason: string, not
  * Request event changes (re-verify docs / venue validation stage).
  */
 export async function requestEventChanges(id: number | string, notes: string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/auditor/reviews/${id}/request-changes`, {
+  return apiRequest<void>(`/api/v1/auditor/reviews/${id}/request-changes`, {
     method: "POST",
     body: JSON.stringify({ notes }),
   });
@@ -105,7 +105,7 @@ export async function requestEventChanges(id: number | string, notes: string): P
  * Update event review stage.
  */
 export async function updateEventReviewStage(id: number | string, stage: string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/auditor/reviews/${id}/stage`, {
+  return apiRequest<void>(`/api/v1/auditor/reviews/${id}/stage`, {
     method: "PATCH",
     body: JSON.stringify({ stage }),
   });
@@ -124,7 +124,7 @@ export interface AddRevisionPayload {
  * Add revision ticket to event.
  */
 export async function addEventRevision(id: number | string, payload: AddRevisionPayload): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/auditor/reviews/${id}/revisions`, {
+  return apiRequest<void>(`/api/v1/auditor/reviews/${id}/revisions`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -134,7 +134,7 @@ export async function addEventRevision(id: number | string, payload: AddRevision
  * Verify document inside event review context.
  */
 export async function verifyReviewDocument(eventId: number | string, docId: number | string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/auditor/reviews/${eventId}/documents/${docId}/verify`, {
+  return apiRequest<void>(`/api/v1/auditor/reviews/${eventId}/documents/${docId}/verify`, {
     method: "PATCH",
   });
 }
@@ -143,7 +143,7 @@ export async function verifyReviewDocument(eventId: number | string, docId: numb
  * Reject document inside event review context.
  */
 export async function rejectReviewDocument(eventId: number | string, docId: number | string, reason: string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/auditor/reviews/${eventId}/documents/${docId}/reject`, {
+  return apiRequest<void>(`/api/v1/auditor/reviews/${eventId}/documents/${docId}/reject`, {
     method: "PATCH",
     body: JSON.stringify({ reason }),
   });
@@ -180,7 +180,7 @@ export async function listDocuments(filters: ListDocumentsFilters = {}): Promise
   if (filters.page) params.append("page", String(filters.page));
   if (filters.limit) params.append("limit", String(filters.limit));
 
-  return apiRequest<AuditorDocument[]>(`/api/auditor/documents?${params.toString()}`, {
+  return apiRequest<AuditorDocument[]>(`/api/v1/auditor/documents?${params.toString()}`, {
     method: "GET",
   });
 }
@@ -189,7 +189,7 @@ export async function listDocuments(filters: ListDocumentsFilters = {}): Promise
  * Get details of a single verification document.
  */
 export async function getDocument(docId: number | string): Promise<ApiResponse<AuditorDocument>> {
-  return apiRequest<AuditorDocument>(`/api/auditor/documents/${docId}`, {
+  return apiRequest<AuditorDocument>(`/api/v1/auditor/documents/${docId}`, {
     method: "GET",
   });
 }
@@ -198,7 +198,7 @@ export async function getDocument(docId: number | string): Promise<ApiResponse<A
  * Verify document.
  */
 export async function verifyDocument(docId: number | string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/auditor/documents/${docId}/verify`, {
+  return apiRequest<void>(`/api/v1/auditor/documents/${docId}/verify`, {
     method: "PATCH",
   });
 }
@@ -207,7 +207,7 @@ export async function verifyDocument(docId: number | string): Promise<ApiRespons
  * Reject document.
  */
 export async function rejectDocument(docId: number | string, reason: string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/auditor/documents/${docId}/reject`, {
+  return apiRequest<void>(`/api/v1/auditor/documents/${docId}/reject`, {
     method: "PATCH",
     body: JSON.stringify({ reason }),
   });
@@ -230,7 +230,7 @@ export async function listOrganizers(filters: ListOrganizersFilters = {}): Promi
   if (filters.page) params.append("page", String(filters.page));
   if (filters.limit) params.append("limit", String(filters.limit));
 
-  return apiRequest<OrganizerVerification[]>(`/api/auditor/organizers?${params.toString()}`, {
+  return apiRequest<OrganizerVerification[]>(`/api/v1/auditor/organizers?${params.toString()}`, {
     method: "GET",
   });
 }
@@ -239,7 +239,7 @@ export async function listOrganizers(filters: ListOrganizersFilters = {}): Promi
  * Get details of a single organizer application.
  */
 export async function getOrganizer(appId: number | string): Promise<ApiResponse<OrganizerVerification>> {
-  return apiRequest<OrganizerVerification>(`/api/auditor/organizers/${appId}`, {
+  return apiRequest<OrganizerVerification>(`/api/v1/auditor/organizers/${appId}`, {
     method: "GET",
   });
 }
@@ -248,7 +248,7 @@ export async function getOrganizer(appId: number | string): Promise<ApiResponse<
  * Approve organizer application.
  */
 export async function approveOrganizer(appId: number | string, notes: string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/auditor/organizers/${appId}/approve`, {
+  return apiRequest<void>(`/api/v1/auditor/organizers/${appId}/approve`, {
     method: "POST",
     body: JSON.stringify({ notes }),
   });
@@ -258,7 +258,7 @@ export async function approveOrganizer(appId: number | string, notes: string): P
  * Reject organizer application.
  */
 export async function rejectOrganizer(appId: number | string, reason: string, notes: string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/auditor/organizers/${appId}/reject`, {
+  return apiRequest<void>(`/api/v1/auditor/organizers/${appId}/reject`, {
     method: "POST",
     body: JSON.stringify({ reason, notes }),
   });
@@ -268,7 +268,7 @@ export async function rejectOrganizer(appId: number | string, reason: string, no
  * Update organizer application review status.
  */
 export async function updateOrganizerStatus(appId: number | string, status: string, notes: string, feedback: string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/auditor/organizers/${appId}/status`, {
+  return apiRequest<void>(`/api/v1/auditor/organizers/${appId}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status, internalNotes: notes, organizerFeedback: feedback }),
   });
@@ -330,7 +330,7 @@ export async function listPayouts(filters: ListPayoutsFilters = {}): Promise<Api
   if (filters.page) params.append("page", String(filters.page));
   if (filters.limit) params.append("limit", String(filters.limit));
 
-  return apiRequest<AuditorPayoutDTO[]>(`/api/auditor/payouts?${params.toString()}`, {
+  return apiRequest<AuditorPayoutDTO[]>(`/api/v1/auditor/payouts?${params.toString()}`, {
     method: "GET",
   });
 }
@@ -339,7 +339,7 @@ export async function listPayouts(filters: ListPayoutsFilters = {}): Promise<Api
  * Get details of a single payout request.
  */
 export async function getPayout(payoutId: number | string): Promise<ApiResponse<AuditorPayoutDTO>> {
-  return apiRequest<AuditorPayoutDTO>(`/api/auditor/payouts/${payoutId}`, {
+  return apiRequest<AuditorPayoutDTO>(`/api/v1/auditor/payouts/${payoutId}`, {
     method: "GET",
   });
 }
@@ -348,7 +348,7 @@ export async function getPayout(payoutId: number | string): Promise<ApiResponse<
  * Approve payout request.
  */
 export async function approvePayout(payoutId: number | string, internalNotes: string, financeNotes: string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/auditor/payouts/${payoutId}/approve`, {
+  return apiRequest<void>(`/api/v1/auditor/payouts/${payoutId}/approve`, {
     method: "POST",
     body: JSON.stringify({ internalNotes, financeNotes }),
   });
@@ -358,7 +358,7 @@ export async function approvePayout(payoutId: number | string, internalNotes: st
  * Reject payout request.
  */
 export async function rejectPayout(payoutId: number | string, reason: string, internalNotes: string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/auditor/payouts/${payoutId}/reject`, {
+  return apiRequest<void>(`/api/v1/auditor/payouts/${payoutId}/reject`, {
     method: "POST",
     body: JSON.stringify({ reason, internalNotes }),
   });
@@ -368,8 +368,49 @@ export async function rejectPayout(payoutId: number | string, reason: string, in
  * Hold payout request.
  */
 export async function holdPayout(payoutId: number | string, reason: string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/auditor/payouts/${payoutId}/hold`, {
+  return apiRequest<void>(`/api/v1/auditor/payouts/${payoutId}/hold`, {
     method: "POST",
     body: JSON.stringify({ reason }),
+  });
+}
+
+/**
+ * Fetch list of revisions for a single event review.
+ */
+export async function listEventRevisions(id: number | string): Promise<ApiResponse<any[]>> {
+  return apiRequest<any[]>(`/api/v1/auditor/reviews/${id}/revisions`, {
+    method: "GET",
+  });
+}
+
+// ---- Notifications ----
+
+export interface AuditorNotification {
+  id: number;
+  userId: number;
+  title: string;
+  detail: string;
+  resourceType?: string;
+  resourceId?: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+/**
+ * Fetch list of all notifications for the current auditor user.
+ */
+export async function listAuditorNotifications(): Promise<ApiResponse<AuditorNotification[]>> {
+  return apiRequest<AuditorNotification[]>("/api/v1/auditor/notifications", {
+    method: "GET",
+  });
+}
+
+/**
+ * Mark notifications as read. If no IDs provided, marks ALL unread as read.
+ */
+export async function markAuditorNotificationsRead(notificationIds?: number[]): Promise<ApiResponse<void>> {
+  return apiRequest<void>("/api/v1/auditor/notifications/read", {
+    method: "PUT",
+    body: notificationIds ? JSON.stringify({ notificationIds }) : undefined,
   });
 }

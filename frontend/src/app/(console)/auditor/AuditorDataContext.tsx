@@ -20,6 +20,8 @@ import {
   approvePayout,
   rejectPayout,
   holdPayout,
+  listAuditorNotifications,
+  AuditorNotification,
   DashboardStats
 } from "@/lib/api/auditor";
 
@@ -29,6 +31,7 @@ interface AuditorDataValue {
   organizers: OrganizerVerification[];
   payouts: PayoutRequest[];
   activity: AuditorActivity[];
+  notifications: AuditorNotification[];
   stats: DashboardStats | null;
   isLoading: boolean;
   fetchDashboard: () => Promise<void>;
@@ -64,6 +67,7 @@ export function AuditorDataProvider({ children }: { children: React.ReactNode })
   const [organizers, setOrganizers] = useState<OrganizerVerification[]>(INITIAL_ORGANIZERS);
   const [payouts, setPayouts] = useState<PayoutRequest[]>(INITIAL_PAYOUTS);
   const [activity, setActivity] = useState<AuditorActivity[]>(ACTIVITY_LOG);
+  const [notifications, setNotifications] = useState<AuditorNotification[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -117,6 +121,12 @@ export function AuditorDataProvider({ children }: { children: React.ReactNode })
         })) as any[];
         setPayouts(payoutList);
       }
+
+      // Load notifications
+      const notifsRes = await listAuditorNotifications();
+      if (notifsRes.success && notifsRes.data) {
+        setNotifications(notifsRes.data);
+      }
     } catch (err) {
       console.error("Failed to load auditor dashboard metrics:", err);
     } finally {
@@ -129,7 +139,7 @@ export function AuditorDataProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const pendingReviewsCount = stats ? stats.pendingReviews : submissions.filter(s => s.status === 'Pending').length;
-  const pendingDocumentsCount = stats ? stats.documentsWaiting : documents.filter(d => d.status === 'WAITING REVIEW').length;
+  const pendingDocumentsCount = notifications.filter(n => !n.isRead).length;
   const pendingOrganizersCount = stats ? stats.pendingOrganizers : organizers.filter(o => o.status === 'Pending').length;
 
   const handleApprove = (id: string) => {
@@ -268,7 +278,7 @@ export function AuditorDataProvider({ children }: { children: React.ReactNode })
   };
 
   const value: AuditorDataValue = {
-    submissions, documents, organizers, payouts, activity, stats, isLoading,
+    submissions, documents, organizers, payouts, activity, notifications, stats, isLoading,
     fetchDashboard,
     pendingReviewsCount, pendingDocumentsCount, pendingOrganizersCount,
     handleApprove, handleReject, handleRequestChanges,

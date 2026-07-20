@@ -83,11 +83,12 @@ export default function StepBasicInfo({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Event Title</label>
-              <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" placeholder="e.g. Prambanan Rock Festival 2026" />
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Category</label>
               <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none cursor-pointer">
+                <option value="">-- Select Category --</option>
                 <option value="Conference">Conference</option>
                 <option value="Festival">Festival</option>
                 <option value="Workshop">Workshop</option>
@@ -112,7 +113,7 @@ export default function StepBasicInfo({
                   <Link2 className="w-3.5 h-3.5" />
                 </button>
               </div>
-              <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} className="w-full p-3 text-xs bg-white outline-none resize-none" />
+              <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} className="w-full p-3 text-xs bg-white outline-none resize-none" placeholder="e.g. Join us for a night of rock music featuring top local and international bands." />
             </div>
           </div>
 

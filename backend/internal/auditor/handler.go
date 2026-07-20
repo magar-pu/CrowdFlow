@@ -32,39 +32,44 @@ func (h *Handler) RegisterRoutes(
 	}
 
 	// Dashboard
-	mux.Handle("GET /api/auditor/dashboard", auditor(http.HandlerFunc(h.handleGetDashboard)))
-	mux.Handle("GET /api/auditor/activity", auditor(http.HandlerFunc(h.handleListActivity)))
+	mux.Handle("GET /api/v1/auditor/dashboard", auditor(http.HandlerFunc(h.handleGetDashboard)))
+	mux.Handle("GET /api/v1/auditor/activity", auditor(http.HandlerFunc(h.handleListActivity)))
 
 	// Event Reviews
-	mux.Handle("GET /api/auditor/reviews", auditor(http.HandlerFunc(h.handleListEventReviews)))
-	mux.Handle("GET /api/auditor/reviews/{id}", auditor(http.HandlerFunc(h.handleGetEventReview)))
-	mux.Handle("POST /api/auditor/reviews/{id}/approve", auditor(http.HandlerFunc(h.handleApproveEventReview)))
-	mux.Handle("POST /api/auditor/reviews/{id}/reject", auditor(http.HandlerFunc(h.handleRejectEventReview)))
-	mux.Handle("POST /api/auditor/reviews/{id}/request-changes", auditor(http.HandlerFunc(h.handleRequestEventChanges)))
-	mux.Handle("PATCH /api/auditor/reviews/{id}/stage", auditor(http.HandlerFunc(h.handleUpdateEventReviewStage)))
-	mux.Handle("POST /api/auditor/reviews/{id}/revisions", auditor(http.HandlerFunc(h.handleAddEventRevision)))
-	mux.Handle("PATCH /api/auditor/reviews/{id}/documents/{docId}/verify", auditor(http.HandlerFunc(h.handleVerifyReviewDocument)))
-	mux.Handle("PATCH /api/auditor/reviews/{id}/documents/{docId}/reject", auditor(http.HandlerFunc(h.handleRejectReviewDocument)))
+	mux.Handle("GET /api/v1/auditor/reviews", auditor(http.HandlerFunc(h.handleListEventReviews)))
+	mux.Handle("GET /api/v1/auditor/reviews/{id}", auditor(http.HandlerFunc(h.handleGetEventReview)))
+	mux.Handle("POST /api/v1/auditor/reviews/{id}/approve", auditor(http.HandlerFunc(h.handleApproveEventReview)))
+	mux.Handle("POST /api/v1/auditor/reviews/{id}/reject", auditor(http.HandlerFunc(h.handleRejectEventReview)))
+	mux.Handle("POST /api/v1/auditor/reviews/{id}/request-changes", auditor(http.HandlerFunc(h.handleRequestEventChanges)))
+	mux.Handle("PATCH /api/v1/auditor/reviews/{id}/stage", auditor(http.HandlerFunc(h.handleUpdateEventReviewStage)))
+	mux.Handle("POST /api/v1/auditor/reviews/{id}/revisions", auditor(http.HandlerFunc(h.handleAddEventRevision)))
+	mux.Handle("GET /api/v1/auditor/reviews/{id}/revisions", auditor(http.HandlerFunc(h.handleListEventRevisions)))
+	mux.Handle("PATCH /api/v1/auditor/reviews/{id}/documents/{docId}/verify", auditor(http.HandlerFunc(h.handleVerifyReviewDocument)))
+	mux.Handle("PATCH /api/v1/auditor/reviews/{id}/documents/{docId}/reject", auditor(http.HandlerFunc(h.handleRejectReviewDocument)))
 
 	// Document Queue
-	mux.Handle("GET /api/auditor/documents", auditor(http.HandlerFunc(h.handleListDocuments)))
-	mux.Handle("GET /api/auditor/documents/{id}", auditor(http.HandlerFunc(h.handleGetDocument)))
-	mux.Handle("PATCH /api/auditor/documents/{id}/verify", auditor(http.HandlerFunc(h.handleVerifyDocument)))
-	mux.Handle("PATCH /api/auditor/documents/{id}/reject", auditor(http.HandlerFunc(h.handleRejectDocument)))
+	mux.Handle("GET /api/v1/auditor/documents", auditor(http.HandlerFunc(h.handleListDocuments)))
+	mux.Handle("GET /api/v1/auditor/documents/{id}", auditor(http.HandlerFunc(h.handleGetDocument)))
+	mux.Handle("PATCH /api/v1/auditor/documents/{id}/verify", auditor(http.HandlerFunc(h.handleVerifyDocument)))
+	mux.Handle("PATCH /api/v1/auditor/documents/{id}/reject", auditor(http.HandlerFunc(h.handleRejectDocument)))
 
 	// Organizer Verification
-	mux.Handle("GET /api/auditor/organizers", auditor(http.HandlerFunc(h.handleListOrganizers)))
-	mux.Handle("GET /api/auditor/organizers/{id}", auditor(http.HandlerFunc(h.handleGetOrganizer)))
-	mux.Handle("POST /api/auditor/organizers/{id}/approve", auditor(http.HandlerFunc(h.handleApproveOrganizer)))
-	mux.Handle("POST /api/auditor/organizers/{id}/reject", auditor(http.HandlerFunc(h.handleRejectOrganizer)))
-	mux.Handle("PATCH /api/auditor/organizers/{id}/status", auditor(http.HandlerFunc(h.handleUpdateOrganizerStatus)))
+	mux.Handle("GET /api/v1/auditor/organizers", auditor(http.HandlerFunc(h.handleListOrganizers)))
+	mux.Handle("GET /api/v1/auditor/organizers/{id}", auditor(http.HandlerFunc(h.handleGetOrganizer)))
+	mux.Handle("POST /api/v1/auditor/organizers/{id}/approve", auditor(http.HandlerFunc(h.handleApproveOrganizer)))
+	mux.Handle("POST /api/v1/auditor/organizers/{id}/reject", auditor(http.HandlerFunc(h.handleRejectOrganizer)))
+	mux.Handle("PATCH /api/v1/auditor/organizers/{id}/status", auditor(http.HandlerFunc(h.handleUpdateOrganizerStatus)))
 
 	// Payout Verification
-	mux.Handle("GET /api/auditor/payouts", auditor(http.HandlerFunc(h.handleListPayouts)))
-	mux.Handle("GET /api/auditor/payouts/{id}", auditor(http.HandlerFunc(h.handleGetPayout)))
-	mux.Handle("POST /api/auditor/payouts/{id}/approve", auditor(http.HandlerFunc(h.handleApprovePayout)))
-	mux.Handle("POST /api/auditor/payouts/{id}/reject", auditor(http.HandlerFunc(h.handleRejectPayout)))
-	mux.Handle("POST /api/auditor/payouts/{id}/hold", auditor(http.HandlerFunc(h.handleHoldPayout)))
+	mux.Handle("GET /api/v1/auditor/payouts", auditor(http.HandlerFunc(h.handleListPayouts)))
+	mux.Handle("GET /api/v1/auditor/payouts/{id}", auditor(http.HandlerFunc(h.handleGetPayout)))
+	mux.Handle("POST /api/v1/auditor/payouts/{id}/approve", auditor(http.HandlerFunc(h.handleApprovePayout)))
+	mux.Handle("POST /api/v1/auditor/payouts/{id}/reject", auditor(http.HandlerFunc(h.handleRejectPayout)))
+	mux.Handle("POST /api/v1/auditor/payouts/{id}/hold", auditor(http.HandlerFunc(h.handleHoldPayout)))
+
+	// Notifications
+	mux.Handle("GET /api/v1/auditor/notifications", auditor(http.HandlerFunc(h.handleListNotifications)))
+	mux.Handle("PUT /api/v1/auditor/notifications/read", auditor(http.HandlerFunc(h.handleMarkNotificationsRead)))
 }
 
 // ---- Shared helpers ----
@@ -287,6 +292,20 @@ func (h *Handler) handleAddEventRevision(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	response.JSON(w, http.StatusCreated, map[string]string{"message": "Revision added"})
+}
+
+func (h *Handler) handleListEventRevisions(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathIntParam(r, "id")
+	if !ok {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a positive integer")
+		return
+	}
+	data, err := h.service.ListEventRevisions(r.Context(), id)
+	if err != nil {
+		handleServiceError(w, "handleListEventRevisions", err)
+		return
+	}
+	response.JSON(w, http.StatusOK, data)
 }
 
 func (h *Handler) handleVerifyReviewDocument(w http.ResponseWriter, r *http.Request) {
@@ -608,3 +627,46 @@ func (h *Handler) handleHoldPayout(w http.ResponseWriter, r *http.Request) {
 	}
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Payout put on hold"})
 }
+
+// ---- Notification Handlers ----
+
+func (h *Handler) handleListNotifications(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := h.actorID(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+
+	notifications, err := h.service.ListNotifications(r.Context(), actorID)
+	if err != nil {
+		log.Printf("ListNotifications error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load notifications")
+		return
+	}
+	response.JSON(w, http.StatusOK, notifications)
+}
+
+func (h *Handler) handleMarkNotificationsRead(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := h.actorID(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+
+	var req MarkNotificationsReadRequest
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse request")
+			return
+		}
+	}
+
+	err := h.service.MarkNotificationsRead(r.Context(), actorID, req.NotificationIDs)
+	if err != nil {
+		log.Printf("MarkNotificationsRead error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to mark notifications read")
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Notifications updated successfully"})
+}
+

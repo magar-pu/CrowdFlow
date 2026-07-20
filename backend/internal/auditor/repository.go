@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -702,7 +703,16 @@ func (r *PostgresAuditorRepository) ApproveEventReview(ctx context.Context, even
 		return err
 	}
 
-	return tx.Commit()
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		_ = r.CreateNotificationForAuditors(context.Background(), "✅ Event Disetujui", fmt.Sprintf("Event %q telah disetujui oleh auditor.", eventName), "event", strconv.Itoa(eventID))
+	}()
+
+	return nil
 }
 
 func (r *PostgresAuditorRepository) RejectEventReview(ctx context.Context, eventID, actorID int, reason, notes string) error {
@@ -749,7 +759,16 @@ func (r *PostgresAuditorRepository) RejectEventReview(ctx context.Context, event
 		return err
 	}
 
-	return tx.Commit()
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		_ = r.CreateNotificationForAuditors(context.Background(), "❌ Event Ditolak", fmt.Sprintf("Event %q telah ditolak. Alasan: %s", eventName, reason), "event", strconv.Itoa(eventID))
+	}()
+
+	return nil
 }
 
 func (r *PostgresAuditorRepository) RequestEventChanges(ctx context.Context, eventID, actorID int, notes string) error {
@@ -1581,8 +1600,13 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 		p.Status = string(dbStatus)
 		p.RequestDate = formatTime(reqTime)
 		p.EventDate = eventTime.Format("2006-01-02 15:04")
-		p.RiskLevel = RiskLow
-		p.RiskScore = 15
+		
+		riskScore := 20
+		if p.RequestedAmount > 1000000.0 {
+			riskScore = 40
+		}
+		p.RiskScore = riskScore
+		p.RiskLevel = computeRiskLevel(100 - riskScore)
 		
 		list = append(list, &p)
 	}
@@ -1610,7 +1634,13 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 			COALESCE(up.full_name, 'Unknown Organizer'),
 			COALESCE(oa.business_email, 'org@crowdflow.com'),
 			COALESCE(oa.notes, ''),
-			e.entertainment_tax_rate
+			e.entertainment_tax_rate,
+			COALESCE(oa.bank_name, 'Bank Central Asia (BCA)'),
+			COALESCE(oa.bank_account_number, '8024927501'),
+			COALESCE(oa.bank_account_holder, up.full_name, 'Unknown Organizer'),
+			COALESCE(oa.business_phone, '+62 812-3456-7890'),
+			COALESCE(oa.business_license, 'BL-2026-ID-00123'),
+			COALESCE(oa.status::text, 'Verified')
 		FROM payouts p
 		JOIN events e ON e.id = p.event_id
 		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
@@ -1635,6 +1665,12 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		&p.OrganizerEmail,
 		&p.InternalNotes,
 		&taxRate,
+		&p.BankName,
+		&p.BankAccountNum,
+		&p.BankHolder,
+		&p.OrganizerPhone,
+		&p.OrganizerBusinessLicense,
+		&p.OrganizerStatus,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -1673,10 +1709,6 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		RefundAmount:    0.0,
 		NetRevenue:      netRevenue,
 	}
-
-	p.BankName = "Bank Central Asia (BCA)"
-	p.BankAccountNum = "8024927501"
-	p.BankHolder = p.OrganizerName
 
 	// Calculate Risk Score & Level
 	riskScore := 20
@@ -1761,7 +1793,16 @@ func (r *PostgresAuditorRepository) ApprovePayout(ctx context.Context, payoutID,
 		return err
 	}
 
-	return tx.Commit()
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Disetujui", fmt.Sprintf("Payout #%d telah disetujui.", payoutID), "payout", strconv.Itoa(payoutID))
+	}()
+
+	return nil
 }
 
 func (r *PostgresAuditorRepository) RejectPayout(ctx context.Context, payoutID, actorID int, req RejectPayoutRequest) error {
@@ -1792,7 +1833,16 @@ func (r *PostgresAuditorRepository) RejectPayout(ctx context.Context, payoutID, 
 		return err
 	}
 
-	return tx.Commit()
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Ditolak", fmt.Sprintf("Payout #%d telah ditolak. Alasan: %s", payoutID, req.Reason), "payout", strconv.Itoa(payoutID))
+	}()
+
+	return nil
 }
 
 func (r *PostgresAuditorRepository) HoldPayout(ctx context.Context, payoutID, actorID int, req HoldPayoutRequest) error {
@@ -1823,5 +1873,98 @@ func (r *PostgresAuditorRepository) HoldPayout(ctx context.Context, payoutID, ac
 		return err
 	}
 
-	return tx.Commit()
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Ditahan", fmt.Sprintf("Payout #%d telah ditahan. Alasan: %s", payoutID, req.Reason), "payout", strconv.Itoa(payoutID))
+	}()
+
+	return nil
 }
+
+// ---- Notification Methods ----
+
+func (r *PostgresAuditorRepository) ListNotifications(ctx context.Context, userID int) ([]*AuditorNotification, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, user_id, title, detail, COALESCE(resource_type, ''), COALESCE(resource_id, ''), is_read, created_at
+		FROM notifications
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+		LIMIT 100
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	notifications := []*AuditorNotification{}
+	for rows.Next() {
+		var n AuditorNotification
+		err = rows.Scan(&n.ID, &n.UserID, &n.Title, &n.Detail, &n.ResourceType, &n.ResourceID, &n.IsRead, &n.CreatedAt)
+		if err == nil {
+			notifications = append(notifications, &n)
+		}
+	}
+	return notifications, nil
+}
+
+func (r *PostgresAuditorRepository) MarkNotificationsRead(ctx context.Context, userID int, notificationIDs []int) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	if len(notificationIDs) == 0 {
+		_, err := r.db.ExecContext(ctx, `
+			UPDATE notifications
+			SET is_read = TRUE
+			WHERE user_id = $1 AND is_read = FALSE
+		`, userID)
+		return err
+	}
+
+	query := `UPDATE notifications SET is_read = TRUE WHERE user_id = $1 AND id IN (`
+	args := []interface{}{userID}
+	for i, id := range notificationIDs {
+		if i > 0 {
+			query += ", "
+		}
+		query += fmt.Sprintf("$%d", i+2)
+		args = append(args, id)
+	}
+	query += ")"
+
+	_, err := r.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+func (r *PostgresAuditorRepository) CreateNotification(ctx context.Context, userID int, title, detail, resourceType, resourceID string) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO notifications (user_id, title, detail, resource_type, resource_id)
+		VALUES ($1, $2, $3, $4, $5)
+	`, userID, title, detail, resourceType, resourceID)
+	return err
+}
+
+func (r *PostgresAuditorRepository) CreateNotificationForAuditors(ctx context.Context, title, detail, resourceType, resourceID string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO notifications (user_id, title, detail, resource_type, resource_id)
+		SELECT u.id, $1, $2, $3, $4
+		FROM users u
+		JOIN user_roles ur ON u.id = ur.user_id
+		JOIN roles r ON ur.role_id = r.id
+		WHERE r.role_name IN ('Auditor', 'Super Admin')
+	`, title, detail, resourceType, resourceID)
+	return err
+}
+

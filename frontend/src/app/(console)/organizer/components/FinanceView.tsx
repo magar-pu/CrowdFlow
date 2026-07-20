@@ -80,7 +80,7 @@ export default function FinanceView() {
             <DollarSign className="w-4 h-4 text-on-surface-variant" />
           </div>
           <span className="text-2xl font-bold text-text-primary">
-            ${summary ? summary.grossSales.toLocaleString() : "0"}
+            Rp {summary ? summary.grossSales.toLocaleString('id-ID') : "0"}
           </span>
           <p className="text-[10px] text-on-surface-variant">Total processed tickets payment volume</p>
         </div>
@@ -91,7 +91,7 @@ export default function FinanceView() {
             <Landmark className="w-4 h-4 text-on-surface-variant" />
           </div>
           <span className="text-2xl font-bold text-secondary">
-            ${summary ? summary.payoutBalance.toLocaleString() : "0"}
+            Rp {summary ? summary.payoutBalance.toLocaleString('id-ID') : "0"}
           </span>
           <p className="text-[10px] text-on-surface-variant">Net balance available for bank settlement</p>
         </div>
@@ -102,7 +102,7 @@ export default function FinanceView() {
             <ArrowUpRight className="w-4 h-4 text-on-surface-variant" />
           </div>
           <span className="text-2xl font-bold text-success">
-            ${summary ? (summary.netRevenue - summary.payoutBalance).toLocaleString() : "0"}
+            Rp {summary ? (summary.netRevenue - summary.payoutBalance).toLocaleString('id-ID') : "0"}
           </span>
           <p className="text-[10px] text-on-surface-variant">Amount successfully wired to bank account</p>
         </div>
@@ -138,7 +138,7 @@ export default function FinanceView() {
                       <td className="p-4 font-medium text-text-primary">{pay.eventName}</td>
                       <td className="p-4 text-text-secondary">Chase Bank (•••• 9876)</td>
                       <td className="p-4 text-text-secondary">{pay.requestedAt ? pay.requestedAt.slice(0, 10) : ""}</td>
-                      <td className="p-4 text-right font-semibold font-mono">${pay.amount.toLocaleString()}</td>
+                      <td className="p-4 text-right font-semibold font-mono">Rp {pay.amount.toLocaleString('id-ID')}</td>
                       <td className="p-4">
                         <span className={`px-2.5 py-1 rounded-full font-mono text-[9px] font-bold ${
                           isProcessed ? 'status-paid' : 'status-pending'

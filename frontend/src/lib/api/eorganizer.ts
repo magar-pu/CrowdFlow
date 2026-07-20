@@ -336,6 +336,8 @@ export interface ApiNotification {
   userId: number;
   title: string;
   detail: string;
+  resourceType?: string;
+  resourceId?: string;
   isRead: boolean;
   createdAt: string;
 }

@@ -426,7 +426,7 @@ func (r *PostgresRepository) GetDashboardData(ctx context.Context, organizerID i
 	// 9. Recent Events
 	recentEvents := []RecentEvent{}
 	rowsEvents, err := r.db.QueryContext(ctx, `
-		SELECT e.id, e.event_name, et.name, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''), v.name, v.city,
+		SELECT e.id, e.event_name, et.event_type, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''), v.name, v.city,
 		       COALESCE((SELECT SUM(allocation_limit) FROM ticket_tiers WHERE event_id = e.id), 0) as capacity,
 		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = e.id), 0) as sold,
 		       COALESCE((SELECT SUM(gross_amount) FROM orders WHERE event_id = e.id AND status = 'paid'), 0) as revenue
@@ -470,7 +470,7 @@ func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerI
 	defer cancel()
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT e.id, e.event_name, et.name, e.description, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''), v.name, v.city,
+		SELECT e.id, e.event_name, et.event_type, e.description, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''), v.name, v.city,
 		       COALESCE((SELECT SUM(allocation_limit) FROM ticket_tiers WHERE event_id = e.id), 0) as capacity,
 		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = e.id), 0) as sold,
 		       COALESCE((SELECT SUM(gross_amount) FROM orders WHERE event_id = e.id AND status = 'paid'), 0) as revenue
@@ -521,7 +521,7 @@ func (r *PostgresRepository) GetOrganizerEvent(ctx context.Context, eventID int,
 	var start, end time.Time
 	var statusVal string
 	err := r.db.QueryRowContext(ctx, `
-		SELECT e.id, e.event_name, et.name, e.description, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''), v.name, v.city,
+		SELECT e.id, e.event_name, et.event_type, e.description, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''), v.name, v.city,
 		       COALESCE((SELECT SUM(allocation_limit) FROM ticket_tiers WHERE event_id = e.id), 0) as capacity,
 		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = e.id), 0) as sold,
 		       COALESCE((SELECT SUM(gross_amount) FROM orders WHERE event_id = e.id AND status = 'paid'), 0) as revenue
@@ -880,10 +880,18 @@ func (r *PostgresRepository) ListAttendees(ctx context.Context, organizerID int)
 	defer cancel()
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT t.id, t.attendee_full_name, t.attendee_email, tt.name, t.ticket_status, t.created_at
+		SELECT 
+			t.id, 
+			t.attendee_full_name, 
+			t.attendee_email, 
+			tt.name, 
+			t.ticket_status, 
+			t.created_at,
+			COALESCE(CONCAT(esm.section_name, ' Row ', esm.row_name, ' Seat ', esm.seat_number), 'General Seating')
 		FROM tickets t
 		JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
 		JOIN events e ON tt.event_id = e.id
+		LEFT JOIN event_seats_matrix esm ON t.event_seats_matrix_id = esm.id
 		WHERE e.organizer_id = $1
 		ORDER BY t.created_at DESC
 	`, organizerID)
@@ -897,10 +905,11 @@ func (r *PostgresRepository) ListAttendees(ctx context.Context, organizerID int)
 		var a OrganizerAttendee
 		var statusVal string
 		var createdAt time.Time
-		err = rows.Scan(&a.ID, &a.Name, &a.Email, &a.TicketType, &statusVal, &createdAt)
+		var seatNo string
+		err = rows.Scan(&a.ID, &a.Name, &a.Email, &a.TicketType, &statusVal, &createdAt, &seatNo)
 		if err == nil {
 			a.Status = string(statusVal)
-			a.SeatNumber = "GA-Field"
+			a.SeatNumber = seatNo
 			a.CheckInTime = createdAt.Format("15:04:05")
 			attendees = append(attendees, &a)
 		}
@@ -913,10 +922,18 @@ func (r *PostgresRepository) ListEventAttendees(ctx context.Context, eventID int
 	defer cancel()
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT t.id, t.attendee_full_name, t.attendee_email, tt.name, t.ticket_status, t.created_at
+		SELECT 
+			t.id, 
+			t.attendee_full_name, 
+			t.attendee_email, 
+			tt.name, 
+			t.ticket_status, 
+			t.created_at,
+			COALESCE(CONCAT(esm.section_name, ' Row ', esm.row_name, ' Seat ', esm.seat_number), 'General Seating')
 		FROM tickets t
 		JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
 		JOIN events e ON tt.event_id = e.id
+		LEFT JOIN event_seats_matrix esm ON t.event_seats_matrix_id = esm.id
 		WHERE e.id = $1 AND e.organizer_id = $2
 		ORDER BY t.created_at DESC
 	`, eventID, organizerID)
@@ -930,10 +947,11 @@ func (r *PostgresRepository) ListEventAttendees(ctx context.Context, eventID int
 		var a OrganizerAttendee
 		var statusVal string
 		var createdAt time.Time
-		err = rows.Scan(&a.ID, &a.Name, &a.Email, &a.TicketType, &statusVal, &createdAt)
+		var seatNo string
+		err = rows.Scan(&a.ID, &a.Name, &a.Email, &a.TicketType, &statusVal, &createdAt, &seatNo)
 		if err == nil {
 			a.Status = string(statusVal)
-			a.SeatNumber = "GA-Field"
+			a.SeatNumber = seatNo
 			a.CheckInTime = createdAt.Format("15:04:05")
 			attendees = append(attendees, &a)
 		}
@@ -1004,7 +1022,7 @@ func (r *PostgresRepository) GetFinanceSummary(ctx context.Context, organizerID 
 
 	// Refunded amount
 	err = r.db.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(r.amount), 0)
+		SELECT COALESCE(SUM(r.final_disbursed_amount), 0)
 		FROM refunds r
 		JOIN orders o ON r.order_id = o.id
 		JOIN events e ON o.event_id = e.id
@@ -1140,15 +1158,15 @@ func (r *PostgresRepository) GetAnalytics(ctx context.Context, organizerID int, 
 		}
 	}
 
-	// If no data points returned, fill in mock trend points for the graph so the UI doesn't look blank
+	// If no data points returned, fill in 0 values for each day so the UI renders a flat line of 0 sales
 	if len(points) == 0 {
 		now := time.Now()
 		for i := days; i >= 0; i-- {
 			d := now.AddDate(0, 0, -i)
 			points = append(points, AnalyticsPoint{
 				Date:    d.Format("2006-01-02"),
-				Sales:   float64(100 + (i*15)%70),
-				Tickets: 1 + (i%5),
+				Sales:   0.0,
+				Tickets: 0,
 			})
 		}
 	}
@@ -1221,10 +1239,10 @@ func (r *PostgresRepository) CreateOrganizerEvent(ctx context.Context, organizer
 	if categoryName == "" {
 		categoryName = "Festival"
 	}
-	err = tx.QueryRowContext(ctx, "SELECT id FROM event_types WHERE name = $1", categoryName).Scan(&eventTypeID)
+	err = tx.QueryRowContext(ctx, "SELECT id FROM event_types WHERE event_type = $1", categoryName).Scan(&eventTypeID)
 	if err == sql.ErrNoRows {
 		err = tx.QueryRowContext(ctx, `
-			INSERT INTO event_types (name)
+			INSERT INTO event_types (event_type)
 			VALUES ($1)
 			RETURNING id
 		`, categoryName).Scan(&eventTypeID)
@@ -1352,10 +1370,10 @@ func (r *PostgresRepository) UpdateOrganizerEvent(ctx context.Context, eventID i
 	if categoryName == "" {
 		categoryName = "Festival"
 	}
-	err = tx.QueryRowContext(ctx, "SELECT id FROM event_types WHERE name = $1", categoryName).Scan(&eventTypeID)
+	err = tx.QueryRowContext(ctx, "SELECT id FROM event_types WHERE event_type = $1", categoryName).Scan(&eventTypeID)
 	if err == sql.ErrNoRows {
 		err = tx.QueryRowContext(ctx, `
-			INSERT INTO event_types (name)
+			INSERT INTO event_types (event_type)
 			VALUES ($1)
 			RETURNING id
 		`, categoryName).Scan(&eventTypeID)
@@ -1686,7 +1704,7 @@ func (r *PostgresRepository) ListNotifications(ctx context.Context, userID int) 
 	defer cancel()
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, user_id, title, detail, is_read, created_at
+		SELECT id, user_id, title, detail, COALESCE(resource_type, ''), COALESCE(resource_id, ''), is_read, created_at
 		FROM notifications
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -1699,7 +1717,7 @@ func (r *PostgresRepository) ListNotifications(ctx context.Context, userID int) 
 	notifications := []*Notification{}
 	for rows.Next() {
 		var n Notification
-		err = rows.Scan(&n.ID, &n.UserID, &n.Title, &n.Detail, &n.IsRead, &n.CreatedAt)
+		err = rows.Scan(&n.ID, &n.UserID, &n.Title, &n.Detail, &n.ResourceType, &n.ResourceID, &n.IsRead, &n.CreatedAt)
 		if err == nil {
 			notifications = append(notifications, &n)
 		}
