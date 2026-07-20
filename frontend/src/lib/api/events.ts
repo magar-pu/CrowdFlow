@@ -10,19 +10,19 @@ export async function listEvents(limit?: number, offset?: number): Promise<ApiRe
   if (params.length > 0) {
     query = "?" + params.join("&");
   }
-  return apiRequest<Event[]>(`/api/events${query}`, {
+  return apiRequest<Event[]>(`/api/v1/events${query}`, {
     method: "GET",
   });
 }
 
-export async function getEvent(id: number | string): Promise<ApiResponse<Event>> {
-  return apiRequest<Event>(`/api/events/${id}`, {
+export async function getEvent(id: number): Promise<ApiResponse<Event>> {
+  return apiRequest<Event>(`/api/v1/events/${id}`, {
     method: "GET",
   });
 }
 
 export async function createEvent(formData: FormData): Promise<ApiResponse<Event>> {
-  return apiRequest<Event>("/api/events", {
+  return apiRequest<Event>("/api/v1/events", {
     method: "POST",
     body: formData,
   });

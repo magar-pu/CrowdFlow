@@ -8,8 +8,8 @@ interface GoogleLoginProps {
 export default function GoogleLogin({ onSuccess, onError }: GoogleLoginProps) {
     return (
         <a
-            href="/api/auth/google/login"
-            className="w-[320px] h-[40px] mx-auto flex items-center justify-center gap-3 border border-outline-variant bg-surface-white hover:bg-surface-container-low text-on-surface font-body-md text-body-md font-medium rounded-lg shadow-sm hover:shadow-md hover:-translate-y-[2px] active:scale-[0.98] transition-all duration-200 select-none text-decoration-none"
+            href="/api/v1/auth/google/login"
+            className="w-[320px] h-[40px] mx-auto flex items-center justify-center gap-3 border border-outline-variant bg-surface-white hover:bg-surface-container-low text-on-surface font-body-md text-body-md font-medium rounded-lg shadow-sm transition-colors select-none text-decoration-none"
         >
             {/* Google "G" Icon */}
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

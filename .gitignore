@@ -62,6 +62,7 @@ backend/.env
 
 # Local Documentation
 DEVELOPER.md
+*.md
 
 # UI Materials
 bahan ui/
@@ -74,3 +75,5 @@ seed_events.sh
 create_event.sh
 
 .claude.json
+
+*.png

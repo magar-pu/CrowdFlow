@@ -329,18 +329,18 @@ func (r *PostgresRepository) ListUsers(limit, offset int) ([]*User, error) {
 }
 
 // mapPlatformRole translates DB platform role names to the admin frontend's
-// 'Buyer' | 'Seller' | 'Organizer' | 'Admin' union. This mapping is lossy:
-// "Auditor" has no equivalent, and "Seller" isn't a platform role at all in
-// the RBAC schema (resale is an order_type on orders/ticket_resale_listings,
-// not a role) - both fall back to "Buyer". The frontend union should be
-// reconciled with the real roles table.
+// 'Buyer' | 'Seller' | 'Organizer' | 'Admin' | 'Auditor' union. "Seller" isn't
+// a platform role at all in the RBAC schema (resale is an order_type on
+// orders/ticket_resale_listings, not a role) - it falls back to "Buyer".
 func mapPlatformRole(dbRole string) string {
 	switch dbRole {
 	case "Event Organizer":
 		return "Organizer"
 	case "Super Admin":
 		return "Admin"
-	default: // "User", "Auditor"
+	case "Auditor":
+		return "Auditor"
+	default: // "User"
 		return "Buyer"
 	}
 }

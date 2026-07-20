@@ -30,13 +30,13 @@ func NewHandler(service *AuthService, secure bool) *Handler {
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux, authenticate func(http.Handler) http.Handler, rateLimitLogin func(http.Handler) http.Handler) {
-	mux.HandleFunc("POST /api/auth/register", h.handleRegister)
-	mux.Handle("POST /api/auth/login", rateLimitLogin(http.HandlerFunc(h.handleLogin)))
-	mux.HandleFunc("GET /api/auth/google/login", h.handleGoogleRedirect)
-	mux.HandleFunc("GET /api/auth/google/callback", h.handleGoogleCallback)
-	mux.HandleFunc("POST /api/auth/logout", h.handleLogout)
-	mux.Handle("GET /api/auth/me", authenticate(http.HandlerFunc(h.handleMe)))
-	mux.Handle("PUT /api/auth/me", authenticate(http.HandlerFunc(h.handleUpdateProfile)))
+	mux.HandleFunc("POST /auth/register", h.handleRegister)
+	mux.Handle("POST /auth/login", rateLimitLogin(http.HandlerFunc(h.handleLogin)))
+	mux.HandleFunc("GET /auth/google/login", h.handleGoogleRedirect)
+	mux.HandleFunc("GET /auth/google/callback", h.handleGoogleCallback)
+	mux.HandleFunc("POST /auth/logout", h.handleLogout)
+	mux.Handle("GET /auth/me", authenticate(http.HandlerFunc(h.handleMe)))
+	mux.Handle("PUT /auth/me", authenticate(http.HandlerFunc(h.handleUpdateProfile)))
 }
 
 func generateCSRFToken() string {
