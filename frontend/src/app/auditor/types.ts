@@ -86,6 +86,9 @@ export interface OrganizerVerification {
     timestamp: string;
     details: string;
   }[];
+
+  // Documents
+  documents?: ReviewDocument[];
 }
 
 export type PayoutStatus =
@@ -222,12 +225,14 @@ export interface ChecklistItem {
 }
 
 export interface ReviewDocument {
+  id?: string | number;
   name: string;
   category: 'Permits & Licenses' | 'Vendor & Venue Contracts' | 'Artist & Talent Agreements' | 'Supporting Documents' | 'Business License' | 'Insurance' | 'Tax Document' | 'Emergency Plan';
   status: 'VERIFIED' | 'WAITING REVIEW' | 'READY' | 'REJECTED' | 'MISSING';
   uploadDate?: string;
   expiredDate?: string;
   uploadedBy?: string;
+  fileUrl?: string;
 }
 
 export interface OrganizerDetail {

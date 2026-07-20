@@ -38,8 +38,9 @@ func (r *PostgresRepository) Create(ctx context.Context, app *OrganizerApplicati
 
 	queryApp := `
 		INSERT INTO organizer_applications (
-			user_id, business_name, business_type, business_email, business_phone, website, description, status
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			user_id, business_name, business_type, business_email, business_phone, website, description, status,
+			bank_name, bank_account_holder, bank_account_number, business_address
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING id, submitted_at
 	`
 	
@@ -56,6 +57,7 @@ func (r *PostgresRepository) Create(ctx context.Context, app *OrganizerApplicati
 		ctx, queryApp,
 		app.UserID, app.BusinessName, app.BusinessType, app.BusinessEmail, app.BusinessPhone,
 		websiteVal, descVal, app.Status,
+		app.BankName, app.BankAccountHolder, app.BankAccountNumber, app.BusinessAddress,
 	).Scan(&app.ID, &app.SubmittedAt)
 	if err != nil {
 		return err
@@ -86,18 +88,20 @@ func (r *PostgresRepository) GetByUserID(ctx context.Context, userID int) (*Orga
 	defer cancel()
 
 	app := &OrganizerApplication{}
-	var websiteNull, descNull, notesNull sql.NullString
+	var websiteNull, descNull, notesNull, bankNameNull, bankAccountHolderNull, bankAccountNumberNull, businessAddressNull sql.NullString
 	var reviewedAtNull sql.NullTime
 	var reviewedByNull sql.NullInt64
 
 	queryApp := `
-		SELECT id, user_id, business_name, business_type, business_email, business_phone, website, description, status, submitted_at, reviewed_at, reviewed_by, notes
+		SELECT id, user_id, business_name, business_type, business_email, business_phone, website, description, status, submitted_at, reviewed_at, reviewed_by, notes,
+		       bank_name, bank_account_holder, bank_account_number, business_address
 		FROM organizer_applications
 		WHERE user_id = $1
 	`
 	err := r.db.QueryRowContext(ctx, queryApp, userID).Scan(
 		&app.ID, &app.UserID, &app.BusinessName, &app.BusinessType, &app.BusinessEmail, &app.BusinessPhone,
 		&websiteNull, &descNull, &app.Status, &app.SubmittedAt, &reviewedAtNull, &reviewedByNull, &notesNull,
+		&bankNameNull, &bankAccountHolderNull, &bankAccountNumberNull, &businessAddressNull,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -121,6 +125,18 @@ func (r *PostgresRepository) GetByUserID(ctx context.Context, userID int) (*Orga
 	}
 	if notesNull.Valid {
 		app.Notes = &notesNull.String
+	}
+	if bankNameNull.Valid {
+		app.BankName = &bankNameNull.String
+	}
+	if bankAccountHolderNull.Valid {
+		app.BankAccountHolder = &bankAccountHolderNull.String
+	}
+	if bankAccountNumberNull.Valid {
+		app.BankAccountNumber = &bankAccountNumberNull.String
+	}
+	if businessAddressNull.Valid {
+		app.BusinessAddress = &businessAddressNull.String
 	}
 
 	docs, err := r.getDocuments(ctx, app.ID)
@@ -137,18 +153,20 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id int) (*OrganizerApp
 	defer cancel()
 
 	app := &OrganizerApplication{}
-	var websiteNull, descNull, notesNull sql.NullString
+	var websiteNull, descNull, notesNull, bankNameNull, bankAccountHolderNull, bankAccountNumberNull, businessAddressNull sql.NullString
 	var reviewedAtNull sql.NullTime
 	var reviewedByNull sql.NullInt64
 
 	queryApp := `
-		SELECT id, user_id, business_name, business_type, business_email, business_phone, website, description, status, submitted_at, reviewed_at, reviewed_by, notes
+		SELECT id, user_id, business_name, business_type, business_email, business_phone, website, description, status, submitted_at, reviewed_at, reviewed_by, notes,
+		       bank_name, bank_account_holder, bank_account_number, business_address
 		FROM organizer_applications
 		WHERE id = $1
 	`
 	err := r.db.QueryRowContext(ctx, queryApp, id).Scan(
 		&app.ID, &app.UserID, &app.BusinessName, &app.BusinessType, &app.BusinessEmail, &app.BusinessPhone,
 		&websiteNull, &descNull, &app.Status, &app.SubmittedAt, &reviewedAtNull, &reviewedByNull, &notesNull,
+		&bankNameNull, &bankAccountHolderNull, &bankAccountNumberNull, &businessAddressNull,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -172,6 +190,18 @@ func (r *PostgresRepository) GetByID(ctx context.Context, id int) (*OrganizerApp
 	}
 	if notesNull.Valid {
 		app.Notes = &notesNull.String
+	}
+	if bankNameNull.Valid {
+		app.BankName = &bankNameNull.String
+	}
+	if bankAccountHolderNull.Valid {
+		app.BankAccountHolder = &bankAccountHolderNull.String
+	}
+	if bankAccountNumberNull.Valid {
+		app.BankAccountNumber = &bankAccountNumberNull.String
+	}
+	if businessAddressNull.Valid {
+		app.BusinessAddress = &businessAddressNull.String
 	}
 
 	docs, err := r.getDocuments(ctx, app.ID)
@@ -209,13 +239,16 @@ func (r *PostgresRepository) Update(ctx context.Context, app *OrganizerApplicati
 	query := `
 		UPDATE organizer_applications
 		SET business_name = $1, business_type = $2, business_email = $3, business_phone = $4,
-		    website = $5, description = $6, status = $7, reviewed_at = $8, reviewed_by = $9, notes = $10
-		WHERE id = $11
+		    website = $5, description = $6, status = $7, reviewed_at = $8, reviewed_by = $9, notes = $10,
+		    bank_name = $11, bank_account_holder = $12, bank_account_number = $13, business_address = $14
+		WHERE id = $15
 	`
 	_, err = tx.ExecContext(
 		ctx, query,
 		app.BusinessName, app.BusinessType, app.BusinessEmail, app.BusinessPhone,
-		websiteVal, descVal, app.Status, app.ReviewedAt, app.ReviewedBy, notesVal, app.ID,
+		websiteVal, descVal, app.Status, app.ReviewedAt, app.ReviewedBy, notesVal,
+		app.BankName, app.BankAccountHolder, app.BankAccountNumber, app.BusinessAddress,
+		app.ID,
 	)
 	if err != nil {
 		return err

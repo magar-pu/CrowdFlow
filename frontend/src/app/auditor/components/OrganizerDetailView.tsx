@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState } from 'react';
-import { OrganizerVerification, OrganizerStatus } from '../types';
+import { OrganizerVerification, OrganizerStatus, ReviewDocument } from '../types';
 import {
   Shield, CheckCircle2,
-  ArrowLeft, Ban, Send, Save, X, Activity, RefreshCw
+  ArrowLeft, Ban, Send, Save, X, Activity, RefreshCw, FileText, ExternalLink
 } from 'lucide-react';
 
 interface OrganizerDetailViewProps {
@@ -12,6 +12,8 @@ interface OrganizerDetailViewProps {
   onBack: () => void;
   onUpdateOrganizerStatus: (id: string, status: OrganizerStatus, notes: string, feedback: string) => void;
   onUpdateOrganizerChecklist: (id: string, checklist: OrganizerVerification['checklist']) => void;
+  onVerifyDocument: (docId: string) => void;
+  onRejectDocument: (docId: string) => void;
 }
 
 const statusColors: Record<OrganizerStatus, string> = {
@@ -43,6 +45,8 @@ export default function OrganizerDetailView({
   onBack,
   onUpdateOrganizerStatus,
   onUpdateOrganizerChecklist,
+  onVerifyDocument,
+  onRejectDocument,
 }: OrganizerDetailViewProps) {
   const [notes, setNotes] = useState(organizer.internalNotes || '');
   const [feedback, setFeedback] = useState(organizer.organizerFeedback || '');
@@ -114,13 +118,12 @@ export default function OrganizerDetailView({
           {/* Company Information */}
           <SectionCard title="Company Information">
             <div className="flex items-center gap-3 border-b border-border-subtle pb-3">
-              <img src={organizer.logo} alt={organizer.name} className="w-10 h-10 rounded-full object-cover border border-border-subtle" />
               <div>
-                <h3 className="text-sm font-bold text-text-primary">{organizer.name}</h3>
+                <h3 className="text-sm font-bold text-text-primary">{organizer.companyName}</h3>
                 <p className="text-[10px] text-text-secondary font-mono">{organizer.businessType}</p>
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs mt-3">
               {[
                 { label: 'Company Name', value: organizer.companyName },
                 { label: 'Business License (NIB)', value: organizer.businessLicense },
@@ -138,30 +141,97 @@ export default function OrganizerDetailView({
 
           {/* PIC Information */}
           <SectionCard title="PIC Information">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2.5 text-xs">
-                {[
-                  { label: 'Full Name', value: organizer.picName },
-                  { label: 'Position', value: organizer.picPosition },
-                  { label: 'Email Address', value: organizer.picEmail },
-                  { label: 'Phone Number', value: organizer.picPhone },
-                  { label: 'National ID (NIK)', value: organizer.picNationalId },
-                ].map(r => (
-                  <div key={r.label}>
-                    <p className="text-[9px] font-mono text-text-secondary uppercase">{r.label}</p>
-                    <p className="text-text-primary font-medium mt-0.5">{r.value}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="space-y-2">
-                <p className="text-[9px] font-mono font-bold text-text-secondary uppercase">Selfie Verification</p>
-                <div className="border border-border-subtle rounded-lg overflow-hidden h-40 relative bg-slate-50 flex items-center justify-center">
-                  <img src={organizer.picSelfieUrl} alt="Selfie Verification" className="w-full h-full object-cover" />
-                  <div className="absolute bottom-2 left-2 right-2 bg-black/60 backdrop-blur-xs text-white text-[9px] text-center rounded py-1 font-semibold">
-                    Face Match ID Verified
-                  </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              {[
+                { label: 'Full Name', value: organizer.picName },
+                { label: 'Position', value: organizer.picPosition },
+                { label: 'Email Address', value: organizer.picEmail },
+                { label: 'Phone Number', value: organizer.picPhone },
+                { label: 'National ID (NIK)', value: organizer.picNationalId },
+              ].map(r => (
+                <div key={r.label}>
+                  <p className="text-[9px] font-mono text-text-secondary uppercase">{r.label}</p>
+                  <p className="text-text-primary font-medium mt-0.5">{r.value}</p>
                 </div>
-              </div>
+              ))}
+            </div>
+          </SectionCard>
+
+          {/* Onboarding Documents */}
+          <SectionCard title="Onboarding Documents">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {organizer.documents && organizer.documents.length > 0 ? (
+                organizer.documents.map((doc: ReviewDocument) => (
+                  <div
+                    key={doc.id}
+                    className="flex flex-col justify-between p-4 border border-border-subtle bg-surface-container-low rounded-xl text-xs space-y-3"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 border border-border-subtle bg-white text-text-secondary rounded-lg shrink-0">
+                        <FileText className="w-5 h-5 text-secondary" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-text-primary uppercase tracking-wide">
+                          {doc.name}
+                        </p>
+                        <p className="text-[10px] text-text-secondary mt-0.5">
+                          {doc.category}
+                        </p>
+                        <p className="text-[9px] font-mono text-text-secondary mt-1">
+                          Uploaded: {doc.uploadDate}
+                        </p>
+                      </div>
+                      <span
+                        className={`ml-auto px-2 py-0.5 rounded-full font-mono text-[9px] font-bold border shrink-0 ${
+                          doc.status === "VERIFIED"
+                            ? "bg-success/10 text-success border-success/20"
+                            : doc.status === "REJECTED"
+                            ? "bg-danger/10 text-danger border-danger/20"
+                            : "bg-warning/10 text-warning border-warning/20"
+                        }`}
+                      >
+                        {doc.status === "VERIFIED"
+                          ? "VERIFIED"
+                          : doc.status === "REJECTED"
+                          ? "REJECTED"
+                          : "WAITING REVIEW"}
+                      </span>
+                    </div>
+
+                    <div className="flex gap-2 pt-2 border-t border-border-subtle">
+                      <a
+                        href={doc.fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 border border-border-subtle bg-white hover:bg-surface text-text-secondary hover:text-text-primary rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" /> View Link
+                      </a>
+
+                      {doc.status !== "VERIFIED" && doc.status !== "REJECTED" && (
+                        <>
+                          <button
+                            onClick={() => onVerifyDocument(String(doc.id))}
+                            className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-success text-white rounded-lg text-xs font-bold hover:bg-success/90 transition-colors cursor-pointer"
+                          >
+                            Verify
+                          </button>
+                          <button
+                            onClick={() => onRejectDocument(String(doc.id))}
+                            className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-danger text-white rounded-lg text-xs font-bold hover:bg-danger/90 transition-colors cursor-pointer"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="col-span-2 text-center py-6 text-text-secondary">
+                  No onboarding documents uploaded for this organizer.
+                </div>
+              )}
             </div>
           </SectionCard>
 

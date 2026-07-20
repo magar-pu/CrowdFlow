@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"crowdflow-backend/internal/admin"
+	"crowdflow-backend/internal/auditor"
 	"crowdflow-backend/internal/auth"
 	"crowdflow-backend/internal/booking"
 	"crowdflow-backend/internal/event"
@@ -145,6 +146,14 @@ func main() {
 
 	// Register Organizer routes
 	organizerHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole, authMounter.RequireEventOwnership)
+
+	// Initialize Auditor portal dependencies
+	auditorRepo := auditor.NewPostgresRepository(db)
+	auditorService := auditor.NewAuditorService(auditorRepo)
+	auditorHandler := auditor.NewHandler(auditorService)
+
+	// Register Auditor routes (Auditor + Super Admin roles)
+	auditorHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole)
 
 	fmt.Println("Starting server on :8080 with CSRF protection enabled")
 	if err := http.ListenAndServe(":8080", middleware.CSRF(mux)); err != nil {

@@ -1,28 +1,136 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ReviewDetailView from "../../components/ReviewDetailView";
 import DocumentDetailView from "../../components/DocumentDetailView";
 import { useAuditorData } from "../../AuditorDataContext";
+import {
+  getEventReview,
+  approveEventReview,
+  rejectEventReview,
+  requestEventChanges,
+  verifyReviewDocument,
+  rejectReviewDocument,
+  updateEventReviewStage,
+  addEventRevision
+} from "@/lib/api/auditor";
+import { EventSubmission } from "../../types";
 
 export default function AuditorReviewDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const {
-    submissions,
-    handleApprove,
-    handleReject,
-    handleRequestChanges,
-    handleVerifySubmissionDocument,
-    handleRejectSubmissionDocument,
-    handleChangeSubmissionStage,
-    handleAddRevision,
-  } = useAuditorData();
+  const { fetchDashboard } = useAuditorData();
 
-  const [viewingDoc, setViewingDoc] = useState<{ name: string; category: string; status: string } | null>(null);
+  const [submission, setSubmission] = useState<EventSubmission | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [viewingDoc, setViewingDoc] = useState<{ id?: number | string; name: string; category: string; status: string } | null>(null);
 
-  const submission = submissions.find((s) => s.id === params.id);
+  const loadDetail = async () => {
+    try {
+      setLoading(true);
+      const res = await getEventReview(params.id);
+      if (res.success && res.data) {
+        setSubmission({
+          ...res.data,
+          id: String(res.data.id),
+        } as any);
+      }
+    } catch (err) {
+      console.error("Failed to load event review details:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDetail();
+  }, [params.id]);
+
+  const handleApproveAction = async (id: string, notes: string = "") => {
+    const res = await approveEventReview(id, notes);
+    if (res.success) {
+      await loadDetail();
+      if (fetchDashboard) fetchDashboard();
+    } else {
+      alert("Failed to approve submission: " + (res.error?.message || "unknown error"));
+    }
+  };
+
+  const handleRejectAction = async (id: string, reason: string) => {
+    const res = await rejectEventReview(id, reason, "Rejected by Auditor");
+    if (res.success) {
+      await loadDetail();
+      if (fetchDashboard) fetchDashboard();
+    } else {
+      alert("Failed to reject submission: " + (res.error?.message || "unknown error"));
+    }
+  };
+
+  const handleRequestChangesAction = async (id: string, notes: string) => {
+    const res = await requestEventChanges(id, notes);
+    if (res.success) {
+      await loadDetail();
+      if (fetchDashboard) fetchDashboard();
+    } else {
+      alert("Failed to request changes: " + (res.error?.message || "unknown error"));
+    }
+  };
+
+  const handleVerifySubmissionDocAction = async (submissionId: string, docName: string) => {
+    const doc = submission?.documents.find(d => d.name === docName);
+    if (!doc?.id) return;
+    const res = await verifyReviewDocument(submissionId, doc.id);
+    if (res.success) {
+      await loadDetail();
+    } else {
+      alert("Failed to verify document: " + (res.error?.message || "unknown error"));
+    }
+  };
+
+  const handleRejectSubmissionDocAction = async (submissionId: string, docName: string, reason: string = "Invalid document details") => {
+    const doc = submission?.documents.find(d => d.name === docName);
+    if (!doc?.id) return;
+    const res = await rejectReviewDocument(submissionId, doc.id, reason);
+    if (res.success) {
+      await loadDetail();
+    } else {
+      alert("Failed to reject document: " + (res.error?.message || "unknown error"));
+    }
+  };
+
+  const handleChangeSubmissionStageAction = async (submissionId: string, stage: any) => {
+    const res = await updateEventReviewStage(submissionId, stage);
+    if (res.success) {
+      await loadDetail();
+    } else {
+      alert("Failed to update stage: " + (res.error?.message || "unknown error"));
+    }
+  };
+
+  const handleAddRevisionAction = async (submissionId: string, revision: any) => {
+    const res = await addEventRevision(submissionId, {
+      category: revision.category,
+      title: revision.title,
+      description: revision.description,
+      requiredAction: revision.requiredAction,
+      priority: revision.priority,
+      deadline: revision.deadline
+    });
+    if (res.success) {
+      await loadDetail();
+    } else {
+      alert("Failed to add revision: " + (res.error?.message || "unknown error"));
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white border border-border-subtle rounded-xl p-10 text-center animate-fade-in">
+        <p className="text-sm font-bold text-text-primary">Loading event review details...</p>
+      </div>
+    );
+  }
 
   if (!submission) {
     return (
@@ -44,7 +152,7 @@ export default function AuditorReviewDetailPage() {
     return (
       <DocumentDetailView
         document={{
-          id: viewingDoc.name,
+          id: String(doc?.id || viewingDoc.name),
           fileName: viewingDoc.name,
           category: viewingDoc.category,
           status: doc?.status ?? viewingDoc.status,
@@ -53,11 +161,11 @@ export default function AuditorReviewDetailPage() {
         }}
         onBack={() => setViewingDoc(null)}
         onVerify={() => {
-          handleVerifySubmissionDocument(submission.id, viewingDoc.name);
+          handleVerifySubmissionDocAction(submission.id, viewingDoc.name);
           setViewingDoc(null);
         }}
         onReject={() => {
-          handleRejectSubmissionDocument(submission.id, viewingDoc.name);
+          handleRejectSubmissionDocAction(submission.id, viewingDoc.name);
           setViewingDoc(null);
         }}
       />
@@ -68,14 +176,14 @@ export default function AuditorReviewDetailPage() {
     <ReviewDetailView
       submission={submission}
       onBack={() => router.push('/auditor/reviews')}
-      onApprove={handleApprove}
-      onReject={handleReject}
-      onRequestChanges={handleRequestChanges}
-      onVerifyDocument={handleVerifySubmissionDocument}
-      onRejectDocument={handleRejectSubmissionDocument}
+      onApprove={handleApproveAction}
+      onReject={handleRejectAction}
+      onRequestChanges={handleRequestChangesAction}
+      onVerifyDocument={handleVerifySubmissionDocAction}
+      onRejectDocument={handleRejectSubmissionDocAction}
       onViewDocument={(doc) => setViewingDoc(doc)}
-      onChangeStage={handleChangeSubmissionStage}
-      onAddRevision={handleAddRevision}
+      onChangeStage={handleChangeSubmissionStageAction}
+      onAddRevision={handleAddRevisionAction}
     />
   );
 }

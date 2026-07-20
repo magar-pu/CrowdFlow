@@ -60,6 +60,18 @@ func (s *OrganizerService) Apply(ctx context.Context, userID int, req ApplyReque
 	if req.Description != "" {
 		app.Description = &req.Description
 	}
+	if req.BankName != "" {
+		app.BankName = &req.BankName
+	}
+	if req.BankAccountHolder != "" {
+		app.BankAccountHolder = &req.BankAccountHolder
+	}
+	if req.BankAccountNumber != "" {
+		app.BankAccountNumber = &req.BankAccountNumber
+	}
+	if req.BusinessAddress != "" {
+		app.BusinessAddress = &req.BusinessAddress
+	}
 
 	var docModels []*OrganizerDocument
 	for _, doc := range docs {
@@ -139,8 +151,28 @@ func (s *OrganizerService) UpdateApplication(ctx context.Context, userID int, re
 	} else {
 		app.Description = nil
 	}
+	if req.BankName != "" {
+		app.BankName = &req.BankName
+	} else {
+		app.BankName = nil
+	}
+	if req.BankAccountHolder != "" {
+		app.BankAccountHolder = &req.BankAccountHolder
+	} else {
+		app.BankAccountHolder = nil
+	}
+	if req.BankAccountNumber != "" {
+		app.BankAccountNumber = &req.BankAccountNumber
+	} else {
+		app.BankAccountNumber = nil
+	}
+	if req.BusinessAddress != "" {
+		app.BusinessAddress = &req.BusinessAddress
+	} else {
+		app.BusinessAddress = nil
+	}
 
-	if app.Status == "rejected" {
+	if app.Status == "rejected" || app.Status == "needs_revision" {
 		app.Status = "pending"
 	}
 

@@ -21,6 +21,10 @@ export interface OrganizerApplicationResponse {
   submitted_at: string;
   reviewed_at: string;
   notes: string;
+  bank_name?: string;
+  bank_account_holder?: string;
+  bank_account_number?: string;
+  business_address?: string;
   documents: DocumentResponse[];
 }
 

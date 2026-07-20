@@ -1,6 +1,8 @@
 import React from 'react';
 import { EventSubmission, DocumentReview, AuditorActivity } from '../types';
 import { ClipboardCheck, CheckCircle2, XCircle, Timer, FileCheck2, ArrowUpRight } from 'lucide-react';
+import { useAuditorData } from '../AuditorDataContext';
+import { useAuthStore } from '@/lib/store/authStore';
 
 interface DashboardViewProps {
   submissions: EventSubmission[];
@@ -10,17 +12,21 @@ interface DashboardViewProps {
 }
 
 export default function DashboardView({ submissions, documents, activity, onNavigateToView }: DashboardViewProps) {
+  const { stats, isLoading } = useAuditorData();
+  const { user } = useAuthStore();
+  const firstName = user?.full_name ? user.full_name.split(' ')[0] : 'Auditor';
+
   const pending = submissions.filter(s => s.status === 'Pending').length;
   const approvedToday = submissions.filter(s => s.status === 'Approved').length;
   const rejected = submissions.filter(s => s.status === 'Rejected').length;
   const docsWaiting = documents.filter(d => d.status === 'WAITING REVIEW').length;
 
   const kpis = [
-    { title: 'Pending Reviews', value: pending, icon: ClipboardCheck, accent: 'text-secondary bg-secondary/10 border-secondary/20' },
-    { title: 'Approved', value: approvedToday, icon: CheckCircle2, accent: 'text-success bg-success/10 border-success/20' },
-    { title: 'Rejected', value: rejected, icon: XCircle, accent: 'text-danger bg-danger/10 border-danger/20' },
-    { title: 'Avg. Review Time', value: '6.4 hrs', icon: Timer, accent: 'text-primary bg-primary/10 border-primary/20' },
-    { title: 'Documents Pending', value: docsWaiting, icon: FileCheck2, accent: 'text-tertiary bg-tertiary/10 border-tertiary/20' },
+    { title: 'Pending Reviews', value: stats ? stats.pendingReviews : pending, icon: ClipboardCheck, accent: 'text-secondary bg-secondary/10 border-secondary/20' },
+    { title: 'Approved', value: stats ? stats.approved : approvedToday, icon: CheckCircle2, accent: 'text-success bg-success/10 border-success/20' },
+    { title: 'Rejected', value: stats ? stats.rejected : rejected, icon: XCircle, accent: 'text-danger bg-danger/10 border-danger/20' },
+    { title: 'Avg. Review Time', value: stats ? `${stats.avgReviewTimeHours.toFixed(1)} hrs` : '6.4 hrs', icon: Timer, accent: 'text-primary bg-primary/10 border-primary/20' },
+    { title: 'Documents Pending', value: stats ? stats.documentsWaiting : docsWaiting, icon: FileCheck2, accent: 'text-tertiary bg-tertiary/10 border-tertiary/20' },
   ];
 
   const queuePreview = submissions.filter(s => s.status === 'Pending').slice(0, 4);
@@ -28,8 +34,8 @@ export default function DashboardView({ submissions, documents, activity, onNavi
   return (
     <div className="space-y-8 pb-12 text-left animate-fade-in">
       <section className="flex flex-col gap-1">
-        <h2 className="font-sans text-3xl font-bold text-text-primary tracking-tight">Good Morning, Priya</h2>
-        <p className="font-sans text-sm text-text-secondary font-normal">Here&apos;s the state of the compliance queue today.</p>
+        <h2 className="font-sans text-3xl font-bold text-text-primary tracking-tight">Good Morning, {firstName}</h2>
+        <p className="font-sans text-sm text-text-secondary font-normal font-sans">Here&apos;s the state of the compliance queue today.</p>
       </section>
 
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">

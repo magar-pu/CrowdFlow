@@ -23,6 +23,10 @@ export default function BusinessPage() {
   const [businessPhone, setBusinessPhone] = useState("");
   const [website, setWebsite] = useState("");
   const [description, setDescription] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [bankAccountHolder, setBankAccountHolder] = useState("");
+  const [bankAccountNumber, setBankAccountNumber] = useState("");
+  const [businessAddress, setBusinessAddress] = useState("");
   
   // Document File States
   const [ktp, setKtp] = useState<File | null>(null);
@@ -49,13 +53,17 @@ export default function BusinessPage() {
       const res = await getOrganizerApplication();
       if (res.success && res.data) {
         setApplication(res.data);
-        // Pre-fill form fields in case they want to edit (rejected application)
+        // Pre-fill form fields in case they want to edit (rejected application / needs revision)
         setBusinessName(res.data.business_name);
         setBusinessType(res.data.business_type);
         setBusinessEmail(res.data.business_email);
         setBusinessPhone(res.data.business_phone);
         setWebsite(res.data.website || "");
         setDescription(res.data.description || "");
+        setBankName(res.data.bank_name || "");
+        setBankAccountHolder(res.data.bank_account_holder || "");
+        setBankAccountNumber(res.data.bank_account_number || "");
+        setBusinessAddress(res.data.business_address || "");
         
         // If approved, refresh session context to fetch role changes
         if (res.data.status === "approved" && user?.role !== "verified_organizer") {
@@ -93,6 +101,10 @@ export default function BusinessPage() {
     formData.append("business_phone", businessPhone);
     formData.append("website", website);
     formData.append("description", description);
+    formData.append("bank_name", bankName);
+    formData.append("bank_account_holder", bankAccountHolder);
+    formData.append("bank_account_number", bankAccountNumber);
+    formData.append("business_address", businessAddress);
     
     if (ktp) formData.append("ktp", ktp);
     if (npwp) formData.append("npwp", npwp);
@@ -101,7 +113,7 @@ export default function BusinessPage() {
 
     try {
       let res;
-      if (application && application.status === "rejected") {
+      if (application && (application.status === "rejected" || application.status === "needs_revision")) {
         res = await updateOrganizerApplication(formData);
       } else {
         res = await applyOrganizer(formData);
@@ -266,6 +278,11 @@ export default function BusinessPage() {
                       <Clock size={16} /> Under Review
                     </span>
                   )}
+                  {application.status === "needs_revision" && (
+                    <span className="bg-warning/10 text-warning px-3 py-1 rounded-full flex items-center gap-1.5">
+                      <Clock size={16} /> Needs Revision
+                    </span>
+                  )}
                   {application.status === "rejected" && (
                     <span className="bg-danger/10 text-danger px-3 py-1 rounded-full flex items-center gap-1.5">
                       <AlertTriangle size={16} /> Rejected
@@ -278,6 +295,13 @@ export default function BusinessPage() {
                 <div className="bg-danger/5 border border-danger/20 rounded-lg p-4 text-sm text-danger space-y-1.5">
                   <p className="font-bold flex items-center gap-1.5"><AlertTriangle size={16} /> Application Rejected by Auditor</p>
                   <p>{application.notes || "Auditor did not leave notes. Please verify that your KTP and Business documents match."}</p>
+                </div>
+              )}
+
+              {application.status === "needs_revision" && (
+                <div className="bg-warning/5 border border-warning/20 rounded-lg p-4 text-sm text-warning space-y-1.5">
+                  <p className="font-bold flex items-center gap-1.5"><AlertTriangle size={16} /> Revision Requested by Auditor</p>
+                  <p>{application.notes || "Auditor requested changes to your application. Please update the details or documents below."}</p>
                 </div>
               )}
 
@@ -331,8 +355,8 @@ export default function BusinessPage() {
               ) : null}
             </div>
 
-            {/* If application is rejected, display editable form to resubmit */}
-            {application.status === "rejected" && (
+            {/* If application is rejected or needs revision, display editable form to resubmit */}
+            {(application.status === "rejected" || application.status === "needs_revision") && (
               <div className="bg-surface-white border border-border-subtle rounded-xl p-8 shadow-sm space-y-6">
                 <h2 className="text-xl font-bold text-text-primary">Update and Resubmit Application</h2>
                 <form onSubmit={handleApply} className="space-y-6">
@@ -401,6 +425,56 @@ export default function BusinessPage() {
                       rows={3}
                       className="w-full border border-border-subtle px-3 py-2 rounded-lg text-sm bg-background focus:ring-1 focus:ring-secondary focus:outline-none"
                     />
+                  </div>
+
+                  <div className="border-t border-border-subtle pt-6 space-y-4">
+                    <h3 className="font-semibold text-text-primary flex items-center gap-1.5"><Building size={18} /> Bank & Address Verification</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <label className="text-sm font-semibold text-text-primary">Business Address</label>
+                        <textarea
+                          value={businessAddress}
+                          onChange={(e) => setBusinessAddress(e.target.value)}
+                          rows={2}
+                          className="w-full border border-border-subtle px-3 py-2 rounded-lg text-sm bg-background focus:ring-1 focus:ring-secondary focus:outline-none"
+                          placeholder="e.g. Sudirman Central Business District, Jakarta"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-semibold text-text-primary">Bank Name</label>
+                        <input
+                          type="text"
+                          value={bankName}
+                          onChange={(e) => setBankName(e.target.value)}
+                          className="w-full border border-border-subtle px-3 py-2 rounded-lg text-sm bg-background focus:ring-1 focus:ring-secondary focus:outline-none"
+                          placeholder="e.g. Bank Central Asia (BCA)"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-semibold text-text-primary">Bank Account Holder Name</label>
+                        <input
+                          type="text"
+                          value={bankAccountHolder}
+                          onChange={(e) => setBankAccountHolder(e.target.value)}
+                          className="w-full border border-border-subtle px-3 py-2 rounded-lg text-sm bg-background focus:ring-1 focus:ring-secondary focus:outline-none"
+                          placeholder="e.g. Richie Obhasa"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-semibold text-text-primary">Bank Account Number</label>
+                        <input
+                          type="text"
+                          value={bankAccountNumber}
+                          onChange={(e) => setBankAccountNumber(e.target.value)}
+                          className="w-full border border-border-subtle px-3 py-2 rounded-lg text-sm bg-background focus:ring-1 focus:ring-secondary focus:outline-none"
+                          placeholder="e.g. 5012394012"
+                          required
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   <div className="border-t border-border-subtle pt-6 space-y-4">
@@ -534,6 +608,56 @@ export default function BusinessPage() {
                   className="w-full border border-border-subtle px-3 py-2 rounded-lg text-sm bg-background focus:ring-1 focus:ring-secondary focus:outline-none"
                   placeholder="Describe your organization's event hosting background..."
                 />
+              </div>
+
+              <div className="border-t border-border-subtle pt-6 space-y-4">
+                <h3 className="font-semibold text-text-primary flex items-center gap-1.5"><Building size={18} /> Bank & Address Verification</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-text-primary">Business Address</label>
+                    <textarea
+                      value={businessAddress}
+                      onChange={(e) => setBusinessAddress(e.target.value)}
+                      rows={2}
+                      className="w-full border border-border-subtle px-3 py-2 rounded-lg text-sm bg-background focus:ring-1 focus:ring-secondary focus:outline-none"
+                      placeholder="e.g. Sudirman Central Business District, Jakarta"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-text-primary">Bank Name</label>
+                    <input
+                      type="text"
+                      value={bankName}
+                      onChange={(e) => setBankName(e.target.value)}
+                      className="w-full border border-border-subtle px-3 py-2 rounded-lg text-sm bg-background focus:ring-1 focus:ring-secondary focus:outline-none"
+                      placeholder="e.g. Bank Central Asia (BCA)"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-text-primary">Bank Account Holder Name</label>
+                    <input
+                      type="text"
+                      value={bankAccountHolder}
+                      onChange={(e) => setBankAccountHolder(e.target.value)}
+                      className="w-full border border-border-subtle px-3 py-2 rounded-lg text-sm bg-background focus:ring-1 focus:ring-secondary focus:outline-none"
+                      placeholder="e.g. Richie Obhasa"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-text-primary">Bank Account Number</label>
+                    <input
+                      type="text"
+                      value={bankAccountNumber}
+                      onChange={(e) => setBankAccountNumber(e.target.value)}
+                      className="w-full border border-border-subtle px-3 py-2 rounded-lg text-sm bg-background focus:ring-1 focus:ring-secondary focus:outline-none"
+                      placeholder="e.g. 5012394012"
+                      required
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="border-t border-border-subtle pt-6 space-y-4">

@@ -14,20 +14,24 @@ var (
 )
 
 type OrganizerApplication struct {
-	ID            int                  `json:"id"`
-	UserID        int                  `json:"user_id"`
-	BusinessName  string               `json:"business_name"`
-	BusinessType  string               `json:"business_type"`
-	BusinessEmail string               `json:"business_email"`
-	BusinessPhone string               `json:"business_phone"`
-	Website       *string              `json:"website,omitempty"`
-	Description   *string              `json:"description,omitempty"`
-	Status        string               `json:"status"` // 'pending', 'in_review', 'approved', 'rejected'
-	SubmittedAt   time.Time            `json:"submitted_at"`
-	ReviewedAt    *time.Time           `json:"reviewed_at,omitempty"`
-	ReviewedBy    *int                 `json:"reviewed_by,omitempty"`
-	Notes         *string              `json:"notes,omitempty"`
-	Documents     []*OrganizerDocument `json:"documents,omitempty"`
+	ID                int                  `json:"id"`
+	UserID            int                  `json:"user_id"`
+	BusinessName      string               `json:"business_name"`
+	BusinessType      string               `json:"business_type"`
+	BusinessEmail     string               `json:"business_email"`
+	BusinessPhone     string               `json:"business_phone"`
+	Website           *string              `json:"website,omitempty"`
+	Description       *string              `json:"description,omitempty"`
+	Status            string               `json:"status"` // 'pending', 'in_review', 'approved', 'rejected'
+	SubmittedAt       time.Time            `json:"submitted_at"`
+	ReviewedAt        *time.Time           `json:"reviewed_at,omitempty"`
+	ReviewedBy        *int                 `json:"reviewed_by,omitempty"`
+	Notes             *string              `json:"notes,omitempty"`
+	BankName          *string              `json:"bank_name,omitempty"`
+	BankAccountHolder *string              `json:"bank_account_holder,omitempty"`
+	BankAccountNumber *string              `json:"bank_account_number,omitempty"`
+	BusinessAddress   *string              `json:"business_address,omitempty"`
+	Documents         []*OrganizerDocument `json:"documents,omitempty"`
 }
 
 type OrganizerDocument struct {
@@ -41,12 +45,16 @@ type OrganizerDocument struct {
 }
 
 type ApplyRequest struct {
-	BusinessName  string `json:"business_name"`
-	BusinessType  string `json:"business_type"`
-	BusinessEmail string `json:"business_email"`
-	BusinessPhone string `json:"business_phone"`
-	Website       string `json:"website"`
-	Description   string `json:"description"`
+	BusinessName      string `json:"business_name"`
+	BusinessType      string `json:"business_type"`
+	BusinessEmail     string `json:"business_email"`
+	BusinessPhone     string `json:"business_phone"`
+	Website           string `json:"website"`
+	Description       string `json:"description"`
+	BankName          string `json:"bank_name"`
+	BankAccountHolder string `json:"bank_account_holder"`
+	BankAccountNumber string `json:"bank_account_number"`
+	BusinessAddress   string `json:"business_address"`
 }
 
 type DocumentUpload struct {
@@ -56,18 +64,22 @@ type DocumentUpload struct {
 }
 
 type ApplicationResponse struct {
-	ID            int                 `json:"id"`
-	BusinessName  string              `json:"business_name"`
-	BusinessType  string              `json:"business_type"`
-	BusinessEmail string              `json:"business_email"`
-	BusinessPhone string              `json:"business_phone"`
-	Website       string              `json:"website,omitempty"`
-	Description   string              `json:"description,omitempty"`
-	Status        string              `json:"status"`
-	SubmittedAt   string              `json:"submitted_at"`
-	ReviewedAt    string              `json:"reviewed_at,omitempty"`
-	Notes         string              `json:"notes,omitempty"`
-	Documents     []*DocumentResponse `json:"documents"`
+	ID                int                 `json:"id"`
+	BusinessName      string              `json:"business_name"`
+	BusinessType      string              `json:"business_type"`
+	BusinessEmail     string              `json:"business_email"`
+	BusinessPhone     string              `json:"business_phone"`
+	Website           string              `json:"website,omitempty"`
+	Description       string              `json:"description,omitempty"`
+	Status            string              `json:"status"`
+	SubmittedAt       string              `json:"submitted_at"`
+	ReviewedAt        string              `json:"reviewed_at,omitempty"`
+	Notes             string              `json:"notes,omitempty"`
+	BankName          string              `json:"bank_name,omitempty"`
+	BankAccountHolder string              `json:"bank_account_holder,omitempty"`
+	BankAccountNumber string              `json:"bank_account_number,omitempty"`
+	BusinessAddress   string              `json:"business_address,omitempty"`
+	Documents         []*DocumentResponse `json:"documents"`
 }
 
 type DocumentResponse struct {
@@ -357,6 +369,22 @@ func MapApplication(app *OrganizerApplication) *ApplicationResponse {
 	if app.Notes != nil {
 		notesVal = *app.Notes
 	}
+	bankNameVal := ""
+	if app.BankName != nil {
+		bankNameVal = *app.BankName
+	}
+	bankAccountHolderVal := ""
+	if app.BankAccountHolder != nil {
+		bankAccountHolderVal = *app.BankAccountHolder
+	}
+	bankAccountNumberVal := ""
+	if app.BankAccountNumber != nil {
+		bankAccountNumberVal = *app.BankAccountNumber
+	}
+	businessAddressVal := ""
+	if app.BusinessAddress != nil {
+		businessAddressVal = *app.BusinessAddress
+	}
 
 	docResponses := make([]*DocumentResponse, len(app.Documents))
 	for i, d := range app.Documents {
@@ -370,17 +398,21 @@ func MapApplication(app *OrganizerApplication) *ApplicationResponse {
 	}
 
 	return &ApplicationResponse{
-		ID:            app.ID,
-		BusinessName:  app.BusinessName,
-		BusinessType:  app.BusinessType,
-		BusinessEmail: app.BusinessEmail,
-		BusinessPhone: app.BusinessPhone,
-		Website:       websiteVal,
-		Description:   descVal,
-		Status:        app.Status,
-		SubmittedAt:   app.SubmittedAt.Format(time.RFC3339),
-		ReviewedAt:    reviewedVal,
-		Notes:         notesVal,
-		Documents:     docResponses,
+		ID:                app.ID,
+		BusinessName:      app.BusinessName,
+		BusinessType:      app.BusinessType,
+		BusinessEmail:     app.BusinessEmail,
+		BusinessPhone:     app.BusinessPhone,
+		Website:           websiteVal,
+		Description:       descVal,
+		Status:            app.Status,
+		SubmittedAt:       app.SubmittedAt.Format(time.RFC3339),
+		ReviewedAt:        reviewedVal,
+		Notes:             notesVal,
+		BankName:          bankNameVal,
+		BankAccountHolder: bankAccountHolderVal,
+		BankAccountNumber: bankAccountNumberVal,
+		BusinessAddress:   businessAddressVal,
+		Documents:         docResponses,
 	}
 }

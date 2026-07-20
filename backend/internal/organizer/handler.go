@@ -99,12 +99,16 @@ func (h *Handler) handleApply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := ApplyRequest{
-		BusinessName:  r.FormValue("business_name"),
-		BusinessType:  r.FormValue("business_type"),
-		BusinessEmail: r.FormValue("business_email"),
-		BusinessPhone: r.FormValue("business_phone"),
-		Website:       r.FormValue("website"),
-		Description:   r.FormValue("description"),
+		BusinessName:      r.FormValue("business_name"),
+		BusinessType:      r.FormValue("business_type"),
+		BusinessEmail:     r.FormValue("business_email"),
+		BusinessPhone:     r.FormValue("business_phone"),
+		Website:           r.FormValue("website"),
+		Description:       r.FormValue("description"),
+		BankName:          r.FormValue("bank_name"),
+		BankAccountHolder: r.FormValue("bank_account_holder"),
+		BankAccountNumber: r.FormValue("bank_account_number"),
+		BusinessAddress:   r.FormValue("business_address"),
 	}
 
 	docTypes := []string{"ktp", "npwp", "nib", "siup", "business_license", "venue_agreement", "event_proposal"}
@@ -194,12 +198,16 @@ func (h *Handler) handleUpdateApplication(w http.ResponseWriter, r *http.Request
 	}
 
 	req := ApplyRequest{
-		BusinessName:  r.FormValue("business_name"),
-		BusinessType:  r.FormValue("business_type"),
-		BusinessEmail: r.FormValue("business_email"),
-		BusinessPhone: r.FormValue("business_phone"),
-		Website:       r.FormValue("website"),
-		Description:   r.FormValue("description"),
+		BusinessName:      r.FormValue("business_name"),
+		BusinessType:      r.FormValue("business_type"),
+		BusinessEmail:     r.FormValue("business_email"),
+		BusinessPhone:     r.FormValue("business_phone"),
+		Website:           r.FormValue("website"),
+		Description:       r.FormValue("description"),
+		BankName:          r.FormValue("bank_name"),
+		BankAccountHolder: r.FormValue("bank_account_holder"),
+		BankAccountNumber: r.FormValue("bank_account_number"),
+		BusinessAddress:   r.FormValue("business_address"),
 	}
 
 	docTypes := []string{"ktp", "npwp", "nib", "siup", "business_license", "venue_agreement", "event_proposal"}
