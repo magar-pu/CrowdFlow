@@ -10,7 +10,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   MapPin,
@@ -42,92 +42,7 @@ interface MyTicketCard {
 
 // ── Mock data ─────────────────────────────────────────────────────────────
 
-const MOCK_TICKETS: MyTicketCard[] = [
-  {
-    ticket_id: "tkt_001",
-    order_id: "ORD-89241",
-    event_title: "Global Soundscapes: Music Festival 2026",
-    cover_image_url:
-      "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=800&auto=format&fit=crop",
-    date_label: "Sat, Aug 15 • 2:00 PM",
-    venue_name: "Metropolis Grand Park",
-    section_label: "Main Stage",
-    ticket_type: "VIP All-Access Pass",
-    quantity: 2,
-    status: "confirmed",
-    tab: "upcoming",
-  },
-  {
-    ticket_id: "tkt_002",
-    order_id: "ORD-89242",
-    event_title: "Symphony in the City: Autumn Series",
-    cover_image_url:
-      "https://images.unsplash.com/photo-1507838153414-b4b713384a76?q=80&w=800&auto=format&fit=crop",
-    date_label: "Fri, Sep 10 • 7:30 PM",
-    venue_name: "The Heritage Concert Hall",
-    section_label: "Section A",
-    ticket_type: "Orchestra Premium",
-    quantity: 1,
-    status: "confirmed",
-    tab: "upcoming",
-  },
-  {
-    ticket_id: "tkt_003",
-    order_id: "ORD-89243",
-    event_title: "Innovators Summit 2026",
-    cover_image_url:
-      "https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=800&auto=format&fit=crop",
-    date_label: "Mon, Oct 5 • 9:00 AM",
-    venue_name: "Jakarta Convention Center",
-    section_label: "Hall B",
-    ticket_type: "General Admission",
-    quantity: 1,
-    status: "confirmed",
-    tab: "upcoming",
-  },
-  {
-    ticket_id: "tkt_004",
-    order_id: "ORD-89100",
-    event_title: "Konser Suara Hati: Noah Live at GBK 2025",
-    cover_image_url:
-      "https://images.unsplash.com/photo-1493676304819-0d7a8d026dcf?q=80&w=800&auto=format&fit=crop",
-    date_label: "Sun, Mar 15, 2025 • 7:00 PM",
-    venue_name: "GBK Stadium",
-    section_label: "Tribune Barat",
-    ticket_type: "Festival Pass",
-    quantity: 3,
-    status: "used",
-    tab: "past",
-  },
-  {
-    ticket_id: "tkt_005",
-    order_id: "ORD-89050",
-    event_title: "Future Tech Summit 2025",
-    cover_image_url:
-      "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?q=80&w=800&auto=format&fit=crop",
-    date_label: "Thu, Jan 22, 2025 • 10:00 AM",
-    venue_name: "BSD City Convention",
-    section_label: "Main Hall",
-    ticket_type: "Full Access",
-    quantity: 1,
-    status: "used",
-    tab: "past",
-  },
-  {
-    ticket_id: "tkt_006",
-    order_id: "ORD-88999",
-    event_title: "Kecak Fire & Trance Dance: Ubud Edition",
-    cover_image_url:
-      "https://images.unsplash.com/photo-1604537529428-15bcbeecfe4d?q=80&w=800&auto=format&fit=crop",
-    date_label: "Sat, Dec 14, 2024 • 6:00 PM",
-    venue_name: "Pura Uluwatu, Bali",
-    section_label: "Front Row",
-    ticket_type: "Premium Experience",
-    quantity: 2,
-    status: "cancelled",
-    tab: "cancelled",
-  },
-];
+const MOCK_TICKETS: MyTicketCard[] = [];
 
 const TABS: { key: TicketTab; label: string }[] = [
   { key: "upcoming", label: "Upcoming" },
@@ -344,8 +259,17 @@ function TicketCardFull({
 
 export default function MyTicketsPage() {
   const [active_tab, set_active_tab] = useState<TicketTab>("upcoming");
+  const [tickets, setTickets] = useState<MyTicketCard[]>(MOCK_TICKETS);
 
-  const filtered = MOCK_TICKETS.filter((t) => t.tab === active_tab);
+  useEffect(() => {
+    // Read from localStorage to simulate dynamic state
+    const stored = localStorage.getItem('demo_tickets');
+    if (stored) {
+      setTickets(JSON.parse(stored));
+    }
+  }, []);
+
+  const filtered = tickets.filter((t) => t.tab === active_tab);
 
   return (
     <div className="min-h-screen bg-background">

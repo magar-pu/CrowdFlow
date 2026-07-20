@@ -25,7 +25,7 @@ export function ResaleFilterToolbar({
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 font-label-sm text-label-sm text-on-primary"
+          className="flex items-center gap-2 rounded-full border border-border-subtle bg-surface-white px-4 py-2 font-label-sm text-label-sm text-primary transition-colors hover:bg-surface-container"
         >
           All Categories
           <ChevronDown size={16} />

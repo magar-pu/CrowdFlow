@@ -15,6 +15,7 @@ import (
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/platform/database"
 	"crowdflow-backend/internal/platform/redisclient"
+	"crowdflow-backend/internal/resale"
 	"crowdflow-backend/internal/response"
 	"crowdflow-backend/internal/storage"
 	"crowdflow-backend/internal/user"
@@ -142,6 +143,14 @@ func main() {
 
 	// Register User routes
 	userHandler.RegisterRoutes(mux, authMounter.Authenticate)
+
+	// Initialize Resale Marketplace dependencies
+	resaleRepo := resale.NewPostgresRepository(db)
+	resaleService := resale.NewResaleService(resaleRepo)
+	resaleHandler := resale.NewHandler(resaleService)
+
+	// Register Resale Marketplace routes
+	resaleHandler.RegisterRoutes(mux, authMounter.Authenticate)
 
 	fmt.Println("Starting server on :8080 with CSRF protection enabled")
 	if err := http.ListenAndServe(":8080", middleware.CSRF(mux)); err != nil {

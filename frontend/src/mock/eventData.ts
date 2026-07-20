@@ -365,7 +365,7 @@ export const mockOrder: Order = {
   paid_at: "2026-06-21T14:32:00+07:00",
   tickets: [
     {
-      ticket_id: "tkt_001",
+      ticket_id: "123e4567-e89b-12d3-a456-426614174001",
       order_id: "ord_4821_xtq",
       event_id: "evt_001_soundscape_festival_2026",
       event_title: "Soundscape Festival 2026",
@@ -379,7 +379,7 @@ export const mockOrder: Order = {
       row: "G",
       seat_number: "14",
       ticket_code: "CF-9824-XTQ",
-      qr_payload: "cf:order=ord_4821_xtq;ticket=tkt_001;sig=mock",
+      qr_payload: "cf:order=ord_4821_xtq;ticket=123e4567-e89b-12d3-a456-426614174001;sig=mock",
     },
   ],
 };

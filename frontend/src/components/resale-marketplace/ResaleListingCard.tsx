@@ -42,7 +42,7 @@ export function ResaleListingCard({ listing }: ResaleListingCardProps) {
         <div className="mb-1 font-label-sm text-label-sm uppercase tracking-wider text-text-secondary">
           {listing.event_category} • {ticket_count_label}
         </div>
-        <h3 className="mb-2 line-clamp-1 font-headline-sm text-headline-sm text-primary">
+        <h3 className="mb-2 line-clamp-2 font-headline-sm text-headline-sm text-primary">
           {listing.event_title}
         </h3>
         <div className="mb-1 flex items-center gap-2 font-body-sm text-body-sm text-text-secondary">
@@ -71,7 +71,7 @@ export function ResaleListingCard({ listing }: ResaleListingCardProps) {
           </div>
           <Link
             href={`/resale/${listing.listing_id}`}
-            className="rounded-full border border-secondary bg-surface-white px-4 py-2 font-label-md text-label-md text-secondary transition-colors hover:bg-secondary hover:text-on-secondary"
+            className="rounded-full bg-secondary px-5 py-2 font-label-md text-label-md text-on-secondary shadow-sm transition-colors hover:bg-secondary/90 hover:shadow-md"
           >
             View
           </Link>

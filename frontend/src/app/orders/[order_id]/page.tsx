@@ -14,16 +14,27 @@
  * ticket orders would need a carousel/list, which isn't in scope yet.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { PurchaseSuccessHeader } from "@/components/your-ticket/PurchaseSuccessHeader";
 import { DigitalTicketCard } from "@/components/your-ticket/DigitalTicketCard";
 import { TicketActions } from "@/components/your-ticket/TicketActions";
 import ResellTicketModal from "@/components/your-ticket/ResellTicketModal";
 import { mockOrder } from "@/mock/eventData";
+import { cancelResaleListing } from "@/lib/api/resale";
 
 export default function YourTicketPage() {
   const [show_resell_modal, set_show_resell_modal] = useState(false);
+  const [isListed, setIsListed] = useState(false);
+
+  // Load sticky state on mount
+  useEffect(() => {
+    const listed = localStorage.getItem('dummy_is_listed');
+    if (listed === 'true') {
+      setIsListed(true);
+    }
+  }, []);
+
   const order = mockOrder; // TODO: replace with getOrder(order_id) once the Go API exists
   const ticket = order.tickets[0];
 
@@ -52,6 +63,25 @@ export default function YourTicketPage() {
     }
   }
 
+  async function handle_cancel_listing() {
+    const listingId = localStorage.getItem('dummy_listing_id');
+    if (!listingId) {
+      alert("Error: Listing ID not found in local storage.");
+      return;
+    }
+
+    const res = await cancelResaleListing(listingId);
+    if (!res.success) {
+      alert(res.error?.message || "Failed to cancel listing.");
+      return;
+    }
+
+    setIsListed(false);
+    localStorage.setItem('dummy_is_listed', 'false');
+    localStorage.removeItem('dummy_listing_id');
+    alert("Resale listing cancelled successfully. The ticket is back in your possession.");
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Navbar active_href="" />
@@ -70,14 +100,23 @@ export default function YourTicketPage() {
           on_download_pdf={handle_download_pdf}
           on_share={handle_share}
           on_resell_ticket={() => set_show_resell_modal(true)}
+          on_cancel_resale={handle_cancel_listing}
+          is_listed={isListed}
         />
       </main>
 
       {show_resell_modal && (
         <ResellTicketModal
           ticketId={ticket.ticket_id}
-          originalPrice={150} // Hardcoded for mock, will come from DB
-          onClose={() => set_show_resell_modal(false)}
+          originalPrice={100000} // Hardcoded for mock, will come from DB
+          onClose={(success, listingId) => {
+            set_show_resell_modal(false);
+            if (success) {
+              setIsListed(true);
+              localStorage.setItem('dummy_is_listed', 'true');
+              if (listingId) localStorage.setItem('dummy_listing_id', listingId);
+            }
+          }}
         />
       )}
     </div>

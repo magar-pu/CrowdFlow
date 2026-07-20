@@ -60,6 +60,28 @@ export default function CheckoutPage() {
     set_is_submitting(true);
     console.log("Confirmed with payment method:", payment_method);
     setTimeout(() => {
+      // Add the ticket to local storage to simulate buying
+      const boughtTicket = {
+        ticket_id: "123e4567-e89b-12d3-a456-426614174001", // The mock ticket ID we seeded in DB
+        order_id: "ORD-NEW",
+        event_title: "Soundscape Festival 2026",
+        cover_image_url: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?q=80&w=900&auto=format&fit=crop",
+        date_label: "Sat, Sep 12 • 7:30 PM",
+        venue_name: "Gelora Bung Karno Stadium",
+        section_label: "102",
+        ticket_type: "VIP Experience",
+        quantity: 1,
+        status: "confirmed",
+        tab: "upcoming",
+      };
+      
+      const existingStr = localStorage.getItem('demo_tickets');
+      // Only add if it's not already in there to prevent duplicates during testing
+      const existing = existingStr ? JSON.parse(existingStr) : [];
+      if (!existing.find((t: any) => t.ticket_id === boughtTicket.ticket_id)) {
+        localStorage.setItem('demo_tickets', JSON.stringify([boughtTicket, ...existing]));
+      }
+
       router.push(`/orders/${mockOrder.order_id}`);
     }, 1200);
   }

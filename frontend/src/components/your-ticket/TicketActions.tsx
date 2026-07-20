@@ -14,6 +14,8 @@ interface TicketActionsProps {
   on_download_pdf: () => void;
   on_share: () => void;
   on_resell_ticket?: () => void;
+  on_cancel_resale?: () => void;
+  is_listed?: boolean;
 }
 
 export function TicketActions({
@@ -21,6 +23,8 @@ export function TicketActions({
   on_download_pdf,
   on_share,
   on_resell_ticket,
+  on_cancel_resale,
+  is_listed = false,
 }: TicketActionsProps) {
   return (
     <>
@@ -41,15 +45,29 @@ export function TicketActions({
           <Download size={20} />
           Download PDF Ticket
         </button>
-        {on_resell_ticket && (
-          <button
-            type="button"
-            onClick={on_resell_ticket}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low py-3.5 font-label-md text-label-md text-text-primary shadow-sm transition-colors hover:bg-surface-container-high"
-          >
-            <Tag size={20} />
-            Resell Ticket
-          </button>
+
+        {is_listed ? (
+          on_cancel_resale && (
+            <button
+              type="button"
+              onClick={on_cancel_resale}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-danger/20 bg-danger/5 py-3.5 font-label-md text-label-md text-danger shadow-sm transition-colors hover:bg-danger/10"
+            >
+              <Tag size={20} className="rotate-45" />
+              Cancel Resale Listing
+            </button>
+          )
+        ) : (
+          on_resell_ticket && (
+            <button
+              type="button"
+              onClick={on_resell_ticket}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low py-3.5 font-label-md text-label-md text-text-primary shadow-sm transition-colors hover:bg-surface-container-high"
+            >
+              <Tag size={20} />
+              Resell Ticket
+            </button>
+          )
         )}
       </div>
 
