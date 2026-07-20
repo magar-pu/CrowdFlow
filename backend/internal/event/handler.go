@@ -61,13 +61,13 @@ func (h *Handler) RegisterRoutes(
 	requirePlatformRole func(allowedRoles ...string) func(http.Handler) http.Handler,
 	requireEventRole func(roleName string) func(http.Handler) http.Handler,
 ) {
-	mux.Handle("GET /api/events", optionalAuthenticate(http.HandlerFunc(h.handleListEvents)))
-	mux.Handle("GET /api/events/{id}", optionalAuthenticate(http.HandlerFunc(h.handleGetEvent)))
-	mux.Handle("POST /api/events", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleCreateEvent))))
-	mux.Handle("PUT /api/events/{id}", authenticate(requireEventRole("Event Organizer")(http.HandlerFunc(h.handleUpdateEvent))))
-	mux.Handle("PATCH /api/events/{id}/publish", authenticate(requireEventRole("Event Organizer")(http.HandlerFunc(h.handlePublishEvent))))
-	mux.Handle("GET /api/venues", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleListVenues))))
-	mux.Handle("GET /api/event-types", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleListEventTypes))))
+	mux.Handle("GET /events", optionalAuthenticate(http.HandlerFunc(h.handleListEvents)))
+	mux.Handle("GET /events/{id}", optionalAuthenticate(http.HandlerFunc(h.handleGetEvent)))
+	mux.Handle("POST /events", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleCreateEvent))))
+	mux.Handle("PUT /events/{id}", authenticate(requireEventRole("Event Organizer")(http.HandlerFunc(h.handleUpdateEvent))))
+	mux.Handle("PATCH /events/{id}/publish", authenticate(requireEventRole("Event Organizer")(http.HandlerFunc(h.handlePublishEvent))))
+	mux.Handle("GET /venues", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleListVenues))))
+	mux.Handle("GET /event-types", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleListEventTypes))))
 }
 
 func (h *Handler) handleListVenues(w http.ResponseWriter, r *http.Request) {

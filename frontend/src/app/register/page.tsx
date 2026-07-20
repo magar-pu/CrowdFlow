@@ -45,7 +45,7 @@ export default function SignUpPage() {
   async function handle_google_success(token: string) {
     set_error_message("");
     try {
-      const res = await fetch("/api/auth/google", {
+      const res = await fetch("/api/v1/auth/google", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -64,15 +64,15 @@ func (h *Handler) RegisterRoutes(
 		return authenticate(requirePlatformRole("Super Admin")(f))
 	}
 
-	mux.Handle("GET /api/v1/dashboard/stats", admin(h.handleGetDashboardStats))
-	mux.Handle("GET /api/v1/dashboard/alerts", admin(h.handleListSecurityAlerts))
-	mux.Handle("GET /api/v1/dashboard/activities", admin(h.handleListActivities))
+	mux.Handle("GET /dashboard/stats", admin(h.handleGetDashboardStats))
+	mux.Handle("GET /dashboard/alerts", admin(h.handleListSecurityAlerts))
+	mux.Handle("GET /dashboard/activities", admin(h.handleListActivities))
 
-	mux.Handle("GET /api/v1/events", admin(h.handleListEvents))
-	mux.Handle("POST /api/v1/events/{id}/approve", admin(h.handleApproveEvent))
-	mux.Handle("POST /api/v1/events/{id}/reject", admin(h.handleRejectEvent))
-	mux.Handle("POST /api/v1/events/{id}/status", admin(h.handleSetEventStatus))
-	mux.Handle("GET /api/v1/events/{id}/status-log", admin(h.handleListEventStatusLog))
+	mux.Handle("GET /events", admin(h.handleListEvents))
+	mux.Handle("POST /events/{id}/approve", admin(h.handleApproveEvent))
+	mux.Handle("POST /events/{id}/reject", admin(h.handleRejectEvent))
+	mux.Handle("POST /events/{id}/status", admin(h.handleSetEventStatus))
+	mux.Handle("GET /events/{id}/status-log", admin(h.handleListEventStatusLog))
 	// NOTE: event creation and publishing are deliberately NOT duplicated here.
 	// backend/internal/event already exposes POST /api/events and
 	// PATCH /api/events/{id}/publish, and Super Admin already bypasses their
@@ -81,30 +81,30 @@ func (h *Handler) RegisterRoutes(
 	// should be pointed at those existing endpoints rather than a new v1
 	// duplicate - see conversation summary.
 
-	mux.Handle("GET /api/v1/events/{id}/scanners", admin(h.handleListScanners))
-	mux.Handle("POST /api/v1/events/{id}/scanners", admin(h.handleNotImplemented))
-	mux.Handle("DELETE /api/v1/events/{id}/scanners/{scannerId}", admin(h.handleNotImplemented))
+	mux.Handle("GET /events/{id}/scanners", admin(h.handleListScanners))
+	mux.Handle("POST /events/{id}/scanners", admin(h.handleNotImplemented))
+	mux.Handle("DELETE /events/{id}/scanners/{scannerId}", admin(h.handleNotImplemented))
 
 	// Bonus reads - not yet called by the frontend service files (only PUT is),
 	// included so a future "load current tiers/sections" fetch has somewhere to go.
-	mux.Handle("GET /api/v1/events/{id}/ticket-tiers", admin(h.handleGetTicketTiers))
-	mux.Handle("PUT /api/v1/events/{id}/ticket-tiers", admin(h.handleUpdateTicketTiers))
-	mux.Handle("DELETE /api/v1/events/{id}/ticket-tiers/{tierId}", admin(h.handleDeleteTicketTier))
-	mux.Handle("GET /api/v1/events/{id}/venue-sections", admin(h.handleGetVenueSections))
-	mux.Handle("PUT /api/v1/events/{id}/venue-sections", admin(h.handleUpdateVenueSections))
+	mux.Handle("GET /events/{id}/ticket-tiers", admin(h.handleGetTicketTiers))
+	mux.Handle("PUT /events/{id}/ticket-tiers", admin(h.handleUpdateTicketTiers))
+	mux.Handle("DELETE /events/{id}/ticket-tiers/{tierId}", admin(h.handleDeleteTicketTier))
+	mux.Handle("GET /events/{id}/venue-sections", admin(h.handleGetVenueSections))
+	mux.Handle("PUT /events/{id}/venue-sections", admin(h.handleUpdateVenueSections))
 
-	mux.Handle("GET /api/v1/finance/transactions", admin(h.handleListTransactions))
-	mux.Handle("GET /api/v1/finance/payouts", admin(h.handleListPayouts))
-	mux.Handle("POST /api/v1/finance/payouts/{id}/process", admin(h.handleProcessPayout))
-	mux.Handle("POST /api/v1/finance/payouts/{id}/reject", admin(h.handleRejectPayout))
-	mux.Handle("POST /api/v1/finance/transactions/{id}/status", admin(h.handleUpdateTransactionStatus))
+	mux.Handle("GET /finance/transactions", admin(h.handleListTransactions))
+	mux.Handle("GET /finance/payouts", admin(h.handleListPayouts))
+	mux.Handle("POST /finance/payouts/{id}/process", admin(h.handleProcessPayout))
+	mux.Handle("POST /finance/payouts/{id}/reject", admin(h.handleRejectPayout))
+	mux.Handle("POST /finance/transactions/{id}/status", admin(h.handleUpdateTransactionStatus))
 
-	mux.Handle("GET /api/v1/users", admin(h.handleListUsers))
-	mux.Handle("POST /api/v1/users/{id}/status", admin(h.handleUpdateUserStatus))
-	mux.Handle("POST /api/v1/users/{id}/roles", admin(h.handleGrantUserRole))
-	mux.Handle("GET /api/v1/users/verifications", admin(h.handleListVerifications))
-	mux.Handle("POST /api/v1/users/verifications/{id}/approve", admin(h.handleApproveVerification))
-	mux.Handle("POST /api/v1/users/verifications/{id}/reject", admin(h.handleRejectVerification))
+	mux.Handle("GET /users", admin(h.handleListUsers))
+	mux.Handle("POST /users/{id}/status", admin(h.handleUpdateUserStatus))
+	mux.Handle("POST /users/{id}/roles", admin(h.handleGrantUserRole))
+	mux.Handle("GET /users/verifications", admin(h.handleListVerifications))
+	mux.Handle("POST /users/verifications/{id}/approve", admin(h.handleApproveVerification))
+	mux.Handle("POST /users/verifications/{id}/reject", admin(h.handleRejectVerification))
 }
 
 // handleNotImplemented is returned for actions on resources with no backing

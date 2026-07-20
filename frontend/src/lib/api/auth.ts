@@ -33,27 +33,27 @@ export interface UserProfileResponse {
 }
 
 export async function loginUser(body: any): Promise<ApiResponse<AuthUser>> {
-  return apiRequest<AuthUser>("/api/auth/login", {
+  return apiRequest<AuthUser>("/api/v1/auth/login", {
     method: "POST",
     body: JSON.stringify(body),
   });
 }
 
 export async function registerUser(body: any): Promise<ApiResponse<void>> {
-  return apiRequest<void>("/api/auth/register", {
+  return apiRequest<void>("/api/v1/auth/register", {
     method: "POST",
     body: JSON.stringify(body),
   });
 }
 
 export async function logoutUser(): Promise<ApiResponse<void>> {
-  return apiRequest<void>("/api/auth/logout", {
+  return apiRequest<void>("/api/v1/auth/logout", {
     method: "POST",
   });
 }
 
 export async function getMe(): Promise<ApiResponse<UserProfileResponse>> {
-  return apiRequest<UserProfileResponse>("/api/auth/me", {
+  return apiRequest<UserProfileResponse>("/api/v1/auth/me", {
     method: "GET",
   });
 }
@@ -64,7 +64,7 @@ export async function updateProfile(body: {
   location: string;
   bio: string;
 }): Promise<ApiResponse<{ message: string }>> {
-  return apiRequest<{ message: string }>("/api/auth/me", {
+  return apiRequest<{ message: string }>("/api/v1/auth/me", {
     method: "PUT",
     body: JSON.stringify(body),
   });
