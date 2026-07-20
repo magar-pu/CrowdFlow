@@ -202,6 +202,10 @@ type AddRevisionRequest struct {
 	Deadline       string `json:"deadline"`
 }
 
+type UpdateRevisionStatusRequest struct {
+	Status string `json:"status"`
+}
+
 type RejectDocumentRequest struct {
 	Reason string `json:"reason"`
 }
@@ -380,6 +384,7 @@ type Repository interface {
 	RequestEventChanges(ctx context.Context, eventID, actorID int, notes string) error
 	UpdateEventReviewStage(ctx context.Context, eventID, actorID int, stage ReviewStage) error
 	AddEventRevision(ctx context.Context, eventID, actorID int, req AddRevisionRequest) error
+	UpdateRevisionStatus(ctx context.Context, revID, actorID int, status string) error
 	VerifyReviewDocument(ctx context.Context, docID, actorID int) error
 	RejectReviewDocument(ctx context.Context, docID, actorID int, reason string) error
 
@@ -425,6 +430,7 @@ type Service interface {
 	RequestEventChanges(ctx context.Context, eventID, actorID int, notes string) error
 	UpdateEventReviewStage(ctx context.Context, eventID, actorID int, stage ReviewStage) error
 	AddEventRevision(ctx context.Context, eventID, actorID int, req AddRevisionRequest) error
+	UpdateRevisionStatus(ctx context.Context, revID, actorID int, status string) error
 	ListEventRevisions(ctx context.Context, eventID int) ([]Revision, error)
 	VerifyReviewDocument(ctx context.Context, docID, actorID int) error
 	RejectReviewDocument(ctx context.Context, docID, actorID int, reason string) error

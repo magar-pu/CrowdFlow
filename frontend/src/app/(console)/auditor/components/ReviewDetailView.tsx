@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { updateRevisionStatus } from '@/lib/api/auditor';
 import { EventSubmission, ReviewStage, RiskLevel, RevisionEntry } from '../types';
 import {
   ArrowLeft, CheckCircle2, FileText, MapPin, CalendarDays, Users2,
@@ -50,6 +51,7 @@ interface Props {
   onViewDocument: (doc: { name: string; category: string; status: string }) => void;
   onChangeStage: (submissionId: string, stage: ReviewStage) => void;
   onAddRevision: (submissionId: string, revision: RevisionEntry) => void;
+  onRefresh?: () => void;
 }
 
 function ScoreBadge({ score }: { score: number }) {
@@ -87,7 +89,7 @@ function ChecklistRow({ label, done }: { label: string; done: boolean }) {
 }
 
 // ─── TAB: OVERVIEW ────────────────────────────────────────────────────────────
-function TabOverview({ sub }: { sub: EventSubmission }) {
+function TabOverview({ sub, onChangeStage }: { sub: EventSubmission; onChangeStage?: (stage: ReviewStage) => void }) {
   const stageIndex = TIMELINE_STAGES.indexOf(sub.stage);
   const isResolved = sub.status !== 'Pending';
 
@@ -181,7 +183,7 @@ function TabOverview({ sub }: { sub: EventSubmission }) {
               const done = isResolved || idx < stageIndex;
               const current = !isResolved && idx === stageIndex;
               return (
-                <button key={stage} className="flex flex-col items-center gap-1.5 flex-1 text-center group cursor-pointer bg-transparent border-0 outline-none">
+                <button key={stage} onClick={() => !isResolved && onChangeStage?.(stage as ReviewStage)} className="flex flex-col items-center gap-1.5 flex-1 text-center group cursor-pointer bg-transparent border-0 outline-none">
                   <div className={`w-10 h-10 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all group-hover:scale-110 ${done ? 'bg-secondary border-secondary text-white' : current ? 'bg-primary border-primary text-white' : 'bg-white border-border-subtle text-text-secondary hover:border-text-secondary'}`}>
                     {done ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
                   </div>
@@ -226,8 +228,8 @@ function TabOverview({ sub }: { sub: EventSubmission }) {
 // ─── TAB: DOCUMENTS ───────────────────────────────────────────────────────────
 function TabDocuments({ sub, onVerify, onReject, onView, onAddRevision }: {
   sub: EventSubmission;
-  onVerify: (name: string) => void;
-  onReject: (name: string) => void;
+  onVerify: (idOrName: string) => void;
+  onReject: (idOrName: string) => void;
   onView: (doc: { name: string; category: string; status: string }) => void;
   onAddRevision: (submissionId: string, revision: RevisionEntry) => void;
 }) {
@@ -275,7 +277,7 @@ function TabDocuments({ sub, onVerify, onReject, onView, onAddRevision }: {
     };
 
     onAddRevision(sub.id, newRevision);
-    onReject(doc.name); // Updates document status to REJECTED
+    onReject(String(doc.id || doc.name)); // Updates document status to REJECTED
 
     // Reset Form
     setRevisingDocName(null);
@@ -353,8 +355,8 @@ function TabDocuments({ sub, onVerify, onReject, onView, onAddRevision }: {
                     )}
                     {doc.status !== 'VERIFIED' && doc.status !== 'REJECTED' && doc.status !== 'MISSING' ? (
                       <div className="flex gap-1.5">
-                        <button onClick={() => onVerify(doc.name)} className="bg-success/10 hover:bg-success hover:text-white border border-success/20 text-success text-[10px] font-bold px-2.5 py-1 rounded transition-all cursor-pointer">Verify</button>
-                        <button onClick={() => onReject(doc.name)} className="bg-danger/10 hover:bg-danger hover:text-white border border-danger/20 text-danger text-[10px] font-bold px-2.5 py-1 rounded transition-all cursor-pointer">Reject</button>
+                        <button onClick={() => onVerify(String(doc.id || doc.name))} className="bg-success/10 hover:bg-success hover:text-white border border-success/20 text-success text-[10px] font-bold px-2.5 py-1 rounded transition-all cursor-pointer">Verify</button>
+                        <button onClick={() => onReject(String(doc.id || doc.name))} className="bg-danger/10 hover:bg-danger hover:text-white border border-danger/20 text-danger text-[10px] font-bold px-2.5 py-1 rounded transition-all cursor-pointer">Reject</button>
                       </div>
                     ) : (
                       <span className={`px-2.5 py-0.5 rounded-full font-mono text-[9px] font-bold border ${statusColor(doc.status)}`}>{doc.status}</span>
@@ -837,8 +839,17 @@ const STATUS_COLORS: Record<RevisionStatus, string> = {
   Expired: 'bg-slate-200 text-slate-500 border-slate-300',
 };
 
-function TabRevision({ sub }: { sub: EventSubmission }) {
+function TabRevision({
+  sub,
+  onAddRevision,
+  onRefresh,
+}: {
+  sub: EventSubmission;
+  onAddRevision?: (submissionId: string, revision: RevisionEntry) => void;
+  onRefresh?: () => void;
+}) {
   const revisions = sub.revisions;
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Dashboard stats
   const stats = {
@@ -860,16 +871,129 @@ function TabRevision({ sub }: { sub: EventSubmission }) {
   const [deadline, setDeadline] = useState('');
   const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
   const [customReason, setCustomReason] = useState('');
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [expandedRevision, setExpandedRevision] = useState<string | null>(null);
 
-  const toggleReason = (r: string) => {
-    setSelectedReasons(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]);
+  const [revToast, setRevToast] = useState<{ message: string; type: 'success' | 'warning' | 'error' } | null>(null);
+
+  const handleVerifyRevisionItem = async (revId: number | string, newStatus: 'Resolved' | 'Sent' | 'Rejected') => {
+    const numericId = typeof revId === 'number' ? revId : parseInt(String(revId).replace(/\D/g, '')) || 0;
+    try {
+      const res = await updateRevisionStatus(numericId, newStatus);
+      if (res.success) {
+        const msg =
+          newStatus === 'Resolved'
+            ? '✅ Revisi berhasil disetujui (Accepted)!'
+            : newStatus === 'Sent'
+            ? '⚠️ Perubahan tambahan diminta! Poin revisi dikembalikan ke EO.'
+            : '❌ Revisi telah ditolak!';
+        setRevToast({ message: msg, type: newStatus === 'Resolved' ? 'success' : newStatus === 'Sent' ? 'warning' : 'error' });
+        setTimeout(() => setRevToast(null), 4000);
+        if (onRefresh) {
+          await onRefresh();
+        }
+      } else {
+        setRevToast({ message: 'Gagal memperbarui status revisi: ' + (res.error?.message || 'Terjadi kesalahan'), type: 'error' });
+        setTimeout(() => setRevToast(null), 4000);
+      }
+    } catch (err) {
+      console.error("Failed to update revision status:", err);
+      setRevToast({ message: 'Error memperbarui status revisi ke server.', type: 'error' });
+      setTimeout(() => setRevToast(null), 4000);
+    }
   };
 
   const sectionOptions = CATEGORY_SECTIONS[category];
 
+  const toggleReason = (r: string) => {
+    setSelectedReasons(prev => {
+      const next = prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r];
+      if (next.length > 0) {
+        const text = next.join(", ");
+        if (!title || title.startsWith("Revisi Dokumen:")) {
+          setTitle(`Revisi Dokumen: ${text}`);
+        }
+        if (!description || description.startsWith("Alasan penolakan dokumen:")) {
+          setDescription(`Alasan penolakan dokumen: ${text}. ${customReason ? `Catatan: ${customReason}` : ''}`);
+        }
+        if (!requiredAction || requiredAction.startsWith("Harap mengunggah kembali")) {
+          setRequiredAction("Harap mengunggah kembali dokumen pendukung yang valid dan sesuai dengan persyaratan audit.");
+        }
+        if (!affectedSection) {
+          setAffectedSection(sectionOptions[0] || "Dokumen Legal");
+        }
+        if (!deadline) {
+          const defaultDeadline = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
+          setDeadline(defaultDeadline);
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setAttachmentFile(e.target.files[0]);
+    }
+  };
+
+  const handleSaveRevision = (status: 'Draft' | 'Sent') => {
+    const finalTitle = title.trim() || (selectedReasons.length > 0 ? `Revisi Dokumen: ${selectedReasons.join(', ')}` : 'Permintaan Revisi Auditor');
+    const finalSection = affectedSection || sectionOptions[0] || 'General';
+    const finalDescription = description.trim() || (selectedReasons.length > 0 ? `Dokumen bermasalah: ${selectedReasons.join(', ')}` : 'Perlu penyesuaian data event');
+    const finalAction = requiredAction.trim() || 'Silakan unggah ulang atau perbaiki dokumen/data yang diperlukan.';
+    const finalDeadline = deadline || new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
+
+    const newRevision: RevisionEntry = {
+      id: `REV-${Math.floor(1000 + Math.random() * 9000)}`,
+      category,
+      affectedSection: finalSection,
+      priority,
+      status,
+      requestedBy: 'Auditor Portal',
+      requestDate: new Date().toISOString().split('T')[0],
+      deadline: finalDeadline,
+      title: finalTitle,
+      description: finalDescription,
+      requiredAction: finalAction,
+      severity: priority === 'Critical' || priority === 'High' ? 'Critical' : 'Medium',
+      area: category === 'Documents' ? 'Document' : (category as any),
+      revisionTimeline: [
+        {
+          id: `rt-${Math.random()}`,
+          actor: 'Auditor Portal',
+          role: 'Auditor',
+          action: status === 'Draft' ? 'Draft Saved' : 'Revision Sent to Organizer',
+          timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16)
+        }
+      ]
+    };
+
+    if (onAddRevision) {
+      onAddRevision(sub.id, newRevision);
+    }
+
+    // Reset Form
+    setTitle('');
+    setDescription('');
+    setRequiredAction('');
+    setSelectedReasons([]);
+    setCustomReason('');
+    setAttachmentFile(null);
+  };
+
   return (
     <div className="space-y-6">
+      {revToast && (
+        <div className={`p-3.5 rounded-xl border text-xs font-bold flex items-center justify-between transition-all ${
+          revToast.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+          revToast.type === 'warning' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+          'bg-rose-50 text-rose-800 border-rose-200'
+        }`}>
+          <span>{revToast.message}</span>
+          <button onClick={() => setRevToast(null)} className="text-slate-400 hover:text-slate-600 font-normal text-xs ml-2 cursor-pointer">✕</button>
+        </div>
+      )}
 
       {/* ── Revision Dashboard ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -978,16 +1102,25 @@ function TabRevision({ sub }: { sub: EventSubmission }) {
                     </div>
 
                     {/* Auditor Verification Actions */}
-                    {['Resubmitted', 'Viewed', 'In Progress'].includes(r.status) && (
-                      <div className="flex gap-2 flex-wrap pt-2 border-t border-border-subtle">
-                        <p className="w-full text-[9px] font-mono font-bold text-text-secondary uppercase">Auditor Verification</p>
-                        <button className="flex items-center gap-1.5 px-3 py-2 bg-success/10 hover:bg-success text-success hover:text-white border border-success/20 rounded-lg text-xs font-bold transition-colors cursor-pointer">
+                    {['Resubmitted', 'Viewed', 'In Progress', 'Sent', 'Draft'].includes(r.status) && (
+                      <div className="flex gap-2 flex-wrap pt-3 border-t border-border-subtle">
+                        <p className="w-full text-[9px] font-mono font-bold text-text-secondary uppercase">Auditor Verification Actions</p>
+                        <button
+                          onClick={() => handleVerifyRevisionItem(r.id, 'Resolved')}
+                          className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
+                        >
                           <CheckCircle2 className="w-3.5 h-3.5" /> Accept Revision
                         </button>
-                        <button className="flex items-center gap-1.5 px-3 py-2 bg-warning/10 hover:bg-warning text-warning hover:text-white border border-warning/20 rounded-lg text-xs font-bold transition-colors cursor-pointer">
+                        <button
+                          onClick={() => handleVerifyRevisionItem(r.id, 'Sent')}
+                          className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
+                        >
                           <RefreshCw className="w-3.5 h-3.5" /> Request Additional Changes
                         </button>
-                        <button className="flex items-center gap-1.5 px-3 py-2 bg-danger/10 hover:bg-danger text-danger hover:text-white border border-danger/20 rounded-lg text-xs font-bold transition-colors cursor-pointer">
+                        <button
+                          onClick={() => handleVerifyRevisionItem(r.id, 'Rejected')}
+                          className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
+                        >
                           <Ban className="w-3.5 h-3.5" /> Reject Revision
                         </button>
                       </div>
@@ -1011,6 +1144,7 @@ function TabRevision({ sub }: { sub: EventSubmission }) {
               {(['Documents', 'Venue', 'Organizer', 'Finance', 'Logistics', 'Other'] as RevisionCategory[]).map(c => (
                 <button
                   key={c}
+                  type="button"
                   onClick={() => { setCategory(c); setAffectedSection(''); }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${category === c ? 'bg-primary text-white border-primary' : 'bg-white border-border-subtle text-text-secondary hover:border-primary/50'}`}
                 >
@@ -1027,6 +1161,7 @@ function TabRevision({ sub }: { sub: EventSubmission }) {
               {sectionOptions.map(s => (
                 <button
                   key={s}
+                  type="button"
                   onClick={() => setAffectedSection(s)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${affectedSection === s ? 'bg-secondary text-white border-secondary' : 'bg-white border-border-subtle text-text-secondary hover:border-secondary/50'}`}
                 >
@@ -1043,6 +1178,7 @@ function TabRevision({ sub }: { sub: EventSubmission }) {
               {(['Low', 'Medium', 'High', 'Critical'] as RevisionPriority[]).map(p => (
                 <button
                   key={p}
+                  type="button"
                   onClick={() => setPriority(p)}
                   className={`flex flex-col items-center py-2.5 px-3 rounded-lg border text-xs font-bold transition-all cursor-pointer ${priority === p ? (p === 'Critical' ? 'bg-danger text-white border-danger' : p === 'High' ? 'bg-orange-500 text-white border-orange-500' : p === 'Medium' ? 'bg-warning text-white border-warning' : 'bg-success text-white border-success') : 'bg-white border-border-subtle text-text-secondary hover:border-slate-400'}`}
                 >
@@ -1096,6 +1232,7 @@ function TabRevision({ sub }: { sub: EventSubmission }) {
                 {DOCUMENT_REJECTION_REASONS.map(reason => (
                   <button
                     key={reason}
+                    type="button"
                     onClick={() => toggleReason(reason)}
                     className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-xs text-left transition-colors cursor-pointer ${selectedReasons.includes(reason) ? 'bg-secondary/10 border-secondary/30 text-secondary font-semibold' : 'bg-white border-border-subtle text-text-secondary hover:border-slate-400'}`}
                   >
@@ -1130,13 +1267,45 @@ function TabRevision({ sub }: { sub: EventSubmission }) {
             />
           </div>
 
-          {/* Attachment */}
+          {/* Attachment (Interactive Upload) */}
           <div className="space-y-1.5">
             <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Attachment (Optional)</label>
-            <div className="border-2 border-dashed border-border-subtle rounded-lg p-4 text-center hover:border-secondary/50 transition-colors cursor-pointer">
-              <FileText className="w-5 h-5 text-text-secondary mx-auto mb-1" />
-              <p className="text-xs text-text-secondary">Click to upload screenshot or supporting evidence</p>
-              <p className="text-[9px] text-text-secondary font-mono mt-0.5">PNG, JPG, PDF up to 10MB</p>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept="image/*,.pdf"
+              className="hidden"
+            />
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-border-subtle rounded-lg p-4 text-center hover:border-secondary/50 transition-colors cursor-pointer bg-white"
+            >
+              {attachmentFile ? (
+                <div className="flex items-center justify-between p-2 bg-surface-container rounded-lg border border-border-subtle text-xs">
+                  <div className="flex items-center gap-2 truncate">
+                    <FileText className="w-4 h-4 text-secondary shrink-0" />
+                    <span className="font-bold text-text-primary truncate">{attachmentFile.name}</span>
+                    <span className="text-[10px] text-text-secondary font-mono">({Math.round(attachmentFile.size / 1024)} KB)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAttachmentFile(null);
+                    }}
+                    className="p-1 hover:bg-surface-container-high rounded text-text-secondary hover:text-danger cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <FileText className="w-5 h-5 text-text-secondary mx-auto mb-1" />
+                  <p className="text-xs text-text-secondary">Click to upload screenshot or supporting evidence</p>
+                  <p className="text-[9px] text-text-secondary font-mono mt-0.5">PNG, JPG, PDF up to 10MB</p>
+                </>
+              )}
             </div>
           </div>
 
@@ -1148,12 +1317,17 @@ function TabRevision({ sub }: { sub: EventSubmission }) {
 
           {/* Actions */}
           <div className="flex gap-2 flex-wrap pt-1">
-            <button className="flex items-center gap-1.5 px-4 py-2.5 border border-border-subtle text-text-secondary rounded-lg text-xs font-bold hover:bg-surface-container-low transition-colors cursor-pointer">
+            <button
+              type="button"
+              onClick={() => handleSaveRevision('Draft')}
+              className="flex items-center gap-1.5 px-4 py-2.5 border border-border-subtle text-text-secondary rounded-lg text-xs font-bold hover:bg-surface-container-low transition-colors cursor-pointer"
+            >
               <Save className="w-3.5 h-3.5" /> Save Draft
             </button>
             <button
-              disabled={!title.trim() || !affectedSection || !deadline}
-              className="flex items-center gap-1.5 px-5 py-2.5 bg-secondary hover:bg-secondary/90 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+              type="button"
+              onClick={() => handleSaveRevision('Sent')}
+              className="flex items-center gap-1.5 px-5 py-2.5 bg-secondary hover:bg-secondary/90 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-sm"
             >
               <Send className="w-3.5 h-3.5" /> Send Revision
             </button>
@@ -1177,6 +1351,7 @@ export default function ReviewDetailView({
   onViewDocument,
   onChangeStage,
   onAddRevision,
+  onRefresh,
 }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [mode, setMode] = useState<'view' | 'reject' | 'changes'>('view');
@@ -1224,7 +1399,7 @@ export default function ReviewDetailView({
 
       {/* ── Tab Content ── */}
       <div className="flex-1">
-        {activeTab === 'overview' && <TabOverview sub={submission} />}
+        {activeTab === 'overview' && <TabOverview sub={submission} onChangeStage={(stage) => onChangeStage(submission.id, stage)} />}
         {activeTab === 'documents' && (
           <TabDocuments
             sub={submission}
@@ -1238,7 +1413,7 @@ export default function ReviewDetailView({
         {activeTab === 'logistics' && <TabLogistics sub={submission} />}
         {activeTab === 'finance' && <TabFinance sub={submission} />}
         {activeTab === 'history' && <TabHistory sub={submission} />}
-        {activeTab === 'revision' && <TabRevision sub={submission} />}
+        {activeTab === 'revision' && <TabRevision sub={submission} onAddRevision={onAddRevision} onRefresh={onRefresh} />}
       </div>
 
       {/* ── Sticky Action Panel (always visible at bottom) ── */}
