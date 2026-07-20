@@ -35,6 +35,9 @@ export function SeatArrangePanel() {
     set_arrange,
     apply_arrange,
     save_history,
+    pricing_tiers,
+    paint_seats,
+    base_currency,
   } = useVenueEditorStore();
 
   const count = multi_selected_seat_ids.length;
@@ -48,6 +51,7 @@ export function SeatArrangePanel() {
 
   const selected = seats.filter((s) => multi_selected_seat_ids.includes(s.seat_id));
   const has_locked = selected.some((s) => s.is_locked);
+  const untagged = selected.filter((s) => !s.tier_id).length;
 
   /** Apply a new seat count, then re-flow into the same frame. */
   const commit_count = () => {
@@ -118,6 +122,69 @@ export function SeatArrangePanel() {
           <p className="text-[11px] text-text-secondary">
             Reducing removes seats from the end of the flow. Press Enter to apply.
           </p>
+        </div>
+
+        {/* Ticket tier — apply one of the existing tiers to the whole selection */}
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-medium text-on-surface-variant">Ticket tier</label>
+
+          {pricing_tiers.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-border-subtle px-3 py-3 text-[11px] text-text-secondary">
+              No pricing tiers yet. Add one in the Ticket Pricing tool first.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {pricing_tiers.map((tier) => {
+                const in_tier = selected.filter((s) => s.tier_id === tier.tier_id).length;
+                const all = in_tier === selected.length;
+                return (
+                  <button
+                    key={tier.tier_id}
+                    type="button"
+                    onClick={() => paint_seats(multi_selected_seat_ids, tier.tier_id)}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-colors",
+                      all
+                        ? "border-primary bg-surface-container-low"
+                        : "border-border-subtle hover:bg-surface-container-low"
+                    )}
+                  >
+                    <span
+                      className="h-4 w-4 shrink-0 rounded-full ring-1 ring-black/10"
+                      style={{ backgroundColor: tier.color }}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-semibold text-primary">
+                        {tier.name}
+                      </span>
+                      <span className="block text-[11px] text-text-secondary">
+                        {base_currency} {tier.price.toLocaleString()}
+                      </span>
+                    </span>
+                    {in_tier > 0 && (
+                      <span className="shrink-0 text-[10px] font-medium text-text-secondary">
+                        {all ? "all" : `${in_tier}/${selected.length}`}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+
+              {untagged > 0 && (
+                <p className="text-[11px] text-warning">
+                  {untagged} of {selected.length} seats still have no tier — required before publish.
+                </p>
+              )}
+
+              <button
+                type="button"
+                onClick={() => paint_seats(multi_selected_seat_ids, undefined)}
+                className="cursor-pointer rounded-lg border border-border-subtle px-3 py-1.5 text-[11px] font-medium text-text-secondary transition-colors hover:bg-surface-container-low"
+              >
+                Clear tier from selection
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Arrangement form */}

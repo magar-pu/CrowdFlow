@@ -521,6 +521,12 @@ export interface VenueBlueprint {
   scale: number;
   offset_x: number;
   offset_y: number;
+  /**
+   * Locked blueprints are click-through, so the layer can't swallow marquee
+   * drags across the area it covers. Unlock it to reposition by dragging.
+   * Defaults to locked.
+   */
+  is_locked?: boolean;
 }
 
 /** Top-level state for the venue editor page. */

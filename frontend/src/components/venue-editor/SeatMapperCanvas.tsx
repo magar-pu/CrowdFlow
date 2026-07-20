@@ -43,7 +43,7 @@ export function SeatMapperCanvas({
     selected_shape_id, set_selected_shape_id, move_selected_elements,
     update_section, generate_seats_for_section,
     facilities, update_facility, remove_facility,
-    blueprint,
+    blueprint, update_blueprint,
     pricing_tiers, selected_paint_tier_id, paint_seats, save_history,
     grid_size_x, grid_size_y, show_grid
   } = useVenueEditorStore();
@@ -112,6 +112,14 @@ export function SeatMapperCanvas({
   // Tracks an in-flight group drag so history is saved once, not per pointermove.
   const group_drag_active = useRef(false);
 
+  // Drag origin for repositioning the blueprint layer.
+  const blueprint_drag = useRef<{
+    x: number;
+    y: number;
+    offset_x: number;
+    offset_y: number;
+  } | null>(null);
+
   const handle_pointer_down = (e: React.PointerEvent) => {
     const target = e.target as HTMLElement;
     if (target.closest('[role="button"]') || target.closest('button')) return;
@@ -143,9 +151,12 @@ export function SeatMapperCanvas({
       return;
     } else if (
       drawing_mode === "select" ||
+      drawing_mode === "paint" ||
       (drawing_mode === "seat_array" && !is_locked_mode)
     ) {
-      // Seat Array reuses the marquee: drag a region, fill it with seats on release.
+      // Select, Paint and Seat Array all share the marquee. Paint is NOT gated
+      // on is_locked_mode — assigning tiers over a locked layout is exactly
+      // what the EO pricing mode is for.
       set_selection_box({ startX: canvas_x, startY: canvas_y, endX: canvas_x, endY: canvas_y });
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
       return;
@@ -324,34 +335,85 @@ export function SeatMapperCanvas({
           transformOrigin: "top left",
         }}
       >
-        {/* Render Marquee Selection Box */}
-        {selection_box && (
-          <div
-            className="absolute border border-primary bg-primary/20 pointer-events-none z-50"
-            style={{
-              left: Math.min(selection_box.startX, selection_box.endX),
-              top: Math.min(selection_box.startY, selection_box.endY),
-              width: Math.abs(selection_box.endX - selection_box.startX),
-              height: Math.abs(selection_box.endY - selection_box.startY),
-            }}
-          />
-        )}
+        {/* Render Marquee Selection Box. While painting it takes the active
+            tier's colour so it's obvious what's about to be applied. */}
+        {selection_box && (() => {
+          const paint_tier =
+            drawing_mode === "paint"
+              ? pricing_tiers.find((t) => t.tier_id === selected_paint_tier_id)
+              : undefined;
+          return (
+            <div
+              className={cn(
+                "absolute pointer-events-none z-50 border",
+                !paint_tier && "border-primary bg-primary/20"
+              )}
+              style={{
+                left: Math.min(selection_box.startX, selection_box.endX),
+                top: Math.min(selection_box.startY, selection_box.endY),
+                width: Math.abs(selection_box.endX - selection_box.startX),
+                height: Math.abs(selection_box.endY - selection_box.startY),
+                ...(paint_tier
+                  ? { borderColor: paint_tier.color, backgroundColor: `${paint_tier.color}33` }
+                  : {}),
+              }}
+            />
+          );
+        })()}
 
-        {/* Render Blueprint Background */}
-        {blueprint && (
-          <img
-            src={blueprint.image_url}
-            alt="Venue Blueprint"
-            className="absolute pointer-events-none z-0"
-            style={{
-              left: blueprint.offset_x,
-              top: blueprint.offset_y,
-              transform: `scale(${blueprint.scale})`,
-              transformOrigin: "top left",
-              opacity: blueprint.opacity,
-            }}
-          />
-        )}
+        {/* Render Blueprint Background. Draggable once unlocked; otherwise it
+            stays click-through so it can't swallow marquee drags. */}
+        {blueprint && (() => {
+          const can_move =
+            !blueprint.is_locked && !is_locked_mode && drawing_mode === "select";
+          return (
+            <img
+              src={blueprint.image_url}
+              alt="Venue Blueprint"
+              draggable={false}
+              className={cn(
+                "absolute z-0",
+                can_move
+                  ? "cursor-move outline-2 outline-dashed outline-primary/60"
+                  : "pointer-events-none"
+              )}
+              style={{
+                left: blueprint.offset_x,
+                top: blueprint.offset_y,
+                transform: `scale(${blueprint.scale})`,
+                transformOrigin: "top left",
+                opacity: blueprint.opacity,
+              }}
+              onPointerDown={(e) => {
+                if (!can_move) return;
+                e.stopPropagation();
+                blueprint_drag.current = {
+                  x: e.clientX,
+                  y: e.clientY,
+                  offset_x: blueprint.offset_x,
+                  offset_y: blueprint.offset_y,
+                };
+                (e.target as HTMLElement).setPointerCapture(e.pointerId);
+              }}
+              onPointerMove={(e) => {
+                const start = blueprint_drag.current;
+                if (!start) return;
+                e.stopPropagation();
+                // Screen delta -> canvas units, so it tracks the cursor at any zoom.
+                update_blueprint({
+                  offset_x: Math.round(start.offset_x + (e.clientX - start.x) / scale),
+                  offset_y: Math.round(start.offset_y + (e.clientY - start.y) / scale),
+                });
+              }}
+              onPointerUp={(e) => {
+                if (!blueprint_drag.current) return;
+                e.stopPropagation();
+                blueprint_drag.current = null;
+                (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+              }}
+            />
+          );
+        })()}
 
         {/* Render Stage Shape */}
         {stage_shape && (
