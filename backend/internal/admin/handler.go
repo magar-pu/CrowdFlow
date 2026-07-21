@@ -461,6 +461,36 @@ func (h *Handler) handleUpdateUserStatus(w http.ResponseWriter, r *http.Request)
 	response.JSON(w, http.StatusOK, map[string]string{"message": "User status updated"})
 }
 
+func (h *Handler) handleApproveVerification(w http.ResponseWriter, r *http.Request) {
+	h.setVerificationStatus(w, r, "Verified", "Verification approved")
+}
+
+func (h *Handler) handleRejectVerification(w http.ResponseWriter, r *http.Request) {
+	h.setVerificationStatus(w, r, "Suspended", "Verification rejected")
+}
+
+// setVerificationStatus approves or rejects a pending verification. The queue is
+// derived from users.verification_status, so the {id} is the user's own id and
+// this reuses UpdateUserStatus ("Verified" -> verified, "Suspended" -> rejected)
+// rather than a parallel data model.
+func (h *Handler) setVerificationStatus(w http.ResponseWriter, r *http.Request, status, successMsg string) {
+	actorID, ok := actorIDFromRequest(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
+		return
+	}
+	userID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Verification ID must be a valid integer")
+		return
+	}
+	if err := h.service.UpdateUserStatus(userID, status, actorID); err != nil {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": successMsg})
+}
+
 type grantRoleRequest struct {
 	RoleID  int  `json:"role_id"`
 	EventID *int `json:"event_id"`
@@ -500,45 +530,4 @@ func (h *Handler) handleListVerifications(w http.ResponseWriter, r *http.Request
 		return
 	}
 	response.JSON(w, http.StatusOK, verifications)
-}
-
-// handleApproveVerification and handleRejectVerification treat the
-// verification "application" ID as the user's own ID (see
-// Repository.ListVerifications) and reuse UpdateUserStatus rather than a
-// separate applications data model.
-
-func (h *Handler) handleApproveVerification(w http.ResponseWriter, r *http.Request) {
-	actorID, ok := actorIDFromRequest(r)
-	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
-		return
-	}
-	userID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Applicant ID must be a valid integer")
-		return
-	}
-	if err := h.service.UpdateUserStatus(userID, "Verified", actorID); err != nil {
-		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
-		return
-	}
-	response.JSON(w, http.StatusOK, map[string]string{"message": "Verification approved"})
-}
-
-func (h *Handler) handleRejectVerification(w http.ResponseWriter, r *http.Request) {
-	actorID, ok := actorIDFromRequest(r)
-	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
-		return
-	}
-	userID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Applicant ID must be a valid integer")
-		return
-	}
-	if err := h.service.UpdateUserStatus(userID, "Suspended", actorID); err != nil {
-		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
-		return
-	}
-	response.JSON(w, http.StatusOK, map[string]string{"message": "Verification rejected"})
 }
