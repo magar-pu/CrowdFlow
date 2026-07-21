@@ -9,12 +9,12 @@
 import Link from "next/link";
 import { Smile, Globe, PlayCircle } from "lucide-react";
 
-const ABOUT_LINKS = ["Cara Pesan", "Hubungi Kami", "Pusat Bantuan", "Karir"];
+const ABOUT_LINKS = ["How to Order", "Contact Us", "Help Center", "Careers"];
 const PRODUCT_LINKS = [
-  "Tiket Konser",
-  "Tiket Atraksi",
-  "Tiket Olahraga",
-  "Layanan Bisnis",
+  "Concert Tickets",
+  "Attraction Tickets",
+  "Sports Tickets",
+  "Business Services",
 ];
 
 export function HomeFooterV2() {
@@ -27,8 +27,8 @@ export function HomeFooterV2() {
             CrowdFlow
           </h3>
           <p className="max-w-xs font-body-sm text-body-sm text-text-secondary">
-            Ekosistem ticketing premium untuk pengalaman live entertainment
-            terbaik di Indonesia.
+            Premium ticketing ecosystem for the best live entertainment
+            experience in Indonesia.
           </p>
           <div className="flex gap-4">
             <Smile size={20} className="cursor-pointer text-text-secondary transition-colors hover:text-primary" />
@@ -40,7 +40,7 @@ export function HomeFooterV2() {
         {/* Tentang CrowdFlow */}
         <div>
           <h4 className="mb-4 font-label-md text-label-md uppercase tracking-wider text-text-primary">
-            Tentang CrowdFlow
+            About CrowdFlow
           </h4>
           <ul className="space-y-3">
             {ABOUT_LINKS.map((link) => (
@@ -59,7 +59,7 @@ export function HomeFooterV2() {
         {/* Produk */}
         <div>
           <h4 className="mb-4 font-label-md text-label-md uppercase tracking-wider text-text-primary">
-            Produk
+            Products
           </h4>
           <ul className="space-y-3">
             {PRODUCT_LINKS.map((link) => (
@@ -86,10 +86,10 @@ export function HomeFooterV2() {
         </p>
         <div className="flex gap-6">
           <Link href="/terms" className="font-body-sm text-body-sm text-text-secondary transition-colors hover:text-primary">
-            Syarat &amp; Ketentuan
+            Terms &amp; Conditions
           </Link>
           <Link href="/privacy" className="font-body-sm text-body-sm text-text-secondary transition-colors hover:text-primary">
-            Kebijakan Privasi
+            Privacy Policy
           </Link>
         </div>
       </div>

@@ -215,11 +215,12 @@ func (h *Handler) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if roleName == "Event Organizer" {
-		http.Redirect(w, r, "/dashboard", http.StatusTemporaryRedirect)
-	} else if roleName == "Super Admin" {
+	switch roleName {
+	case "Super Admin":
 		http.Redirect(w, r, "/admin", http.StatusTemporaryRedirect)
-	} else {
+	case "Event Organizer":
+		http.Redirect(w, r, "/dashboard", http.StatusTemporaryRedirect)
+	default:
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 	}
 }
@@ -371,4 +372,3 @@ func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		"message": "Profile updated successfully",
 	})
 }
-

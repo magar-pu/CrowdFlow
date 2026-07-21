@@ -14,13 +14,16 @@
  * ticket orders would need a carousel/list, which isn't in scope yet.
  */
 
+import { useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { PurchaseSuccessHeader } from "@/components/your-ticket/PurchaseSuccessHeader";
 import { DigitalTicketCard } from "@/components/your-ticket/DigitalTicketCard";
 import { TicketActions } from "@/components/your-ticket/TicketActions";
+import ResellTicketModal from "@/components/your-ticket/ResellTicketModal";
 import { mockOrder } from "@/mock/eventData";
 
 export default function YourTicketPage() {
+  const [show_resell_modal, set_show_resell_modal] = useState(false);
   const order = mockOrder; // TODO: replace with getOrder(order_id) once the Go API exists
   const ticket = order.tickets[0];
 
@@ -66,8 +69,17 @@ export default function YourTicketPage() {
           on_add_to_wallet={handle_add_to_wallet}
           on_download_pdf={handle_download_pdf}
           on_share={handle_share}
+          on_resell_ticket={() => set_show_resell_modal(true)}
         />
       </main>
+
+      {show_resell_modal && (
+        <ResellTicketModal
+          ticketId={ticket.ticket_id}
+          originalPrice={150} // Hardcoded for mock, will come from DB
+          onClose={() => set_show_resell_modal(false)}
+        />
+      )}
     </div>
   );
 }

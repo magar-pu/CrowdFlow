@@ -11,21 +11,21 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 const QUICK_FILTERS = [
-  "Semua",
-  "Hari Ini",
-  "Pekan Ini",
-  "Bulan Ini",
-  "Event Gratis",
-  "Terdekat",
+  "All",
+  "Today",
+  "This Week",
+  "This Month",
+  "Free Events",
+  "Nearby",
   "Online",
-  "Terbaru",
+  "Newest",
 ];
 
 const SORT_OPTIONS = [
-  "Paling Populer",
-  "Terbaru",
-  "Harga Terendah",
-  "Harga Tertinggi",
+  "Most Popular",
+  "Newest",
+  "Lowest Price",
+  "Highest Price",
 ];
 
 interface QuickFilterBarProps {
@@ -62,7 +62,7 @@ export function QuickFilterBar({
       </div>
       <div className="flex shrink-0 items-center gap-4">
         <span className="hidden font-body-sm text-text-secondary md:inline">
-          Urutkan:
+          Sort by:
         </span>
         <select
           value={sort_by}

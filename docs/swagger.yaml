@@ -836,6 +836,265 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/v1/venues/{id}/layouts:
+    get:
+      summary: List Venue Layouts
+      description: |
+        Lists the seat-map layouts a caller may pick for a venue: every `public` layout plus the
+        caller's own `event_exclusive` layouts. Summary shape only (no seats or sections).
+        Requires the Event Organizer or Super Admin platform role.
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the venue.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Layouts retrieved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Layout'
+        '400':
+          description: Venue ID missing or not an integer (`INVALID_ID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Event Organizer or Super Admin required (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Database/Internal error (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: Create Venue Layout
+      description: |
+        Creates a new, empty layout claimed by the caller (`owner_user_id` = caller). Seats,
+        sections and geometry arrive via a subsequent save (PUT). Requires the Event Organizer
+        or Super Admin platform role.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the venue.
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLayoutRequest'
+      responses:
+        '201':
+          description: Layout created (starts empty, status `draft`).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Layout'
+        '400':
+          description: Venue ID not an integer (`INVALID_ID`), malformed JSON body (`BAD_REQUEST`), or invalid layout payload (`INVALID_INPUT`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Event Organizer or Super Admin required - or CSRF mismatch (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Venue not found (`NOT_FOUND`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Database/Internal error (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/venues/{id}/layouts/{lid}:
+    put:
+      summary: Save Venue Layout
+      description: |
+        Persists the whole editor state (geometry, sections and seats) in one transaction.
+        Sections and seats diff against what is stored: an element with a non-null `id` is
+        updated, a null `id` is inserted, and a stored row absent from the payload is deleted
+        (subject to in-use guards). Uses optimistic locking via `expected_updated_at`.
+        Requires the Event Organizer or Super Admin platform role, and the caller must own the layout.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the venue.
+          schema:
+            type: integer
+        - name: lid
+          in: path
+          required: true
+          description: The numeric database ID of the layout being saved.
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveLayoutRequest'
+      responses:
+        '200':
+          description: Layout saved. Returns the persisted layout plus the temp-id to real-id maps.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SaveLayoutResponse'
+        '400':
+          description: Venue/layout ID not an integer (`INVALID_ID`), malformed JSON body (`BAD_REQUEST`), or invalid layout payload (`INVALID_INPUT`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Event Organizer or Super Admin required - CSRF mismatch, or the caller does not own the layout (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Layout not found (`NOT_FOUND`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The layout changed since it was loaded (`STALE_LAYOUT`), or a deleted seat/section is still in use for an event (`SEAT_IN_USE`, `SECTION_IN_USE`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Database/Internal error (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/layouts/{id}:
+    get:
+      summary: Load Venue Layout
+      description: |
+        Loads a single full layout: the layout header (with decorative geometry) plus every
+        section and seat belonging to it. The venue editor reads its whole state from this one
+        document. Requires the Event Organizer or Super Admin platform role; `event_exclusive`
+        layouts are only accessible to their owner.
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the layout.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Layout loaded.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LayoutDetail'
+        '400':
+          description: Layout ID missing or not an integer (`INVALID_ID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Event Organizer or Super Admin required - or the layout is event-exclusive and not owned by the caller (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Layout not found (`NOT_FOUND`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Database/Internal error (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/v1/admin/dashboard/stats:
     get:
       summary: Admin - Dashboard Statistics
@@ -2810,3 +3069,242 @@ components:
           nullable: true
           description: Omit or set null for a platform-wide grant; set to an event ID for an event-scoped grant.
           example: null
+
+    Layout:
+      type: object
+      description: A saved seat-map plan for a venue. Returned as a summary by the list endpoint and embedded in LayoutDetail on load.
+      properties:
+        id:
+          type: integer
+          example: 12
+        venue_id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Main Floor Plan
+        schema_version:
+          type: integer
+          description: Geometry schema version, for forward-compatible migrations.
+          example: 1
+        geometry:
+          type: object
+          nullable: true
+          description: Opaque JSONB document holding decorative geometry (stage, facilities, blueprint ref, section shapes). Structure is not fixed by this API.
+        visibility:
+          type: string
+          enum: [public, event_exclusive]
+          example: public
+        owner_user_id:
+          type: integer
+          nullable: true
+          description: The user who owns an event-exclusive layout; null for public layouts.
+          example: null
+        status:
+          type: string
+          enum: [draft, published, archived]
+          example: draft
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-07-20T10:00:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-07-20T10:00:00Z'
+
+    Section:
+      type: object
+      description: A commercial/decorative grouping a seat can be tagged with.
+      properties:
+        id:
+          type: integer
+          example: 4
+        section_name:
+          type: string
+          example: Orchestra Left
+        color:
+          type: string
+          nullable: true
+          example: "#22c55e"
+        shape:
+          type: object
+          nullable: true
+          description: Optional decorative geometry for the section; may be omitted/null for pure tag sections.
+
+    Seat:
+      type: object
+      description: One physical seat's identity, position and optional section tag. The integer id is the canonical identity referenced by orders, tickets and the scanner.
+      properties:
+        id:
+          type: integer
+          example: 501
+        section_id:
+          type: integer
+          nullable: true
+          example: 4
+        row:
+          type: string
+          description: Display label only.
+          example: A
+        number:
+          type: string
+          description: Display label only.
+          example: "12"
+        pos_x:
+          type: number
+          format: double
+          nullable: true
+          example: 120.5
+        pos_y:
+          type: number
+          format: double
+          nullable: true
+          example: 88.0
+
+    LayoutDetail:
+      type: object
+      description: The full read shape returned when loading a layout - the Layout header plus every section and seat belonging to it.
+      allOf:
+        - $ref: '#/components/schemas/Layout'
+        - type: object
+          properties:
+            sections:
+              type: array
+              items:
+                $ref: '#/components/schemas/Section'
+            seats:
+              type: array
+              items:
+                $ref: '#/components/schemas/Seat'
+
+    CreateLayoutRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          example: Main Floor Plan
+        visibility:
+          type: string
+          enum: [public, event_exclusive]
+          description: Defaults to `public` when omitted.
+          example: public
+
+    SectionInput:
+      type: object
+      description: One section in a save payload. `key` is the client's stable handle used to resolve SeatInput.section_key and to build section_id_map in the response; `id` is the real DB id when the section already exists.
+      required:
+        - key
+        - section_name
+      properties:
+        key:
+          type: string
+          example: sec-tmp-1
+        id:
+          type: integer
+          nullable: true
+          description: Real DB id for an existing section; null to insert a new one.
+          example: null
+        section_name:
+          type: string
+          example: Orchestra Left
+        color:
+          type: string
+          nullable: true
+          example: "#22c55e"
+        shape:
+          type: object
+          nullable: true
+          description: Optional decorative geometry for the section.
+
+    SeatInput:
+      type: object
+      description: One seat in a save payload. `section_key` references a SectionInput in the SAME payload (real or temp), or is null for a section-free seat.
+      required:
+        - key
+        - row
+        - number
+      properties:
+        key:
+          type: string
+          example: seat-tmp-1
+        id:
+          type: integer
+          nullable: true
+          description: Real DB id for an existing seat; null to insert a new one.
+          example: null
+        section_key:
+          type: string
+          nullable: true
+          example: sec-tmp-1
+        row:
+          type: string
+          example: A
+        number:
+          type: string
+          example: "12"
+        pos_x:
+          type: number
+          format: double
+          nullable: true
+          example: 120.5
+        pos_y:
+          type: number
+          format: double
+          nullable: true
+          example: 88.0
+
+    SaveLayoutRequest:
+      type: object
+      description: The whole editor state in one document. Seats and sections diff against what is stored (insert/update/delete).
+      required:
+        - name
+        - expected_updated_at
+      properties:
+        name:
+          type: string
+          example: Main Floor Plan
+        visibility:
+          type: string
+          enum: [public, event_exclusive]
+          example: public
+        geometry:
+          type: object
+          nullable: true
+          description: Opaque JSONB document holding decorative geometry.
+        expected_updated_at:
+          type: string
+          format: date-time
+          description: The `updated_at` value the client loaded. The save is rejected with 409 (`STALE_LAYOUT`) if the layout changed since (optimistic locking).
+          example: '2026-07-20T10:00:00Z'
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/SectionInput'
+        seats:
+          type: array
+          items:
+            $ref: '#/components/schemas/SeatInput'
+
+    SaveLayoutResponse:
+      type: object
+      description: The persisted layout plus the maps the client uses to reconcile its temporary keys to real DB ids. Only newly-inserted rows appear in the maps.
+      properties:
+        layout:
+          $ref: '#/components/schemas/LayoutDetail'
+        section_id_map:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Client section key -> new DB id, for inserted sections only.
+          example:
+            sec-tmp-1: 4
+        seat_id_map:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Client seat key -> new DB id, for inserted seats only.
+          example:
+            seat-tmp-1: 501

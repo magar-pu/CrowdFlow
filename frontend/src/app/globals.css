@@ -72,6 +72,12 @@
    --color-on-background: #191c1e;
    --color-text-primary: #0f172a;
    --color-text-secondary: #64748b;
+
+   /* Venue Editor section zone colors */
+   --color-accent-blue: #3b82f6;
+   --color-vip-purple: #8b5cf6;
+   --color-gold-yellow: #eab308;
+   --color-ga-green: #22c55e;
  
    /* ---- Border radius --------------------------------------------------- */
    --radius-sm: 0.25rem;
@@ -170,6 +176,53 @@
        scroll-behavior: auto !important;
      }
    }
+ }
+
+@layer utilities {
+  .glass-card {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(226, 232, 240, 0.8);
+  }
+  .shimmer {
+    background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.4) 50%, rgba(255,255,255,0) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 3s infinite;
+  }
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  /* ---- Venue Editor: Seat Dots ---------------------------------------- */
+  .seat-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    background-color: var(--color-surface-container-high);
+    cursor: pointer;
+    transition: all 150ms ease;
+    border: 1px solid transparent;
+  }
+  .seat-dot:hover {
+    transform: scale(1.3);
+    box-shadow: 0 0 0 2px var(--color-accent-blue);
+  }
+  .seat-dot.active {
+    background-color: var(--color-accent-blue);
+  }
+  .seat-dot.selected {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px rgba(15, 23, 42, 0.1);
+  }
+
+  /* ---- Venue Editor: Canvas Grid Background -----------------------------
+     Cell size and offset are set inline by SeatMapperCanvas so the dots track
+     the real snap step and stay aligned while panning/zooming. */
+  .canvas-grid {
+    background-image: radial-gradient(var(--color-border-subtle) 1px, transparent 1px);
+  }
  
    /* laser check scanner laser effect */
    @keyframes scanline {
@@ -220,4 +273,4 @@
    .status-failed { background-color: #FEE2E2; color: #991B1B; }
    .status-refunded { background-color: #F1F5F9; color: #475569; }
    .status-resale { background-color: #F3E8FF; color: #6B21A8; }
- }
+}

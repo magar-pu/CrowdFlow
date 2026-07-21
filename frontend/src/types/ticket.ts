@@ -48,7 +48,7 @@ export interface Venue {
   postal_code: string;
   latitude: number;
   longitude: number;
-  capacity: number;
+  total_capacity: number; // matches the backend's `total_capacity` JSON key
   timezone: string; // e.g. "Asia/Jakarta"
 }
 
@@ -411,4 +411,145 @@ export interface TrendingEventCard {
   city: string;
   category: string;  // e.g. "concert", "festival", "conference" — drives the category filter pills
   starts_at: string; // ISO-8601 — displayed as a formatted date on the card
+  // MOCK-BACKED FIELDS — no backend source yet: there is no reviews system,
+  // and GET /api/events carries no tier prices. Filled with placeholder values
+  // by mockTrendingCardStats() (mock/homeV2Data.ts) until the API provides them.
+  rating: number; // 0–5
+  review_count: number;
+  starting_price: number; // whole IDR, lowest tier price
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Venue Editor (VenueMaster Pro)
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Active tool in the VenueMaster Pro sidebar. */
+export type VenueEditorTool =
+  | "seat_mapper"
+  | "section_zone"
+  | "facility_icons"
+  | "layer_manager";
+
+/** Layout form a group of selected seats can be arranged into. */
+export type SeatArrangeForm = "grid" | "arc" | "diagonal" | "ellipse";
+
+/** Active tool in the Seat Mapper floating toolbar. */
+export type CanvasDrawingMode = "select" | "pan" | "add_shape" | "add_seat" | "seat_array" | "paint";
+
+/** A single seat on the venue canvas. */
+export interface VenueSeat {
+  seat_id: string;
+  /**
+   * Persisted DB id (integer) once the seat has been saved to the backend.
+   * Absent/null = new & unsaved; this is what drives insert-vs-update when the
+   * layout is saved. `seat_id` stays the stable client key throughout.
+   */
+  db_id?: number | null;
+  /**
+   * Optional event-level grouping tag. Seats are physical and belong to the
+   * venue; sections are commercial zones each event draws over them, so a seat
+   * can exist with no section at all.
+   */
+  section_id?: string | null;
+  row: string;
+  number: number;
+  x: number;
+  y: number;
+  status: "available" | "reserved" | "sold" | "locked" | "unavailable" | "accessible";
+  is_locked?: boolean;
+  tier_id?: string;
+}
+
+/** A geometric shape representing a section zone or stage on the canvas. */
+export interface VenueShape {
+  type: "rectangle" | "rounded-rectangle" | "ellipse" | "polygon";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  points?: { x: number; y: number }[]; // For polygons
+  is_locked?: boolean;
+}
+
+/** A section/zone on the venue map (e.g. "VIP Pit", "Gold Circle"). */
+export interface VenueSection {
+  section_id: string;
+  /** Persisted DB id (integer) once saved; absent/null = new. Mirrors VenueSeat.db_id. */
+  db_id?: number | null;
+  label: string;
+  color: string;
+  section_code: string; // e.g. "A1", "B1-B2", "Lawn"
+  shape?: VenueShape;
+  is_locked?: boolean;
+}
+
+export interface TicketConfig {
+  section_id: string;
+  section_label: string;
+  section_color: string;
+  section_code: string;
+  ticket_type_name: string;
+  price: number;
+  initial_quota: number;
+  tiers: TicketTier[];
+}
+
+/** Global Pricing Tier for Paint Bucket mode */
+export interface PricingTier {
+  tier_id: string;
+  name: string;
+  price: number;
+  color: string;
+  quota: number;        // Max tickets available for this tier
+  description?: string; // Tier benefits/description (e.g. "Includes meet & greet")
+}
+
+export interface TicketTier {
+  tier_id: string;
+  name: string;
+  price: number;
+  quota: number;
+}
+
+/** Available facility icon types */
+export type FacilityIconType = "restroom" | "food" | "medical" | "exit" | "info" | "merch";
+
+/** A facility icon placed on the venue map. */
+export interface VenueFacility {
+  id: string;
+  type: FacilityIconType;
+  x: number;
+  y: number;
+  label?: string;
+}
+
+export interface VenueBlueprint {
+  image_url: string;
+  opacity: number;
+  scale: number;
+  offset_x: number;
+  offset_y: number;
+  /**
+   * Locked blueprints are click-through, so the layer can't swallow marquee
+   * drags across the area it covers. Unlock it to reposition by dragging.
+   * Defaults to locked.
+   */
+  is_locked?: boolean;
+}
+
+/** Top-level state for the venue editor page. */
+export interface VenueEditorState {
+  event_id: string;
+  event_title: string;
+  venue_name: string;
+  venues: { venue_id: string; name: string }[];
+  selected_venue_id: string;
+  base_currency: string;
+  tax_rate: number;
+  seats: VenueSeat[];
+  sections: VenueSection[];
+  facilities: VenueFacility[];
+  pricing_tiers: PricingTier[];
+  stage_shape: VenueShape;
+  blueprint?: VenueBlueprint;
 }

@@ -64,6 +64,9 @@ backend/.env
 DEVELOPER.md
 *.md
 
+# UI Materials
+bahan ui/
+
 # Local Dev Storage Compose
 docker-compose-minio.yml
 docker-compose.yml

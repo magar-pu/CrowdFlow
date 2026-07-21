@@ -105,14 +105,15 @@ func (r *PostgresRepository) GetByID(id int) (*Event, error) {
 	var e Event
 	var eventTypeID sql.NullInt64
 	var coverImageURL sql.NullString
-	
+	var layoutID sql.NullInt64
+
 	var vID sql.NullInt64
 	var vName sql.NullString
 	var vAddress sql.NullString
 	var vCity sql.NullString
 	var vProvince sql.NullString
 	var vCapacity sql.NullInt64
-	
+
 	var oID sql.NullInt64
 	var oName sql.NullString
 	var oAvatar sql.NullString
@@ -121,7 +122,7 @@ func (r *PostgresRepository) GetByID(id int) (*Event, error) {
 		SELECT
 			e.id, e.venue_id, e.organizer_id, e.event_name, COALESCE(e.description, ''), e.event_start, e.event_end,
 			e.entertainment_tax_rate, e.entertainment_tax_passed_to_buyer, e.status, e.created_at, e.updated_at,
-			e.event_type_id, COALESCE(e.cover_image_url, ''),
+			e.event_type_id, COALESCE(e.cover_image_url, ''), e.layout_id,
 			v.id, COALESCE(v.name, ''), COALESCE(v.address, ''), COALESCE(v.city, ''), COALESCE(v.province, ''), COALESCE(v.total_capacity, 0),
 			u.id, COALESCE(up.full_name, ''), COALESCE(up.avatar_pic, '')
 		FROM events e
@@ -132,7 +133,7 @@ func (r *PostgresRepository) GetByID(id int) (*Event, error) {
 	`, id).Scan(
 		&e.ID, &e.VenueID, &e.OrganizerID, &e.EventName, &e.Description, &e.EventStart, &e.EventEnd,
 		&e.EntertainmentTaxRate, &e.EntertainmentTaxPassedToBuyer, &e.Status, &e.CreatedAt, &e.UpdatedAt,
-		&eventTypeID, &coverImageURL,
+		&eventTypeID, &coverImageURL, &layoutID,
 		&vID, &vName, &vAddress, &vCity, &vProvince, &vCapacity,
 		&oID, &oName, &oAvatar,
 	)
@@ -147,6 +148,10 @@ func (r *PostgresRepository) GetByID(id int) (*Event, error) {
 	}
 	if coverImageURL.Valid {
 		e.CoverImageURL = coverImageURL.String
+	}
+	if layoutID.Valid {
+		lid := int(layoutID.Int64)
+		e.LayoutID = &lid
 	}
 
 	if vID.Valid {
@@ -263,6 +268,44 @@ func (r *PostgresRepository) Update(event *Event) error {
 		return ErrEventLocked
 	}
 	return ErrEventNotFound
+}
+
+// SetEventLayout binds an event to a venue layout, or unbinds it when layoutID
+// is nil. A non-nil layout must belong to the event's OWN venue; that check
+// lives in the WHERE clause so it can't race a concurrent venue change. A zero
+// RowsAffected means either the event is gone or the layout isn't in its venue,
+// which we disambiguate with a follow-up existence check.
+func (r *PostgresRepository) SetEventLayout(eventID int, layoutID *int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE events e SET layout_id = $1, updated_at = now()
+		WHERE e.id = $2
+		  AND ($1::int IS NULL OR EXISTS (
+			SELECT 1 FROM venue_layouts vl
+			WHERE vl.id = $1 AND vl.venue_id = e.venue_id
+		  ))
+	`, layoutID, eventID)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected > 0 {
+		return nil
+	}
+
+	var exists bool
+	if err := r.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)`, eventID).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return ErrEventNotFound
+	}
+	return ErrLayoutVenueMismatch
 }
 
 func (r *PostgresRepository) ListVenues() ([]*Venue, error) {

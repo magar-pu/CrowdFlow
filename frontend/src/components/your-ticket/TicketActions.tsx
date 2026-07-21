@@ -7,18 +7,20 @@
  * and PDF export are backend/Go concerns, not implemented here yet.
  */
 
-import { Wallet, Download, Share2 } from "lucide-react";
+import { Wallet, Download, Share2, Tag } from "lucide-react";
 
 interface TicketActionsProps {
   on_add_to_wallet: () => void;
   on_download_pdf: () => void;
   on_share: () => void;
+  on_resell_ticket?: () => void;
 }
 
 export function TicketActions({
   on_add_to_wallet,
   on_download_pdf,
   on_share,
+  on_resell_ticket,
 }: TicketActionsProps) {
   return (
     <>
@@ -39,6 +41,16 @@ export function TicketActions({
           <Download size={20} />
           Download PDF Ticket
         </button>
+        {on_resell_ticket && (
+          <button
+            type="button"
+            onClick={on_resell_ticket}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-container-low py-3.5 font-label-md text-label-md text-text-primary shadow-sm transition-colors hover:bg-surface-container-high"
+          >
+            <Tag size={20} />
+            Resell Ticket
+          </button>
+        )}
       </div>
 
       <div className="mt-stack-lg text-center">

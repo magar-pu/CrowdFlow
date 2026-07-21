@@ -30,6 +30,7 @@ import {
   CircleCheck,
   Loader2,
   ChevronDown,
+  Ticket,
 } from "lucide-react";
 import { PasswordStrengthMeter } from "./PasswordStrengthMeter";
 import GoogleLogin from "./GoogleLogin";
@@ -91,7 +92,22 @@ export function SignUpForm({ on_submit, on_google_success, on_google_error }: Si
   }
 
   return (
-    <div className="p-8 md:p-10">
+    <div className="p-6 md:p-8 pt-8">
+      <div className="mb-8 flex flex-col items-center text-center">
+        <div className="mb-4 inline-flex items-center gap-2">
+          <Ticket size={24} className="text-primary" fill="currentColor" />
+          <span className="font-headline-md text-headline-md font-bold tracking-tight text-primary">
+            CrowdFlow
+          </span>
+        </div>
+        <h1 className="mb-2 font-headline-lg text-headline-lg text-primary font-bold tracking-tight">
+          Create an Account
+        </h1>
+        <p className="font-body-md text-body-md text-text-secondary">
+          Join CrowdFlow and get your tickets securely.
+        </p>
+      </div>
+
       <form className="space-y-6" onSubmit={handle_submit}>
         {/* Full Name */}
         <div className="space-y-1.5">
@@ -291,7 +307,7 @@ export function SignUpForm({ on_submit, on_google_success, on_google_error }: Si
           className={`flex w-full items-center justify-center gap-2 rounded-lg py-4 font-label-md text-label-md shadow-sm transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 ${
             submit_state === "success"
               ? "bg-success text-on-success"
-              : "bg-primary text-on-primary hover:opacity-90"
+              : "bg-primary text-white hover:opacity-90"
           }`}
         >
           {submit_state === "loading" && (

@@ -49,6 +49,25 @@ export const mockBentoTiles: BentoCollectionTile[] = [
   },
 ];
 
+// Placeholder rating / review-count / starting-price values for the trending
+// cards. There is no backend source for these yet (no reviews system, and the
+// event list response carries no tier prices), so they are derived
+// deterministically from the event id — stable across renders and reloads.
+// TODO: replace with real API data once the backend provides it.
+export function mockTrendingCardStats(
+  event_id: string
+): Pick<TrendingEventCard, "rating" | "review_count" | "starting_price"> {
+  let hash = 0;
+  for (let i = 0; i < event_id.length; i++) {
+    hash = (hash * 31 + event_id.charCodeAt(i)) >>> 0;
+  }
+  return {
+    rating: 4 + (hash % 10) / 10, // 4.0–4.9
+    review_count: 120 + (hash % 4880), // 120–4,999
+    starting_price: (150 + (hash % 14) * 25) * 1000, // Rp 150.000–475.000
+  };
+}
+
 // Category filter pills for the "Event Paling Dinanti" trending section.
 // Values match the category strings returned by GET /api/events (backend mapCategory).
 export const CATEGORY_FILTERS = [

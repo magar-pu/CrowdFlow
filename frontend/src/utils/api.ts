@@ -47,9 +47,27 @@ export async function apiRequest<T>(
       headers,
     });
 
+    if (!response.ok) {
+      console.log("API response not ok:", response.status, response.statusText);
+      const text = await response.text();
+      console.log("API response body:", text);
+      try {
+        return JSON.parse(text) as ApiResponse<T>;
+      } catch (e) {
+        return {
+          success: false,
+          error: {
+            code: "SERVER_ERROR",
+            message: "Invalid JSON from server: " + text.substring(0, 50),
+          },
+        } as ApiResponse<T>;
+      }
+    }
+
     const result: ApiResponse<T> = await response.json();
     return result;
   } catch (err: unknown) {
+    console.error("API Request threw an error:", err);
     return {
       success: false,
       error: {

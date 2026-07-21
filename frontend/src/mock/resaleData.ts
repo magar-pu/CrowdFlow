@@ -46,7 +46,7 @@ export const mockResaleListings: ResaleListing[] = [
     event_title: "Championship Finals: Game 6",
     event_category: "Sports",
     cover_image_url:
-      "https://images.unsplash.com/photo-1546519638-68e109498ffd?q=80&w=600&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1504450758481-7338eba7524a?q=80&w=600&auto=format&fit=crop",
     ticket_count: 4,
     is_vip: false,
     event_date_label: "Jun 18, 2026 • 7:30 PM",

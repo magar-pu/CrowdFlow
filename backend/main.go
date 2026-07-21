@@ -20,6 +20,9 @@ import (
 	"crowdflow-backend/internal/response"
 	"crowdflow-backend/internal/scanner"
 	"crowdflow-backend/internal/storage"
+	"crowdflow-backend/internal/user"
+	"crowdflow-backend/internal/venuelayout"
+
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -147,6 +150,14 @@ func main() {
 	// Register Booking routes
 	bookingHandler.RegisterRoutes(apiV1, authMounter.Authenticate)
 
+	// Initialize Venue Layout dependencies (saved seat-map plans + geometry)
+	venueLayoutRepo := venuelayout.NewPostgresRepository(db)
+	venueLayoutService := venuelayout.NewLayoutService(venueLayoutRepo)
+	venueLayoutHandler := venuelayout.NewHandler(venueLayoutService)
+
+	// Register Venue Layout routes (organizer + super admin console)
+	venueLayoutHandler.RegisterRoutes(apiV1, authMounter.Authenticate, authMounter.RequirePlatformRole)
+
 	// Mount the versioned sub-routers onto the root mux. ServeMux matches the
 	// more specific /api/v1/admin/ pattern ahead of /api/v1/, so admin console
 	// routes never collide with the public/EO event routes.
@@ -168,6 +179,14 @@ func main() {
 
 	// Register Auditor routes (Auditor + Super Admin roles)
 	auditorHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole)
+
+	// Initialize User dependencies
+	userRepo := user.NewBankAccountRepository(db)
+	userService := user.NewBankAccountService(userRepo)
+	userHandler := user.NewBankAccountHandler(userService)
+
+	// Register User routes
+	userHandler.RegisterRoutes(mux, authMounter.Authenticate)
 
 	// Initialize and Register Scanner routes
 	scannerHandler := scanner.NewHandler(db)

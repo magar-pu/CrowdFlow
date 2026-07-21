@@ -11,6 +11,12 @@ var (
 	ErrApplicationAlreadyExists = errors.New("an application has already been submitted for this user")
 	ErrValidation               = errors.New("validation failed")
 	ErrApplicationLocked        = errors.New("cannot modify application in its current status")
+
+	// Seat-overlay (Phase 4/5)
+	ErrNoLayoutBound      = errors.New("no venue layout is bound to this event")
+	ErrSectionNotInLayout = errors.New("section does not belong to the event's layout")
+	ErrTierNotInEvent     = errors.New("ticket tier does not belong to this event")
+	ErrSeatingIncomplete  = errors.New("event seating is incomplete")
 )
 
 type OrganizerApplication struct {
@@ -350,6 +356,8 @@ type Repository interface {
 	CreateVenueSection(ctx context.Context, eventID int, organizerID int, section *VenueSection) error
 	UpdateVenueSection(ctx context.Context, eventID int, organizerID int, sectionID int, section *VenueSection) error
 	DeleteVenueSection(ctx context.Context, eventID int, organizerID int, sectionID int) error
+	GetEventSeating(ctx context.Context, eventID int, organizerID int) (*EventSeatingResponse, error)
+	SeedEventSeating(ctx context.Context, eventID int, organizerID int, assignments []SeatingAssignment) error
 	CheckInAttendee(ctx context.Context, eventID int, organizerID int, qrToken string) (*CheckInResponse, error)
 	ListNotifications(ctx context.Context, userID int) ([]*Notification, error)
 	MarkNotificationsRead(ctx context.Context, userID int, notificationIDs []int) error
@@ -375,6 +383,8 @@ type Service interface {
 	CreateVenueSection(ctx context.Context, eventID int, organizerID int, section *VenueSection) error
 	UpdateVenueSection(ctx context.Context, eventID int, organizerID int, sectionID int, section *VenueSection) error
 	DeleteVenueSection(ctx context.Context, eventID int, organizerID int, sectionID int) error
+	GetEventSeating(ctx context.Context, eventID int, organizerID int) (*EventSeatingResponse, error)
+	SeedEventSeating(ctx context.Context, eventID int, organizerID int, req SeedSeatingRequest) error
 	CheckInAttendee(ctx context.Context, eventID int, organizerID int, qrToken string) (*CheckInResponse, error)
 	ListTicketTiers(ctx context.Context, eventID int, organizerID int) ([]*OrganizerTicketTier, error)
 	CreateTicketTier(ctx context.Context, eventID int, organizerID int, tier *OrganizerTicketTier) error

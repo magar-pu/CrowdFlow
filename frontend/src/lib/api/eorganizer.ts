@@ -233,6 +233,45 @@ export async function deleteTicketTier(eventId: number, tierId: number): Promise
   });
 }
 
+// Seat overlay (Phase 4): assign the bound layout's sections to ticket tiers,
+// which seeds the per-seat availability matrix booking reads from.
+export interface SectionSeating {
+  venue_section_id: number;
+  section_name: string;
+  seat_count: number;
+  ticket_tier_id: number | null;
+  available: number;
+  sold: number;
+  blocked: number;
+}
+
+export interface EventSeating {
+  layout_id: number | null;
+  sections: SectionSeating[];
+  untiered_seats: number;
+}
+
+export interface SeatingAssignment {
+  venue_section_id: number;
+  ticket_tier_id: number;
+}
+
+export async function getEventSeating(eventId: number): Promise<ApiResponse<EventSeating>> {
+  return apiRequest<EventSeating>(`/api/organizer/events/${eventId}/seating`, {
+    method: "GET",
+  });
+}
+
+export async function seedEventSeating(
+  eventId: number,
+  assignments: SeatingAssignment[]
+): Promise<ApiResponse<{ message: string }>> {
+  return apiRequest(`/api/organizer/events/${eventId}/seating`, {
+    method: "PUT",
+    body: JSON.stringify({ assignments }),
+  });
+}
+
 // Orders & Refunds
 export async function listOrders(): Promise<ApiResponse<OrganizerOrder[]>> {
   return apiRequest<OrganizerOrder[]>("/api/organizer/orders", {

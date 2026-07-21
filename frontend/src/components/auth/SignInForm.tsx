@@ -14,7 +14,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Mail, Eye, EyeOff, ArrowRight, CircleCheck, Loader2 } from "lucide-react";
+import { Mail, Eye, EyeOff, ArrowRight, CircleCheck, Loader2, Ticket } from "lucide-react";
 import GoogleLogin from "./GoogleLogin";
 
 type SubmitState = "idle" | "loading" | "success";
@@ -50,8 +50,15 @@ export function SignInForm({ on_submit, on_google_success, on_google_error }: Si
   }
 
   return (
-    <div className="p-8 md:p-10">
-      <div className="mb-8">
+    <div className="p-6 md:p-8">
+      <div className="mb-8 flex flex-col items-center text-center">
+        {/* Brand header inside card */}
+        <div className="mb-4 inline-flex items-center gap-2">
+          <Ticket size={24} className="text-primary" fill="currentColor" />
+          <span className="font-headline-md text-headline-md font-bold tracking-tight text-primary">
+            CrowdFlow
+          </span>
+        </div>
         <h1 className="mb-2 font-headline-lg text-headline-lg text-text-primary">
           Welcome Back
         </h1>
@@ -149,7 +156,7 @@ export function SignInForm({ on_submit, on_google_success, on_google_error }: Si
           className={`flex w-full transform items-center justify-center gap-2 rounded-lg py-3.5 font-label-md text-label-md shadow-sm transition-all duration-200 active:scale-[0.98] ${
             submit_state === "success"
               ? "bg-success text-on-success"
-              : "bg-primary text-on-primary hover:bg-on-surface-variant"
+              : "bg-primary text-white hover:opacity-90"
           }`}
         >
           {submit_state === "loading" && (

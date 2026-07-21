@@ -14,19 +14,19 @@ const TRUST_POINTS = [
     icon: BadgeCheck,
     icon_class: "bg-success/20 text-success",
     title: "100% Guaranteed Authenticity",
-    description: "Tiket dicek dan divalidasi langsung oleh sistem kami.",
+    description: "Tickets are checked and validated directly by our system.",
   },
   {
     icon: Banknote,
     icon_class: "bg-secondary/20 text-secondary",
     title: "Escrow Payment System",
-    description: "Dana penjual hanya akan cair setelah event selesai.",
+    description: "Seller funds will only be released after the event ends.",
   },
   {
     icon: QrCode,
     icon_class: "bg-warning/20 text-warning",
     title: "Automatic Re-Issue",
-    description: "Tiket lama hangus, pembeli baru mendapat QR baru.",
+    description: "Old ticket is voided, new buyer gets a new QR.",
   },
 ];
 
@@ -40,12 +40,12 @@ export function ResaleMarketplacePromo() {
               Safe Secondary Market
             </span>
             <h2 className="mb-6 font-headline-xl text-headline-xl text-white">
-              Tiket Habis? Beli di Marketplace Resmi Kami.
+              Tickets Sold Out? Buy on Our Official Marketplace.
             </h2>
             <p className="mb-10 font-body-lg text-body-lg leading-relaxed text-white/70">
-              Hindari penipuan tiket. Marketplace CrowdFlow menjamin
-              keaslian tiket melalui re-issue teknologi QR code unik untuk
-              setiap pembeli baru.
+              Avoid ticket scams. CrowdFlow Marketplace guarantees ticket
+              authenticity through re-issue technology with unique QR codes
+              for every new buyer.
             </p>
             <div className="flex flex-wrap gap-4">
               <Link
@@ -59,7 +59,7 @@ export function ResaleMarketplacePromo() {
                 type="button"
                 className="rounded-full border border-white/30 px-8 py-4 font-bold text-white transition-all hover:bg-white/10"
               >
-                Pelajari Lebih Lanjut
+                Learn More
               </button>
             </div>
           </div>

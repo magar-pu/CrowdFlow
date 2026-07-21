@@ -17,7 +17,7 @@
 import { useRouter, useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
-import { Footer } from "@/components/layout/Footer";
+import { HomeFooterV3 } from "@/components/home-v3/HomeFooterV3";
 import { EventHero } from "@/components/event-detail/EventHero";
 import { AboutEventSection } from "@/components/event-detail/AboutEventSection";
 import { VenueInfoSection } from "@/components/event-detail/VenueInfoSection";
@@ -27,6 +27,7 @@ import { formatIDR } from "@/lib/pricing";
 import { mockEvent } from "@/mock/eventData";
 import { getEvent } from "@/lib/api/events";
 import { Event } from "@/types/ticket";
+import { Footer } from "@/components/layout/Footer";
 
 export default function EventDetailPage() {
   const router = useRouter();
@@ -38,23 +39,20 @@ export default function EventDetailPage() {
 
   useEffect(() => {
     if (!event_id) return;
-    const id = parseInt(event_id as string, 10);
-    if (isNaN(id)) {
-      setError("ID Event tidak valid");
-      setLoading(false);
-      return;
-    }
+    const id = event_id as string;
 
     getEvent(id)
       .then((res) => {
         if (res.success && res.data) {
           setEvent(res.data);
         } else {
-          setError(res.error?.message || "Event tidak ditemukan");
+          // Fallback to mock data if not found in DB
+          setEvent({ ...mockEvent, event_id: id });
         }
       })
       .catch(() => {
-        setError("Gagal memuat rincian event. Silakan coba lagi.");
+        // Fallback to mock data on API error
+        setEvent({ ...mockEvent, event_id: id });
       })
       .finally(() => {
         setLoading(false);
@@ -111,21 +109,18 @@ export default function EventDetailPage() {
   return (
     <div className="flex min-h-screen flex-col bg-surface">
       <Navbar active_href="/events" />
-
       <main className="flex-grow">
-        <EventHero event={currentEvent} starting_price_label={starting_price_label} />
-
+        <EventHero event={event} starting_price_label={starting_price_label} />
         <div className="mx-auto grid w-full max-w-container-max grid-cols-1 items-start gap-gutter px-margin-mobile py-section-gap md:px-margin-desktop lg:grid-cols-12">
           {/* Left column */}
-          <div className="flex flex-col gap-12 lg:col-span-8">
+          <div className="flex flex-col gap-8 lg:col-span-8">
             <AboutEventSection
               description={currentEvent.description}
               important_info={currentEvent.important_info || mockEvent.important_info}
             />
-            <VenueInfoSection venue={currentEvent.venue || mockEvent.venue} />
+            <VenueInfoSection venue={event.venue} event_id={event.event_id} />
           </div>
-
-          {/* Right column — sticky */}
+          {/* Right column sticky */}
           <div className="flex flex-col gap-6 lg:sticky lg:top-28 lg:col-span-4">
             <TicketSelectionCard
               ticket_categories={categories}
@@ -135,8 +130,7 @@ export default function EventDetailPage() {
           </div>
         </div>
       </main>
-
-      <Footer />
+      <HomeFooterV3 />
     </div>
   );
 }

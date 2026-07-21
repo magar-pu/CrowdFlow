@@ -22,9 +22,14 @@ import { FeaturedCarousel } from "@/components/event-discovery/FeaturedCarousel"
 import { CategoryIconsGrid } from "@/components/event-discovery/CategoryIconsGrid";
 import { QuickFilterBar } from "@/components/event-discovery/QuickFilterBar";
 import { FilterSidebar } from "@/components/event-discovery/FilterSidebar";
-import { AIRecommendationsPanel } from "@/components/event-discovery/AIRecommendationsPanel";
 import { EventListingCard } from "@/components/event-discovery/EventListingCard";
 import { ResaleMarketplacePromo } from "@/components/event-discovery/ResaleMarketplacePromo";
+import { HomeFooterV3 } from "@/components/home-v3/HomeFooterV3";
+import {
+  mockFeaturedCarousel,
+  mockAIRecommendedEvents,
+  mockEventListingCards,
+} from "@/mock/eventDiscoveryData";
 import { EventDiscoveryFooter } from "@/components/event-discovery/EventDiscoveryFooter";
 import { listEvents } from "@/lib/api/events";
 import { EventListingCard as EventCardType, FeaturedCarouselEvent, AIRecommendedEvent } from "@/types/ticket";
@@ -32,12 +37,12 @@ import { EventListingCard as EventCardType, FeaturedCarouselEvent, AIRecommended
 const DEFAULT_MAX_PRICE = 5_000_000;
 
 export default function EventsDiscoveryPage() {
-  const [active_quick_filter, set_active_quick_filter] = useState("Semua");
-  const [sort_by, set_sort_by] = useState("Paling Populer");
+  const [active_quick_filter, set_active_quick_filter] = useState("All");
+  const [sort_by, set_sort_by] = useState("Most Popular");
   const [selected_cities, set_selected_cities] = useState<string[]>(["Jakarta"]);
   const [max_price, set_max_price] = useState(DEFAULT_MAX_PRICE);
-  const [availability, set_availability] = useState<"tersedia" | "terbatas">(
-    "tersedia"
+  const [availability, set_availability] = useState<"available" | "limited">(
+    "available"
   );
   const [dbEvents, setDbEvents] = useState<EventCardType[]>([]);
 
@@ -76,10 +81,13 @@ export default function EventsDiscoveryPage() {
       });
   }, []);
 
-  const displayEvents = dbEvents;
+  const displayEvents = dbEvents.length > 0 ? dbEvents : mockEventListingCards;
 
   const featuredEvents = useMemo<FeaturedCarouselEvent[]>(() => {
-    return dbEvents.slice(0, 3).map((evt, idx) => ({
+    if (displayEvents === mockEventListingCards) {
+      return mockFeaturedCarousel;
+    }
+    return displayEvents.slice(0, 3).map((evt, idx) => ({
       event_id: evt.event_id,
       cover_image_url: evt.cover_image_url,
       tag_label: idx === 0 ? "Pilihan Editor" : "Trending",
@@ -88,10 +96,13 @@ export default function EventsDiscoveryPage() {
       date_venue_label: evt.date_label,
       starting_price: evt.starting_price,
     }));
-  }, [dbEvents]);
+  }, [displayEvents]);
 
   const aiRecommendedEvents = useMemo<AIRecommendedEvent[]>(() => {
-    return dbEvents.slice(0, 2).map((evt, idx) => ({
+    if (displayEvents === mockEventListingCards) {
+      return mockAIRecommendedEvents;
+    }
+    return displayEvents.slice(0, 2).map((evt, idx) => ({
       event_id: evt.event_id,
       cover_image_url: evt.cover_image_url,
       tag_label: idx === 0 ? "Top Match" : "Hot Deal",
@@ -100,7 +111,7 @@ export default function EventsDiscoveryPage() {
       date_venue_label: evt.date_label.split("•")[0].trim(),
       price: evt.starting_price,
     }));
-  }, [dbEvents]);
+  }, [displayEvents]);
 
   function handle_toggle_city(city: string) {
     set_selected_cities((cities) =>
@@ -113,9 +124,15 @@ export default function EventsDiscoveryPage() {
   function handle_clear_filters() {
     set_selected_cities([]);
     set_max_price(DEFAULT_MAX_PRICE);
-    set_availability("tersedia");
-    set_active_quick_filter("Semua");
+    set_availability("available");
+    set_active_quick_filter("All");
   }
+
+  const [visible_count, set_visible_count] = useState(6);
+
+  useEffect(() => {
+    set_visible_count(6);
+  }, [selected_cities, max_price, availability, sort_by]);
 
   const filtered_events = useMemo(() => {
     let events = displayEvents.filter(
@@ -126,7 +143,7 @@ export default function EventsDiscoveryPage() {
       events = events.filter((event) => selected_cities.includes(event.city));
     }
 
-    if (availability === "tersedia") {
+    if (availability === "available") {
       events = events.filter((event) => event.badge !== "sold_out");
     } else {
       events = events.filter(
@@ -134,9 +151,9 @@ export default function EventsDiscoveryPage() {
       );
     }
 
-    if (sort_by === "Harga Terendah") {
+    if (sort_by === "Lowest Price") {
       events = [...events].sort((a, b) => a.starting_price - b.starting_price);
-    } else if (sort_by === "Harga Tertinggi") {
+    } else if (sort_by === "Highest Price") {
       events = [...events].sort((a, b) => b.starting_price - a.starting_price);
     }
 
@@ -152,8 +169,8 @@ export default function EventsDiscoveryPage() {
         {featuredEvents.length > 0 && <FeaturedCarousel events={featuredEvents} />}
         <CategoryIconsGrid />
 
-        <section className="bg-background px-margin-mobile py-section-gap md:px-margin-desktop">
-          <div className="mx-auto max-w-container-max">
+        <section className="bg-background py-section-gap">
+          <div className="mx-auto max-w-7xl w-full px-margin-mobile md:px-margin-desktop">
             <div className="mb-10 flex flex-col gap-6">
               <QuickFilterBar
                 active_filter={active_quick_filter}
@@ -175,33 +192,29 @@ export default function EventsDiscoveryPage() {
               />
 
               <div className="flex-1">
-                {aiRecommendedEvents.length > 0 && (
-                  <AIRecommendationsPanel
-                    recommendations={aiRecommendedEvents}
-                  />
-                )}
 
                 {filtered_events.length > 0 ? (
                   <div className="grid grid-cols-1 gap-gutter md:grid-cols-2 xl:grid-cols-3">
-                    {filtered_events.map((event) => (
+                    {filtered_events.slice(0, visible_count).map((event) => (
                       <EventListingCard key={event.event_id} event={event} />
                     ))}
                   </div>
                 ) : (
                   <div className="rounded-xl border border-dashed border-border-subtle py-16 text-center">
                     <p className="font-body-md text-body-md text-text-secondary">
-                      Tidak ada event yang cocok dengan filter Anda.
+                      No events match your filter.
                     </p>
                   </div>
                 )}
 
-                {filtered_events.length > 0 && (
+                {filtered_events.length > visible_count && (
                   <div className="mt-12 text-center">
                     <button
                       type="button"
+                      onClick={() => set_visible_count(prev => prev + 6)}
                       className="rounded-full border-2 border-border-subtle px-12 py-4 font-bold text-text-primary transition-all hover:border-secondary hover:text-secondary"
                     >
-                      Muat Lebih Banyak
+                      Load More
                     </button>
                   </div>
                 )}
@@ -213,7 +226,7 @@ export default function EventsDiscoveryPage() {
         <ResaleMarketplacePromo />
       </main>
 
-      <EventDiscoveryFooter />
+      <HomeFooterV3 />
     </div>
   );
 }
