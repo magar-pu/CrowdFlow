@@ -5,7 +5,7 @@ info:
     API documentation for the CrowdFlow Venue and Event Management platform.
 
     ### Security Architecture:
-    - **Session Authentication**: JWT access token set as a secure `HttpOnly` cookie named `access_token`.
+    - **Session Authentication**: A short-lived JWT access token is set as a secure `HttpOnly` cookie named `access_token` (Path `/`). It is paired with a long-lived, rotating, server-revocable `refresh_token` cookie (scoped to Path `/api/v1/auth`) which `POST /api/v1/auth/refresh` exchanges for a fresh access token once the access token expires.
     - **CSRF Protection**: State-changing endpoints require Double-Submit Cookie verification. The client extracts the value of the `csrf_token` cookie and submits it in the custom header `X-CSRF-Token`. Only `/api/v1/auth/login` and `/api/v1/auth/register` are exempt.
     - **Admin Console**: Every `/api/v1/admin/*` route requires the `Super Admin` platform role.
 
@@ -109,13 +109,14 @@ paths:
               $ref: '#/components/schemas/LoginRequest'
       responses:
         '200':
-          description: Successful authentication. Sets `access_token` and `csrf_token` cookies.
+          description: Successful authentication. Sets `access_token`, `refresh_token`, and `csrf_token` cookies. No token is returned in the JSON body.
           headers:
             Set-Cookie:
               description: |
-                Sets two cookies:
-                1. `access_token`: Secure HttpOnly JWT session token.
-                2. `csrf_token`: Client-readable cookie for CSRF double-submission.
+                Sets three cookies:
+                1. `access_token`: Short-lived HttpOnly JWT access token (Path `/`).
+                2. `refresh_token`: Long-lived HttpOnly rotating refresh token (Path `/api/v1/auth`).
+                3. `csrf_token`: Client-readable cookie for CSRF double-submission (Path `/`).
               schema:
                 type: string
                 example: access_token=eyJhbGciOi...; Path=/; HttpOnly; SameSite=Lax
@@ -163,6 +164,79 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/v1/auth/refresh:
+    post:
+      summary: Refresh Session
+      description: |
+        Rotates the refresh token and issues a new access token. Authenticated
+        purely via the `refresh_token` cookie (the `access_token` may be expired,
+        so `CookieAuth` is deliberately NOT required here). CSRF-protected like any
+        state-changing POST.
+
+        On success the refresh token is rotated and all three auth cookies
+        (`access_token`, `refresh_token`, `csrf_token`) are re-set. On any failure —
+        missing, expired, revoked, or replayed (reuse-detected) token — all auth
+        cookies are cleared and 401 is returned so the client falls back to a full
+        login.
+
+        Rate limited per client IP: at most 60 attempts per 15-minute window
+        (fixed-window counter in Redis; fails open on Redis outage).
+      security:
+        - RefreshCookie: []
+        - CSRFToken: []
+      responses:
+        '200':
+          description: Session refreshed. Rotates and re-sets the `access_token`, `refresh_token`, and `csrf_token` cookies.
+          headers:
+            Set-Cookie:
+              description: Re-sets all three auth cookies with a freshly minted access token and rotated refresh token.
+              schema:
+                type: string
+                example: access_token=eyJhbGciOi...; Path=/; HttpOnly; SameSite=Lax
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user_id:
+                            type: string
+                            example: "12"
+                          email:
+                            type: string
+                            format: email
+                            example: admin@crowdflow.com
+                          full_name:
+                            type: string
+                            example: Richie Obhasa
+                          role:
+                            type: string
+                            description: Highest-privilege platform-wide role held by the user.
+                            enum: [User, Event Organizer, Super Admin]
+                            example: Super Admin
+        '401':
+          description: Refresh token missing, expired, revoked, or replayed (`UNAUTHORIZED`). All auth cookies are cleared.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF verification missing or failed (`CSRF_TOKEN_MISSING`, `CSRF_HEADER_MISSING`, `CSRF_TOKEN_MISMATCH`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded - more than 60 refresh attempts from this IP within 15 minutes (`RATE_LIMITED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/v1/auth/google/login:
     get:
       summary: Google OAuth Redirect
@@ -203,10 +277,11 @@ paths:
       responses:
         '307':
           description: |
-            Redirect outcome. On successful login the `oauth_state` cookie is cleared, `access_token` and
-            `csrf_token` session cookies are set, and the browser is redirected by platform role:
-            - `Event Organizer` → `/dashboard`
+            Redirect outcome. On successful login the `oauth_state` cookie is cleared, the `access_token`,
+            `refresh_token`, and `csrf_token` session cookies are set, and the browser is redirected by platform role:
             - `Super Admin` → `/admin`
+            - `Auditor` → `/auditor`
+            - `Event Organizer` → `/dashboard`
             - everyone else → `/`
 
             If the email is already registered with native credentials, no session is created and the browser
@@ -238,15 +313,20 @@ paths:
   /api/v1/auth/logout:
     post:
       summary: User Logout
-      description: Clears active user session cookies. Does not require an authenticated session, but does require CSRF verification (double-submit cookie).
+      description: |
+        Logs out the current session. Revokes the server-side refresh session (using the
+        `refresh_token` cookie) so the refresh token can no longer be used, then clears all
+        three auth cookies (`access_token`, `refresh_token`, `csrf_token`). Does not require an
+        authenticated access token, but does require CSRF verification (double-submit cookie).
+        Logout still succeeds even if server-side revocation fails.
       security:
         - CSRFToken: []
       responses:
         '200':
-          description: Successfully logged out. Clears `access_token` and `csrf_token` cookies.
+          description: Successfully logged out. Revokes the server-side refresh session and clears the `access_token`, `refresh_token`, and `csrf_token` cookies.
           headers:
             Set-Cookie:
-              description: Overwrites active cookies with MaxAge=-1 to delete them.
+              description: Overwrites all three auth cookies with MaxAge=-1 to delete them.
               schema:
                 type: string
           content:
@@ -264,6 +344,56 @@ paths:
                             example: Logged out successfully
         '403':
           description: CSRF verification missing or failed (`CSRF_TOKEN_MISSING`, `CSRF_HEADER_MISSING`, `CSRF_TOKEN_MISMATCH`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/logout-all:
+    post:
+      summary: Logout All Devices
+      description: |
+        Revokes every active session for the authenticated user (all devices), e.g. after a
+        suspected account compromise, then clears the current browser's auth cookies. Requires
+        an authenticated access token and CSRF verification.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      responses:
+        '200':
+          description: All sessions revoked. Clears the current browser's `access_token`, `refresh_token`, and `csrf_token` cookies.
+          headers:
+            Set-Cookie:
+              description: Overwrites all three auth cookies with MaxAge=-1 to delete them.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Logged out of all devices
+        '401':
+          description: Access token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF verification missing or failed (`CSRF_TOKEN_MISSING`, `CSRF_HEADER_MISSING`, `CSRF_TOKEN_MISMATCH`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to revoke sessions (`INTERNAL_SERVER_ERROR`).
           content:
             application/json:
               schema:
@@ -2280,7 +2410,16 @@ components:
       type: apiKey
       in: cookie
       name: access_token
-      description: JWT authentication token.
+      description: Short-lived JWT access token. Sent on every request (Path `/`).
+    RefreshCookie:
+      type: apiKey
+      in: cookie
+      name: refresh_token
+      description: |
+        Long-lived, rotating, server-revocable refresh token. Scoped to Path
+        `/api/v1/auth`, so it is only sent to `/api/v1/auth/refresh` (to rotate)
+        and `/api/v1/auth/logout` (to revoke). Used by `POST /api/v1/auth/refresh`
+        to mint a new access token when the access token has expired.
     StateCookie:
       type: apiKey
       in: cookie
