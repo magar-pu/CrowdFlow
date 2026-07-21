@@ -83,9 +83,18 @@ func main() {
 
 	// Register global system health route (intentionally unversioned)
 	mux.HandleFunc("GET /api/health", healthCheck(db))
+
+	// Development mode relaxes production-only guardrails (the Secure-cookie flag
+	// below, and the required-secret check here). Anything other than
+	// DEV_MODE=true is treated as production.
+	devMode := os.Getenv("DEV_MODE") == "true"
+
 	// Initialize Configuration for JWT & Google Client ID
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
+		if !devMode {
+			log.Fatalf("JWT_SECRET environment variable is required in production (set DEV_MODE=true to use the insecure development fallback)")
+		}
 		jwtSecret = "crowdflow_dev_jwt_secret"
 	}
 	googleClientID := os.Getenv("GOOGLE_CLIENT_ID")
@@ -125,7 +134,7 @@ func main() {
 	// Initialize Authentication dependencies
 	authRepo := auth.NewPostgresRepository(db)
 	authService := auth.NewAuthService(authRepo, jwtSecret, oauthConfig)
-	isSecure := os.Getenv("DEV_MODE") != "true"
+	isSecure := !devMode
 	authHandler := auth.NewHandler(authService, isSecure)
 
 	// Rate limit login attempts per IP to slow brute-force/credential-stuffing
