@@ -32,6 +32,12 @@ type UpdateEventRequest struct {
 	EventTypeID                   int       `json:"event_type_id"`
 }
 
+// BindLayoutRequest binds an event to a venue layout. A null layout_id unbinds
+// (clears) the event's current layout.
+type BindLayoutRequest struct {
+	LayoutID *int `json:"layout_id"`
+}
+
 // VenueResponse defines a cleaned venue data payload for API outputs (hides raw audit timestamps)
 type VenueResponse struct {
 	ID            int    `json:"venue_id"`
@@ -81,6 +87,7 @@ type EventDetailResponse struct {
 	EntertainmentTaxRate          float64            `json:"entertainment_tax_rate"`
 	EntertainmentTaxPassedToBuyer bool               `json:"entertainment_tax_passed_to_buyer"`
 	CoverImageURL                 string             `json:"cover_image_url"`
+	LayoutID                      *int               `json:"layout_id"` // bound venue layout; null = none
 	Venue                         *VenueResponse     `json:"venue,omitempty"`
 	Organizer                     *OrganizerResponse `json:"organizer,omitempty"`
 }
@@ -158,6 +165,7 @@ func MapEventToDetail(e *Event) *EventDetailResponse {
 		EntertainmentTaxRate:          e.EntertainmentTaxRate,
 		EntertainmentTaxPassedToBuyer: e.EntertainmentTaxPassedToBuyer,
 		CoverImageURL:                 e.CoverImageURL,
+		LayoutID:                      e.LayoutID,
 		Venue:                         MapVenue(e.Venue),
 		Organizer:                     MapOrganizer(e.Organizer),
 	}
