@@ -201,6 +201,44 @@ func (s *DelegationService) Revoke(ctx context.Context, ownerID, delegationID in
 	return nil
 }
 
+// ---- admin oversight ----
+
+// ListForUser returns the delegations a user has granted (as owner) and received
+// (as delegate). Read-only oversight for the Super Admin Users panel.
+func (s *DelegationService) ListForUser(ctx context.Context, userID int) (owned, received []*Delegation, err error) {
+	owned, err = s.repo.ListByOwner(ctx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	received, err = s.repo.ListByDelegate(ctx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return owned, received, nil
+}
+
+// AdminRevoke revokes any delegation for moderation, bypassing the owner check.
+// Both the owner and the delegate are notified.
+func (s *DelegationService) AdminRevoke(ctx context.Context, delegationID, actorID int) error {
+	d, err := s.repo.GetByID(ctx, delegationID)
+	if err != nil {
+		return err
+	}
+	if d.Status != StatusActive && d.Status != StatusPending {
+		return ErrInvalidState
+	}
+	if err := s.repo.UpdateStatus(ctx, d.ID, StatusRevoked, nil); err != nil {
+		return err
+	}
+	_ = s.repo.Notify(ctx, d.DelegateID,
+		"Akses Co-Organizer Dicabut",
+		"Akses co-organizer Anda telah dicabut oleh administrator.", d.ID)
+	_ = s.repo.Notify(ctx, d.OwnerID,
+		"Delegasi Co-Organizer Dicabut",
+		"Sebuah delegasi co-organizer pada akun Anda dicabut oleh administrator.", d.ID)
+	return nil
+}
+
 // ---- helpers ----
 
 // ownedDelegation loads a delegation and asserts the caller is its owner.

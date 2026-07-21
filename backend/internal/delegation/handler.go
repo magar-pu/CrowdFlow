@@ -45,6 +45,47 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("POST /api/organizer/delegations/{id}/decline", guard(h.handleDecline))
 }
 
+// RegisterAdminRoutes mounts Super Admin oversight routes on the admin
+// sub-router (paths are relative to /api/v1/admin). The caller supplies the
+// authenticate + Super Admin guard.
+func (h *Handler) RegisterAdminRoutes(mux *http.ServeMux, guard func(http.HandlerFunc) http.Handler) {
+	mux.Handle("GET /users/{id}/delegations", guard(h.handleAdminListForUser))
+	mux.Handle("DELETE /delegations/{id}", guard(h.handleAdminRevoke))
+}
+
+func (h *Handler) handleAdminListForUser(w http.ResponseWriter, r *http.Request) {
+	targetID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "User ID must be an integer")
+		return
+	}
+	owned, received, err := h.service.ListForUser(r.Context(), targetID)
+	if err != nil {
+		writeErr(w, "list user delegations", err)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string][]delegationDTO{
+		"owned":    mapDelegations(owned),
+		"received": mapDelegations(received),
+	})
+}
+
+func (h *Handler) handleAdminRevoke(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.service.AdminRevoke(r.Context(), id, actorID); err != nil {
+		writeErr(w, "revoke delegation", err)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]bool{"revoked": true})
+}
+
 func (h *Handler) handleListForOwner(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUserID(w, r)
 	if !ok {

@@ -125,4 +125,9 @@ type Service interface {
 	// Delegate-driven.
 	RequestAccess(ctx context.Context, delegateID int, req RequestAccessRequest) (*Delegation, error)
 	ListForDelegate(ctx context.Context, delegateID int) ([]*Delegation, error)
+
+	// Admin oversight (Super Admin) — read a user's delegations both ways and
+	// revoke any of them for moderation, regardless of ownership.
+	ListForUser(ctx context.Context, userID int) (owned, received []*Delegation, err error)
+	AdminRevoke(ctx context.Context, delegationID, actorID int) error
 }

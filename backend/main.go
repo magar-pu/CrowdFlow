@@ -170,6 +170,11 @@ func main() {
 	// Register Delegation routes (verified Event Organizer, on the organizer console)
 	delegationHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole)
 
+	// Register Delegation admin-oversight routes on the admin sub-router (Super Admin only)
+	delegationHandler.RegisterAdminRoutes(adminV1, func(f http.HandlerFunc) http.Handler {
+		return authMounter.Authenticate(authMounter.RequirePlatformRole("Super Admin")(f))
+	})
+
 	// Initialize Auditor portal dependencies
 	auditorRepo := auditor.NewPostgresRepository(db)
 	auditorService := auditor.NewAuditorService(auditorRepo)

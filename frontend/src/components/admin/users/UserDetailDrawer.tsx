@@ -5,6 +5,7 @@ import { X, UserCheck, Ban } from 'lucide-react';
 import { ApiResponse, Event, User } from '@/types/admin';
 import RoleBadge from './RoleBadge';
 import UserRolesManager from './UserRolesManager';
+import UserDelegationsPanel from './UserDelegationsPanel';
 
 interface UserDetailDrawerProps {
   user: User;
@@ -108,6 +109,9 @@ export default function UserDetailDrawer({
             onGrantRole={onGrantRole}
             onRevokeRole={onRevokeRole}
           />
+
+          {/* Read-only co-organizer delegation oversight + moderation revoke */}
+          <UserDelegationsPanel userId={user.id} />
         </div>
 
         {/* Quick Actions Panel */}
