@@ -102,9 +102,9 @@ type Repository interface{
 
 type Service interface{
 	Register(req RegisterRequest) error
-	Login(req LoginRequest) (string, *User, error)
+	Login(ctx context.Context, req LoginRequest) (string, string, *User, error)
 	GetGoogleAuthURL(state string) string
-	HandleGoogleCallback(ctx context.Context, code string) (string, *User, error)
+	HandleGoogleCallback(ctx context.Context, code string) (string, string, *User, error)
 }
 
 

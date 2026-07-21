@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/response"
@@ -21,12 +22,14 @@ var rolePriority = map[string]int{
 }
 
 type Handler struct {
-	service *AuthService
-	secure  bool // Enforces Secure cookie flag (true in production, false in development)
+	service    *AuthService
+	secure     bool          // Enforces Secure cookie flag (true in production, false in development)
+	accessTTL  time.Duration // access_token cookie lifetime
+	refreshTTL time.Duration // refresh_token + csrf_token cookie lifetime
 }
 
-func NewHandler(service *AuthService, secure bool) *Handler {
-	return &Handler{service: service, secure: secure}
+func NewHandler(service *AuthService, secure bool, accessTTL, refreshTTL time.Duration) *Handler {
+	return &Handler{service: service, secure: secure, accessTTL: accessTTL, refreshTTL: refreshTTL}
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux, authenticate func(http.Handler) http.Handler, rateLimitLogin func(http.Handler) http.Handler) {
@@ -45,25 +48,40 @@ func generateCSRFToken() string {
 	return hex.EncodeToString(b)
 }
 
-func (h *Handler) setAuthCookies(w http.ResponseWriter, token string) {
-	// 1. Set HttpOnly JWT Cookie
+func (h *Handler) setAuthCookies(w http.ResponseWriter, accessToken, refreshToken string) {
+	// 1. Short-lived access JWT, sent on every request (Path "/").
 	http.SetCookie(w, &http.Cookie{
 		Name:     "access_token",
-		Value:    token,
+		Value:    accessToken,
 		Path:     "/",
-		MaxAge:   86400, // 1 day
+		MaxAge:   int(h.accessTTL.Seconds()),
 		HttpOnly: true,
 		Secure:   h.secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	// 2. Set client-readable CSRF Cookie
+	// 2. Long-lived refresh token, scoped to the auth subtree so it is only
+	//    sent to /refresh (to rotate) and /logout (to revoke) — never on
+	//    ordinary API calls, limiting its exposure.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    refreshToken,
+		Path:     "/api/v1/auth",
+		MaxAge:   int(h.refreshTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   h.secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	// 3. Client-readable CSRF token (double-submit). Its lifetime matches the
+	//    refresh token so a POST /auth/refresh still has a CSRF cookie to
+	//    submit long after the access token has expired.
 	csrfToken := generateCSRFToken()
 	http.SetCookie(w, &http.Cookie{
 		Name:     "csrf_token",
 		Value:    csrfToken,
 		Path:     "/",
-		MaxAge:   86400, // 1 day
+		MaxAge:   int(h.refreshTTL.Seconds()),
 		HttpOnly: false, // Must be readable by Next.js client
 		Secure:   h.secure,
 		SameSite: http.SameSiteLaxMode,
@@ -109,14 +127,14 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, user, err := h.service.Login(req)
+	accessToken, refreshToken, user, err := h.service.Login(r.Context(), req)
 	if err != nil {
 		response.Error(w, http.StatusUnauthorized, "AUTHENTICATION_FAILED", err.Error())
 		return
 	}
 
 	// Set secure auth cookies instead of returning token in JSON body
-	h.setAuthCookies(w, token)
+	h.setAuthCookies(w, accessToken, refreshToken)
 
 	// Resolve the highest-privilege platform role for this user
 	roleName := "User"
@@ -189,7 +207,7 @@ func (h *Handler) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Exchange code for JWT session token
-	token, user, err := h.service.HandleGoogleCallback(r.Context(), code)
+	accessToken, refreshToken, user, err := h.service.HandleGoogleCallback(r.Context(), code)
 	if err != nil {
 		if err.Error() == "PROVIDER_MISMATCH: native" {
 			http.Redirect(w, r, "/login?error=PROVIDER_MISMATCH&provider=native", http.StatusTemporaryRedirect)
@@ -200,7 +218,7 @@ func (h *Handler) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. Set authentication and CSRF session cookies
-	h.setAuthCookies(w, token)
+	h.setAuthCookies(w, accessToken, refreshToken)
 
 	// 5. Redirect browser based on user platform role
 	// Resolve the highest-privilege platform role for this user

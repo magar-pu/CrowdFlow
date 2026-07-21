@@ -17,14 +17,37 @@ type AuthService struct {
 	repo        Repository
 	jwtSecret   []byte
 	oauthConfig *oauth2.Config
+	sessions    *SessionStore
+	accessTTL   time.Duration
 }
 
-func NewAuthService(repo Repository, jwtSecret string, oauthConfig *oauth2.Config) *AuthService {
+func NewAuthService(repo Repository, jwtSecret string, oauthConfig *oauth2.Config, sessions *SessionStore, accessTTL time.Duration) *AuthService {
 	return &AuthService{
 		repo:        repo,
 		jwtSecret:   []byte(jwtSecret),
 		oauthConfig: oauthConfig,
+		sessions:    sessions,
+		accessTTL:   accessTTL,
 	}
+}
+
+// issueTokens mints a fresh access JWT and opens a new refresh-token session.
+// Roles are re-read from the DB on every mint (via GenerateJWT), so a login or
+// refresh always reflects the user's current platform roles.
+func (s *AuthService) issueTokens(ctx context.Context, user *User) (access, refresh string, err error) {
+	access, err = s.GenerateJWT(user)
+	if err != nil {
+		return "", "", err
+	}
+	userID, err := strconv.Atoi(user.ID)
+	if err != nil {
+		return "", "", err
+	}
+	refresh, err = s.sessions.Create(ctx, userID)
+	if err != nil {
+		return "", "", err
+	}
+	return access, refresh, nil
 }
 
 // GenerateJWT creates a signed access token containing User ID claims and platform roles
@@ -58,7 +81,7 @@ func (s *AuthService) GenerateJWT(user *User) (string, error) {
 		"sub":   user.ID,
 		"email": user.Email,
 		"roles": platformRoles,
-		"exp":   time.Now().Add(24 * time.Hour).Unix(), // Access token lifetime
+		"exp":   time.Now().Add(s.accessTTL).Unix(), // Short-lived; refreshed via refresh token
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -89,50 +112,50 @@ func (s *AuthService) Register(req RegisterRequest) error {
 	return s.repo.Create(user, req.FullName)
 }
 
-func (s *AuthService) Login(req LoginRequest) (string, *User, error) {
+func (s *AuthService) Login(ctx context.Context, req LoginRequest) (string, string, *User, error) {
 	user, err := s.repo.GetByEmail(req.Email)
 	if err != nil {
-		return "", nil, errors.New("invalid email or password")
+		return "", "", nil, errors.New("invalid email or password")
 	}
 
 	if user.AuthProvider != "native" {
-		return "", nil, errors.New("invalid email or password")
+		return "", "", nil, errors.New("invalid email or password")
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(req.Password))
 	if err != nil {
-		return "", nil, errors.New("invalid email or password")
+		return "", "", nil, errors.New("invalid email or password")
 	}
 
-	token, err := s.GenerateJWT(user)
+	access, refresh, err := s.issueTokens(ctx, user)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 
-	return token, user, nil
+	return access, refresh, user, nil
 }
 
 func (s *AuthService) GetGoogleAuthURL(state string) string {
 	return s.oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
 }
 
-func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (string, *User, error) {
+func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (string, string, *User, error) {
 	// Exchange authorization code for token
 	token, err := s.oauthConfig.Exchange(ctx, code)
 	if err != nil {
-		return "", nil, errors.New("failed to exchange authorization code: " + err.Error())
+		return "", "", nil, errors.New("failed to exchange authorization code: " + err.Error())
 	}
 
 	// Extract the ID Token (JWT) from OAuth2 token response
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok {
-		return "", nil, errors.New("google token response did not contain id_token")
+		return "", "", nil, errors.New("google token response did not contain id_token")
 	}
 
 	// Validate the ID Token
 	payload, err := idtoken.Validate(ctx, rawIDToken, s.oauthConfig.ClientID)
 	if err != nil {
-		return "", nil, errors.New("invalid Google ID token: " + err.Error())
+		return "", "", nil, errors.New("invalid Google ID token: " + err.Error())
 	}
 
 	email, _ := payload.Claims["email"].(string)
@@ -150,22 +173,22 @@ func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (st
 			}
 			err = s.repo.Create(user, name)
 			if err != nil {
-				return "", nil, err
+				return "", "", nil, err
 			}
 		} else {
-			return "", nil, err
+			return "", "", nil, err
 		}
 	} else {
 		// Verify that this user account was registered with Google
 		if user.AuthProvider != "google" {
-			return "", nil, errors.New("PROVIDER_MISMATCH: native")
+			return "", "", nil, errors.New("PROVIDER_MISMATCH: native")
 		}
 	}
 
-	jwtStr, err := s.GenerateJWT(user)
+	access, refresh, err := s.issueTokens(ctx, user)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 
-	return jwtStr, user, nil
+	return access, refresh, user, nil
 }
