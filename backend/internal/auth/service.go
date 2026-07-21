@@ -160,6 +160,16 @@ func (s *AuthService) RefreshTokens(ctx context.Context, rawRefreshToken string)
 	return access, newRefresh, user, nil
 }
 
+// Logout revokes the single session identified by the refresh token.
+func (s *AuthService) Logout(ctx context.Context, rawRefreshToken string) error {
+	return s.sessions.Revoke(ctx, rawRefreshToken)
+}
+
+// LogoutAll revokes every session for a user (all devices).
+func (s *AuthService) LogoutAll(ctx context.Context, userID int) error {
+	return s.sessions.RevokeAllForUser(ctx, userID)
+}
+
 func (s *AuthService) GetGoogleAuthURL(state string) string {
 	return s.oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
 }

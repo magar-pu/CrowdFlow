@@ -41,6 +41,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, authenticate func(http.Hand
 	mux.HandleFunc("GET /auth/google/login", h.handleGoogleRedirect)
 	mux.HandleFunc("GET /auth/google/callback", h.handleGoogleCallback)
 	mux.HandleFunc("POST /auth/logout", h.handleLogout)
+	mux.Handle("POST /auth/logout-all", authenticate(http.HandlerFunc(h.handleLogoutAll)))
 	mux.Handle("GET /auth/me", authenticate(http.HandlerFunc(h.handleMe)))
 	mux.Handle("PUT /auth/me", authenticate(http.HandlerFunc(h.handleUpdateProfile)))
 }
@@ -297,30 +298,43 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
-	// 1. Clear access_token cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     "access_token",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1, // Deletes the cookie
-		HttpOnly: true,
-		Secure:   h.secure,
-		SameSite: http.SameSiteLaxMode,
-	})
+	// Revoke the server-side session so the refresh token can't be reused.
+	// Logout still succeeds (cookies cleared) even if revocation errors.
+	if cookie, err := r.Cookie("refresh_token"); err == nil && cookie.Value != "" {
+		if err := h.service.Logout(r.Context(), cookie.Value); err != nil {
+			log.Printf("[WARN] logout: revoke session: %v", err)
+		}
+	}
 
-	// 2. Clear csrf_token cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     "csrf_token",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1, // Deletes the cookie
-		HttpOnly: false,
-		Secure:   h.secure,
-		SameSite: http.SameSiteLaxMode,
-	})
-
+	h.clearAuthCookies(w)
 	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "Logged out successfully",
+	})
+}
+
+// handleLogoutAll revokes every session for the authenticated user (all
+// devices), e.g. after a suspected compromise.
+func (h *Handler) handleLogoutAll(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User is not authenticated")
+		return
+	}
+
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user ID in token claims")
+		return
+	}
+
+	if err := h.service.LogoutAll(r.Context(), userID); err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", "Failed to revoke sessions")
+		return
+	}
+
+	h.clearAuthCookies(w)
+	response.JSON(w, http.StatusOK, map[string]string{
+		"message": "Logged out of all devices",
 	})
 }
 
