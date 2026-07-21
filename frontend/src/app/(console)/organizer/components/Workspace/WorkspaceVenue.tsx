@@ -1,6 +1,7 @@
 import React, { useState } from "react";
+import Link from "next/link";
 import { VenueSection } from "../../types";
-import { Map, Layers, Plus, Edit2, Trash2, X } from "lucide-react";
+import { Map, Layers, Plus, Edit2, Trash2, X, Maximize2 } from "lucide-react";
 
 interface WorkspaceVenueProps {
   sections: VenueSection[];
@@ -89,11 +90,18 @@ export default function WorkspaceVenue({
 
   return (
     <div className="space-y-6 text-left animate-fade-in">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center gap-4">
         <div>
           <h3 className="text-base font-bold text-text-primary">Venue Vector Layout</h3>
           <p className="text-xs text-text-secondary">Live graphical layout representing stages, seat positions, and gate sectors.</p>
         </div>
+        <Link
+          href="/venue-designer"
+          className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-on-primary shadow-sm transition-colors hover:bg-primary-container"
+        >
+          <Maximize2 className="w-3.5 h-3.5" />
+          Open Full Designer
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

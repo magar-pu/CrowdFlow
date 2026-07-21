@@ -34,7 +34,6 @@ const NAV_LINKS = [
   { label: "Events", href: "/events" },
   { label: "Resale Marketplace", href: "/resale" },
   { label: "Business", href: "/business" },
-  { label: "Venue Editor", href: "/venue-editor-preview" },
 ];
 
 const PROFILE_MENU = [

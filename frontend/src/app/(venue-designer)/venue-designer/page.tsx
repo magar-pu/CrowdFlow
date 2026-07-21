@@ -1,10 +1,10 @@
 /**
- * app/venue-editor-preview/page.tsx
+ * app/(venue-designer)/venue-designer/page.tsx
  *
- * Preview route for VenueMaster Pro — bypasses AuthGuard so the UI
- * can be reviewed without logging in. Remove this file once the
- * feature is finalized and only use the protected route at
- * (organizer)/dashboard/events/[event_id]/venue-editor.
+ * Full-screen venue geometry designer (VenueMaster Pro, mode="admin").
+ * Guarded by the (venue-designer) group's AuthGuard + the edge middleware, so
+ * only authenticated organizers/admins can reach it. The authenticated session
+ * also lets listVenues()/save() succeed against the backend.
  */
 
 "use client";
@@ -23,7 +23,7 @@ import { useVenueEditorStore } from "@/lib/store/venueEditorStore";
 import { useVenueLayoutPersistence } from "@/lib/venueLayout/useVenueLayoutPersistence";
 import { listVenues } from "@/lib/api/venues";
 
-export default function VenueEditorPreviewPage() {
+export default function VenueDesignerPage() {
   const {
     active_tool,
     set_active_tool,
@@ -143,7 +143,7 @@ export default function VenueEditorPreviewPage() {
                 on_section_select={set_selected_hierarchy_section}
               />
             )}
-            
+
             {active_tool === "facility_icons" && <FacilityIconsPanel />}
 
             <div className="relative h-full flex-1 overflow-hidden">
@@ -155,7 +155,7 @@ export default function VenueEditorPreviewPage() {
                 zoom_level={zoom_level}
               />
             </div>
-            
+
             {active_tool === "seat_mapper" && (
               <>
                 {/* Multi-seat selection takes over the right sidebar; a single

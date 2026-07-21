@@ -38,7 +38,7 @@ export function useVenueLayoutPersistence() {
       if (layoutId == null) {
         const created = await createLayout(venueId, {
           name: store.venue_name || "Untitled Layout",
-          visibility: "public",
+          visibility: store.layout_visibility,
         });
         if (!created.success || !created.data) {
           const message = created.error?.message ?? "Failed to create layout";

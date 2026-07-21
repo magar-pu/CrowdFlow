@@ -272,6 +272,9 @@ interface VenueEditorStore {
   layout_id: number | null;
   /** updated_at the layout was last loaded/saved at — the optimistic-lock token. */
   layout_updated_at: string | null;
+  /** Who can read this layout. Defaults to owner-only ("event_exclusive"); a
+   *  layout only becomes world-readable if the owner explicitly makes it public. */
+  layout_visibility: "public" | "event_exclusive";
 
   // ── Actions ───────────────────────────────────────────────────────────
   set_active_tool: (tool: VenueEditorTool) => void;
@@ -366,6 +369,8 @@ interface VenueEditorStore {
   ) => void;
   /** Record the layout id + optimistic-lock token (after create or save). */
   set_layout_meta: (layout_id: number, updated_at: string) => void;
+  /** Set who can read the layout (owner-only vs public). */
+  set_layout_visibility: (visibility: "public" | "event_exclusive") => void;
   /** Replace editor state with a layout loaded from the server. */
   load_layout_detail: (detail: LayoutDetail) => void;
 
@@ -406,6 +411,7 @@ export const useVenueEditorStore = create<VenueEditorStore>()(
   last_saved_at: null,
   layout_id: null,
   layout_updated_at: null,
+  layout_visibility: "event_exclusive",
   past: [],
   future: [],
 
@@ -1233,7 +1239,7 @@ export const useVenueEditorStore = create<VenueEditorStore>()(
     const s = get();
     return buildSaveLayoutRequest({
       name: s.venue_name,
-      visibility: "public",
+      visibility: s.layout_visibility,
       expectedUpdatedAt: s.layout_updated_at ?? "",
       stage_shape: s.stage_shape,
       facilities: s.facilities,
@@ -1259,11 +1265,16 @@ export const useVenueEditorStore = create<VenueEditorStore>()(
     set({ layout_id, layout_updated_at: updated_at });
   },
 
+  set_layout_visibility: (visibility) => {
+    set({ layout_visibility: visibility });
+  },
+
   load_layout_detail: (detail) => {
     const h = layoutDetailToEditorState(detail);
     set((state) => ({
       layout_id: h.layoutId,
       layout_updated_at: h.layoutUpdatedAt,
+      layout_visibility: detail.visibility,
       seats: h.seats,
       sections: h.sections,
       stage_shape: h.stage_shape ?? state.stage_shape,
@@ -1293,6 +1304,7 @@ export const useVenueEditorStore = create<VenueEditorStore>()(
     tax_rate: state.tax_rate,
     layout_id: state.layout_id,
     layout_updated_at: state.layout_updated_at,
+    layout_visibility: state.layout_visibility,
   }),
 }
 ));
