@@ -2015,6 +2015,119 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/v1/admin/users/{id}/delegations:
+    get:
+      summary: Admin - List User Co-Organizer Delegations
+      description: |
+        Read-only Super Admin oversight of a user's co-organizer delegations: those the user granted
+        as an event owner (`owned`) and those delegated to the user as a co-organizer (`received`).
+        Delegations are created from the organizer console, not here. Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the target user.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The user's delegations, both directions.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          owned:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Delegation'
+                          received:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Delegation'
+        '400':
+          description: User ID not an integer (`BAD_REQUEST`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing/invalid (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed (Super Admin required) (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/delegations/{id}:
+    delete:
+      summary: Admin - Revoke Co-Organizer Delegation
+      description: |
+        Moderation revoke of any co-organizer delegation, regardless of ownership. Sets the delegation
+        status to `revoked` and notifies both the owner and the delegate. Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the delegation.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Delegation revoked.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          revoked:
+                            type: boolean
+                            example: true
+        '401':
+          description: Session token missing/invalid (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed (Super Admin required) or CSRF mismatch (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Delegation not found (`NOT_FOUND`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Delegation is already declined/revoked and cannot be revoked (`INVALID_STATE`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 components:
   securitySchemes:
     CookieAuth:
@@ -2810,3 +2923,81 @@ components:
           nullable: true
           description: Omit or set null for a platform-wide grant; set to an event ID for an event-scoped grant.
           example: null
+
+    Delegation:
+      type: object
+      description: |
+        A co-organizer delegation: an event owner ("author") delegates management of their events to
+        another verified organizer. Effective only once `status` is `active`. Co-organizers gain
+        management access only, never payouts.
+      properties:
+        id:
+          type: integer
+          example: 7
+        owner_id:
+          type: integer
+          description: The event owner (author) who granted the delegation.
+          example: 12
+        owner_name:
+          type: string
+          example: Jane Organizer
+        owner_email:
+          type: string
+          example: jane@example.com
+        delegate_id:
+          type: integer
+          description: The co-organizer receiving management access.
+          example: 34
+        delegate_name:
+          type: string
+          example: Sam Co-Organizer
+        delegate_email:
+          type: string
+          example: sam@example.com
+        scope:
+          type: string
+          enum: [all, specific]
+          description: '`all` covers the owner''s whole portfolio incl. future events; `specific` covers only the listed events.'
+          example: specific
+        status:
+          type: string
+          enum: [pending, active, declined, revoked]
+          example: active
+        requested_by:
+          type: integer
+          description: The user who initiated the delegation (owner, delegate, or admin).
+          example: 12
+        approved_by:
+          type: integer
+          nullable: true
+          description: The owner who approved the delegation; null until approved.
+          example: 12
+        note:
+          type: string
+          nullable: true
+          example: Helping run the summer festival series.
+        events:
+          type: array
+          description: Covered events (populated only for `scope=specific`).
+          items:
+            $ref: '#/components/schemas/DelegationEvent'
+        created_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+
+    DelegationEvent:
+      type: object
+      properties:
+        event_id:
+          type: integer
+          example: 42
+        name:
+          type: string
+          example: Summer Music Festival
