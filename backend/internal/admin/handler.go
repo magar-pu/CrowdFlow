@@ -102,6 +102,7 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /users", admin(h.handleListUsers))
 	mux.Handle("POST /users/{id}/status", admin(h.handleUpdateUserStatus))
 	mux.Handle("POST /users/{id}/roles", admin(h.handleGrantUserRole))
+	mux.Handle("DELETE /users/{id}/roles", admin(h.handleRevokeUserRole))
 	mux.Handle("GET /users/verifications", admin(h.handleListVerifications))
 	mux.Handle("POST /users/verifications/{id}/approve", admin(h.handleApproveVerification))
 	mux.Handle("POST /users/verifications/{id}/reject", admin(h.handleRejectVerification))
@@ -490,6 +491,32 @@ func (h *Handler) handleGrantUserRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.JSON(w, http.StatusCreated, map[string]string{"message": "Role granted"})
+}
+
+// handleRevokeUserRole removes a role_id from the target user, matching the
+// same event scope the grant used (event_id omitted/null -> the platform-wide
+// grant; an event_id -> that event's scoped grant).
+func (h *Handler) handleRevokeUserRole(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := actorIDFromRequest(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
+		return
+	}
+	userID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "User ID must be a valid integer")
+		return
+	}
+	var req grantRoleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
+		return
+	}
+	if err := h.service.RevokeUserRole(userID, req.RoleID, req.EventID, actorID); err != nil {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Role revoked"})
 }
 
 func (h *Handler) handleListVerifications(w http.ResponseWriter, r *http.Request) {

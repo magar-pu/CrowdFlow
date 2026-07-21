@@ -27,15 +27,31 @@ type Event struct {
 	Description  string  `json:"description"`
 }
 
+// RoleAssignment is one of a user's user_roles rows, mapped to the admin
+// frontend's display vocabulary: the role plus the event it is scoped to
+// (nil for a platform-wide grant like Super Admin or a platform Event
+// Organizer). Event-scoped Event Organizer / Auditor / Gate Scanner rows carry
+// EventID + EventName so the profile can show "Organizer - Event A" etc.
+type RoleAssignment struct {
+	RoleID    int    `json:"roleId"`
+	Role      string `json:"role"`
+	EventID   *int   `json:"eventId"`
+	EventName string `json:"eventName,omitempty"`
+}
+
 type User struct {
-	ID                string `json:"id"`
-	Name              string `json:"name"`
-	Email             string `json:"email"`
-	Role              string `json:"role"`   // "Buyer" | "Seller" | "Organizer" | "Admin"
-	Status            string `json:"status"` // "Verified" | "Pending" | "Suspended"
-	JoinedAt          string `json:"joinedAt"`
-	TransactionsCount int    `json:"transactionsCount"`
-	ProfilePic        string `json:"profilePic"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Email string `json:"email"`
+	// Role is a single collapsed label for list badges: the user's one console
+	// role, "Mixed" when they hold more than one distinct console role, or
+	// "Buyer" when they hold none. See RoleAssignments for the breakdown.
+	Role              string           `json:"role"` // "Buyer" | "Organizer" | "Auditor" | "Gate Scanner" | "Admin" | "Mixed"
+	RoleAssignments   []RoleAssignment `json:"roleAssignments"`
+	Status            string           `json:"status"` // "Verified" | "Pending" | "Suspended"
+	JoinedAt          string           `json:"joinedAt"`
+	TransactionsCount int              `json:"transactionsCount"`
+	ProfilePic        string           `json:"profilePic"`
 }
 
 type Transaction struct {
@@ -145,6 +161,7 @@ type Repository interface {
 	UpdateVenueSections(eventID int, sections []*VenueSection) error
 	UpdateUserStatus(userID int, status string, actorID int) error
 	GrantUserRole(userID int, roleID int, eventID *int, actorID int) error
+	RevokeUserRole(userID int, roleID int, eventID *int, actorID int) error
 	UpdateTransactionStatus(orderID string, status string, actorID int) error
 	ListVerifications(limit, offset int) ([]*VerificationApplication, error)
 
@@ -170,6 +187,7 @@ type Service interface {
 	UpdateVenueSections(eventID int, sections []*VenueSection) error
 	UpdateUserStatus(userID int, status string, actorID int) error
 	GrantUserRole(userID int, roleID int, eventID *int, actorID int) error
+	RevokeUserRole(userID int, roleID int, eventID *int, actorID int) error
 	UpdateTransactionStatus(orderID string, status string, actorID int) error
 	ListVerifications(limit, offset int) ([]*VerificationApplication, error)
 

@@ -24,6 +24,34 @@ export async function toggleUserStatus(
   });
 }
 
+// grantUserRole assigns a role to a user. eventId scopes event-bound roles
+// (Auditor, Gate Scanner) to one event; pass null/undefined for platform-wide
+// roles (Super Admin, Event Organizer). Maps to POST /admin/users/{id}/roles.
+export async function grantUserRole(
+  userId: string,
+  roleId: number,
+  eventId?: number | null
+): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/v1/admin/users/${userId}/roles`, {
+    method: "POST",
+    body: JSON.stringify({ role_id: roleId, event_id: eventId ?? null }),
+  });
+}
+
+// revokeUserRole removes a role assignment. eventId must match the scope the
+// role was granted with (the same event, or null for a platform-wide grant).
+// Maps to DELETE /admin/users/{id}/roles.
+export async function revokeUserRole(
+  userId: string,
+  roleId: number,
+  eventId?: number | null
+): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/v1/admin/users/${userId}/roles`, {
+    method: "DELETE",
+    body: JSON.stringify({ role_id: roleId, event_id: eventId ?? null }),
+  });
+}
+
 export async function listVerifications(limit?: number, offset?: number): Promise<ApiResponse<VerificationApplication[]>> {
   let query = "";
   const params = [];

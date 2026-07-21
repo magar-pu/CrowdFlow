@@ -12,6 +12,8 @@ import {
   listVerifications,
   approveVerification,
   rejectVerification,
+  grantUserRole,
+  revokeUserRole,
 } from '@/lib/api/admin/userService';
 import {
   listEvents,
@@ -346,6 +348,25 @@ export default function AdminPage() {
     }
   };
 
+  // Grant/revoke return the ApiResponse so the drawer can surface the specific
+  // error (e.g. the separation-of-duties rejection) inline instead of only the
+  // page-level banner, which sits behind the drawer overlay.
+  const handleGrantRole = async (userId: string, roleId: number, eventId: number | null) => {
+    const result = await grantUserRole(userId, roleId, eventId);
+    if (result.success) {
+      await Promise.all([refreshUsers(), refreshActivities()]);
+    }
+    return result;
+  };
+
+  const handleRevokeRole = async (userId: string, roleId: number, eventId: number | null) => {
+    const result = await revokeUserRole(userId, roleId, eventId);
+    if (result.success) {
+      await Promise.all([refreshUsers(), refreshActivities()]);
+    }
+    return result;
+  };
+
   const handleProcessPayout = async (payoutId: string) => {
     const result = await processPayout(payoutId);
     if (result.success) {
@@ -534,9 +555,12 @@ export default function AdminPage() {
                 <UserManagementView
                   users={users}
                   verifications={verifications}
+                  events={events}
                   onApproveVerification={handleApproveVerification}
                   onRejectVerification={handleRejectVerification}
                   onToggleUserStatus={handleToggleUserStatus}
+                  onGrantRole={handleGrantRole}
+                  onRevokeRole={handleRevokeRole}
                   page={usersPage}
                   hasNextPage={usersHasNext}
                   onPrevPage={() => setUsersPage((p) => Math.max(0, p - 1))}
