@@ -12,6 +12,7 @@ import (
 	"crowdflow-backend/internal/auditor"
 	"crowdflow-backend/internal/auth"
 	"crowdflow-backend/internal/booking"
+	"crowdflow-backend/internal/delegation"
 	"crowdflow-backend/internal/event"
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/organizer"
@@ -160,6 +161,14 @@ func main() {
 
 	// Register Organizer routes
 	organizerHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole, authMounter.RequireEventOwnership)
+
+	// Initialize Co-Organizer Delegation dependencies (owner-driven delegation + approval)
+	delegationRepo := delegation.NewPostgresRepository(db)
+	delegationService := delegation.NewDelegationService(delegationRepo)
+	delegationHandler := delegation.NewHandler(delegationService)
+
+	// Register Delegation routes (verified Event Organizer, on the organizer console)
+	delegationHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole)
 
 	// Initialize Auditor portal dependencies
 	auditorRepo := auditor.NewPostgresRepository(db)
