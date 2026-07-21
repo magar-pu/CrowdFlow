@@ -1,188 +1,216 @@
 /**
  * app/(venue-designer)/venue-designer/page.tsx
  *
- * Full-screen venue geometry designer (VenueMaster Pro, mode="admin").
- * Guarded by the (venue-designer) group's AuthGuard + the edge middleware, so
- * only authenticated organizers/admins can reach it. The authenticated session
- * also lets listVenues()/save() succeed against the backend.
+ * Venue-designer landing / selector. Pick a venue, then pick one of that venue's
+ * layouts to edit — or create a new named one — before entering the full-screen
+ * geometry designer at /venue-designer/edit?venueId=&layoutId=. This is what
+ * gives the designer its "which venue / which layout" context; the layout list
+ * is owner-scoped by the backend (your own + public), so organizers no longer
+ * land in each other's layouts. Guarded by the (venue-designer) AuthGuard.
  */
 
 "use client";
 
-import { useEffect, useState } from "react";
-import { EditorSidebar } from "@/components/venue-editor/EditorSidebar";
-import { VenueMapPreview } from "@/components/venue-editor/VenueMapPreview";
-import { TicketConfigPanel } from "@/components/venue-editor/TicketConfigPanel";
-import { HierarchyPanel } from "@/components/venue-editor/HierarchyPanel";
-import { FacilityIconsPanel } from "@/components/venue-editor/FacilityIconsPanel";
-import { FloatingToolbar } from "@/components/venue-editor/FloatingToolbar";
-import { SeatMapperCanvas } from "@/components/venue-editor/SeatMapperCanvas";
-import { SeatPropertiesPanel } from "@/components/venue-editor/SeatPropertiesPanel";
-import { SeatArrangePanel } from "@/components/venue-editor/SeatArrangePanel";
-import { useVenueEditorStore } from "@/lib/store/venueEditorStore";
-import { useVenueLayoutPersistence } from "@/lib/venueLayout/useVenueLayoutPersistence";
-import { listVenues } from "@/lib/api/venues";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Building2, Plus, Layers, ChevronRight, Lock, Globe } from "lucide-react";
+import { listVenues, type Venue } from "@/lib/api/venues";
+import { listLayouts, createLayout, type LayoutSummary } from "@/lib/api/venueLayouts";
 
-export default function VenueDesignerPage() {
-  const {
-    active_tool,
-    set_active_tool,
-    seats,
-    sections,
-    renumber_seats,
-    selected_seat,
-    multi_selected_seat_ids,
-    select_seat,
-    update_seat,
-    zoom_level,
-    set_zoom,
-    event_title,
-    venue_name,
-    venues,
-    selected_venue_id,
-    set_venue,
-    set_venues,
-    base_currency,
-    tax_rate,
-    set_currency,
-    set_tax_rate,
-    pricing_tiers,
-    selected_paint_tier_id,
-    set_selected_paint_tier_id,
-    add_pricing_tier,
-    update_pricing_tier,
-    remove_pricing_tier,
-    set_drawing_mode,
-    stage_shape,
-    validate_for_publish,
-  } = useVenueEditorStore();
+export default function VenueDesignerSelectorPage() {
+  const router = useRouter();
 
-  const [selected_hierarchy_section, set_selected_hierarchy_section] = useState<
-    string | null
-  >(null);
+  const [venues, setVenues] = useState<Venue[]>([]);
+  const [selectedVenueId, setSelectedVenueId] = useState<number | null>(null);
+  const [layouts, setLayouts] = useState<LayoutSummary[]>([]);
+  const [loadingVenues, setLoadingVenues] = useState(true);
+  const [loadingLayouts, setLoadingLayouts] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  const persistence = useVenueLayoutPersistence();
+  const loadLayouts = useCallback(async (venueId: number) => {
+    setLoadingLayouts(true);
+    setError(null);
+    const res = await listLayouts(venueId);
+    if (res.success && res.data) {
+      setLayouts(res.data);
+    } else {
+      setLayouts([]);
+      setError(res.error?.message ?? "Failed to load layouts");
+    }
+    setLoadingLayouts(false);
+  }, []);
 
-  // Load real venues so the layout saves against a real integer venue id
-  // (the store's mock venues use string ids the backend can't accept).
+  // Load venues once; auto-select the first so the page isn't empty on arrival.
   useEffect(() => {
     let cancelled = false;
     listVenues().then((res) => {
-      if (cancelled || !res.success || !res.data || res.data.length === 0) return;
-      set_venues(res.data.map((v) => ({ venue_id: String(v.venue_id), name: v.name })));
-      set_venue(String(res.data[0].venue_id));
+      if (cancelled) return;
+      if (res.success && res.data) {
+        setVenues(res.data);
+        if (res.data.length > 0) {
+          setSelectedVenueId(res.data[0].venue_id);
+          loadLayouts(res.data[0].venue_id);
+        }
+      } else {
+        setError(res.error?.message ?? "Failed to load venues");
+      }
+      setLoadingVenues(false);
     });
     return () => {
       cancelled = true;
     };
-  }, [set_venues, set_venue]);
+  }, [loadLayouts]);
+
+  const onSelectVenue = (venueId: number) => {
+    setSelectedVenueId(venueId);
+    setNewName("");
+    loadLayouts(venueId);
+  };
+
+  const openLayout = (layoutId: number) => {
+    if (selectedVenueId == null) return;
+    router.push(`/venue-designer/edit?venueId=${selectedVenueId}&layoutId=${layoutId}`);
+  };
+
+  const onCreate = async () => {
+    if (selectedVenueId == null || !newName.trim()) return;
+    setCreating(true);
+    setError(null);
+    // Explicit event_exclusive keeps new layouts owner-only (the API defaults an
+    // omitted visibility to public).
+    const res = await createLayout(selectedVenueId, {
+      name: newName.trim(),
+      visibility: "event_exclusive",
+    });
+    setCreating(false);
+    if (res.success && res.data) {
+      openLayout(res.data.id);
+    } else {
+      setError(res.error?.message ?? "Failed to create layout");
+    }
+  };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-surface">
-      <EditorSidebar
-        active_tool={active_tool}
-        on_tool_change={set_active_tool}
-        on_save={async () => {
-          // Labels drift while a plan is being built (each seat array restarts
-          // at row A). Normalise from final geometry before the plan is saved.
-          renumber_seats();
-          const venueId = Number(selected_venue_id);
-          if (!Number.isInteger(venueId) || venueId <= 0) {
-            window.alert("Select a venue before saving.");
-            return;
-          }
-          const result = await persistence.save(venueId);
-          if (!result.ok) {
-            window.alert(result.error ?? "Failed to save layout.");
-          }
-        }}
-        mode="admin"
-      />
+    <div className="min-h-screen w-full bg-surface-dim px-4 py-10">
+      <div className="mx-auto w-full max-w-2xl">
+        <header className="mb-8">
+          <h1 className="text-2xl font-black text-text-primary" style={{ fontFamily: "Hanken Grotesk, sans-serif" }}>
+            Venue Designer
+          </h1>
+          <p className="mt-1 text-sm text-text-secondary">
+            Choose a venue, then open or create a seat-map layout to edit.
+          </p>
+        </header>
 
-      <main className="ml-64 flex flex-1 overflow-hidden">
-        {active_tool === "section_zone" && (
-          <div className="flex h-full w-full overflow-hidden">
-            <div className="relative h-full flex-1 overflow-hidden">
-              <SeatMapperCanvas
-                sections={sections}
-                selected_seat={selected_seat}
-                on_seat_click={select_seat}
-                zoom_level={zoom_level}
-                is_locked_mode={true}
-              />
-              <FloatingToolbar />
-            </div>
-            <TicketConfigPanel
-              base_currency={base_currency}
-              tax_rate={tax_rate}
-              pricing_tiers={pricing_tiers}
-              sections={sections}
-              selected_paint_tier_id={selected_paint_tier_id}
-              on_tier_select={(id) => {
-                set_selected_paint_tier_id(id);
-                set_drawing_mode(id ? "paint" : "select");
-              }}
-              on_currency_change={set_currency}
-              on_tax_rate_change={set_tax_rate}
-              on_tier_add={add_pricing_tier}
-              on_tier_update={update_pricing_tier}
-              on_tier_remove={remove_pricing_tier}
-              on_save_draft={() => console.log("Save draft")}
-              on_publish={() => console.log("Publish event")}
-              on_validate={validate_for_publish}
-            />
+        {error && (
+          <div className="mb-4 rounded-lg border border-danger/20 bg-danger/10 px-4 py-3 text-xs font-semibold text-danger">
+            {error}
           </div>
         )}
 
-        {(active_tool === "seat_mapper" || active_tool === "facility_icons") && (
-          <>
-            {active_tool === "seat_mapper" && (
-              <HierarchyPanel
-                sections={sections}
-                selected_section_id={selected_hierarchy_section}
-                on_section_select={set_selected_hierarchy_section}
-              />
-            )}
+        {/* Venue picker */}
+        <section className="mb-6">
+          <label className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-text-primary">
+            <Building2 className="h-3.5 w-3.5" /> Venue
+          </label>
+          {loadingVenues ? (
+            <div className="h-11 w-full animate-pulse rounded-lg bg-surface-container" />
+          ) : venues.length === 0 ? (
+            <p className="rounded-lg border border-border-subtle bg-white px-4 py-3 text-xs text-text-secondary">
+              No venues available for your account.
+            </p>
+          ) : (
+            <select
+              value={selectedVenueId ?? ""}
+              onChange={(e) => onSelectVenue(Number(e.target.value))}
+              className="h-11 w-full rounded-lg border border-border-subtle bg-white px-3 text-sm text-text-primary outline-none focus:border-outline"
+            >
+              {venues.map((v) => (
+                <option key={v.venue_id} value={v.venue_id}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </section>
 
-            {active_tool === "facility_icons" && <FacilityIconsPanel />}
-
-            <div className="relative h-full flex-1 overflow-hidden">
-              <FloatingToolbar />
-              <SeatMapperCanvas
-                sections={sections}
-                selected_seat={selected_seat}
-                on_seat_click={select_seat}
-                zoom_level={zoom_level}
-              />
+        {/* Layout list */}
+        {selectedVenueId != null && (
+          <section className="mb-6">
+            <h2 className="mb-2 flex items-center gap-1.5 text-xs font-bold text-text-primary">
+              <Layers className="h-3.5 w-3.5" /> Layouts
+            </h2>
+            <div className="space-y-2">
+              {loadingLayouts ? (
+                [...Array(2)].map((_, i) => (
+                  <div key={i} className="h-16 w-full animate-pulse rounded-xl bg-surface-container" />
+                ))
+              ) : layouts.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-border-subtle bg-white px-4 py-6 text-center text-xs text-text-secondary">
+                  No layouts yet for this venue. Create one below.
+                </p>
+              ) : (
+                layouts.map((l) => (
+                  <button
+                    key={l.id}
+                    onClick={() => openLayout(l.id)}
+                    className="flex w-full items-center justify-between gap-3 rounded-xl border border-border-subtle bg-white px-4 py-3 text-left shadow-sm transition-colors hover:border-outline hover:bg-surface-container-low"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-bold text-text-primary">{l.name}</span>
+                        <span className="shrink-0 rounded bg-surface-container px-1.5 py-0.5 font-mono text-[10px] font-bold text-text-secondary">
+                          #{l.id}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-2 text-[10px] font-medium text-text-secondary">
+                        {l.visibility === "public" ? (
+                          <span className="flex items-center gap-1"><Globe className="h-3 w-3" /> Public</span>
+                        ) : (
+                          <span className="flex items-center gap-1"><Lock className="h-3 w-3" /> Private</span>
+                        )}
+                        <span>·</span>
+                        <span className="font-mono">updated {new Date(l.updated_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-text-secondary" />
+                  </button>
+                ))
+              )}
             </div>
-
-            {active_tool === "seat_mapper" && (
-              <>
-                {/* Multi-seat selection takes over the right sidebar; a single
-                    selected seat falls back to its properties. */}
-                <SeatArrangePanel />
-                {multi_selected_seat_ids.length < 2 && (
-                  <SeatPropertiesPanel seat={selected_seat} on_update={update_seat} />
-                )}
-              </>
-            )}
-          </>
+          </section>
         )}
 
-        {active_tool !== "section_zone" && active_tool !== "seat_mapper" && active_tool !== "facility_icons" && (
-          <div className="flex flex-1 items-center justify-center bg-background">
-            <div className="text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-container-low">
-                <span className="text-2xl">🚧</span>
-              </div>
-              <h2 className="text-lg font-semibold text-primary">
-                {active_tool.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}
-              </h2>
-              <p className="mt-1 text-sm text-text-secondary">This tool is coming soon.</p>
+        {/* Create new layout */}
+        {selectedVenueId != null && (
+          <section className="rounded-xl border border-border-subtle bg-white p-4 shadow-sm">
+            <h2 className="mb-2 flex items-center gap-1.5 text-xs font-bold text-text-primary">
+              <Plus className="h-3.5 w-3.5" /> New layout
+            </h2>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") onCreate();
+                }}
+                placeholder="e.g. Main Floor — Concert Config"
+                className="h-11 flex-1 rounded-lg border border-border-subtle bg-surface-container-low px-3 text-sm text-text-primary outline-none focus:border-outline"
+              />
+              <button
+                onClick={onCreate}
+                disabled={creating || !newName.trim()}
+                className="shrink-0 rounded-lg bg-primary px-5 text-sm font-semibold text-on-primary shadow-sm transition-colors hover:bg-primary-container disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {creating ? "Creating…" : "Create & Edit"}
+              </button>
             </div>
-          </div>
+          </section>
         )}
-      </main>
+      </div>
     </div>
   );
 }

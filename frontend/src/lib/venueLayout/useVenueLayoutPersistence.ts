@@ -37,7 +37,7 @@ export function useVenueLayoutPersistence() {
 
       if (layoutId == null) {
         const created = await createLayout(venueId, {
-          name: store.venue_name || "Untitled Layout",
+          name: store.layout_name.trim() || store.venue_name.trim() || "Untitled Layout",
           visibility: store.layout_visibility,
         });
         if (!created.success || !created.data) {

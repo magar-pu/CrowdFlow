@@ -98,6 +98,7 @@ export function reconcileSavedIds(
 export interface HydratedLayout {
   layoutId: number;
   layoutUpdatedAt: string;
+  name: string;
   seats: VenueSeat[];
   sections: VenueSection[];
   stage_shape?: VenueShape;
@@ -121,6 +122,7 @@ export function layoutDetailToEditorState(detail: LayoutDetail): HydratedLayout 
   return {
     layoutId: detail.id,
     layoutUpdatedAt: detail.updated_at,
+    name: detail.name,
     stage_shape: geometry.stage ?? undefined,
     facilities: geometry.facilities ?? undefined,
     blueprint: geometry.blueprint ?? undefined,
