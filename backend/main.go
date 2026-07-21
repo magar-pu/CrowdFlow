@@ -157,9 +157,12 @@ func main() {
 
 	// Rate limit login attempts per IP to slow brute-force/credential-stuffing
 	loginRateLimit := middleware.RateLimit(redisClient, "login", 10, 15*time.Minute)
+	// Refresh is legitimate ~once per access-token lifetime per session; keep a
+	// generous per-IP ceiling to blunt abuse without harming users behind NAT.
+	refreshRateLimit := middleware.RateLimit(redisClient, "refresh", 60, 15*time.Minute)
 
 	// Register Authentication routes
-	authHandler.RegisterRoutes(apiV1, authMounter.Authenticate, loginRateLimit)
+	authHandler.RegisterRoutes(apiV1, authMounter.Authenticate, loginRateLimit, refreshRateLimit)
 
 	// Initialize Admin console dependencies
 	adminRepo := admin.NewPostgresRepository(db)

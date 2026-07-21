@@ -135,6 +135,31 @@ func (s *AuthService) Login(ctx context.Context, req LoginRequest) (string, stri
 	return access, refresh, user, nil
 }
 
+// RefreshTokens validates and rotates a refresh token, then mints a new access
+// JWT with the user's current roles re-read from the DB. The presented token is
+// invalidated; a replayed or expired token yields ErrRefreshTokenReuse or
+// ErrInvalidRefreshToken. Note the session is rotated before the user lookup,
+// so a rare DB error here forces a re-login rather than silently reusing the
+// old token — an acceptable trade for keeping rotation atomic.
+func (s *AuthService) RefreshTokens(ctx context.Context, rawRefreshToken string) (string, string, *User, error) {
+	userID, newRefresh, err := s.sessions.ValidateAndRotate(ctx, rawRefreshToken)
+	if err != nil {
+		return "", "", nil, err
+	}
+
+	user, err := s.repo.GetByID(userID)
+	if err != nil {
+		return "", "", nil, err
+	}
+
+	access, err := s.GenerateJWT(user)
+	if err != nil {
+		return "", "", nil, err
+	}
+
+	return access, newRefresh, user, nil
+}
+
 func (s *AuthService) GetGoogleAuthURL(state string) string {
 	return s.oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
 }
