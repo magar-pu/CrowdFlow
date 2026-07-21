@@ -23,7 +23,8 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
   const [resubmitSuccess, setResubmitSuccess] = useState(false);
 
   useEffect(() => {
-    if (event && (event.status === "Need Revision" || event.status === "Rejected")) {
+    const s = event?.status?.toLowerCase() || "";
+    if (event && (s === "need revision" || s === "needs_revision" || s === "rejected")) {
       getEventRevisions(Number(eventId)).then((res) => {
         if (res.success && res.data) {
           setRevisionFeedback(res.data);
@@ -63,8 +64,9 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
     );
   }
 
-  const isNeedRevision = event.status === "Need Revision";
-  const isRejected = event.status === "Rejected";
+  const sLower = event.status?.toLowerCase() || "";
+  const isNeedRevision = sLower === "need revision" || sLower === "needs_revision";
+  const isRejected = sLower === "rejected";
 
   return (
     <>
@@ -137,11 +139,15 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
           {revisionFeedback?.revisions && revisionFeedback.revisions.length > 0 && (
             <div className="mt-3 space-y-2">
               <span className="text-[10px] font-mono font-bold text-text-secondary uppercase block">
-                Required Revision Items
+                Required Revision Items (Klik item untuk merespons)
               </span>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {revisionFeedback.revisions.map((rev) => (
-                  <div key={rev.id} className="p-3 bg-white border border-border-subtle rounded-lg text-xs space-y-1 shadow-2xs">
+                  <div
+                    key={rev.id}
+                    onClick={() => router.push(`/organizer/events/${eventId}/revisions?revId=${rev.id}`)}
+                    className="p-3 bg-white border border-border-subtle hover:border-secondary rounded-lg text-xs space-y-1 shadow-2xs cursor-pointer transition-all hover:shadow-xs"
+                  >
                     <div className="flex justify-between items-center">
                       <span className="font-bold text-text-primary">{rev.title}</span>
                       <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-surface-container text-text-secondary">

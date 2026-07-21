@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -151,6 +152,7 @@ func (r *PostgresAuditorRepository) ListReviewQueue(ctx context.Context, limit i
 			e.event_name,
 			COALESCE(up.full_name, 'Unknown Organizer'),
 			COALESCE(up.avatar_pic, ''),
+			COALESCE(e.cover_image_url, ''),
 			COALESCE(et.event_type, 'Other'),
 			COALESCE(
 				(SELECT MIN(created_at) FROM event_status_log WHERE event_id = e.id AND to_status = 'pending_review'),
@@ -201,6 +203,7 @@ func (r *PostgresAuditorRepository) ListReviewQueue(ctx context.Context, limit i
 			&rev.EventName,
 			&rev.OrganizerName,
 			&rev.OrganizerAvatar,
+			&rev.BannerURL,
 			&rev.Category,
 			&submittedAt,
 			&lastUpdated,
@@ -217,6 +220,7 @@ func (r *PostgresAuditorRepository) ListReviewQueue(ctx context.Context, limit i
 		rev.LastUpdated = formatTime(lastUpdated)
 		rev.Stage = ReviewStage(stageStr)
 		rev.Status = mapEventReviewStatus(dbStatus)
+		rev.BannerURL = formatBannerURL(rev.BannerURL)
 
 		// Calculate Risk Level based on compliance score and missing docs
 		score := rev.ComplianceScore
@@ -258,6 +262,7 @@ func (r *PostgresAuditorRepository) ListEventReviews(ctx context.Context, filter
 			e.event_name,
 			COALESCE(up.full_name, 'Unknown Organizer'),
 			COALESCE(up.avatar_pic, ''),
+			COALESCE(e.cover_image_url, ''),
 			COALESCE(et.event_type, 'Other'),
 			COALESCE(
 				(SELECT MIN(created_at) FROM event_status_log WHERE event_id = e.id AND to_status = 'pending_review'),
@@ -332,6 +337,7 @@ func (r *PostgresAuditorRepository) ListEventReviews(ctx context.Context, filter
 			&rev.EventName,
 			&rev.OrganizerName,
 			&rev.OrganizerAvatar,
+			&rev.BannerURL,
 			&rev.Category,
 			&submittedAt,
 			&lastUpdated,
@@ -348,6 +354,7 @@ func (r *PostgresAuditorRepository) ListEventReviews(ctx context.Context, filter
 		rev.LastUpdated = formatTime(lastUpdated)
 		rev.Stage = ReviewStage(stageStr)
 		rev.Status = mapEventReviewStatus(dbStatus)
+		rev.BannerURL = formatBannerURL(rev.BannerURL)
 
 		// Calculate Risk Level based on compliance score and missing docs
 		score := rev.ComplianceScore
@@ -445,6 +452,7 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 	rev.Date = eventStart.Format("2006-01-02 15:04")
 	rev.Stage = ReviewStage(stageStr)
 	rev.Status = mapEventReviewStatus(dbStatus)
+	rev.BannerURL = formatBannerURL(rev.BannerURL)
 
 	// 2. Fetch Organizer application documents
 	queryDocs := `
@@ -608,7 +616,12 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 
 	// 5. Fetch revisions list
 	queryRevisions := `
-		SELECT id, category, title, description, required_action, status, created_at
+		SELECT id, category, title, description, required_action, status, created_at,
+		       COALESCE(priority, 'Medium'),
+		       COALESCE(organizer_comment, ''),
+		       COALESCE(organizer_action_taken, ''),
+		       COALESCE(organizer_file, ''),
+		       COALESCE(responded_at::text, '')
 		FROM auditor_revisions
 		WHERE event_id = $1
 		ORDER BY created_at DESC
@@ -623,6 +636,7 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 	for rowsRevisions.Next() {
 		var revItem Revision
 		var createdAt time.Time
+		var respondedAtStr string
 		err = rowsRevisions.Scan(
 			&revItem.ID,
 			&revItem.Category,
@@ -631,11 +645,22 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 			&revItem.RequiredAction,
 			&revItem.Status,
 			&createdAt,
+			&revItem.Priority,
+			&revItem.OrganizerComment,
+			&revItem.OrganizerActionTaken,
+			&revItem.OrganizerFile,
+			&respondedAtStr,
 		)
 		if err != nil {
 			return nil, err
 		}
-		revItem.Priority = "Medium"
+		if respondedAtStr != "" {
+			if tResp, errParse := time.Parse(time.RFC3339, respondedAtStr); errParse == nil {
+				revItem.RespondedAt = formatTime(tResp)
+			} else {
+				revItem.RespondedAt = respondedAtStr
+			}
+		}
 		revItem.Deadline = "3 Days"
 		revItem.CreatedAt = formatTime(createdAt)
 		rev.Revisions = append(rev.Revisions, revItem)
@@ -2088,5 +2113,30 @@ func (r *PostgresAuditorRepository) CreateNotificationForAuditors(ctx context.Co
 		WHERE r.role_name IN ('Auditor', 'Super Admin')
 	`, title, detail, resourceType, resourceID)
 	return err
+}
+
+func formatBannerURL(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	if strings.Contains(rawURL, "localhost:9000") || strings.Contains(rawURL, "minio:9000") {
+		rawURL = strings.ReplaceAll(rawURL, "localhost:9000", "localhost:9001")
+		rawURL = strings.ReplaceAll(rawURL, "minio:9000", "localhost:9001")
+		rawURL = strings.ReplaceAll(rawURL, "crowdflow-uploads", "crowdflow-public")
+		return rawURL
+	}
+	if strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://") {
+		return rawURL
+	}
+	base := os.Getenv("S3_PUBLIC_BASE_URL")
+	if base == "" {
+		base = "http://localhost:9001/crowdflow-public"
+	}
+	base = strings.TrimSuffix(base, "/")
+	cleaned := strings.TrimPrefix(rawURL, "/")
+	if !strings.HasPrefix(cleaned, "events/") {
+		cleaned = "events/covers/" + cleaned
+	}
+	return base + "/" + cleaned
 }
 
