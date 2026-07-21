@@ -1438,7 +1438,8 @@ export default function ReviewDetailView({
                   onClick={() => {
                     if (!reason.trim()) return;
                     mode === 'reject' ? onReject(submission.id, reason) : onRequestChanges(submission.id, reason);
-                    onBack();
+                    setMode('view');
+                    setReason('');
                   }}
                   disabled={!reason.trim()}
                   className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-bold text-white transition-colors cursor-pointer disabled:opacity-50 ${mode === 'reject' ? 'bg-danger hover:bg-danger/90' : 'bg-warning hover:bg-warning/90'}`}
@@ -1467,7 +1468,7 @@ export default function ReviewDetailView({
                   <button onClick={() => setMode('reject')} className="flex items-center gap-1.5 px-4 py-2.5 bg-danger/10 hover:bg-danger text-danger hover:text-white border border-danger/30 rounded-lg text-xs font-bold transition-colors cursor-pointer">
                     <Ban className="w-3.5 h-3.5" /> Reject Event
                   </button>
-                  <button onClick={() => { onApprove(submission.id); onBack(); }} className="flex items-center gap-1.5 px-5 py-2.5 bg-success hover:bg-success/90 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-sm shadow-success/20">
+                  <button onClick={() => { onApprove(submission.id); }} className="flex items-center gap-1.5 px-5 py-2.5 bg-success hover:bg-success/90 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-sm shadow-success/20">
                     <Send className="w-3.5 h-3.5" /> Approve Event
                   </button>
                 </>

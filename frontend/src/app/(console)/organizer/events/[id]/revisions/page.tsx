@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import EventWorkspaceShell from "../../../components/EventWorkspaceShell";
 import { useOrganizerData } from "../../../OrganizerDataContext";
 import { getEventRevisions, publishOrganizerEvent, respondToEventRevision, EventRevisionFeedback } from "@/lib/api/eorganizer";
@@ -27,6 +27,8 @@ import {
 
 export default function OrganizerEventRevisionsPage() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
+  const revIdParam = searchParams.get("revId");
   const eventIdNum = Number(params.id);
 
   const { fetchData } = useOrganizerData();
@@ -38,7 +40,15 @@ export default function OrganizerEventRevisionsPage() {
 
   // EO Active Item Selection State
   // "eo memilih pilihan yang direvisi setelah memilih pilihan yang direvisi baru muncul form"
-  const [selectedRevisionId, setSelectedRevisionId] = useState<number | null>(null);
+  const [selectedRevisionId, setSelectedRevisionId] = useState<number | null>(
+    revIdParam ? Number(revIdParam) : null
+  );
+
+  useEffect(() => {
+    if (revIdParam) {
+      setSelectedRevisionId(Number(revIdParam));
+    }
+  }, [revIdParam]);
 
   // Per-item Response State
   const [itemComments, setItemComments] = useState<Record<number, string>>({});
