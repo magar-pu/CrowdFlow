@@ -21,6 +21,28 @@ type contextKey string
 
 const UserContextKey contextKey = "user"
 
+// eventAccessQuery returns whether user $2 may manage event $1: either they own
+// it (events.organizer_id) or an active co-organizer delegation covers it.
+// scope='all' covers the owner's whole portfolio (incl. future events);
+// scope='specific' covers only the named events. See
+// docs/co-organizer-delegation-design.md §4.1.
+const eventAccessQuery = `
+	SELECT EXISTS (
+		SELECT 1 FROM events WHERE id = $1 AND organizer_id = $2
+		UNION ALL
+		SELECT 1
+		  FROM organizer_delegations d
+		  JOIN events e ON e.id = $1
+		 WHERE d.delegate_id = $2
+		   AND d.status = 'active'
+		   AND (
+		        (d.scope = 'all'      AND d.owner_id = e.organizer_id)
+		     OR (d.scope = 'specific' AND EXISTS (
+		           SELECT 1 FROM organizer_delegation_events de
+		            WHERE de.delegation_id = d.id AND de.event_id = e.id))
+		   )
+	)`
+
 func GetClaims(ctx context.Context) (*UserClaims, bool) {
 	claims, ok := ctx.Value(UserContextKey).(*UserClaims)
 	return claims, ok
@@ -227,6 +249,15 @@ func (m *AuthMiddleware) RequireEventRole(roleName string) func(http.Handler) ht
 				return
 			}
 
+			// Parity with RequireEventOwnership (§4.3): an active co-organizer
+			// delegation stands in for an event-scoped Event Organizer role.
+			if !exists && roleName == "Event Organizer" {
+				if err = m.db.QueryRowContext(r.Context(), eventAccessQuery, eventID, userID).Scan(&exists); err != nil {
+					response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to verify event authorization context")
+					return
+				}
+			}
+
 			if !exists {
 				response.Error(w, http.StatusForbidden, "FORBIDDEN", "You do not have authorization for this event resource")
 				return
@@ -272,9 +303,13 @@ func (m *AuthMiddleware) RequireEventOwnership(next http.Handler) http.Handler {
 			return
 		}
 
-		query := `SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND organizer_id = $2)`
+		// Ownership passes on the event's own organizer_id, OR on an active
+		// co-organizer delegation covering this event (scope='all' over the
+		// owner's whole portfolio incl. future events, or scope='specific' on a
+		// named event). Kept to one round trip.
+		// See docs/co-organizer-delegation-design.md §4.1.
 		var exists bool
-		err = m.db.QueryRowContext(r.Context(), query, eventID, userID).Scan(&exists)
+		err = m.db.QueryRowContext(r.Context(), eventAccessQuery, eventID, userID).Scan(&exists)
 		if err != nil {
 			response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to verify event ownership")
 			return

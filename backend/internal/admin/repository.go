@@ -751,6 +751,8 @@ func (r *PostgresRepository) GrantUserRole(userID int, roleID int, eventID *int,
 func (r *PostgresRepository) checkAuditorOrganizerConflict(ctx context.Context, userID int, roleName string, eventID int) error {
 	switch roleName {
 	case "Auditor":
+		// "Organizes event E" = owns it, holds an event-scoped Event Organizer
+		// role on it, or is an active co-organizer (delegation) covering it.
 		var isOrganizer bool
 		if err := r.db.QueryRowContext(ctx, `
 			SELECT EXISTS (
@@ -758,12 +760,22 @@ func (r *PostgresRepository) checkAuditorOrganizerConflict(ctx context.Context, 
 				UNION ALL
 				SELECT 1 FROM user_roles ur JOIN roles r ON ur.role_id = r.id
 				WHERE ur.user_id = $2 AND ur.event_id = $1 AND r.role_name = 'Event Organizer'
+				UNION ALL
+				SELECT 1 FROM organizer_delegations d
+				  JOIN events e ON e.id = $1
+				 WHERE d.delegate_id = $2 AND d.status = 'active'
+				   AND (
+				        (d.scope = 'all'      AND d.owner_id = e.organizer_id)
+				     OR (d.scope = 'specific' AND EXISTS (
+				           SELECT 1 FROM organizer_delegation_events de
+				            WHERE de.delegation_id = d.id AND de.event_id = e.id))
+				   )
 			)
 		`, eventID, userID).Scan(&isOrganizer); err != nil {
 			return err
 		}
 		if isOrganizer {
-			return errors.New("cannot assign Auditor: this user organizes that event (separation of duties)")
+			return errors.New("cannot assign Auditor: this user organizes or co-organizes that event (separation of duties)")
 		}
 	case "Event Organizer":
 		var isAuditor bool

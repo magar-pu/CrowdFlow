@@ -17,6 +17,7 @@ var (
 	ErrInvalidState   = errors.New("delegation is not in a state that allows this action")
 	ErrSelfDelegation = errors.New("you cannot delegate to yourself")
 	ErrEventNotOwned  = errors.New("one or more events are not owned by you")
+	ErrSoDConflict    = errors.New("the delegate audits one or more of these events (separation of duties)")
 )
 
 // Scope values.
@@ -102,6 +103,10 @@ type Repository interface {
 	UserExists(ctx context.Context, id int) (bool, error)
 	IsVerifiedOrganizer(ctx context.Context, userID int) (bool, error)
 	EventsOwnedBy(ctx context.Context, ownerID int, eventIDs []int) (allOwned bool, err error)
+	// DelegateAuditsCovered reports whether the delegate holds an Auditor role on
+	// any event the delegation would cover (SoD). For scope='specific' the named
+	// events are checked; for scope='all', every current event owned by ownerID.
+	DelegateAuditsCovered(ctx context.Context, delegateID, ownerID int, scope string, eventIDs []int) (bool, error)
 
 	// Notify writes a row into the notifications table (resource_type='delegation').
 	Notify(ctx context.Context, userID int, title, detail string, delegationID int) error

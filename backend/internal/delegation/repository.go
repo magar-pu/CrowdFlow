@@ -319,6 +319,42 @@ func (r *PostgresRepository) EventsOwnedBy(ctx context.Context, ownerID int, eve
 	return count == len(eventIDs), nil
 }
 
+// DelegateAuditsCovered reports whether delegateID holds an event-scoped Auditor
+// role on any event the delegation covers. scope='specific' checks eventIDs;
+// scope='all' checks every current event owned by ownerID.
+func (r *PostgresRepository) DelegateAuditsCovered(ctx context.Context, delegateID, ownerID int, scope string, eventIDs []int) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	var exists bool
+	if scope == ScopeAll {
+		err := r.db.QueryRowContext(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM user_roles ur
+				JOIN roles r ON r.id = ur.role_id
+				JOIN events e ON e.id = ur.event_id
+				WHERE ur.user_id = $1 AND e.organizer_id = $2 AND r.role_name = 'Auditor'
+			)`, delegateID, ownerID).Scan(&exists)
+		return exists, err
+	}
+
+	if len(eventIDs) == 0 {
+		return false, nil
+	}
+	ids := make([]string, len(eventIDs))
+	for i, id := range eventIDs {
+		ids[i] = strconv.Itoa(id)
+	}
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM user_roles ur
+			JOIN roles r ON r.id = ur.role_id
+			WHERE ur.user_id = $1 AND r.role_name = 'Auditor'
+			  AND ur.event_id IN (`+strings.Join(ids, ",")+`)
+		)`, delegateID).Scan(&exists)
+	return exists, err
+}
+
 func (r *PostgresRepository) Notify(ctx context.Context, userID int, title, detail string, delegationID int) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()

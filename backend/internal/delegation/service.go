@@ -28,6 +28,9 @@ func (s *DelegationService) Invite(ctx context.Context, ownerID int, req InviteR
 	if err := s.validateScope(ctx, ownerID, req.Scope, req.EventIDs); err != nil {
 		return nil, err
 	}
+	if err := s.checkSoD(ctx, delegateID, ownerID, req.Scope, req.EventIDs); err != nil {
+		return nil, err
+	}
 
 	// D1 — require verified organizer.
 	isOrg, err := s.repo.IsVerifiedOrganizer(ctx, delegateID)
@@ -87,6 +90,9 @@ func (s *DelegationService) RequestAccess(ctx context.Context, delegateID int, r
 	if err := s.validateScope(ctx, ownerID, req.Scope, req.EventIDs); err != nil {
 		return nil, err
 	}
+	if err := s.checkSoD(ctx, delegateID, ownerID, req.Scope, req.EventIDs); err != nil {
+		return nil, err
+	}
 
 	if existing, err := s.repo.GetByOwnerAndDelegate(ctx, ownerID, delegateID); err == nil {
 		switch existing.Status {
@@ -133,6 +139,9 @@ func (s *DelegationService) EditScope(ctx context.Context, ownerID, delegationID
 		return nil, err
 	}
 	if err := s.validateScope(ctx, ownerID, req.Scope, req.EventIDs); err != nil {
+		return nil, err
+	}
+	if err := s.checkSoD(ctx, d.DelegateID, ownerID, req.Scope, req.EventIDs); err != nil {
 		return nil, err
 	}
 	if err := s.repo.UpdateScope(ctx, d.ID, req.Scope, req.EventIDs); err != nil {
@@ -245,6 +254,20 @@ func (s *DelegationService) validateScope(ctx context.Context, ownerID int, scop
 	default:
 		return fmt.Errorf("%w: scope must be 'all' or 'specific'", ErrValidation)
 	}
+}
+
+// checkSoD blocks a delegation that would let a user co-organize an event they
+// audit (separation of duties). Mirrors the admin-side rule that blocks granting
+// Auditor to a co-organizer.
+func (s *DelegationService) checkSoD(ctx context.Context, delegateID, ownerID int, scope string, eventIDs []int) error {
+	audits, err := s.repo.DelegateAuditsCovered(ctx, delegateID, ownerID, scope, eventIDs)
+	if err != nil {
+		return err
+	}
+	if audits {
+		return ErrSoDConflict
+	}
+	return nil
 }
 
 func optionalText(s string) *string {

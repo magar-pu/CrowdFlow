@@ -212,6 +212,8 @@ func writeErr(w http.ResponseWriter, label string, err error) {
 		response.Error(w, http.StatusUnprocessableEntity, "SELF_DELEGATION", err.Error())
 	case errors.Is(err, ErrNotOrganizer):
 		response.Error(w, http.StatusUnprocessableEntity, "NOT_VERIFIED_ORGANIZER", err.Error())
+	case errors.Is(err, ErrSoDConflict):
+		response.Error(w, http.StatusUnprocessableEntity, "SEPARATION_OF_DUTIES", err.Error())
 	case errors.Is(err, ErrUserNotFound):
 		response.Error(w, http.StatusNotFound, "USER_NOT_FOUND", err.Error())
 	case errors.Is(err, ErrNotFound):
