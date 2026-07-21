@@ -27,6 +27,18 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
+// getDurationEnv reads a Go duration string (e.g. "15m", "720h") from the
+// environment, falling back to def when unset or unparseable.
+func getDurationEnv(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+		log.Printf("[WARN] invalid %s=%q; using default %s", key, v, def)
+	}
+	return def
+}
+
 func healthCheck(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := db.Ping(); err != nil {
@@ -83,9 +95,18 @@ func main() {
 
 	// Register global system health route (intentionally unversioned)
 	mux.HandleFunc("GET /api/health", healthCheck(db))
+
+	// Development mode relaxes production-only guardrails (the Secure-cookie flag
+	// below, and the required-secret check here). Anything other than
+	// DEV_MODE=true is treated as production.
+	devMode := os.Getenv("DEV_MODE") == "true"
+
 	// Initialize Configuration for JWT & Google Client ID
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
+		if !devMode {
+			log.Fatalf("JWT_SECRET environment variable is required in production (set DEV_MODE=true to use the insecure development fallback)")
+		}
 		jwtSecret = "crowdflow_dev_jwt_secret"
 	}
 	googleClientID := os.Getenv("GOOGLE_CLIENT_ID")
@@ -122,17 +143,26 @@ func main() {
 	// Register feature routes
 	eventHandler.RegisterRoutes(apiV1, authMounter.Authenticate, authMounter.OptionalAuthenticate, authMounter.RequirePlatformRole, authMounter.RequireEventRole)
 
+	// Token lifetimes: short-lived access JWT refreshed via a long-lived,
+	// rotating, revocable refresh token (see internal/auth/session.go).
+	accessTTL := getDurationEnv("ACCESS_TOKEN_TTL", 15*time.Minute)
+	refreshTTL := getDurationEnv("REFRESH_TOKEN_TTL", 30*24*time.Hour)
+
 	// Initialize Authentication dependencies
 	authRepo := auth.NewPostgresRepository(db)
-	authService := auth.NewAuthService(authRepo, jwtSecret, oauthConfig)
-	isSecure := os.Getenv("DEV_MODE") != "true"
-	authHandler := auth.NewHandler(authService, isSecure)
+	sessionStore := auth.NewSessionStore(redisClient, refreshTTL)
+	authService := auth.NewAuthService(authRepo, jwtSecret, oauthConfig, sessionStore, accessTTL)
+	isSecure := !devMode
+	authHandler := auth.NewHandler(authService, isSecure, accessTTL, refreshTTL)
 
 	// Rate limit login attempts per IP to slow brute-force/credential-stuffing
 	loginRateLimit := middleware.RateLimit(redisClient, "login", 10, 15*time.Minute)
+	// Refresh is legitimate ~once per access-token lifetime per session; keep a
+	// generous per-IP ceiling to blunt abuse without harming users behind NAT.
+	refreshRateLimit := middleware.RateLimit(redisClient, "refresh", 60, 15*time.Minute)
 
 	// Register Authentication routes
-	authHandler.RegisterRoutes(apiV1, authMounter.Authenticate, loginRateLimit)
+	authHandler.RegisterRoutes(apiV1, authMounter.Authenticate, loginRateLimit, refreshRateLimit)
 
 	// Initialize Admin console dependencies
 	adminRepo := admin.NewPostgresRepository(db)
