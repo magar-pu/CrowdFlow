@@ -66,6 +66,7 @@ DEVELOPER.md
 
 # Local Dev Storage Compose
 docker-compose-minio.yml
+docker-compose.yml
 
 # Local Dev Scripts
 seed_events.sh
@@ -74,3 +75,4 @@ create_event.sh
 .claude.json
 
 *.png
+

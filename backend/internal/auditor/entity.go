@@ -155,15 +155,19 @@ type StatusEntry struct {
 }
 
 type Revision struct {
-	ID             int    `json:"id"`
-	Category       string `json:"category"`
-	Title          string `json:"title"`
-	Description    string `json:"description"`
-	RequiredAction string `json:"requiredAction"`
-	Priority       string `json:"priority"`
-	Status         string `json:"status"`
-	Deadline       string `json:"deadline"`
-	CreatedAt      string `json:"createdAt"`
+	ID                   int    `json:"id"`
+	Category             string `json:"category"`
+	Title                string `json:"title"`
+	Description          string `json:"description"`
+	RequiredAction       string `json:"requiredAction"`
+	Priority             string `json:"priority"`
+	Status               string `json:"status"`
+	Deadline             string `json:"deadline"`
+	CreatedAt            string `json:"createdAt"`
+	OrganizerComment     string `json:"organizerComment,omitempty"`
+	OrganizerActionTaken string `json:"organizerActionTaken,omitempty"`
+	OrganizerFile        string `json:"organizerFile,omitempty"`
+	RespondedAt          string `json:"respondedAt,omitempty"`
 }
 
 type EventReviewFilters struct {
