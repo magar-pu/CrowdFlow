@@ -27,3 +27,41 @@ export async function createEvent(formData: FormData): Promise<ApiResponse<Event
     body: formData,
   });
 }
+
+/** The venue + bound-layout ids the venue workspace needs, read from the real
+ *  EventDetailResponse (not the richer mock Event type used elsewhere). */
+export interface EventLayoutBinding {
+  event_id: number;
+  venue_id: number;
+  layout_id: number | null;
+}
+
+export async function getEventLayoutBinding(
+  id: number | string
+): Promise<ApiResponse<EventLayoutBinding>> {
+  const res = await apiRequest<{
+    event_id: number;
+    layout_id: number | null;
+    venue?: { venue_id: number };
+  }>(`/api/v1/events/${id}`, { method: "GET" });
+  if (!res.success || !res.data) return res as unknown as ApiResponse<EventLayoutBinding>;
+  return {
+    success: true,
+    data: {
+      event_id: res.data.event_id,
+      venue_id: res.data.venue?.venue_id ?? 0,
+      layout_id: res.data.layout_id ?? null,
+    },
+  };
+}
+
+/** Bind the event to a venue layout, or unbind it with layoutId = null. */
+export async function bindEventLayout(
+  id: number | string,
+  layoutId: number | null
+): Promise<ApiResponse<{ message: string; event_id: number; layout_id: number | null }>> {
+  return apiRequest(`/api/v1/events/${id}/layout`, {
+    method: "PUT",
+    body: JSON.stringify({ layout_id: layoutId }),
+  });
+}
