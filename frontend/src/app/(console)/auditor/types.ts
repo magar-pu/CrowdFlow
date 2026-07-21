@@ -10,7 +10,9 @@ export type AuditorView =
   | 'organizers'
   | 'payouts'
   | 'view-organizer'
-  | 'view-payout';
+  | 'view-payout'
+  | 'events';
+
 
 export type OrganizerStatus = 'Pending' | 'Verified' | 'Need Revision' | 'Rejected' | 'Suspended';
 

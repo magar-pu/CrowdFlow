@@ -1,6 +1,6 @@
 import React from 'react';
 import { AuditorView } from '../types';
-import { LayoutDashboard, ClipboardCheck, Bell, Settings, ShieldCheck, ChevronLeft, ChevronRight, Users2, DollarSign } from 'lucide-react';
+import { LayoutDashboard, ClipboardCheck, Bell, Settings, ShieldCheck, ChevronLeft, ChevronRight, Users2, DollarSign, Database } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 interface SidebarProps {
@@ -15,6 +15,7 @@ interface SidebarProps {
 
 const NAV_ITEMS: { view: AuditorView; label: string; icon: LucideIcon }[] = [
   { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { view: 'events', label: 'Events', icon: Database },
   { view: 'reviews', label: 'Reviews', icon: ClipboardCheck },
   { view: 'organizers', label: 'Organizers', icon: Users2 },
   { view: 'payouts', label: 'Payouts', icon: DollarSign },

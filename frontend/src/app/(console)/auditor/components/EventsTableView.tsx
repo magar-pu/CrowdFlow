@@ -1,0 +1,160 @@
+"use client";
+
+import React, { useEffect, useState } from 'react';
+import { Search, Calendar, MapPin, Tag } from 'lucide-react';
+import { Event } from '@/types/admin';
+
+
+export default function EventsTableView() {
+  const [events, setEvents] = useState<Event[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        const token = localStorage.getItem('crowdflow_auth_token');
+        const res = await fetch(`/api/v1/admin/events`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (!res.ok) {
+          throw new Error('Failed to fetch admin events');
+        }
+        
+        const body = await res.json();
+        setEvents(body.data || []);
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchEvents();
+  }, []);
+
+  const safeEvents = Array.isArray(events) ? events : [];
+  const filteredEvents = safeEvents.filter(e => 
+    (e?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (e?.venue || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (e?.category || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const getStatusBadge = (status: string) => {
+    switch(status?.toLowerCase()) {
+      case 'active':
+        return <span className="px-2 py-1 bg-success/10 text-success rounded-md text-xs font-medium uppercase tracking-wider">Active</span>;
+      case 'in review':
+        return <span className="px-2 py-1 bg-secondary/10 text-secondary rounded-md text-xs font-medium uppercase tracking-wider">In Review</span>;
+      case 'rejected':
+        return <span className="px-2 py-1 bg-danger/10 text-danger rounded-md text-xs font-medium uppercase tracking-wider">Rejected</span>;
+      case 'completed':
+        return <span className="px-2 py-1 bg-surface-hover text-text-primary rounded-md text-xs font-medium uppercase tracking-wider">Completed</span>;
+      case 'draft':
+      default:
+        return <span className="px-2 py-1 bg-surface-hover text-text-secondary rounded-md text-xs font-medium uppercase tracking-wider">Draft</span>;
+    }
+  };
+
+  return (
+    <div className="space-y-6 animate-fade-in text-left pb-12">
+      <div className="flex justify-between items-end">
+        <div className="space-y-1">
+          <h2 className="text-2xl font-bold tracking-tight text-text-primary">Master Event List</h2>
+          <p className="text-sm text-text-secondary">View all registered events in the system regardless of status.</p>
+        </div>
+      </div>
+
+      <div className="bg-surface-white rounded-xl border border-border-subtle soft-shadow overflow-hidden flex flex-col">
+        <div className="p-4 border-b border-border-subtle flex flex-col sm:flex-row gap-4 justify-between items-center bg-surface-white">
+          <div className="relative w-full sm:w-96">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
+            <input 
+              type="text" 
+              placeholder="Search by event title, venue, or category..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-surface border border-border-subtle rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+            />
+          </div>
+        </div>
+
+        <div className="overflow-x-auto min-h-[400px]">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-surface text-text-secondary font-mono uppercase tracking-wider text-[10px]">
+              <tr>
+                <th className="px-6 py-4 font-bold border-b border-border-subtle">Event Details</th>
+                <th className="px-6 py-4 font-bold border-b border-border-subtle">Status</th>
+                <th className="px-6 py-4 font-bold border-b border-border-subtle">Category</th>
+                <th className="px-6 py-4 font-bold border-b border-border-subtle">Venue</th>
+                <th className="px-6 py-4 font-bold border-b border-border-subtle">Date</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border-subtle bg-surface-white">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-text-muted">
+                    Loading events...
+                  </td>
+                </tr>
+              ) : error ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-danger">
+                    Error loading events: {error}
+                  </td>
+                </tr>
+              ) : filteredEvents.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-text-muted">
+                    No events found matching your search.
+                  </td>
+                </tr>
+              ) : (
+                filteredEvents.map((evt) => (
+                  <tr key={evt.id} className="hover:bg-surface transition-colors duration-150">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded overflow-hidden bg-surface flex-shrink-0 border border-border-subtle">
+                          <img src={evt.image || 'https://via.placeholder.com/40'} alt={evt.name} className="h-full w-full object-cover" />
+                        </div>
+                        <div>
+                          <div className="font-semibold text-text-primary line-clamp-1">{evt.name}</div>
+                          <div className="text-xs text-text-muted font-mono mt-0.5">ID: {evt.id}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      {getStatusBadge(evt.status)}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2 text-text-secondary">
+                        <Tag className="w-3.5 h-3.5" />
+                        <span>{evt.category || 'N/A'}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2 text-text-secondary">
+                        <MapPin className="w-3.5 h-3.5" />
+                        <span className="line-clamp-1">{evt.venue || 'No Venue'}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2 text-text-secondary">
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>{evt.date ? new Date(evt.date).toLocaleDateString() : 'TBA'}</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

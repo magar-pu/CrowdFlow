@@ -24,6 +24,10 @@ func (s *EventService) ListEvents(limit, offset int) ([]*Event, error) {
 	return s.repo.GetAll(limit, offset)
 }
 
+func (s *EventService) GetAllAdminEvents(limit, offset int) ([]*Event, error) {
+	return s.repo.GetAllAdmin(limit, offset)
+}
+
 func (s *EventService) GetEventDetails(id int) (*Event, error) {
 	if id <= 0 {
 		return nil, errors.New("event ID must be greater than zero")

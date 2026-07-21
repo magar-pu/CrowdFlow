@@ -23,6 +23,21 @@ const nextConfig: NextConfig = {
     }
     return rules;
   },
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+        port: '9000',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+        pathname: '/**',
+      }
+    ],
+  },
 };
 
 export default nextConfig;
