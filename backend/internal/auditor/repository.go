@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -151,6 +152,7 @@ func (r *PostgresAuditorRepository) ListReviewQueue(ctx context.Context, limit i
 			e.event_name,
 			COALESCE(up.full_name, 'Unknown Organizer'),
 			COALESCE(up.avatar_pic, ''),
+			COALESCE(e.cover_image_url, ''),
 			COALESCE(et.event_type, 'Other'),
 			COALESCE(
 				(SELECT MIN(created_at) FROM event_status_log WHERE event_id = e.id AND to_status = 'pending_review'),
@@ -201,6 +203,7 @@ func (r *PostgresAuditorRepository) ListReviewQueue(ctx context.Context, limit i
 			&rev.EventName,
 			&rev.OrganizerName,
 			&rev.OrganizerAvatar,
+			&rev.BannerURL,
 			&rev.Category,
 			&submittedAt,
 			&lastUpdated,
@@ -217,6 +220,7 @@ func (r *PostgresAuditorRepository) ListReviewQueue(ctx context.Context, limit i
 		rev.LastUpdated = formatTime(lastUpdated)
 		rev.Stage = ReviewStage(stageStr)
 		rev.Status = mapEventReviewStatus(dbStatus)
+		rev.BannerURL = formatBannerURL(rev.BannerURL)
 
 		// Calculate Risk Level based on compliance score and missing docs
 		score := rev.ComplianceScore
@@ -258,6 +262,7 @@ func (r *PostgresAuditorRepository) ListEventReviews(ctx context.Context, filter
 			e.event_name,
 			COALESCE(up.full_name, 'Unknown Organizer'),
 			COALESCE(up.avatar_pic, ''),
+			COALESCE(e.cover_image_url, ''),
 			COALESCE(et.event_type, 'Other'),
 			COALESCE(
 				(SELECT MIN(created_at) FROM event_status_log WHERE event_id = e.id AND to_status = 'pending_review'),
@@ -332,6 +337,7 @@ func (r *PostgresAuditorRepository) ListEventReviews(ctx context.Context, filter
 			&rev.EventName,
 			&rev.OrganizerName,
 			&rev.OrganizerAvatar,
+			&rev.BannerURL,
 			&rev.Category,
 			&submittedAt,
 			&lastUpdated,
@@ -348,6 +354,7 @@ func (r *PostgresAuditorRepository) ListEventReviews(ctx context.Context, filter
 		rev.LastUpdated = formatTime(lastUpdated)
 		rev.Stage = ReviewStage(stageStr)
 		rev.Status = mapEventReviewStatus(dbStatus)
+		rev.BannerURL = formatBannerURL(rev.BannerURL)
 
 		// Calculate Risk Level based on compliance score and missing docs
 		score := rev.ComplianceScore
@@ -445,6 +452,7 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 	rev.Date = eventStart.Format("2006-01-02 15:04")
 	rev.Stage = ReviewStage(stageStr)
 	rev.Status = mapEventReviewStatus(dbStatus)
+	rev.BannerURL = formatBannerURL(rev.BannerURL)
 
 	// 2. Fetch Organizer application documents
 	queryDocs := `
@@ -608,7 +616,12 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 
 	// 5. Fetch revisions list
 	queryRevisions := `
-		SELECT id, category, title, description, required_action, status, created_at
+		SELECT id, category, title, description, required_action, status, created_at,
+		       COALESCE(priority, 'Medium'),
+		       COALESCE(organizer_comment, ''),
+		       COALESCE(organizer_action_taken, ''),
+		       COALESCE(organizer_file, ''),
+		       COALESCE(responded_at::text, '')
 		FROM auditor_revisions
 		WHERE event_id = $1
 		ORDER BY created_at DESC
@@ -623,6 +636,7 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 	for rowsRevisions.Next() {
 		var revItem Revision
 		var createdAt time.Time
+		var respondedAtStr string
 		err = rowsRevisions.Scan(
 			&revItem.ID,
 			&revItem.Category,
@@ -631,11 +645,22 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 			&revItem.RequiredAction,
 			&revItem.Status,
 			&createdAt,
+			&revItem.Priority,
+			&revItem.OrganizerComment,
+			&revItem.OrganizerActionTaken,
+			&revItem.OrganizerFile,
+			&respondedAtStr,
 		)
 		if err != nil {
 			return nil, err
 		}
-		revItem.Priority = "Medium"
+		if respondedAtStr != "" {
+			if tResp, errParse := time.Parse(time.RFC3339, respondedAtStr); errParse == nil {
+				revItem.RespondedAt = formatTime(tResp)
+			} else {
+				revItem.RespondedAt = respondedAtStr
+			}
+		}
 		revItem.Deadline = "3 Days"
 		revItem.CreatedAt = formatTime(createdAt)
 		rev.Revisions = append(rev.Revisions, revItem)
@@ -703,6 +728,16 @@ func (r *PostgresAuditorRepository) ApproveEventReview(ctx context.Context, even
 		return err
 	}
 
+	// Send notification to event organizer
+	var organizerUserID int
+	_ = tx.QueryRowContext(ctx, `SELECT organizer_id FROM events WHERE id = $1`, eventID).Scan(&organizerUserID)
+	if organizerUserID > 0 {
+		_, _ = tx.ExecContext(ctx, `
+			INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
+			VALUES ($1, '✅ Event Disetujui!', $2, 'event', $3, FALSE, now())
+		`, organizerUserID, fmt.Sprintf("Event %q telah disetujui oleh auditor.", eventName), strconv.Itoa(eventID))
+	}
+
 	err = tx.Commit()
 	if err != nil {
 		return err
@@ -759,6 +794,16 @@ func (r *PostgresAuditorRepository) RejectEventReview(ctx context.Context, event
 		return err
 	}
 
+	// Send notification to event organizer
+	var organizerUserID int
+	_ = tx.QueryRowContext(ctx, `SELECT organizer_id FROM events WHERE id = $1`, eventID).Scan(&organizerUserID)
+	if organizerUserID > 0 {
+		_, _ = tx.ExecContext(ctx, `
+			INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
+			VALUES ($1, '❌ Event Ditolak', $2, 'event', $3, FALSE, now())
+		`, organizerUserID, fmt.Sprintf("Event %q ditolak oleh Auditor. Alasan: %s. Catatan: %s", eventName, reason, notes), strconv.Itoa(eventID))
+	}
+
 	err = tx.Commit()
 	if err != nil {
 		return err
@@ -789,10 +834,15 @@ func (r *PostgresAuditorRepository) RequestEventChanges(ctx context.Context, eve
 	var eventName string
 	_ = tx.QueryRowContext(ctx, `SELECT event_name FROM events WHERE id = $1`, eventID).Scan(&eventName)
 
+	// Update events status to needs_revision
+	if _, err := tx.ExecContext(ctx, `UPDATE events SET status = 'needs_revision', updated_at = now() WHERE id = $1`, eventID); err != nil {
+		return err
+	}
+
 	// Log to event_status_log representing changes requested
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO event_status_log (event_id, actor_id, from_status, to_status, notes)
-		VALUES ($1, $2, $3::event_status, $3::event_status, NULLIF($4, ''))
+		VALUES ($1, $2, $3::event_status, 'needs_revision'::event_status, NULLIF($4, ''))
 	`, eventID, actorID, fromStatus, "Changes Requested: " + notes); err != nil {
 		return err
 	}
@@ -812,6 +862,16 @@ func (r *PostgresAuditorRepository) RequestEventChanges(ctx context.Context, eve
 	detail := fmt.Sprintf("Requested changes for event %q. Notes: %s", eventName, notes)
 	if _, err := tx.ExecContext(ctx, `INSERT INTO activity_log (actor_id, action, detail) VALUES ($1, 'Request Changes', $2)`, actorID, detail); err != nil {
 		return err
+	}
+
+	// Send notification to event organizer
+	var organizerUserID int
+	_ = tx.QueryRowContext(ctx, `SELECT organizer_id FROM events WHERE id = $1`, eventID).Scan(&organizerUserID)
+	if organizerUserID > 0 {
+		_, _ = tx.ExecContext(ctx, `
+			INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
+			VALUES ($1, '⚠️ Perlu Revisi Event', $2, 'event', $3, FALSE, now())
+		`, organizerUserID, fmt.Sprintf("Event %q memerlukan revisi. Catatan Auditor: %s", eventName, notes), strconv.Itoa(eventID))
 	}
 
 	return tx.Commit()
@@ -840,11 +900,98 @@ func (r *PostgresAuditorRepository) AddEventRevision(ctx context.Context, eventI
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
+	var deadlineVal interface{} = nil
+	if req.Deadline != "" {
+		if t, err := time.Parse("2006-01-02", req.Deadline); err == nil {
+			deadlineVal = t
+		}
+	}
+
+	priorityVal := req.Priority
+	if priorityVal == "" {
+		priorityVal = "High"
+	}
+
+	categoryVal := req.Category
+	if categoryVal == "" {
+		categoryVal = "Documents"
+	}
+
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO auditor_revisions (event_id, category, title, description, required_action, status, created_at)
-		VALUES ($1, $2, $3, $4, $5, 'Sent', now())
-	`, eventID, req.Category, req.Title, req.Description, req.RequiredAction)
-	return err
+		INSERT INTO auditor_revisions (event_id, auditor_id, category, title, description, required_action, priority, status, deadline, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'Sent', $8, now())
+	`, eventID, actorID, categoryVal, req.Title, req.Description, req.RequiredAction, priorityVal, deadlineVal)
+	if err != nil {
+		return err
+	}
+
+	// Update event status to needs_revision
+	_, _ = r.db.ExecContext(ctx, `UPDATE events SET status = 'needs_revision', updated_at = now() WHERE id = $1`, eventID)
+
+	var organizerUserID int
+	var eventName string
+	_ = r.db.QueryRowContext(ctx, `SELECT organizer_id, event_name FROM events WHERE id = $1`, eventID).Scan(&organizerUserID, &eventName)
+	if organizerUserID > 0 {
+		_, _ = r.db.ExecContext(ctx, `
+			INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
+			VALUES ($1, $2, $3, 'event', $4, FALSE, now())
+		`, organizerUserID, fmt.Sprintf("⚠️ Perlu Revisi: %s", req.Title), fmt.Sprintf("Event %q memerlukan tindakan: %s (%s)", eventName, req.RequiredAction, req.Description), strconv.Itoa(eventID))
+	}
+
+	return nil
+}
+
+func (r *PostgresAuditorRepository) UpdateRevisionStatus(ctx context.Context, revID, actorID int, status string) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	var eventID int
+	var title string
+	err := r.db.QueryRowContext(ctx, `SELECT event_id, title FROM auditor_revisions WHERE id = $1`, revID).Scan(&eventID, &title)
+	if err != nil {
+		return fmt.Errorf("revision item not found")
+	}
+
+	_, err = r.db.ExecContext(ctx, `UPDATE auditor_revisions SET status = $1, updated_at = now() WHERE id = $2`, status, revID)
+	if err != nil {
+		return err
+	}
+
+	var organizerUserID int
+	var eventName string
+	_ = r.db.QueryRowContext(ctx, `SELECT organizer_id, event_name FROM events WHERE id = $1`, eventID).Scan(&organizerUserID, &eventName)
+
+	if status == "Resolved" {
+		var unresolvedCount int
+		_ = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM auditor_revisions WHERE event_id = $1 AND status != 'Resolved'`, eventID).Scan(&unresolvedCount)
+		if unresolvedCount == 0 {
+			_, _ = r.db.ExecContext(ctx, `UPDATE events SET status = 'approved', updated_at = now() WHERE id = $1`, eventID)
+		}
+		if organizerUserID > 0 {
+			_, _ = r.db.ExecContext(ctx, `
+				INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
+				VALUES ($1, $2, $3, 'event', $4, FALSE, now())
+			`, organizerUserID, fmt.Sprintf("✅ Revisi Disetujui: %s", title), fmt.Sprintf("Auditor telah menyetujui perbaikan revisi untuk event %q.", eventName), strconv.Itoa(eventID))
+		}
+	} else if status == "Sent" || status == "Draft" {
+		_, _ = r.db.ExecContext(ctx, `UPDATE events SET status = 'needs_revision', updated_at = now() WHERE id = $1`, eventID)
+		if organizerUserID > 0 {
+			_, _ = r.db.ExecContext(ctx, `
+				INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
+				VALUES ($1, $2, $3, 'event', $4, FALSE, now())
+			`, organizerUserID, fmt.Sprintf("⚠️ Perlu Revisi Tambahan: %s", title), fmt.Sprintf("Auditor meminta perbaikan tambahan untuk event %q.", eventName), strconv.Itoa(eventID))
+		}
+	} else if status == "Rejected" {
+		_, _ = r.db.ExecContext(ctx, `UPDATE events SET status = 'rejected', updated_at = now() WHERE id = $1`, eventID)
+		if organizerUserID > 0 {
+			_, _ = r.db.ExecContext(ctx, `
+				INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
+				VALUES ($1, $2, $3, 'event', $4, FALSE, now())
+			`, organizerUserID, fmt.Sprintf("❌ Perbaikan Ditolak: %s", title), fmt.Sprintf("Auditor menolak hasil perbaikan revisi untuk event %q.", eventName), strconv.Itoa(eventID))
+		}
+	}
+
+	return nil
 }
 
 func (r *PostgresAuditorRepository) VerifyReviewDocument(ctx context.Context, docID, actorID int) error {
@@ -1966,5 +2113,30 @@ func (r *PostgresAuditorRepository) CreateNotificationForAuditors(ctx context.Co
 		WHERE r.role_name IN ('Auditor', 'Super Admin')
 	`, title, detail, resourceType, resourceID)
 	return err
+}
+
+func formatBannerURL(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	if strings.Contains(rawURL, "localhost:9000") || strings.Contains(rawURL, "minio:9000") {
+		rawURL = strings.ReplaceAll(rawURL, "localhost:9000", "localhost:9001")
+		rawURL = strings.ReplaceAll(rawURL, "minio:9000", "localhost:9001")
+		rawURL = strings.ReplaceAll(rawURL, "crowdflow-uploads", "crowdflow-public")
+		return rawURL
+	}
+	if strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://") {
+		return rawURL
+	}
+	base := os.Getenv("S3_PUBLIC_BASE_URL")
+	if base == "" {
+		base = "http://localhost:9001/crowdflow-public"
+	}
+	base = strings.TrimSuffix(base, "/")
+	cleaned := strings.TrimPrefix(rawURL, "/")
+	if !strings.HasPrefix(cleaned, "events/") {
+		cleaned = "events/covers/" + cleaned
+	}
+	return base + "/" + cleaned
 }
 

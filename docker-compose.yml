@@ -77,3 +77,4 @@ networks:
 volumes:
   minio-data:
     driver: local
+

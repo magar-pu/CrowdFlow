@@ -155,15 +155,19 @@ type StatusEntry struct {
 }
 
 type Revision struct {
-	ID             int    `json:"id"`
-	Category       string `json:"category"`
-	Title          string `json:"title"`
-	Description    string `json:"description"`
-	RequiredAction string `json:"requiredAction"`
-	Priority       string `json:"priority"`
-	Status         string `json:"status"`
-	Deadline       string `json:"deadline"`
-	CreatedAt      string `json:"createdAt"`
+	ID                   int    `json:"id"`
+	Category             string `json:"category"`
+	Title                string `json:"title"`
+	Description          string `json:"description"`
+	RequiredAction       string `json:"requiredAction"`
+	Priority             string `json:"priority"`
+	Status               string `json:"status"`
+	Deadline             string `json:"deadline"`
+	CreatedAt            string `json:"createdAt"`
+	OrganizerComment     string `json:"organizerComment,omitempty"`
+	OrganizerActionTaken string `json:"organizerActionTaken,omitempty"`
+	OrganizerFile        string `json:"organizerFile,omitempty"`
+	RespondedAt          string `json:"respondedAt,omitempty"`
 }
 
 type EventReviewFilters struct {
@@ -200,6 +204,10 @@ type AddRevisionRequest struct {
 	RequiredAction string `json:"requiredAction"`
 	Priority       string `json:"priority"`
 	Deadline       string `json:"deadline"`
+}
+
+type UpdateRevisionStatusRequest struct {
+	Status string `json:"status"`
 }
 
 type RejectDocumentRequest struct {
@@ -380,6 +388,7 @@ type Repository interface {
 	RequestEventChanges(ctx context.Context, eventID, actorID int, notes string) error
 	UpdateEventReviewStage(ctx context.Context, eventID, actorID int, stage ReviewStage) error
 	AddEventRevision(ctx context.Context, eventID, actorID int, req AddRevisionRequest) error
+	UpdateRevisionStatus(ctx context.Context, revID, actorID int, status string) error
 	VerifyReviewDocument(ctx context.Context, docID, actorID int) error
 	RejectReviewDocument(ctx context.Context, docID, actorID int, reason string) error
 
@@ -425,6 +434,7 @@ type Service interface {
 	RequestEventChanges(ctx context.Context, eventID, actorID int, notes string) error
 	UpdateEventReviewStage(ctx context.Context, eventID, actorID int, stage ReviewStage) error
 	AddEventRevision(ctx context.Context, eventID, actorID int, req AddRevisionRequest) error
+	UpdateRevisionStatus(ctx context.Context, revID, actorID int, status string) error
 	ListEventRevisions(ctx context.Context, eventID int) ([]Revision, error)
 	VerifyReviewDocument(ctx context.Context, docID, actorID int) error
 	RejectReviewDocument(ctx context.Context, docID, actorID int, reason string) error
