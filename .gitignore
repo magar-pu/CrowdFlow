@@ -63,6 +63,7 @@ backend/.env
 # Local Documentation
 DEVELOPER.md
 *.md
+docs/
 
 # Local Dev Storage Compose
 docker-compose-minio.yml

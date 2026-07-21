@@ -5,6 +5,7 @@ export type AppView =
   | 'attendees'
   | 'finance'
   | 'reports'
+  | 'co-organizers'
   | 'settings'
   | 'create-event'
   | 'workspace';

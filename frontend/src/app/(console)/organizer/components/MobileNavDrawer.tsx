@@ -1,6 +1,6 @@
 import React from 'react';
 import { AppView } from '../types';
-import { LayoutDashboard, Calendar, Receipt, Users, DollarSign, BarChart3, Settings, Plus, Workflow, X } from 'lucide-react';
+import { LayoutDashboard, Calendar, Receipt, Users, UserCog, DollarSign, BarChart3, Settings, Plus, Workflow, X } from 'lucide-react';
 
 interface MobileNavDrawerProps {
   isOpen: boolean;
@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { view: 'attendees' as const, label: 'Attendees', icon: Users },
   { view: 'finance' as const, label: 'Finance', icon: DollarSign },
   { view: 'reports' as const, label: 'Reports', icon: BarChart3 },
+  { view: 'co-organizers' as const, label: 'Co-organizers', icon: UserCog },
   { view: 'settings' as const, label: 'Settings', icon: Settings },
 ];
 
