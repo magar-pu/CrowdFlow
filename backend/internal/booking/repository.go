@@ -72,6 +72,14 @@ func (r *PostgresRedisRepository) GetSeatMap(eventID int) (*SeatMap, error) {
 		return nil, err
 	}
 
+	// current_state only becomes 'sold' once an order is paid, so a seat another
+	// buyer is holding right now still reads 'available' in Postgres. Overlay
+	// the live Redis locks, otherwise the map advertises seats that cannot be
+	// held and buyers only discover the clash at the last step.
+	if err := r.applySeatHolds(ctx, eventID, tiers); err != nil {
+		return nil, err
+	}
+
 	layout, err := r.seatMapLayout(ctx, eventID)
 	if err != nil {
 		return nil, err
@@ -90,6 +98,41 @@ func (r *PostgresRedisRepository) GetSeatMap(eventID int) (*SeatMap, error) {
 	}
 
 	return &SeatMap{Layout: layout, Tiers: tiers, GaTiers: gaTiers}, nil
+}
+
+// applySeatHolds marks seats currently locked in Redis as "held", in place.
+//
+// Only seats Postgres still reports as available are considered: a sold or
+// blocked seat outranks a stale lock. Read-only, and a missing key simply means
+// the seat is free — expiry is handled by Redis, not here.
+func (r *PostgresRedisRepository) applySeatHolds(ctx context.Context, eventID int, tiers []*SeatTier) error {
+	keys := make([]string, 0)
+	positions := make([][2]int, 0) // tier index, seat index
+	for ti, tier := range tiers {
+		for si, seat := range tier.Seats {
+			if seat.Status != "available" {
+				continue
+			}
+			keys = append(keys, seatLockKey(eventID, seat.SeatID))
+			positions = append(positions, [2]int{ti, si})
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+
+	values, err := r.redis.MGet(ctx, keys...).Result()
+	if err != nil {
+		return err
+	}
+	for i, v := range values {
+		if v == nil {
+			continue
+		}
+		ti, si := positions[i][0], positions[i][1]
+		tiers[ti].Seats[si].Status = "held"
+	}
+	return nil
 }
 
 // seatMapTiers loads each ticket tier with the seats assigned to it for this

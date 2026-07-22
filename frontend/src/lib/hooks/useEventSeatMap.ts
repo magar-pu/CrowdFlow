@@ -12,7 +12,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getSeatMap, type SeatMap } from "@/lib/api/booking";
 
 interface UseEventSeatMapResult {
@@ -20,12 +20,17 @@ interface UseEventSeatMapResult {
   loading: boolean;
   /** Set only when the request itself failed. An event with no seating is not an error. */
   error: string | null;
+  /** Refetch, e.g. after losing a race for a seat someone else just took. */
+  reload: () => void;
 }
 
 export function useEventSeatMap(event_id: string | number | undefined): UseEventSeatMapResult {
   const [seat_map, set_seat_map] = useState<SeatMap | null>(null);
   const [loading, set_loading] = useState(true);
   const [error, set_error] = useState<string | null>(null);
+  const [reload_key, set_reload_key] = useState(0);
+
+  const reload = useCallback(() => set_reload_key((k) => k + 1), []);
 
   useEffect(() => {
     if (event_id === undefined || event_id === null || event_id === "") {
@@ -62,7 +67,7 @@ export function useEventSeatMap(event_id: string | number | undefined): UseEvent
     return () => {
       active = false;
     };
-  }, [event_id]);
+  }, [event_id, reload_key]);
 
-  return { seat_map, loading, error };
+  return { seat_map, loading, error, reload };
 }

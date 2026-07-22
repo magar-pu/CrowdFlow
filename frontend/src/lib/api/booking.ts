@@ -7,8 +7,12 @@ import type { RenderableLayout, LayoutSeat } from "@/lib/api/venueLayouts";
  * mirror the Go DTOs 1:1 (snake_case JSON) so nothing is remapped at this seam.
  *
  * Endpoints (public — no authentication):
- *   GET /api/v1/events/{id}/seatmap        layout geometry + tiers with seats + GA tiers
- *   GET /api/v1/events/{id}/ticket-tiers   on-sale tiers (see lib/api/events.ts)
+ *   GET    /api/v1/events/{id}/seatmap      layout geometry + tiers with seats + GA tiers
+ *   GET    /api/v1/events/{id}/ticket-tiers on-sale tiers (see lib/api/events.ts)
+ *
+ * Endpoints (authenticated):
+ *   POST   /api/v1/booking/holds            lock seats, or GA quantity, before checkout
+ *   DELETE /api/v1/booking/holds/{token}    release a hold early
  */
 
 /** A seat's live per-event state, from event_seats_matrix.current_state. */
@@ -74,6 +78,47 @@ export async function getSeatMap(
 ): Promise<ApiResponse<SeatMap>> {
   return apiRequest<SeatMap>(`/api/v1/events/${eventId}/seatmap`, {
     method: "GET",
+  });
+}
+
+// ── holds ──────────────────────────────────────────────────────────────────
+
+/**
+ * Reserve inventory before checkout. Carries `seat_ids` for assigned seating or
+ * `quantity` for general admission — never both, and always for a single tier,
+ * which is why the buyer's selection cannot span tiers.
+ */
+export interface HoldRequest {
+  event_id: number;
+  ticket_tier_id: number;
+  seat_ids?: number[];
+  quantity?: number;
+}
+
+export interface Hold {
+  hold_token: string;
+  /** RFC3339. After this the seats return to the pool on their own. */
+  expires_at: string;
+}
+
+/**
+ * Acquire a hold. All-or-nothing for assigned seating: if any seat was taken
+ * in the meantime the whole request fails and nothing stays locked, so the
+ * caller should refetch the seat map and let the buyer pick again.
+ *
+ * Requires authentication — a signed-out buyer gets 401.
+ */
+export async function createHold(req: HoldRequest): Promise<ApiResponse<Hold>> {
+  return apiRequest<Hold>("/api/v1/booking/holds", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+/** Release a hold early, e.g. when the buyer backs out of checkout. */
+export async function releaseHold(holdToken: string): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/v1/booking/holds/${holdToken}`, {
+    method: "DELETE",
   });
 }
 

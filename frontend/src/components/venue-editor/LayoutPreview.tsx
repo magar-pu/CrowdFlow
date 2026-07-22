@@ -34,7 +34,14 @@ interface LayoutPreviewProps {
   seat_colors?: Map<number, string>;
   /** Makes available seats clickable and keyboard-focusable. */
   on_seat_click?: (seat_id: number) => void;
-  /** Pan/zoom from useSeatMap, applied as a single group transform. */
+  /**
+   * Restricts clicking to these seats, on top of the status rules. The buyer's
+   * map passes the active tier's seats, because a hold covers exactly one tier
+   * — seats outside it stay visible for context but inert. Omit to allow every
+   * seat the status rules permit.
+   */
+  selectable_seat_ids?: Set<number>;
+  /** Pan/zoom from useSeatSelection, applied as a single group transform. */
   transform?: { zoom: number; pan_x: number; pan_y: number };
 }
 
@@ -73,6 +80,7 @@ export function LayoutPreview({
   selected_seat_ids,
   seat_colors,
   on_seat_click,
+  selectable_seat_ids,
   transform,
 }: LayoutPreviewProps) {
   const model = useMemo(() => {
@@ -117,7 +125,7 @@ export function LayoutPreview({
   }
 
   const isInteractive = on_seat_click != null;
-  // useSeatMap owns the clamping; this only applies the result.
+  // useSeatSelection owns the clamping; this only applies the result.
   const groupTransform = transform
     ? `translate(${transform.pan_x} ${transform.pan_y}) scale(${transform.zoom})`
     : undefined;
@@ -210,8 +218,13 @@ export function LayoutPreview({
         // unpainted seat in the organizer's editor, which must be clickable to
         // get its first tier. Buyer seats always carry a status, so requiring
         // "available" there is unchanged.
+        const inSelectableSet = selectable_seat_ids?.has(seat.id) ?? true;
         const isSelectable =
-          isInteractive && status !== "sold" && status !== "blocked" && status !== "held";
+          isInteractive &&
+          inSelectableSet &&
+          status !== "sold" &&
+          status !== "blocked" &&
+          status !== "held";
 
         // Precedence: selection, then the tier's colour, then live status, then
         // neutral. An untiered template hits the neutral branch, which is what
