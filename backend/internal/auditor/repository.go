@@ -293,7 +293,7 @@ func (r *PostgresAuditorRepository) ListEventReviews(ctx context.Context, filter
 		LEFT JOIN user_profiles up ON up.user_id = e.organizer_id
 		LEFT JOIN event_types et ON et.id = e.event_type_id
 		LEFT JOIN auditor_event_reviews ear ON ear.event_id = e.id
-		WHERE e.status IN ('pending_review', 'approved', 'rejected')
+		WHERE e.status IN ('pending_review', 'approved', 'rejected', 'needs_revision')
 	`
 
 	args := []interface{}{}
@@ -306,6 +306,8 @@ func (r *PostgresAuditorRepository) ListEventReviews(ctx context.Context, filter
 			dbStatus = "approved"
 		} else if sLower == "rejected" {
 			dbStatus = "rejected"
+		} else if sLower == "changes requested" || sLower == "needs_revision" {
+			dbStatus = "needs_revision"
 		}
 		query += fmt.Sprintf(" AND e.status = $%d", argIndex)
 		args = append(args, dbStatus)
@@ -730,23 +732,24 @@ func (r *PostgresAuditorRepository) ApproveEventReview(ctx context.Context, even
 		return err
 	}
 
-	// Send notification to event organizer
 	var organizerUserID int
 	_ = tx.QueryRowContext(ctx, `SELECT organizer_id FROM events WHERE id = $1`, eventID).Scan(&organizerUserID)
-	if organizerUserID > 0 {
-		_, _ = tx.ExecContext(ctx, `
-			INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
-			VALUES ($1, '✅ Event Disetujui!', $2, 'event', $3, FALSE, now())
-		`, organizerUserID, fmt.Sprintf("Event %q telah disetujui oleh auditor.", eventName), strconv.Itoa(eventID))
-	}
 
 	err = tx.Commit()
 	if err != nil {
 		return err
 	}
 
+	// Notify AFTER the commit, never inside it. A failed statement aborts the
+	// whole Postgres transaction, so an ignored error here (`_, _ =`) could not
+	// do what it looked like it did - it silently poisoned the tx and the
+	// approval came back as "commit unexpectedly resulted in rollback".
 	go func() {
-		_ = r.CreateNotificationForAuditors(context.Background(), "✅ Event Disetujui", fmt.Sprintf("Event %q telah disetujui oleh auditor.", eventName), "event", strconv.Itoa(eventID))
+		msg := fmt.Sprintf("Event %q telah disetujui oleh auditor.", eventName)
+		if organizerUserID > 0 {
+			_ = r.CreateNotification(context.Background(), organizerUserID, "✅ Event Disetujui!", msg, "event", strconv.Itoa(eventID))
+		}
+		_ = r.CreateNotificationForAuditors(context.Background(), "✅ Event Disetujui", msg, "event", strconv.Itoa(eventID))
 	}()
 
 	return nil
@@ -796,22 +799,20 @@ func (r *PostgresAuditorRepository) RejectEventReview(ctx context.Context, event
 		return err
 	}
 
-	// Send notification to event organizer
 	var organizerUserID int
 	_ = tx.QueryRowContext(ctx, `SELECT organizer_id FROM events WHERE id = $1`, eventID).Scan(&organizerUserID)
-	if organizerUserID > 0 {
-		_, _ = tx.ExecContext(ctx, `
-			INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
-			VALUES ($1, '❌ Event Ditolak', $2, 'event', $3, FALSE, now())
-		`, organizerUserID, fmt.Sprintf("Event %q ditolak oleh Auditor. Alasan: %s. Catatan: %s", eventName, reason, notes), strconv.Itoa(eventID))
-	}
 
 	err = tx.Commit()
 	if err != nil {
 		return err
 	}
 
+	// After the commit - see the note in ApproveEventReview.
 	go func() {
+		if organizerUserID > 0 {
+			_ = r.CreateNotification(context.Background(), organizerUserID, "❌ Event Ditolak",
+				fmt.Sprintf("Event %q ditolak oleh Auditor. Alasan: %s. Catatan: %s", eventName, reason, notes), "event", strconv.Itoa(eventID))
+		}
 		_ = r.CreateNotificationForAuditors(context.Background(), "❌ Event Ditolak", fmt.Sprintf("Event %q telah ditolak. Alasan: %s", eventName, reason), "event", strconv.Itoa(eventID))
 	}()
 
@@ -866,17 +867,22 @@ func (r *PostgresAuditorRepository) RequestEventChanges(ctx context.Context, eve
 		return err
 	}
 
-	// Send notification to event organizer
 	var organizerUserID int
 	_ = tx.QueryRowContext(ctx, `SELECT organizer_id FROM events WHERE id = $1`, eventID).Scan(&organizerUserID)
-	if organizerUserID > 0 {
-		_, _ = tx.ExecContext(ctx, `
-			INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
-			VALUES ($1, '⚠️ Perlu Revisi Event', $2, 'event', $3, FALSE, now())
-		`, organizerUserID, fmt.Sprintf("Event %q memerlukan revisi. Catatan Auditor: %s", eventName, notes), strconv.Itoa(eventID))
+
+	if err := tx.Commit(); err != nil {
+		return err
 	}
 
-	return tx.Commit()
+	// After the commit - see the note in ApproveEventReview.
+	go func() {
+		if organizerUserID > 0 {
+			_ = r.CreateNotification(context.Background(), organizerUserID, "⚠️ Perlu Revisi Event",
+				fmt.Sprintf("Event %q memerlukan revisi. Catatan Auditor: %s", eventName, notes), "event", strconv.Itoa(eventID))
+		}
+	}()
+
+	return nil
 }
 
 func (r *PostgresAuditorRepository) UpdateEventReviewStage(ctx context.Context, eventID, actorID int, stage ReviewStage) error {
