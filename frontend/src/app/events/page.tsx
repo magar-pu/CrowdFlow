@@ -4,15 +4,13 @@
  * app/events/page.tsx
  *
  * Event Discovery page — search hero, featured carousel, category icons,
- * quick-filter bar, advanced filter sidebar, AI recommendations panel,
- * event grid, resale marketplace promo, footer. Matches the Stitch
- * events-discovery screen end-to-end.
+ * quick-filter bar, advanced filter sidebar, event grid, resale marketplace
+ * promo, footer.
  *
- * Filtering (city, price, availability, quick filter) runs client-side
- * against mockEventListingCards — swap for a real
- * GET /api/v1/events?city=...&max_price=...&... call once the Go
- * endpoint exists; the filter state shape here maps directly onto query
- * params.
+ * Events come from GET /api/v1/events with no mock fallback: an empty
+ * response renders the empty state. Filtering (city, price, availability,
+ * quick filter) still runs client-side — the filter state shape maps
+ * directly onto query params for when the backend grows them.
  */
 
 import { useMemo, useState, useEffect } from "react";
@@ -25,14 +23,9 @@ import { FilterSidebar } from "@/components/event-discovery/FilterSidebar";
 import { EventListingCard } from "@/components/event-discovery/EventListingCard";
 import { ResaleMarketplacePromo } from "@/components/event-discovery/ResaleMarketplacePromo";
 import { HomeFooterV3 } from "@/components/home-v3/HomeFooterV3";
-import {
-  mockFeaturedCarousel,
-  mockAIRecommendedEvents,
-  mockEventListingCards,
-} from "@/mock/eventDiscoveryData";
 import { EventDiscoveryFooter } from "@/components/event-discovery/EventDiscoveryFooter";
 import { listEvents } from "@/lib/api/events";
-import { EventListingCard as EventCardType, FeaturedCarouselEvent, AIRecommendedEvent } from "@/types/ticket";
+import { EventListingCard as EventCardType, FeaturedCarouselEvent } from "@/types/ticket";
 
 const DEFAULT_MAX_PRICE = 5_000_000;
 
@@ -45,6 +38,7 @@ export default function EventsDiscoveryPage() {
     "available"
   );
   const [dbEvents, setDbEvents] = useState<EventCardType[]>([]);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
     listEvents()
@@ -69,24 +63,24 @@ export default function EventsDiscoveryPage() {
                 minute: "2-digit",
               })} WIB`,
               venue_label: evt.venue ? `${evt.venue.name}, ${evt.venue.city}` : "Lokasi Belum Ditentukan",
-              starting_price: 150_000,
+              starting_price: evt.starting_price ?? null,
               city: evt.venue ? evt.venue.city : "Jakarta",
             };
           });
           setDbEvents(mapped);
+        } else if (!res.success) {
+          setLoadFailed(true);
         }
       })
       .catch((err) => {
         console.error("Failed to fetch events from API:", err);
+        setLoadFailed(true);
       });
   }, []);
 
-  const displayEvents = dbEvents.length > 0 ? dbEvents : mockEventListingCards;
+  const displayEvents = dbEvents;
 
   const featuredEvents = useMemo<FeaturedCarouselEvent[]>(() => {
-    if (displayEvents === mockEventListingCards) {
-      return mockFeaturedCarousel;
-    }
     return displayEvents.slice(0, 3).map((evt, idx) => ({
       event_id: evt.event_id,
       cover_image_url: evt.cover_image_url,
@@ -95,21 +89,6 @@ export default function EventsDiscoveryPage() {
       title: evt.title,
       date_venue_label: evt.date_label,
       starting_price: evt.starting_price,
-    }));
-  }, [displayEvents]);
-
-  const aiRecommendedEvents = useMemo<AIRecommendedEvent[]>(() => {
-    if (displayEvents === mockEventListingCards) {
-      return mockAIRecommendedEvents;
-    }
-    return displayEvents.slice(0, 2).map((evt, idx) => ({
-      event_id: evt.event_id,
-      cover_image_url: evt.cover_image_url,
-      tag_label: idx === 0 ? "Top Match" : "Hot Deal",
-      match_pct: idx === 0 ? 98 : 94,
-      title: evt.title,
-      date_venue_label: evt.date_label.split("•")[0].trim(),
-      price: evt.starting_price,
     }));
   }, [displayEvents]);
 
@@ -135,8 +114,10 @@ export default function EventsDiscoveryPage() {
   }, [selected_cities, max_price, availability, sort_by]);
 
   const filtered_events = useMemo(() => {
+    // Events with no tiers yet have no price to compare, so a price ceiling
+    // can't meaningfully include them — exclude rather than treat them as free.
     let events = displayEvents.filter(
-      (event) => event.starting_price <= max_price
+      (event) => event.starting_price !== null && event.starting_price <= max_price
     );
 
     if (selected_cities.length > 0) {
@@ -152,9 +133,13 @@ export default function EventsDiscoveryPage() {
     }
 
     if (sort_by === "Lowest Price") {
-      events = [...events].sort((a, b) => a.starting_price - b.starting_price);
+      events = [...events].sort(
+        (a, b) => (a.starting_price ?? 0) - (b.starting_price ?? 0)
+      );
     } else if (sort_by === "Highest Price") {
-      events = [...events].sort((a, b) => b.starting_price - a.starting_price);
+      events = [...events].sort(
+        (a, b) => (b.starting_price ?? 0) - (a.starting_price ?? 0)
+      );
     }
 
     return events;
@@ -202,7 +187,11 @@ export default function EventsDiscoveryPage() {
                 ) : (
                   <div className="rounded-xl border border-dashed border-border-subtle py-16 text-center">
                     <p className="font-body-md text-body-md text-text-secondary">
-                      No events match your filter.
+                      {loadFailed
+                        ? "Gagal memuat event. Silakan coba lagi nanti."
+                        : dbEvents.length === 0
+                          ? "Belum ada event yang tersedia."
+                          : "No events match your filter."}
                     </p>
                   </div>
                 )}

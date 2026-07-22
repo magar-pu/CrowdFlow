@@ -54,16 +54,51 @@ func (r *PostgresRedisRepository) ListTicketTiers(eventID int) ([]*TicketTier, e
 	return tiers, nil
 }
 
-// GetSeatMap returns every assigned seat for the event, grouped by section.
+// GetSeatMap returns the buyer-facing seating payload for an event: the bound
+// layout's decorative geometry, every assigned seat grouped by priced section,
+// and any on-sale tiers that have no assigned seats (general admission).
+//
 // Seat status comes from event_seats_matrix.current_state (per-event booking
 // status), not seats.seat_status (the seat's venue-level physical condition).
-func (r *PostgresRedisRepository) GetSeatMap(eventID int) ([]*SeatSection, error) {
+// Geometry (section shape/colour, seat pos_x/pos_y) rides along so buyers can
+// render the same map the organizer designed without needing the
+// organizer-gated layout API.
+func (r *PostgresRedisRepository) GetSeatMap(eventID int) (*SeatMap, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
+	sections, seatedTierIDs, err := r.seatMapSections(ctx, eventID)
+	if err != nil {
+		return nil, err
+	}
+
+	layout, err := r.seatMapLayout(ctx, eventID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Any on-sale tier without assigned seats is sold as general admission.
+	allTiers, err := r.ListTicketTiers(eventID)
+	if err != nil {
+		return nil, err
+	}
+	gaTiers := make([]*TicketTier, 0, len(allTiers))
+	for _, t := range allTiers {
+		if !seatedTierIDs[t.ID] {
+			gaTiers = append(gaTiers, t)
+		}
+	}
+
+	return &SeatMap{Layout: layout, Sections: sections, GaTiers: gaTiers}, nil
+}
+
+// seatMapSections loads the priced sections and their seats, also reporting
+// which ticket tiers are sold as assigned seating.
+func (r *PostgresRedisRepository) seatMapSections(ctx context.Context, eventID int) ([]*SeatSection, map[int]bool, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT es.id, vs.section_name, es.ticket_tier_id, tt.price,
-			s.id, s.row_number, s.seat_number, esm.current_state
+		SELECT es.id, es.section_id, vs.section_name, es.ticket_tier_id, tt.price,
+			vs.shape, vs.color,
+			s.id, s.row_number, s.seat_number, esm.current_state, s.pos_x, s.pos_y
 		FROM event_sections es
 		JOIN venue_sections vs ON es.section_id = vs.id
 		JOIN ticket_tiers tt ON es.ticket_tier_id = tt.id
@@ -73,47 +108,94 @@ func (r *PostgresRedisRepository) GetSeatMap(eventID int) ([]*SeatSection, error
 		ORDER BY vs.section_name, s.row_number, s.seat_number
 	`, eventID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 
 	sectionsByID := make(map[int]*SeatSection)
+	seatedTierIDs := make(map[int]bool)
 	var order []int
 	for rows.Next() {
-		var sectionID, tierID, seatID int
+		var eventSectionID, sectionID, tierID, seatID int
 		var sectionName, row, number, state string
 		var price float64
-		if err := rows.Scan(&sectionID, &sectionName, &tierID, &price, &seatID, &row, &number, &state); err != nil {
-			return nil, err
+		var shape []byte
+		var color sql.NullString
+		var posX, posY sql.NullFloat64
+		if err := rows.Scan(
+			&eventSectionID, &sectionID, &sectionName, &tierID, &price,
+			&shape, &color,
+			&seatID, &row, &number, &state, &posX, &posY,
+		); err != nil {
+			return nil, nil, err
 		}
 
-		section, ok := sectionsByID[sectionID]
+		section, ok := sectionsByID[eventSectionID]
 		if !ok {
 			section = &SeatSection{
-				EventSectionID: sectionID,
+				EventSectionID: eventSectionID,
+				SectionID:      sectionID,
 				Name:           sectionName,
 				TicketTierID:   tierID,
 				Price:          price,
+				Seats:          []Seat{},
 			}
-			sectionsByID[sectionID] = section
-			order = append(order, sectionID)
+			// A zero-length RawMessage marshals to invalid JSON, so only set
+			// Shape when the column actually held a value.
+			if len(shape) > 0 {
+				section.Shape = json.RawMessage(shape)
+			}
+			if color.Valid {
+				section.Color = &color.String
+			}
+			sectionsByID[eventSectionID] = section
+			order = append(order, eventSectionID)
+			seatedTierIDs[tierID] = true
 		}
-		section.Seats = append(section.Seats, Seat{
-			SeatID: seatID,
-			Row:    row,
-			Number: number,
-			Status: state,
-		})
+
+		seat := Seat{SeatID: seatID, Row: row, Number: number, Status: state}
+		if posX.Valid {
+			seat.PosX = &posX.Float64
+		}
+		if posY.Valid {
+			seat.PosY = &posY.Float64
+		}
+		section.Seats = append(section.Seats, seat)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	sections := make([]*SeatSection, 0, len(order))
 	for _, id := range order {
 		sections = append(sections, sectionsByID[id])
 	}
-	return sections, nil
+	return sections, seatedTierIDs, nil
+}
+
+// seatMapLayout loads the decorative geometry of the layout bound to the
+// event. Returns nil (not an error) when the event has no layout bound.
+func (r *PostgresRedisRepository) seatMapLayout(ctx context.Context, eventID int) (*SeatMapLayout, error) {
+	var layoutID int
+	var geometry []byte
+	err := r.db.QueryRowContext(ctx, `
+		SELECT vl.id, vl.geometry
+		FROM events e
+		JOIN venue_layouts vl ON vl.id = e.layout_id
+		WHERE e.id = $1
+	`, eventID).Scan(&layoutID, &geometry)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	// venue_layouts.geometry is NOT NULL DEFAULT '{}', but guard anyway so an
+	// empty column can never emit invalid JSON.
+	if len(geometry) == 0 {
+		geometry = []byte("{}")
+	}
+	return &SeatMapLayout{LayoutID: layoutID, Geometry: json.RawMessage(geometry)}, nil
 }
 
 func (r *PostgresRedisRepository) IsAssignedSeating(ticketTierID int) (bool, error) {

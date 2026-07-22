@@ -110,6 +110,10 @@ func (s *AdminService) GrantUserRole(userID int, roleID int, eventID *int, actor
 	return s.repo.GrantUserRole(userID, roleID, eventID, actorID)
 }
 
+func (s *AdminService) RevokeUserRole(userID int, roleID int, eventID *int, actorID int) error {
+	return s.repo.RevokeUserRole(userID, roleID, eventID, actorID)
+}
+
 func (s *AdminService) UpdateTransactionStatus(orderID string, status string, actorID int) error {
 	return s.repo.UpdateTransactionStatus(orderID, status, actorID)
 }

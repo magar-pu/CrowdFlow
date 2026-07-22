@@ -64,8 +64,12 @@ backend/.env
 DEVELOPER.md
 *.md
 
+# ...except docs/, the one place documentation is version-controlled.
+!docs/**
+
 # UI Materials
 bahan ui/
+bahan/
 
 # Local Dev Storage Compose
 docker-compose-minio.yml

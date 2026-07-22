@@ -76,6 +76,25 @@ export function normalizeUserRole(apiRole: string): string {
   return apiRole.toLowerCase().replace(/\s+/g, "_");
 }
 
+/**
+ * Single source of truth for where a role lands after login. Accepts a raw
+ * or normalized role string; normalizes it, then maps to that role's console
+ * home. Every other role (user, gate_scanner, unknown) lands on the public
+ * home page.
+ */
+export function getRoleLandingPath(role: string): string {
+  switch (normalizeUserRole(role)) {
+    case "super_admin":
+      return "/admin";
+    case "verified_organizer":
+      return "/organizer";
+    case "auditor":
+      return "/auditor";
+    default:
+      return "/";
+  }
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({

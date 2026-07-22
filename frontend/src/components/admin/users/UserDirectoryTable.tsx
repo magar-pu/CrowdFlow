@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Search, ChevronRight } from 'lucide-react';
 import { User } from '@/types/admin';
+import RoleBadge from './RoleBadge';
 
 interface UserDirectoryTableProps {
   users: User[];
@@ -52,7 +53,10 @@ export default function UserDirectoryTable({ users, onInspectUser }: UserDirecto
             <option value="Buyer">Buyers Only</option>
             <option value="Seller">Sellers Only</option>
             <option value="Organizer">Organizers Only</option>
+            <option value="Auditor">Auditors Only</option>
+            <option value="Gate Scanner">Gate Scanners Only</option>
             <option value="Admin">Admins Only</option>
+            <option value="Mixed">Mixed Roles Only</option>
           </select>
 
           <select
@@ -99,17 +103,14 @@ export default function UserDirectoryTable({ users, onInspectUser }: UserDirecto
                     </div>
                   </td>
                   <td className="py-3.5 px-4">
-                    <span className={`inline-flex rounded-lg px-2 py-0.5 text-[9px] font-semibold uppercase ${
-                      user.role === 'Admin' 
-                        ? 'border border-danger/20 bg-danger/5 text-danger' 
-                        : user.role === 'Organizer' 
-                        ? 'border border-secondary/20 bg-secondary/5 text-secondary'
-                        : user.role === 'Seller' 
-                        ? 'border border-tertiary/20 bg-tertiary/5 text-tertiary' 
-                        : 'bg-surface text-text-secondary'
-                    }`}>
-                      {user.role}
-                    </span>
+                    <RoleBadge
+                      role={user.role}
+                      label={
+                        user.role === 'Mixed' && user.roleAssignments
+                          ? `Mixed · ${user.roleAssignments.length}`
+                          : undefined
+                      }
+                    />
                   </td>
                   <td className="py-3.5 px-4 text-xs text-text-secondary">{user.joinedAt}</td>
                   <td className="py-3.5 px-4 text-xs font-bold text-text-primary">{user.transactionsCount} orders</td>

@@ -2,15 +2,28 @@
 
 import React from 'react';
 import { X, UserCheck, Ban } from 'lucide-react';
-import { User } from '@/types/admin';
+import { ApiResponse, Event, User } from '@/types/admin';
+import RoleBadge from './RoleBadge';
+import UserRolesManager from './UserRolesManager';
+import UserDelegationsPanel from './UserDelegationsPanel';
 
 interface UserDetailDrawerProps {
   user: User;
+  events: Event[];
   onClose: () => void;
   onToggleStatus: (userId: string, status: 'Verified' | 'Suspended') => void;
+  onGrantRole: (userId: string, roleId: number, eventId: number | null) => Promise<ApiResponse<void>>;
+  onRevokeRole: (userId: string, roleId: number, eventId: number | null) => Promise<ApiResponse<void>>;
 }
 
-export default function UserDetailDrawer({ user, onClose, onToggleStatus }: UserDetailDrawerProps) {
+export default function UserDetailDrawer({
+  user,
+  events,
+  onClose,
+  onToggleStatus,
+  onGrantRole,
+  onRevokeRole,
+}: UserDetailDrawerProps) {
   const handleVerify = () => {
     onToggleStatus(user.id, 'Verified');
   };
@@ -18,6 +31,12 @@ export default function UserDetailDrawer({ user, onClose, onToggleStatus }: User
   const handleSuspend = () => {
     onToggleStatus(user.id, 'Suspended');
   };
+
+  // A Super Admin must not be suspendable from the UI. The collapsed `role` is
+  // "Mixed" (not "Admin") when they also hold another role, so check every
+  // assignment, falling back to `role` for payloads without the breakdown.
+  const isAdmin =
+    user.role === 'Admin' || (user.roleAssignments?.some((a) => a.role === 'Admin') ?? false);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm animate-fade-in">
@@ -43,9 +62,9 @@ export default function UserDetailDrawer({ user, onClose, onToggleStatus }: User
             />
             <h3 className="mt-3 text-base font-bold text-text-primary">{user.name}</h3>
             <p className="text-[10px] text-text-secondary">{user.email}</p>
-            <span className="mt-2.5 rounded-full border border-secondary/20 bg-secondary/5 px-2.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-secondary">
-              {user.role}
-            </span>
+            <div className="mt-2.5">
+              <RoleBadge role={user.role} />
+            </div>
           </div>
 
           {/* Stats */}
@@ -82,6 +101,17 @@ export default function UserDetailDrawer({ user, onClose, onToggleStatus }: User
               </div>
             </div>
           </div>
+
+          {/* Roles & Access: current role -> event bindings + grant/revoke */}
+          <UserRolesManager
+            user={user}
+            events={events}
+            onGrantRole={onGrantRole}
+            onRevokeRole={onRevokeRole}
+          />
+
+          {/* Read-only co-organizer delegation oversight + moderation revoke */}
+          <UserDelegationsPanel userId={user.id} />
         </div>
 
         {/* Quick Actions Panel */}
@@ -96,7 +126,7 @@ export default function UserDetailDrawer({ user, onClose, onToggleStatus }: User
             </button>
           )}
           
-          {user.status !== 'Suspended' && user.role !== 'Admin' && (
+          {user.status !== 'Suspended' && !isAdmin && (
             <button
               onClick={handleSuspend}
               className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-danger/20 bg-danger/10 py-2.5 text-xs font-bold text-danger transition-all hover:bg-danger hover:text-on-error cursor-pointer"

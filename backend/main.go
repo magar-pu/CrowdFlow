@@ -11,7 +11,9 @@ import (
 	"crowdflow-backend/internal/admin"
 	"crowdflow-backend/internal/auditor"
 	"crowdflow-backend/internal/auth"
+	"crowdflow-backend/internal/bankaccount"
 	"crowdflow-backend/internal/booking"
+	"crowdflow-backend/internal/delegation"
 	"crowdflow-backend/internal/event"
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/organizer"
@@ -20,7 +22,6 @@ import (
 	"crowdflow-backend/internal/response"
 	"crowdflow-backend/internal/scanner"
 	"crowdflow-backend/internal/storage"
-	"crowdflow-backend/internal/user"
 	"crowdflow-backend/internal/venuelayout"
 
 	"golang.org/x/oauth2"
@@ -202,6 +203,19 @@ func main() {
 	// Register Organizer routes
 	organizerHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole, authMounter.RequireEventOwnership)
 
+	// Initialize Co-Organizer Delegation dependencies (owner-driven delegation + approval)
+	delegationRepo := delegation.NewPostgresRepository(db)
+	delegationService := delegation.NewDelegationService(delegationRepo)
+	delegationHandler := delegation.NewHandler(delegationService)
+
+	// Register Delegation routes (verified Event Organizer, on the organizer console)
+	delegationHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole)
+
+	// Register Delegation admin-oversight routes on the admin sub-router (Super Admin only)
+	delegationHandler.RegisterAdminRoutes(adminV1, func(f http.HandlerFunc) http.Handler {
+		return authMounter.Authenticate(authMounter.RequirePlatformRole("Super Admin")(f))
+	})
+
 	// Initialize Auditor portal dependencies
 	auditorRepo := auditor.NewPostgresRepository(db)
 	auditorService := auditor.NewAuditorService(auditorRepo)
@@ -210,13 +224,13 @@ func main() {
 	// Register Auditor routes (Auditor + Super Admin roles)
 	auditorHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole)
 
-	// Initialize User dependencies
-	userRepo := user.NewBankAccountRepository(db)
-	userService := user.NewBankAccountService(userRepo)
-	userHandler := user.NewBankAccountHandler(userService)
+	// Initialize Bank Account dependencies
+	bankAccountRepo := bankaccount.NewBankAccountRepository(db)
+	bankAccountService := bankaccount.NewBankAccountService(bankAccountRepo)
+	bankAccountHandler := bankaccount.NewBankAccountHandler(bankAccountService)
 
-	// Register User routes
-	userHandler.RegisterRoutes(mux, authMounter.Authenticate)
+	// Register Bank Account routes (nested under /api/users/me/)
+	bankAccountHandler.RegisterRoutes(mux, authMounter.Authenticate)
 
 	// Initialize and Register Scanner routes
 	scannerHandler := scanner.NewHandler(db)

@@ -70,11 +70,38 @@ export interface EventStatusLogEntry {
   createdAt: string;
 }
 
+// PlatformRole is the admin frontend's display union for a single role, as
+// mapped from the DB's roles table by backend mapPlatformRole. "Mixed" is a
+// synthesized value (not a real DB role) shown when a user holds more than one
+// console role - see roleAssignments on User.
+export type PlatformRole =
+  | 'Buyer'
+  | 'Seller'
+  | 'Organizer'
+  | 'Auditor'
+  | 'Gate Scanner'
+  | 'Admin'
+  | 'Mixed';
+
+// RoleAssignment is one row of a user's user_roles: the role plus the event it
+// is scoped to (null/omitted for a platform-wide grant like Admin or Organizer).
+// roleId is the DB roles.id, used to revoke this exact assignment.
+export interface RoleAssignment {
+  roleId: number;
+  role: PlatformRole;
+  eventId: number | null;
+  eventName?: string | null;
+}
+
 export interface User {
   id: string;
   name: string;
   email: string;
-  role: 'Buyer' | 'Seller' | 'Organizer' | 'Admin';
+  role: PlatformRole;
+  // Full list of the user's role assignments (platform-wide + event-scoped).
+  // Optional so older/mock payloads without it still parse; when present and
+  // holding >1 console role, `role` is 'Mixed'.
+  roleAssignments?: RoleAssignment[];
   status: 'Verified' | 'Pending' | 'Suspended';
   joinedAt: string;
   transactionsCount: number;
