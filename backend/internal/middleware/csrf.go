@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 
 	"crowdflow-backend/internal/response"
 )
@@ -15,9 +16,10 @@ func CSRF(next http.Handler) http.Handler {
 			return
 		}
 
-		// Bypass validation for authentication bootstrap endpoints
+		// Bypass validation for authentication bootstrap and scanner device endpoints
 		path := r.URL.Path
-		if path == "/api/v1/auth/login" || path == "/api/v1/auth/register" || path == "/api/v1/auth/google" {
+		if path == "/api/v1/auth/login" || path == "/api/v1/auth/register" || path == "/api/v1/auth/google" ||
+			strings.HasPrefix(path, "/api/scanner/") || strings.HasPrefix(path, "/api/v1/scanner/") {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -23,20 +23,45 @@ func (r *PostgresRepository) CheckIn(eventID int, qrToken string, deviceID *int,
 	}
 	defer tx.Rollback()
 
-	// 1. Locate ticket
+	// 1. Locate ticket & verify dynamic 10-minute token
 	var tID string
 	var fullName, tierName, currentStatus string
 	var esmID *int
 	var ticketEventID int
+	var tokenWindow *int64
 
+	// First try matching via ticket_tokens table
 	err = tx.QueryRow(`
-		SELECT t.id::text, t.attendee_full_name, tt.name, t.ticket_status::text, t.event_seats_matrix_id, tt.event_id
-		FROM tickets t
+		SELECT tk.ticket_id::text, tk.time_window, t.attendee_full_name, tt.name, t.ticket_status::text, t.event_seats_matrix_id, tt.event_id
+		FROM ticket_tokens tk
+		JOIN tickets t ON tk.ticket_id = t.id
 		JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
-		WHERE t.qr_signature = $1 OR t.id::text = $1
-	`, qrToken).Scan(&tID, &fullName, &tierName, &currentStatus, &esmID, &ticketEventID)
+		WHERE tk.secure_token = $1
+	`, qrToken).Scan(&tID, &tokenWindow, &fullName, &tierName, &currentStatus, &esmID, &ticketEventID)
+
 	if err != nil {
-		return &CheckInResponse{Status: "INVALID", Message: "QR code not recognized"}, nil
+		// Fallback to tickets table direct lookup by qr_signature or UUID
+		err = tx.QueryRow(`
+			SELECT t.id::text, t.attendee_full_name, tt.name, t.ticket_status::text, t.event_seats_matrix_id, tt.event_id
+			FROM tickets t
+			JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
+			WHERE t.qr_signature = $1 OR t.id::text = $1
+		`, qrToken).Scan(&tID, &fullName, &tierName, &currentStatus, &esmID, &ticketEventID)
+
+		if err != nil {
+			return &CheckInResponse{Status: "INVALID", Message: "QR code not recognized"}, nil
+		}
+	} else if tokenWindow != nil {
+		// Validate 10-minute server time window (600 seconds)
+		currentWindow := time.Now().Unix() / 600
+		if *tokenWindow < (currentWindow - 1) {
+			r.LogScan(deviceID, eventID, "EXPIRED", fmt.Sprintf("Expired token for ticket %s (%s)", tID, fullName), "", 0)
+			return &CheckInResponse{
+				Status:       "EXPIRED",
+				AttendeeName: fullName,
+				Message:      "QR Token expired (10-min window passed). Please refresh ticket.",
+			}, nil
+		}
 	}
 
 	// 2. Check event match

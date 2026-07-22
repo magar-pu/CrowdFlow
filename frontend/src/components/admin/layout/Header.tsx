@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Bell, HelpCircle, CheckCircle, ShieldAlert, X, ChevronDown, LogOut } from 'lucide-react';
+import { Search, Bell, HelpCircle, CheckCircle, ShieldAlert, X, ChevronDown, LogOut, QrCode } from 'lucide-react';
 import { SecurityAlert } from '@/types/admin';
 import { useAuthStore } from '@/lib/store/authStore';
 import { format_role_label, get_initials } from '@/lib/utils/user-display';
@@ -166,19 +166,101 @@ export default function Header({
           )}
         </div>
 
-        {/* Profile Identity Banner */}
-        <div className="flex items-center gap-3 border-l border-border-subtle pl-3 sm:pl-4">
-          <div className="hidden md:block text-right">
-            <span className="block text-sm font-medium text-text-primary leading-tight">{userName}</span>
-            <span className="block text-xs text-text-secondary leading-none mt-1">{userRole}</span>
-          </div>
-          <img 
-            id="admin-profile-avatar"
-            src={userAvatar} 
-            alt={userName} 
-            referrerPolicy="no-referrer"
-            className="h-9 w-9 rounded-full border border-border-subtle object-cover shadow-xs"
-          />
+        {/* Profile Identity Banner & Dropdown */}
+        <div className="relative" ref={profileRef}>
+          <button
+            onClick={() => setProfileOpen(!profileOpen)}
+            className="flex items-center gap-3 border-l border-border-subtle pl-3 sm:pl-4 cursor-pointer hover:opacity-90 transition-opacity"
+          >
+            <div className="hidden md:block text-right">
+              <span className="block text-sm font-medium text-text-primary leading-tight">{userName}</span>
+              <span className="block text-xs text-text-secondary leading-none mt-1">{userRole}</span>
+            </div>
+            <img 
+              id="admin-profile-avatar"
+              src={userAvatar || undefined} 
+              alt={userName} 
+              referrerPolicy="no-referrer"
+              className="h-9 w-9 rounded-full border border-border-subtle object-cover shadow-xs"
+            />
+            <ChevronDown className="h-4 w-4 text-text-secondary" />
+          </button>
+
+          {profileOpen && (
+            <div className="absolute right-0 z-30 mt-3 w-80 rounded-2xl border border-border-subtle bg-white p-4 shadow-xl text-left space-y-3 animate-scale-in">
+              <div className="border-b border-border-subtle pb-3">
+                <span className="text-[10px] font-mono font-bold text-primary tracking-widest uppercase block">ADMIN PROFILE SESSION</span>
+                <h4 className="text-sm font-bold text-text-primary mt-0.5">{userName}</h4>
+                <p className="text-xs text-text-secondary">{userRole}</p>
+              </div>
+
+              {/* Quick Scanner Test Tool */}
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-primary flex items-center gap-1.5">
+                    <QrCode className="h-4 w-4" /> EO Scanner Test Suite
+                  </span>
+                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 bg-primary text-white rounded">EVENT 10</span>
+                </div>
+                <p className="text-[11px] text-text-secondary leading-relaxed">
+                  Access Code: <code className="font-mono text-primary font-bold">CF-SCAN-ADMIN123</code>
+                </p>
+                <a
+                  href="/scanner/10?token=CF-SCAN-ADMIN123"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full py-2 bg-primary hover:bg-primary/90 text-white rounded-lg text-xs font-bold transition-colors"
+                >
+                  Launch Scanner (Admin Mode)
+                </a>
+              </div>
+
+              {/* Quick Copy Test Ticket Tokens */}
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[9px] font-mono font-bold text-text-secondary uppercase block">Seeded Test Tickets (Click to Copy ID)</span>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText("20ed491c-4d15-43f4-8d8b-0c8d3ee0622e");
+                    alert("Copied Ticket ID: Richie Obhasa (Admin)");
+                  }}
+                  className="w-full text-left p-2 rounded-lg bg-surface-container hover:bg-surface-container-high border border-border-subtle text-[11px] font-mono truncate flex justify-between items-center transition-colors cursor-pointer"
+                >
+                  <span className="truncate text-text-primary">1. Richie Obhasa (Admin)</span>
+                  <span className="text-[9px] text-primary font-bold shrink-0">COPY ID</span>
+                </button>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText("d33e38db-ce17-434c-95c3-0d291544ab60");
+                    alert("Copied Ticket ID: John Doe (Tester)");
+                  }}
+                  className="w-full text-left p-2 rounded-lg bg-surface-container hover:bg-surface-container-high border border-border-subtle text-[11px] font-mono truncate flex justify-between items-center transition-colors cursor-pointer"
+                >
+                  <span className="truncate text-text-primary">2. John Doe (Tester)</span>
+                  <span className="text-[9px] text-primary font-bold shrink-0">COPY ID</span>
+                </button>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText("0be0eae4-f244-499d-b48a-6f0af8463543");
+                    alert("Copied Ticket ID: Siti Rahma (VVIP)");
+                  }}
+                  className="w-full text-left p-2 rounded-lg bg-surface-container hover:bg-surface-container-high border border-border-subtle text-[11px] font-mono truncate flex justify-between items-center transition-colors cursor-pointer"
+                >
+                  <span className="truncate text-text-primary">3. Siti Rahma (VVIP)</span>
+                  <span className="text-[9px] text-primary font-bold shrink-0">COPY ID</span>
+                </button>
+              </div>
+
+              <div className="border-t border-border-subtle pt-2">
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs font-semibold text-danger hover:bg-danger/10 transition-colors cursor-pointer"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>Logout Admin Session</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </header>
