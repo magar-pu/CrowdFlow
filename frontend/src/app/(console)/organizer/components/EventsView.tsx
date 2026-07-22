@@ -52,9 +52,11 @@ export default function EventsView({ events, onCreateEvent, onOpenWorkspace }: E
               >
                 <div className="absolute top-4 right-4">
                   <span className={`backdrop-blur-sm border px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-sm font-mono text-[9px] font-bold ${
-                    event.status === 'Live'
-                      ? 'bg-success/90 text-white border-success'
-                      : 'bg-white/90 text-text-primary border-border-subtle'
+                    event.status === 'Live' ? 'bg-success/90 text-white border-success' :
+                    event.status === 'Need Revision' ? 'bg-amber-500 text-white border-amber-600' :
+                    event.status === 'Rejected' ? 'bg-rose-600 text-white border-rose-700' :
+                    event.status === 'In Review' ? 'bg-blue-600 text-white border-blue-700' :
+                    'bg-white/90 text-text-primary border-border-subtle'
                   }`}>
                     {event.status === 'Live' && (
                       <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>

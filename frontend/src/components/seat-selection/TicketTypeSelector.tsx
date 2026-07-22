@@ -1,77 +1,89 @@
 /**
  * components/seat-selection/TicketTypeSelector.tsx
  *
- * Row horizontal ticket type pills sesuai Stitch design.
- * VIP, VIP C, VIP R, Gold, GA — dengan icon + harga.
+ * Tier picker across the top of the seat map, built from the event's real
+ * tiers. Choosing a tier both filters which seats are clickable and decides
+ * which tier the hold is taken against — a hold covers exactly one tier.
+ *
+ * Previously this listed five invented tiers at USD prices on an IDR platform.
  */
 
+"use client";
+
 import { cn } from "@/lib/utils";
+import { formatIDR } from "@/lib/pricing";
 
-interface TicketType {
-  id: string;
-  label: string;
-  price_label: string;
+export interface SelectableTier {
+  ticket_tier_id: number;
+  name: string;
+  price: number;
+  /** Palette colour, matching the seat fills on the map. */
   color: string;
-  icon: string;
+  /** False for a tier with nothing left to sell. */
+  available: boolean;
+  /** General admission tiers are bought by quantity, not by seat. */
+  is_general_admission: boolean;
 }
-
-const TICKET_TYPES: TicketType[] = [
-  { id: "vip", label: "VIP", price_label: "$299.00", color: "#7C3AED", icon: "👑" },
-  { id: "vip_c", label: "VIP C", price_label: "$199.00", color: "#EA580C", icon: "👑" },
-  { id: "vip_r", label: "VIP R", price_label: "$149.00", color: "#3B82F6", icon: "💎" },
-  { id: "gold", label: "Gold", price_label: "$99.00", color: "#D97706", icon: "🏆" },
-  { id: "ga", label: "GA", price_label: "$59.00", color: "#16A34A", icon: "☰" },
-];
 
 interface TicketTypeSelectorProps {
-  active_type_id: string;
-  on_select: (id: string) => void;
+  tiers: SelectableTier[];
+  active_tier_id: number | null;
+  on_select: (ticket_tier_id: number) => void;
 }
 
-export function TicketTypeSelector({ active_type_id, on_select }: TicketTypeSelectorProps) {
+export function TicketTypeSelector({
+  tiers,
+  active_tier_id,
+  on_select,
+}: TicketTypeSelectorProps) {
+  if (tiers.length === 0) return null;
+
   return (
     <div className="border-b border-border-subtle bg-white px-6 py-3">
       <p className="mb-2 font-label-sm text-label-sm uppercase tracking-wider text-text-secondary">
         Choose Ticket Type
       </p>
-      <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {TICKET_TYPES.map((type) => {
-          const is_active = active_type_id === type.id;
+      <div
+        role="radiogroup"
+        aria-label="Ticket type"
+        className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {tiers.map((tier) => {
+          const is_active = active_tier_id === tier.ticket_tier_id;
           return (
             <button
-              key={type.id}
+              key={tier.ticket_tier_id}
               type="button"
-              onClick={() => on_select(type.id)}
+              role="radio"
+              aria-checked={is_active}
+              disabled={!tier.available}
+              onClick={() => on_select(tier.ticket_tier_id)}
               className={cn(
-                "flex shrink-0 items-center gap-3 rounded-xl border-2 px-4 py-2.5 transition-all duration-150",
+                "flex shrink-0 items-center gap-2.5 rounded-xl border px-4 py-2.5 text-left transition-all",
                 is_active
-                  ? "border-secondary bg-secondary/5"
-                  : "border-border-subtle bg-white hover:bg-surface-container-low"
+                  ? "border-secondary bg-secondary/10"
+                  : "border-border-subtle bg-white hover:border-outline",
+                !tier.available && "cursor-not-allowed opacity-40"
               )}
             >
-              {/* Colored icon circle */}
-              <div
-                className="flex h-9 w-9 items-center justify-center rounded-full text-base"
-                style={{ backgroundColor: `${type.color}20`, border: `2px solid ${type.color}40` }}
-              >
-                <span>{type.icon}</span>
-              </div>
-              <div className="text-left">
-                <p className={cn(
-                  "font-label-md text-label-md font-bold",
-                  is_active ? "text-secondary" : "text-text-primary"
-                )}>
-                  {type.label}
-                </p>
-                <p className="font-label-sm text-label-sm text-text-secondary">{type.price_label}</p>
-              </div>
-              {is_active && (
-                <div className="ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-secondary">
-                  <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                    <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </div>
-              )}
+              <span
+                aria-hidden
+                className="h-3 w-3 shrink-0 rounded-full"
+                style={{ backgroundColor: tier.color }}
+              />
+              <span className="flex flex-col">
+                <span className="font-label-md text-label-md font-bold text-text-primary">
+                  {tier.name}
+                  {tier.is_general_admission && (
+                    <span className="ml-1.5 font-label-sm text-label-sm font-normal text-text-secondary">
+                      (bebas tempat)
+                    </span>
+                  )}
+                </span>
+                <span className="font-label-sm text-label-sm text-text-secondary">
+                  {tier.available ? formatIDR(tier.price) : "Habis"}
+                </span>
+              </span>
             </button>
           );
         })}

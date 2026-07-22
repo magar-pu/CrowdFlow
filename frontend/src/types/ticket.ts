@@ -84,6 +84,9 @@ export interface Event {
   venue: Venue;
   starts_at: string; // ISO-8601, e.g. "2026-09-12T13:00:00+07:00"
   ends_at: string; // ISO-8601
+  // Cheapest ticket tier price (MIN of ticket_tiers.price), from GET /api/v1/events.
+  // null when the event has no tiers yet — distinct from a free event priced at 0.
+  starting_price?: number | null;
   sales_open_at: string; // ISO-8601 — when the virtual waiting room queue opens
   sales_close_at: string; // ISO-8601
   ticket_categories: TicketCategory[];
@@ -365,20 +368,11 @@ export interface EventListingCard {
   trust_signal: EventListingTrustSignal;
   date_label: string; // e.g. "30 September 2024 • 19:00 WIB"
   venue_label: string;
-  starting_price: number;
+  /** Cheapest tier price; null when the event has no ticket tiers configured. */
+  starting_price: number | null;
   city: string; // used by the sidebar city filter
 }
 
-/** A card inside the "Direkomendasikan Untukmu (AI)" glassmorphism panel. */
-export interface AIRecommendedEvent {
-  event_id: string;
-  cover_image_url: string;
-  tag_label: string; // e.g. "Top Match", "Trending"
-  match_pct: number;
-  title: string;
-  date_venue_label: string; // e.g. "20 Sep • Salihara Arts Center"
-  price: number;
-}
 
 /** One slide in the "Editor's Choice" hero carousel. */
 export interface FeaturedCarouselEvent {
@@ -388,24 +382,14 @@ export interface FeaturedCarouselEvent {
   tag_color: "secondary" | "success";
   title: string;
   date_venue_label: string;
-  starting_price: number;
+  /** Cheapest tier price; null when the event has no ticket tiers configured. */
+  starting_price: number | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
 // Home Page (v2 — Indonesian redesign)
 // ─────────────────────────────────────────────────────────────────────────
 
-/** One tile in the "Koleksi Event Pilihan" bento grid. */
-export interface BentoCollectionTile {
-  tile_id: string;
-  title: string;
-  subtitle?: string; // omitted on the two smaller tiles in the original design
-  cover_image_url: string;
-  /** CSS grid span — matches the bento-grid's col-span-{n} row-span-{n} classes. */
-  col_span: 1 | 2;
-  row_span: 1 | 2;
-  href: string;
-}
 
 /** One card in the "Event Paling Dinanti" trending grid, driven by real API data. */
 export interface TrendingEventCard {
@@ -415,12 +399,12 @@ export interface TrendingEventCard {
   city: string;
   category: string;  // e.g. "concert", "festival", "conference" — drives the category filter pills
   starts_at: string; // ISO-8601 — displayed as a formatted date on the card
-  // MOCK-BACKED FIELDS — no backend source yet: there is no reviews system,
-  // and GET /api/events carries no tier prices. Filled with placeholder values
-  // by mockTrendingCardStats() (mock/homeV2Data.ts) until the API provides them.
-  rating: number; // 0–5
-  review_count: number;
-  starting_price: number; // whole IDR, lowest tier price
+  /**
+   * Cheapest tier price from GET /api/v1/events; null when the event has no
+   * ticket tiers configured. There is deliberately no rating/review_count
+   * here — the platform has no reviews system, so those cannot be sourced.
+   */
+  starting_price: number | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -434,13 +418,27 @@ export type VenueEditorTool =
   | "facility_icons"
   | "layer_manager";
 
+/** Layout form a group of selected seats can be arranged into. */
+export type SeatArrangeForm = "grid" | "arc" | "diagonal" | "ellipse";
+
 /** Active tool in the Seat Mapper floating toolbar. */
-export type CanvasDrawingMode = "select" | "pan" | "add_shape" | "add_seat" | "paint";
+export type CanvasDrawingMode = "select" | "pan" | "add_shape" | "add_seat" | "seat_array" | "paint";
 
 /** A single seat on the venue canvas. */
 export interface VenueSeat {
   seat_id: string;
-  section_id: string;
+  /**
+   * Persisted DB id (integer) once the seat has been saved to the backend.
+   * Absent/null = new & unsaved; this is what drives insert-vs-update when the
+   * layout is saved. `seat_id` stays the stable client key throughout.
+   */
+  db_id?: number | null;
+  /**
+   * Optional event-level grouping tag. Seats are physical and belong to the
+   * venue; sections are commercial zones each event draws over them, so a seat
+   * can exist with no section at all.
+   */
+  section_id?: string | null;
   row: string;
   number: number;
   x: number;
@@ -464,10 +462,11 @@ export interface VenueShape {
 /** A section/zone on the venue map (e.g. "VIP Pit", "Gold Circle"). */
 export interface VenueSection {
   section_id: string;
+  /** Persisted DB id (integer) once saved; absent/null = new. Mirrors VenueSeat.db_id. */
+  db_id?: number | null;
   label: string;
   color: string;
   section_code: string; // e.g. "A1", "B1-B2", "Lawn"
-  seats: VenueSeat[];
   shape?: VenueShape;
   is_locked?: boolean;
 }
@@ -518,6 +517,12 @@ export interface VenueBlueprint {
   scale: number;
   offset_x: number;
   offset_y: number;
+  /**
+   * Locked blueprints are click-through, so the layer can't swallow marquee
+   * drags across the area it covers. Unlock it to reposition by dragging.
+   * Defaults to locked.
+   */
+  is_locked?: boolean;
 }
 
 /** Top-level state for the venue editor page. */
@@ -529,6 +534,7 @@ export interface VenueEditorState {
   selected_venue_id: string;
   base_currency: string;
   tax_rate: number;
+  seats: VenueSeat[];
   sections: VenueSection[];
   facilities: VenueFacility[];
   pricing_tiers: PricingTier[];

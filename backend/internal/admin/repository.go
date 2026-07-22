@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -280,16 +281,26 @@ func (r *PostgresRepository) ListUsers(limit, offset int) ([]*User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
+	// roleAssignments is aggregated as JSON so every user_roles row (platform-wide
+	// AND event-scoped) comes back in a single round trip - no N+1. Event-scoped
+	// rows carry the event name via the LEFT JOIN; platform-wide rows leave it null.
+	// Ordered platform-wide first, then by event, for stable display.
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
 			u.id, COALESCE(up.full_name, ''), u.email, u.verification_status, u.created_at, COALESCE(up.avatar_pic, ''),
 			COALESCE((SELECT COUNT(*) FROM orders o WHERE o.purchaser_id = u.id), 0),
 			COALESCE((
-				SELECT r.role_name FROM user_roles ur
+				SELECT json_agg(json_build_object(
+					'role_id', r.id,
+					'role_name', r.role_name,
+					'event_id', ur.event_id,
+					'event_name', e.event_name
+				) ORDER BY (ur.event_id IS NOT NULL), ur.event_id)
+				FROM user_roles ur
 				JOIN roles r ON ur.role_id = r.id
-				WHERE ur.user_id = u.id AND ur.event_id IS NULL
-				LIMIT 1
-			), 'User')
+				LEFT JOIN events e ON ur.event_id = e.id
+				WHERE ur.user_id = u.id
+			), '[]'::json)::text
 		FROM users u
 		LEFT JOIN user_profiles up ON u.id = up.user_id
 		ORDER BY u.created_at DESC
@@ -303,19 +314,22 @@ func (r *PostgresRepository) ListUsers(limit, offset int) ([]*User, error) {
 	users := []*User{}
 	for rows.Next() {
 		var id int
-		var fullName, email, verificationStatus, avatarPic, platformRole string
+		var fullName, email, verificationStatus, avatarPic, rolesJSON string
 		var createdAt time.Time
 		var txCount int
 
-		if err := rows.Scan(&id, &fullName, &email, &verificationStatus, &createdAt, &avatarPic, &txCount, &platformRole); err != nil {
+		if err := rows.Scan(&id, &fullName, &email, &verificationStatus, &createdAt, &avatarPic, &txCount, &rolesJSON); err != nil {
 			return nil, err
 		}
+
+		assignments, collapsedRole := buildRoleView(rolesJSON)
 
 		users = append(users, &User{
 			ID:                strconv.Itoa(id),
 			Name:              fullName,
 			Email:             email,
-			Role:              mapPlatformRole(platformRole),
+			Role:              collapsedRole,
+			RoleAssignments:   assignments,
 			Status:            mapVerificationStatus(verificationStatus),
 			JoinedAt:          createdAt.Format("2006-01-02"),
 			TransactionsCount: txCount,
@@ -326,6 +340,53 @@ func (r *PostgresRepository) ListUsers(limit, offset int) ([]*User, error) {
 		return nil, err
 	}
 	return users, nil
+}
+
+// rawRoleRow is the shape emitted by ListUsers' json_agg per user_roles row.
+type rawRoleRow struct {
+	RoleID    int    `json:"role_id"`
+	RoleName  string `json:"role_name"`
+	EventID   *int   `json:"event_id"`
+	EventName string `json:"event_name"`
+}
+
+// buildRoleView turns the aggregated user_roles JSON into (1) the display list
+// of role assignments (console roles only - the baseline "User"/Buyer role is
+// omitted so the profile shows meaningful bindings) and (2) a single collapsed
+// role label for the list badge: "Mixed" when the user holds more than one
+// distinct console role, the sole console role when they hold exactly one, or
+// "Buyer" when they hold none.
+func buildRoleView(rolesJSON string) ([]RoleAssignment, string) {
+	var raw []rawRoleRow
+	if rolesJSON != "" {
+		_ = json.Unmarshal([]byte(rolesJSON), &raw)
+	}
+
+	assignments := []RoleAssignment{}
+	distinct := map[string]struct{}{}
+	for _, row := range raw {
+		display := mapPlatformRole(row.RoleName)
+		if display == "Buyer" {
+			continue // baseline role - not a console binding worth listing
+		}
+		assignments = append(assignments, RoleAssignment{
+			RoleID:    row.RoleID,
+			Role:      display,
+			EventID:   row.EventID,
+			EventName: row.EventName,
+		})
+		distinct[display] = struct{}{}
+	}
+
+	switch len(distinct) {
+	case 0:
+		return assignments, "Buyer"
+	case 1:
+		for role := range distinct {
+			return assignments, role
+		}
+	}
+	return assignments, "Mixed"
 }
 
 // mapPlatformRole translates DB platform role names to the admin frontend's
@@ -340,6 +401,8 @@ func mapPlatformRole(dbRole string) string {
 		return "Admin"
 	case "Auditor":
 		return "Auditor"
+	case "Gate Scanner":
+		return "Gate Scanner"
 	default: // "User"
 		return "Buyer"
 	}
@@ -518,74 +581,6 @@ func (r *PostgresRepository) DeleteTicketTier(eventID, tierID int) error {
 	return nil
 }
 
-func (r *PostgresRepository) GetVenueSections(eventID int) ([]*VenueSection, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT vs.id, vs.section_name, vs.capacity
-		FROM venue_sections vs
-		JOIN events e ON e.venue_id = vs.venue_id
-		WHERE e.id = $1
-		ORDER BY vs.section_name ASC
-	`, eventID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	// Same nil-vs-empty-slice reasoning as GetTicketTiers above.
-	sections := []*VenueSection{}
-	for rows.Next() {
-		var id int
-		var name string
-		var capacity int
-		if err := rows.Scan(&id, &name, &capacity); err != nil {
-			return nil, err
-		}
-		sections = append(sections, &VenueSection{
-			ID:       strconv.Itoa(id),
-			Name:     name,
-			Capacity: capacity,
-			Occupied: 0, // TODO: requires joining seat/ticket assignment by section
-			Color:    "",
-		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return sections, nil
-}
-
-// UpdateVenueSections updates name/capacity for existing sections (matched by
-// ID). Sections without a valid numeric ID are skipped for the same reason as
-// UpdateTicketTiers - creating a new section requires resolving the event's
-// venue_id, which is done here for consistency but new-row insertion is left
-// as a follow-up.
-func (r *PostgresRepository) UpdateVenueSections(eventID int, sections []*VenueSection) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	var venueID int
-	if err := r.db.QueryRowContext(ctx, `SELECT venue_id FROM events WHERE id = $1`, eventID).Scan(&venueID); err != nil {
-		return err
-	}
-
-	for _, s := range sections {
-		id, err := strconv.Atoi(s.ID)
-		if err != nil {
-			continue
-		}
-		if _, err := r.db.ExecContext(ctx, `
-			UPDATE venue_sections SET section_name = $1, capacity = $2
-			WHERE id = $3 AND venue_id = $4
-		`, s.Name, s.Capacity, id, venueID); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // UpdateUserStatus reverse-maps the admin frontend's display status onto
 // users.verification_status. There is no dedicated account-suspension column,
 // so "Suspended" is approximated as "rejected" - see mapVerificationStatus.
@@ -659,6 +654,15 @@ func (r *PostgresRepository) GrantUserRole(userID int, roleID int, eventID *int,
 		return err
 	}
 
+	// Separation of duties: a user may not audit an event they organize (or
+	// vice-versa). Only enforced for event-scoped grants - platform-wide roles
+	// aren't tied to a single event and so can't conflict on one.
+	if eventID != nil {
+		if err := r.checkAuditorOrganizerConflict(ctx, userID, roleName, *eventID); err != nil {
+			return err
+		}
+	}
+
 	if _, err := r.db.ExecContext(ctx, `INSERT INTO user_roles (user_id, event_id, role_id) VALUES ($1, $2, $3)`, userID, eventID, roleID); err != nil {
 		return err
 	}
@@ -668,6 +672,122 @@ func (r *PostgresRepository) GrantUserRole(userID int, roleID int, eventID *int,
 		detail = fmt.Sprintf("Granted %q the %s role for event #%d.", targetName, roleName, *eventID)
 	}
 	return r.insertActivity(actorID, "Granted Role", detail)
+}
+
+// checkAuditorOrganizerConflict enforces separation of duties for an
+// event-scoped grant: the user organizing an event cannot also audit it, and
+// vice-versa. "Organizes event E" means either owning it (events.organizer_id)
+// or holding an event-scoped Event Organizer role on it. Returns a clean
+// validation error when the grant would violate the rule, or nil otherwise
+// (including for any role that isn't Auditor/Event Organizer).
+func (r *PostgresRepository) checkAuditorOrganizerConflict(ctx context.Context, userID int, roleName string, eventID int) error {
+	switch roleName {
+	case "Auditor":
+		// "Organizes event E" = owns it, holds an event-scoped Event Organizer
+		// role on it, or is an active co-organizer (delegation) covering it.
+		var isOrganizer bool
+		if err := r.db.QueryRowContext(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM events WHERE id = $1 AND organizer_id = $2
+				UNION ALL
+				SELECT 1 FROM user_roles ur JOIN roles r ON ur.role_id = r.id
+				WHERE ur.user_id = $2 AND ur.event_id = $1 AND r.role_name = 'Event Organizer'
+				UNION ALL
+				SELECT 1 FROM organizer_delegations d
+				  JOIN events e ON e.id = $1
+				 WHERE d.delegate_id = $2 AND d.status = 'active'
+				   AND (
+				        (d.scope = 'all'      AND d.owner_id = e.organizer_id)
+				     OR (d.scope = 'specific' AND EXISTS (
+				           SELECT 1 FROM organizer_delegation_events de
+				            WHERE de.delegation_id = d.id AND de.event_id = e.id))
+				   )
+			)
+		`, eventID, userID).Scan(&isOrganizer); err != nil {
+			return err
+		}
+		if isOrganizer {
+			return errors.New("cannot assign Auditor: this user organizes or co-organizes that event (separation of duties)")
+		}
+	case "Event Organizer":
+		var isAuditor bool
+		if err := r.db.QueryRowContext(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM user_roles ur JOIN roles r ON ur.role_id = r.id
+				WHERE ur.user_id = $2 AND ur.event_id = $1 AND r.role_name = 'Auditor'
+			)
+		`, eventID, userID).Scan(&isAuditor); err != nil {
+			return err
+		}
+		if isAuditor {
+			return errors.New("cannot assign Event Organizer: this user audits that event (separation of duties)")
+		}
+	}
+	return nil
+}
+
+// RevokeUserRole removes a role assignment - the inverse of GrantUserRole,
+// matching on the same (user_id, role_id, event_id) tuple (event_id compared
+// with IS NOT DISTINCT FROM so a null platform-wide grant matches a null
+// request). Guards against locking the platform out of Super Admin: an admin
+// cannot revoke their own Super Admin role, nor the last remaining one.
+func (r *PostgresRepository) RevokeUserRole(userID int, roleID int, eventID *int, actorID int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var roleName string
+	if err := r.db.QueryRowContext(ctx, `SELECT role_name FROM roles WHERE id = $1`, roleID).Scan(&roleName); err != nil {
+		if err == sql.ErrNoRows {
+			return errors.New("role not found")
+		}
+		return err
+	}
+
+	if roleName == "Super Admin" {
+		if userID == actorID {
+			return errors.New("you cannot revoke your own Super Admin role")
+		}
+		var superAdminCount int
+		if err := r.db.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM user_roles ur JOIN roles r ON ur.role_id = r.id
+			WHERE r.role_name = 'Super Admin'
+		`).Scan(&superAdminCount); err != nil {
+			return err
+		}
+		if superAdminCount <= 1 {
+			return errors.New("cannot revoke the last Super Admin")
+		}
+	}
+
+	res, err := r.db.ExecContext(ctx, `
+		DELETE FROM user_roles
+		WHERE user_id = $1 AND role_id = $2 AND event_id IS NOT DISTINCT FROM $3
+	`, userID, roleID, eventID)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return errors.New("user does not have this role assignment")
+	}
+
+	var targetName string
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(up.full_name, u.email) FROM users u
+		LEFT JOIN user_profiles up ON up.user_id = u.id
+		WHERE u.id = $1
+	`, userID).Scan(&targetName); err != nil {
+		targetName = "user #" + strconv.Itoa(userID)
+	}
+
+	detail := fmt.Sprintf("Revoked the %s role from %q.", roleName, targetName)
+	if eventID != nil {
+		detail = fmt.Sprintf("Revoked the %s role for event #%d from %q.", roleName, *eventID, targetName)
+	}
+	return r.insertActivity(actorID, "Revoked Role", detail)
 }
 
 // ListVerifications derives the Verification Queue directly from users with

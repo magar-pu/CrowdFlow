@@ -25,6 +25,7 @@ import {
   Users,
   Mail,
   LogOut,
+  LayoutDashboard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/store/authStore";
@@ -34,7 +35,6 @@ const NAV_LINKS = [
   { label: "Events", href: "/events" },
   { label: "Resale Marketplace", href: "/resale" },
   { label: "Business", href: "/business" },
-  { label: "Venue Editor", href: "/venue-editor-preview" },
 ];
 
 const PROFILE_MENU = [
@@ -43,9 +43,6 @@ const PROFILE_MENU = [
   { label: "Purchase History", href: "/profile/history", icon: ClockIcon },
   { label: "My Tickets", href: "/orders", icon: Ticket },
   { label: "Resale", href: "/resale/my-listings", icon: RefreshCw, badge: "BARU!" },
-  { label: "Price Alerts", href: "/profile/alerts", icon: BellRing },
-  { label: "Saved Travelers", href: "/profile/travelers", icon: Users },
-  { label: "Promo Info", href: "/profile/promo", icon: Mail },
 ];
 
 interface NavbarProps {
@@ -226,6 +223,38 @@ export function Navbar({ active_href = "/", is_authenticated: override, isTransp
 
                     {/* Menu */}
                     <div className="py-2">
+                      {/* Console Workspace Link for special roles */}
+                      {display_user.role === "super_admin" && (
+                        <Link
+                          href="/admin"
+                          onClick={() => set_profile_open(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 bg-primary/5 border-b border-border-subtle font-bold text-primary hover:bg-primary/10 transition-colors"
+                        >
+                          <LayoutDashboard size={18} className="text-primary" />
+                          <span className="font-body-md text-body-md text-primary">Admin Console</span>
+                        </Link>
+                      )}
+                      {display_user.role === "verified_organizer" && (
+                        <Link
+                          href="/organizer"
+                          onClick={() => set_profile_open(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 bg-primary/5 border-b border-border-subtle font-bold text-primary hover:bg-primary/10 transition-colors"
+                        >
+                          <LayoutDashboard size={18} className="text-primary" />
+                          <span className="font-body-md text-body-md text-primary">Organizer Workspace</span>
+                        </Link>
+                      )}
+                      {display_user.role === "auditor" && (
+                        <Link
+                          href="/auditor"
+                          onClick={() => set_profile_open(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 bg-primary/5 border-b border-border-subtle font-bold text-primary hover:bg-primary/10 transition-colors"
+                        >
+                          <LayoutDashboard size={18} className="text-primary" />
+                          <span className="font-body-md text-body-md text-primary">Auditor Portal</span>
+                        </Link>
+                      )}
+
                       {PROFILE_MENU.map((item) => {
                         const Icon = item.icon;
                         return (

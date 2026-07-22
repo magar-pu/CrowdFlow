@@ -34,10 +34,10 @@ AI should prioritize **consistency**, **maintainability**, and **reusability** o
 Before generating any code, AI must read the project documentation in this order.
 
 1. agents.md
-2. design-system.md
-3. design-tokens.md
-4. component-library.md
-5. frontend-architecture.md
+2. docs/design-system.md
+3. docs/design-token.md
+4. docs/component-library.md
+5. docs/frontend-architecture.md
 
 If there is any conflict,
 
@@ -209,7 +209,7 @@ Use design tokens.
 
 Always follow
 
-frontend-architecture.md
+docs/frontend-architecture.md
 
 Never
 

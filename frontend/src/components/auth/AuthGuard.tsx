@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@/lib/store/authStore";
+import { useAuthStore, normalizeUserRole, getRoleLandingPath } from "@/lib/store/authStore";
 import { getMe } from "@/lib/api/auth";
 
 interface AuthGuardProps {
@@ -29,10 +29,6 @@ export function AuthGuard({
   const [checkingSession, setCheckingSession] = useState(true);
 
   // 1. Handle hydration and always re-verify the session against the server.
-  // Persisted Zustand state (is_authenticated/role) is client-controlled and
-  // can be edited in devtools/localStorage, so it must never be trusted for a
-  // role check on its own - only skip verification when getMe() genuinely
-  // can't be reached (network failure), falling back to persisted state.
   useEffect(() => {
     setIsHydrated(true);
 
@@ -42,8 +38,6 @@ export function AuthGuard({
         if (result.success && result.data) {
           set_user_from_api(result.data);
         } else if (is_authenticated) {
-          // Server says the session is no longer valid but local state
-          // still claims otherwise - clear it rather than trusting the stale copy.
           await logout();
         }
       } catch {
@@ -56,6 +50,11 @@ export function AuthGuard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const userRole = normalizeUserRole(user?.role || "");
+  const targetRole = requiredRole ? normalizeUserRole(requiredRole) : null;
+  const isRoleAuthorized =
+    !targetRole || userRole === targetRole || userRole === "super_admin";
+
   // 2. Perform authentication and role checks once session is verified
   useEffect(() => {
     if (!isHydrated || checkingSession) return;
@@ -65,11 +64,10 @@ export function AuthGuard({
       return;
     }
 
-    if (requiredRole && user && user.role !== requiredRole && user.role !== "super_admin") {
-      // If user doesn't match the specific role (super_admin bypasses role checks)
-      router.replace("/");
+    if (!isRoleAuthorized) {
+      router.replace(getRoleLandingPath(userRole));
     }
-  }, [isHydrated, checkingSession, is_authenticated, user, requiredRole, redirectTo, router]);
+  }, [isHydrated, checkingSession, is_authenticated, isRoleAuthorized, userRole, redirectTo, router]);
 
   // 3. Show a sleek, premium loading screen while state is loading
   if (!isHydrated || checkingSession || !is_authenticated) {
@@ -90,7 +88,7 @@ export function AuthGuard({
   }
 
   // 4. Render children if authenticated and meets role requirement
-  if (requiredRole && user && user.role !== requiredRole && user.role !== "super_admin") {
+  if (!isRoleAuthorized) {
     return null; // Let the redirect trigger in useEffect
   }
 

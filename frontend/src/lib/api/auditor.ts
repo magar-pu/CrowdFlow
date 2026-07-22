@@ -213,6 +213,19 @@ export async function rejectDocument(docId: number | string, reason: string): Pr
   });
 }
 
+/**
+ * Update status of an auditor revision item (Accept/RequestMore/Reject).
+ */
+export async function updateRevisionStatus(
+  revId: number | string,
+  status: 'Resolved' | 'Sent' | 'Rejected'
+): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/v1/auditor/revisions/${revId}/status`, {
+    method: "PUT",
+    body: JSON.stringify({ status }),
+  });
+}
+
 export interface ListOrganizersFilters {
   status?: string;
   search?: string;

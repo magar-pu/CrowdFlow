@@ -24,6 +24,7 @@ function sidebarViewFromSegments(segments: string[]): AppView {
   if (section === 'orders' || section === 'attendees' || section === 'finance' || section === 'reports' || section === 'settings') {
     return section as AppView;
   }
+  if (section === 'co-organizers') return 'co-organizers';
   return 'dashboard';
 }
 
@@ -52,6 +53,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
       attendees: '/organizer/attendees',
       finance: '/organizer/finance',
       reports: '/organizer/reports',
+      'co-organizers': '/organizer/co-organizers',
       settings: '/organizer/settings',
       'create-event': '/organizer/events/create',
     };

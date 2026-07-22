@@ -5,6 +5,7 @@ export type AppView =
   | 'attendees'
   | 'finance'
   | 'reports'
+  | 'co-organizers'
   | 'settings'
   | 'create-event'
   | 'workspace';
@@ -26,7 +27,7 @@ export interface EventItem {
   capacity: number;
   sold: number;
   revenue: number;
-  status: "Live" | "Scheduled" | "Draft";
+  status: "Live" | "Scheduled" | "Draft" | "Rejected" | "Need Revision" | "In Review";
   image: string;
 }
 
@@ -68,6 +69,7 @@ export interface ScannerDevice {
   scans: number;
   role: "QR Scanner" | "Manual Validation" | "Supervisor";
   permissions: string[];
+  deviceToken?: string;
 }
 
 export interface Staff {

@@ -233,6 +233,47 @@ export async function deleteTicketTier(eventId: number, tierId: number): Promise
   });
 }
 
+// Seat overlay: paint the event's ticket tiers onto individual seats of its
+// bound layout, which seeds the per-seat availability matrix booking reads
+// from. The layout itself is an untiered, reusable template.
+export interface TierSeating {
+  ticket_tier_id: number;
+  tier_name: string;
+  seat_count: number;
+  available: number;
+  sold: number;
+  blocked: number;
+}
+
+export interface EventSeating {
+  layout_id: number | null;
+  tiers: TierSeating[];
+  total_seats: number;
+  /** Seats in the bound layout with no tier yet — these block submission. */
+  untiered_seats: number;
+}
+
+export interface SeatingAssignment {
+  seat_ids: number[];
+  ticket_tier_id: number;
+}
+
+export async function getEventSeating(eventId: number): Promise<ApiResponse<EventSeating>> {
+  return apiRequest<EventSeating>(`/api/organizer/events/${eventId}/seating`, {
+    method: "GET",
+  });
+}
+
+export async function seedEventSeating(
+  eventId: number,
+  assignments: SeatingAssignment[]
+): Promise<ApiResponse<{ message: string }>> {
+  return apiRequest(`/api/organizer/events/${eventId}/seating`, {
+    method: "PUT",
+    body: JSON.stringify({ assignments }),
+  });
+}
+
 // Orders & Refunds
 export async function listOrders(): Promise<ApiResponse<OrganizerOrder[]>> {
   return apiRequest<OrganizerOrder[]>("/api/organizer/orders", {
@@ -352,5 +393,51 @@ export async function markNotificationsRead(notificationIds?: number[]): Promise
   return apiRequest<void>("/api/notifications/read", {
     method: "PUT",
     body: notificationIds ? JSON.stringify({ notificationIds }) : undefined,
+  });
+}
+
+export interface EventRevisionFeedback {
+  eventId: number;
+  eventStatus: string;
+  auditorNotes?: string;
+  assignedAuditorName?: string;
+  stage?: string;
+  revisions?: Array<{
+    id: number;
+    category: string;
+    title: string;
+    description: string;
+    requiredAction: string;
+    priority: string;
+    status: string;
+    organizerComment?: string;
+    organizerActionTaken?: string;
+    organizerFile?: string;
+    respondedAt?: string;
+  }>;
+  statusLogs?: Array<{
+    fromStatus: string;
+    toStatus: string;
+    notes?: string;
+    createdAt: string;
+  }>;
+}
+
+export async function getEventRevisions(eventId: number): Promise<ApiResponse<EventRevisionFeedback>> {
+  return apiRequest<EventRevisionFeedback>(`/api/organizer/events/${eventId}/revisions`, {
+    method: "GET",
+  });
+}
+
+export async function respondToEventRevision(
+  eventId: number,
+  revId: number,
+  comment: string,
+  actionTaken: string,
+  proofFile?: string
+): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/revisions/${revId}/respond`, {
+    method: "POST",
+    body: JSON.stringify({ comment, actionTaken, proofFile }),
   });
 }

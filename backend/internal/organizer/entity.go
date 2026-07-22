@@ -11,6 +11,12 @@ var (
 	ErrApplicationAlreadyExists = errors.New("an application has already been submitted for this user")
 	ErrValidation               = errors.New("validation failed")
 	ErrApplicationLocked        = errors.New("cannot modify application in its current status")
+
+	// Seat-overlay (Phase 4/5)
+	ErrNoLayoutBound     = errors.New("no venue layout is bound to this event")
+	ErrSeatNotInLayout   = errors.New("seat does not belong to the event's layout")
+	ErrTierNotInEvent    = errors.New("ticket tier does not belong to this event")
+	ErrSeatingIncomplete = errors.New("event seating is incomplete")
 )
 
 type OrganizerApplication struct {
@@ -169,19 +175,19 @@ type OrganizerTicketTier struct {
 
 // Venue Section model
 type VenueSection struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Type     string `json:"type"` // "seats" | "standing"
-	Capacity int    `json:"capacity"`
-	Sold     int    `json:"sold"`
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	Type     string  `json:"type"` // "seats" | "standing"
+	Capacity int     `json:"capacity"`
+	Sold     int     `json:"sold"`
 	Price    float64 `json:"price"`
-	X        int    `json:"x"`
-	Y        int    `json:"y"`
-	Width    int    `json:"width"`
-	Height   int    `json:"height"`
-	Rows     int    `json:"rows,omitempty"`
-	Cols     int    `json:"cols,omitempty"`
-	Gate     string `json:"gate"`
+	X        int     `json:"x"`
+	Y        int     `json:"y"`
+	Width    int     `json:"width"`
+	Height   int     `json:"height"`
+	Rows     int     `json:"rows,omitempty"`
+	Cols     int     `json:"cols,omitempty"`
+	Gate     string  `json:"gate"`
 }
 
 type CheckInRequest struct {
@@ -208,6 +214,44 @@ type Notification struct {
 
 type MarkReadRequest struct {
 	NotificationIDs []int `json:"notificationIds"`
+}
+
+type EventRevisionFeedback struct {
+	EventID             int                    `json:"eventId"`
+	EventStatus         string                 `json:"eventStatus"`
+	AuditorNotes        string                 `json:"auditorNotes,omitempty"`
+	AssignedAuditorName string                 `json:"assignedAuditorName,omitempty"`
+	Stage               string                 `json:"stage,omitempty"`
+	Revisions           []*AuditorRevisionItem `json:"revisions"`
+	StatusLogs          []*EventStatusLogItem  `json:"statusLogs"`
+}
+
+type RespondRevisionRequest struct {
+	Comment     string `json:"comment"`
+	ActionTaken string `json:"actionTaken"`
+	ProofFile   string `json:"proofFile"`
+}
+
+type AuditorRevisionItem struct {
+	ID                   int       `json:"id"`
+	Category             string    `json:"category"`
+	Title                string    `json:"title"`
+	Description          string    `json:"description"`
+	RequiredAction       string    `json:"requiredAction"`
+	Priority             string    `json:"priority"`
+	Status               string    `json:"status"`
+	CreatedAt            time.Time `json:"createdAt"`
+	OrganizerComment     string    `json:"organizerComment,omitempty"`
+	OrganizerActionTaken string    `json:"organizerActionTaken,omitempty"`
+	OrganizerFile        string    `json:"organizerFile,omitempty"`
+	RespondedAt          string    `json:"respondedAt,omitempty"`
+}
+
+type EventStatusLogItem struct {
+	FromStatus string    `json:"fromStatus"`
+	ToStatus   string    `json:"toStatus"`
+	Notes      string    `json:"notes,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
 }
 
 // Organizer Order model
@@ -294,7 +338,6 @@ type Repository interface {
 	UpdateOrganizerEvent(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
 	PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
-	GetVenueLayout(ctx context.Context, eventID int, organizerID int) ([]*VenueSection, error)
 	ListTicketTiers(ctx context.Context, eventID int, organizerID int) ([]*OrganizerTicketTier, error)
 	CreateTicketTier(ctx context.Context, eventID int, organizerID int, tier *OrganizerTicketTier) error
 	UpdateTicketTier(ctx context.Context, eventID int, organizerID int, tierID int, tier *OrganizerTicketTier) error
@@ -309,12 +352,13 @@ type Repository interface {
 	CreatePayoutRequest(ctx context.Context, eventID int, organizerID int, amount float64) error
 	GetAnalytics(ctx context.Context, organizerID int, dateRange string) (*OrganizerAnalytics, error)
 	GetEventAnalytics(ctx context.Context, eventID int, organizerID int, dateRange string) (*OrganizerAnalytics, error)
-	CreateVenueSection(ctx context.Context, eventID int, organizerID int, section *VenueSection) error
-	UpdateVenueSection(ctx context.Context, eventID int, organizerID int, sectionID int, section *VenueSection) error
-	DeleteVenueSection(ctx context.Context, eventID int, organizerID int, sectionID int) error
+	GetEventSeating(ctx context.Context, eventID int, organizerID int) (*EventSeatingResponse, error)
+	SeedEventSeating(ctx context.Context, eventID int, organizerID int, assignments []SeatingAssignment) error
 	CheckInAttendee(ctx context.Context, eventID int, organizerID int, qrToken string) (*CheckInResponse, error)
 	ListNotifications(ctx context.Context, userID int) ([]*Notification, error)
 	MarkNotificationsRead(ctx context.Context, userID int, notificationIDs []int) error
+	GetEventRevisions(ctx context.Context, eventID int, organizerID int) (*EventRevisionFeedback, error)
+	RespondToEventRevision(ctx context.Context, eventID, revID, organizerID int, req RespondRevisionRequest) error
 }
 
 type Service interface {
@@ -331,10 +375,8 @@ type Service interface {
 	UpdateOrganizerEvent(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
 	PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
-	GetVenueLayout(ctx context.Context, eventID int, organizerID int) ([]*VenueSection, error)
-	CreateVenueSection(ctx context.Context, eventID int, organizerID int, section *VenueSection) error
-	UpdateVenueSection(ctx context.Context, eventID int, organizerID int, sectionID int, section *VenueSection) error
-	DeleteVenueSection(ctx context.Context, eventID int, organizerID int, sectionID int) error
+	GetEventSeating(ctx context.Context, eventID int, organizerID int) (*EventSeatingResponse, error)
+	SeedEventSeating(ctx context.Context, eventID int, organizerID int, req SeedSeatingRequest) error
 	CheckInAttendee(ctx context.Context, eventID int, organizerID int, qrToken string) (*CheckInResponse, error)
 	ListTicketTiers(ctx context.Context, eventID int, organizerID int) ([]*OrganizerTicketTier, error)
 	CreateTicketTier(ctx context.Context, eventID int, organizerID int, tier *OrganizerTicketTier) error
@@ -350,6 +392,8 @@ type Service interface {
 	CreatePayoutRequest(ctx context.Context, eventID int, organizerID int, amount float64) error
 	GetAnalytics(ctx context.Context, organizerID int, dateRange string) (*OrganizerAnalytics, error)
 	GetEventAnalytics(ctx context.Context, eventID int, organizerID int, dateRange string) (*OrganizerAnalytics, error)
+	GetEventRevisions(ctx context.Context, eventID int, organizerID int) (*EventRevisionFeedback, error)
+	RespondToEventRevision(ctx context.Context, eventID, revID, organizerID int, req RespondRevisionRequest) error
 	ListNotifications(ctx context.Context, userID int) ([]*Notification, error)
 	MarkNotificationsRead(ctx context.Context, userID int, notificationIDs []int) error
 }

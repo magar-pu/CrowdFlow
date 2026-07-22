@@ -54,66 +54,180 @@ func (r *PostgresRedisRepository) ListTicketTiers(eventID int) ([]*TicketTier, e
 	return tiers, nil
 }
 
-// GetSeatMap returns every assigned seat for the event, grouped by section.
+// GetSeatMap returns the buyer-facing seating payload for an event: the bound
+// layout's decorative geometry, every assigned seat grouped by priced section,
+// and any on-sale tiers that have no assigned seats (general admission).
+//
 // Seat status comes from event_seats_matrix.current_state (per-event booking
 // status), not seats.seat_status (the seat's venue-level physical condition).
-func (r *PostgresRedisRepository) GetSeatMap(eventID int) ([]*SeatSection, error) {
+// Geometry (section shape/colour, seat pos_x/pos_y) rides along so buyers can
+// render the same map the organizer designed without needing the
+// organizer-gated layout API.
+func (r *PostgresRedisRepository) GetSeatMap(eventID int) (*SeatMap, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT es.id, vs.section_name, es.ticket_tier_id, tt.price,
-			s.id, s.row_number, s.seat_number, esm.current_state
-		FROM event_sections es
-		JOIN venue_sections vs ON es.section_id = vs.id
-		JOIN ticket_tiers tt ON es.ticket_tier_id = tt.id
-		JOIN event_seats_matrix esm ON esm.event_section_id = es.id AND esm.event_id = es.event_id
-		JOIN seats s ON s.id = esm.seat_id
-		WHERE es.event_id = $1 AND es.is_active = true
-		ORDER BY vs.section_name, s.row_number, s.seat_number
-	`, eventID)
+	tiers, seatedTierIDs, err := r.seatMapTiers(ctx, eventID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	sectionsByID := make(map[int]*SeatSection)
-	var order []int
-	for rows.Next() {
-		var sectionID, tierID, seatID int
-		var sectionName, row, number, state string
-		var price float64
-		if err := rows.Scan(&sectionID, &sectionName, &tierID, &price, &seatID, &row, &number, &state); err != nil {
-			return nil, err
-		}
-
-		section, ok := sectionsByID[sectionID]
-		if !ok {
-			section = &SeatSection{
-				EventSectionID: sectionID,
-				Name:           sectionName,
-				TicketTierID:   tierID,
-				Price:          price,
-			}
-			sectionsByID[sectionID] = section
-			order = append(order, sectionID)
-		}
-		section.Seats = append(section.Seats, Seat{
-			SeatID: seatID,
-			Row:    row,
-			Number: number,
-			Status: state,
-		})
-	}
-	if err := rows.Err(); err != nil {
+	// current_state only becomes 'sold' once an order is paid, so a seat another
+	// buyer is holding right now still reads 'available' in Postgres. Overlay
+	// the live Redis locks, otherwise the map advertises seats that cannot be
+	// held and buyers only discover the clash at the last step.
+	if err := r.applySeatHolds(ctx, eventID, tiers); err != nil {
 		return nil, err
 	}
 
-	sections := make([]*SeatSection, 0, len(order))
-	for _, id := range order {
-		sections = append(sections, sectionsByID[id])
+	layout, err := r.seatMapLayout(ctx, eventID)
+	if err != nil {
+		return nil, err
 	}
-	return sections, nil
+
+	// Any on-sale tier without assigned seats is sold as general admission.
+	allTiers, err := r.ListTicketTiers(eventID)
+	if err != nil {
+		return nil, err
+	}
+	gaTiers := make([]*TicketTier, 0, len(allTiers))
+	for _, t := range allTiers {
+		if !seatedTierIDs[t.ID] {
+			gaTiers = append(gaTiers, t)
+		}
+	}
+
+	return &SeatMap{Layout: layout, Tiers: tiers, GaTiers: gaTiers}, nil
+}
+
+// applySeatHolds marks seats currently locked in Redis as "held", in place.
+//
+// Only seats Postgres still reports as available are considered: a sold or
+// blocked seat outranks a stale lock. Read-only, and a missing key simply means
+// the seat is free — expiry is handled by Redis, not here.
+func (r *PostgresRedisRepository) applySeatHolds(ctx context.Context, eventID int, tiers []*SeatTier) error {
+	keys := make([]string, 0)
+	positions := make([][2]int, 0) // tier index, seat index
+	for ti, tier := range tiers {
+		for si, seat := range tier.Seats {
+			if seat.Status != "available" {
+				continue
+			}
+			keys = append(keys, seatLockKey(eventID, seat.SeatID))
+			positions = append(positions, [2]int{ti, si})
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+
+	values, err := r.redis.MGet(ctx, keys...).Result()
+	if err != nil {
+		return err
+	}
+	for i, v := range values {
+		if v == nil {
+			continue
+		}
+		ti, si := positions[i][0], positions[i][1]
+		tiers[ti].Seats[si].Status = "held"
+	}
+	return nil
+}
+
+// seatMapTiers loads each ticket tier with the seats assigned to it for this
+// event, also reporting which tiers are sold as assigned seating. Grouping is
+// per-seat via event_seats_matrix - the venue layout itself is untiered.
+func (r *PostgresRedisRepository) seatMapTiers(ctx context.Context, eventID int) ([]*SeatTier, map[int]bool, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT tt.id, tt.name, tt.price, tt.color,
+			s.id, s.row_number, s.seat_number, esm.current_state, s.pos_x, s.pos_y
+		FROM event_seats_matrix esm
+		JOIN ticket_tiers tt ON tt.id = esm.ticket_tier_id
+		JOIN seats s ON s.id = esm.seat_id
+		WHERE esm.event_id = $1
+		ORDER BY tt.price, s.row_number, s.seat_number
+	`, eventID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	tiersByID := make(map[int]*SeatTier)
+	seatedTierIDs := make(map[int]bool)
+	var order []int
+	for rows.Next() {
+		var tierID, seatID int
+		var tierName, row, number, state string
+		var price float64
+		var color sql.NullString
+		var posX, posY sql.NullFloat64
+		if err := rows.Scan(
+			&tierID, &tierName, &price, &color,
+			&seatID, &row, &number, &state, &posX, &posY,
+		); err != nil {
+			return nil, nil, err
+		}
+
+		tier, ok := tiersByID[tierID]
+		if !ok {
+			tier = &SeatTier{
+				TicketTierID: tierID,
+				Name:         tierName,
+				Price:        price,
+				Seats:        []Seat{},
+			}
+			if color.Valid {
+				tier.Color = &color.String
+			}
+			tiersByID[tierID] = tier
+			order = append(order, tierID)
+			seatedTierIDs[tierID] = true
+		}
+
+		seat := Seat{SeatID: seatID, Row: row, Number: number, Status: state}
+		if posX.Valid {
+			seat.PosX = &posX.Float64
+		}
+		if posY.Valid {
+			seat.PosY = &posY.Float64
+		}
+		tier.Seats = append(tier.Seats, seat)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	tiers := make([]*SeatTier, 0, len(order))
+	for _, id := range order {
+		tiers = append(tiers, tiersByID[id])
+	}
+	return tiers, seatedTierIDs, nil
+}
+
+// seatMapLayout loads the decorative geometry of the layout bound to the
+// event. Returns nil (not an error) when the event has no layout bound.
+func (r *PostgresRedisRepository) seatMapLayout(ctx context.Context, eventID int) (*SeatMapLayout, error) {
+	var layoutID int
+	var geometry []byte
+	err := r.db.QueryRowContext(ctx, `
+		SELECT vl.id, vl.geometry
+		FROM events e
+		JOIN venue_layouts vl ON vl.id = e.layout_id
+		WHERE e.id = $1
+	`, eventID).Scan(&layoutID, &geometry)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	// venue_layouts.geometry is NOT NULL DEFAULT '{}', but guard anyway so an
+	// empty column can never emit invalid JSON.
+	if len(geometry) == 0 {
+		geometry = []byte("{}")
+	}
+	return &SeatMapLayout{LayoutID: layoutID, Geometry: json.RawMessage(geometry)}, nil
 }
 
 func (r *PostgresRedisRepository) IsAssignedSeating(ticketTierID int) (bool, error) {

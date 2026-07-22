@@ -17,7 +17,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { SignInForm } from "@/components/auth/SignInForm";
 import { AuthFooterLink } from "@/components/auth/AuthFooterLink";
-import { useAuthStore } from "@/lib/store/authStore";
+import { useAuthStore, getRoleLandingPath } from "@/lib/store/authStore";
 import { loginUser } from "@/lib/api/auth";
 
 const BACKEND_READY = true; // Flip ke true setelah Go backend live
@@ -25,9 +25,21 @@ const BACKEND_READY = true; // Flip ke true setelah Go backend live
 function SignInPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login, set_user_from_api } = useAuthStore();
+  const { user, is_authenticated, login, set_user_from_api } = useAuthStore();
   const [error_message, set_error_message] = useState("");
   const [success_message, set_success_message] = useState("");
+
+  // Redirect away if already authenticated
+  useEffect(() => {
+    if (is_authenticated && user) {
+      const from = searchParams.get("from");
+      if (from && from !== "/login") {
+        router.replace(from);
+      } else {
+        router.replace(getRoleLandingPath(user.role));
+      }
+    }
+  }, [is_authenticated, user, router, searchParams]);
 
   // Check URL query parameters for Google OAuth callback errors and registration success
   useEffect(() => {
@@ -59,14 +71,10 @@ function SignInPageContent() {
       if (result.success && result.data) {
         // Sync user from API response to Zustand
         set_user_from_api(result.data);
-        
-        // Redirect dynamically based on user platform role
-        const role = result.data.role as any;
-        if (role === "Super Admin" || role === "super_admin") {
-          router.push("/admin");
-        } else {
-          router.push("/");
-        }
+
+        // Redirect dynamically based on user platform role — super_admin →
+        // /admin, verified_organizer → /organizer, auditor → /auditor, else /.
+        router.push(getRoleLandingPath(result.data.role ?? ""));
       } else {
         set_error_message(result.error?.message ?? "Login failed.");
         throw new Error(result.error?.message);
@@ -97,7 +105,8 @@ function SignInPageContent() {
       if (result.success) {
         // Sync Google user to Zustand as well
         set_user_from_api(result.data);
-        router.push("/");
+        // Same role-based landing as the password flow.
+        router.push(getRoleLandingPath(result.data?.role ?? ""));
       } else {
         set_error_message(result.error?.message ?? "Google login failed.");
       }

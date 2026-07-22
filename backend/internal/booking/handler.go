@@ -48,12 +48,12 @@ func (h *Handler) handleGetSeatMap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sections, err := h.service.GetSeatMap(eventID)
+	seatMap, err := h.service.GetSeatMap(eventID)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load seat map")
 		return
 	}
-	response.JSON(w, http.StatusOK, sections)
+	response.JSON(w, http.StatusOK, seatMap)
 }
 
 func (h *Handler) handleCreateHold(w http.ResponseWriter, r *http.Request) {

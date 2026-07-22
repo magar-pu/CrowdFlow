@@ -88,7 +88,7 @@ func (s *OrganizerService) Apply(ctx context.Context, userID int, req ApplyReque
 				ext = ".png"
 			}
 		}
-		
+
 		timestamp := time.Now().UnixNano()
 		objectKey := fmt.Sprintf("organizers/documents/%d_%d_%s%s", userID, timestamp, strings.ToLower(doc.Type), ext)
 
@@ -191,7 +191,7 @@ func (s *OrganizerService) UpdateApplication(ctx context.Context, userID int, re
 				ext = ".png"
 			}
 		}
-		
+
 		timestamp := time.Now().UnixNano()
 		objectKey := fmt.Sprintf("organizers/documents/%d_%d_%s%s", userID, timestamp, strings.ToLower(doc.Type), ext)
 
@@ -267,10 +267,6 @@ func (s *OrganizerService) GetOrganizerEvent(ctx context.Context, eventID int, o
 
 func (s *OrganizerService) DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error {
 	return s.repo.DeleteOrganizerEvent(ctx, eventID, organizerID)
-}
-
-func (s *OrganizerService) GetVenueLayout(ctx context.Context, eventID int, organizerID int) ([]*VenueSection, error) {
-	return s.repo.GetVenueLayout(ctx, eventID, organizerID)
 }
 
 func (s *OrganizerService) ListTicketTiers(ctx context.Context, eventID int, organizerID int) ([]*OrganizerTicketTier, error) {
@@ -389,27 +385,6 @@ func (s *OrganizerService) GetEventAnalytics(ctx context.Context, eventID int, o
 	return s.repo.GetEventAnalytics(ctx, eventID, organizerID, dateRange)
 }
 
-func (s *OrganizerService) CreateVenueSection(ctx context.Context, eventID int, organizerID int, section *VenueSection) error {
-	if section.Name == "" || section.Capacity <= 0 {
-		return fmt.Errorf("%w: invalid section name or capacity", ErrValidation)
-	}
-	return s.repo.CreateVenueSection(ctx, eventID, organizerID, section)
-}
-
-func (s *OrganizerService) UpdateVenueSection(ctx context.Context, eventID int, organizerID int, sectionID int, section *VenueSection) error {
-	if sectionID <= 0 || section.Capacity <= 0 {
-		return fmt.Errorf("%w: invalid section ID or capacity", ErrValidation)
-	}
-	return s.repo.UpdateVenueSection(ctx, eventID, organizerID, sectionID, section)
-}
-
-func (s *OrganizerService) DeleteVenueSection(ctx context.Context, eventID int, organizerID int, sectionID int) error {
-	if sectionID <= 0 {
-		return fmt.Errorf("%w: invalid section ID", ErrValidation)
-	}
-	return s.repo.DeleteVenueSection(ctx, eventID, organizerID, sectionID)
-}
-
 func (s *OrganizerService) CheckInAttendee(ctx context.Context, eventID int, organizerID int, qrToken string) (*CheckInResponse, error) {
 	if qrToken == "" {
 		return nil, fmt.Errorf("%w: QR token is required", ErrValidation)
@@ -429,4 +404,18 @@ func (s *OrganizerService) MarkNotificationsRead(ctx context.Context, userID int
 		return fmt.Errorf("%w: invalid user ID", ErrValidation)
 	}
 	return s.repo.MarkNotificationsRead(ctx, userID, notificationIDs)
+}
+
+func (s *OrganizerService) GetEventRevisions(ctx context.Context, eventID int, organizerID int) (*EventRevisionFeedback, error) {
+	if eventID <= 0 || organizerID <= 0 {
+		return nil, fmt.Errorf("%w: invalid parameters", ErrValidation)
+	}
+	return s.repo.GetEventRevisions(ctx, eventID, organizerID)
+}
+
+func (s *OrganizerService) RespondToEventRevision(ctx context.Context, eventID, revID, organizerID int, req RespondRevisionRequest) error {
+	if eventID <= 0 || revID <= 0 || organizerID <= 0 {
+		return fmt.Errorf("%w: invalid parameters", ErrValidation)
+	}
+	return s.repo.RespondToEventRevision(ctx, eventID, revID, organizerID, req)
 }

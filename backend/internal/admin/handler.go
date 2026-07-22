@@ -90,8 +90,6 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /events/{id}/ticket-tiers", admin(h.handleGetTicketTiers))
 	mux.Handle("PUT /events/{id}/ticket-tiers", admin(h.handleUpdateTicketTiers))
 	mux.Handle("DELETE /events/{id}/ticket-tiers/{tierId}", admin(h.handleDeleteTicketTier))
-	mux.Handle("GET /events/{id}/venue-sections", admin(h.handleGetVenueSections))
-	mux.Handle("PUT /events/{id}/venue-sections", admin(h.handleUpdateVenueSections))
 
 	mux.Handle("GET /finance/transactions", admin(h.handleListTransactions))
 	mux.Handle("GET /finance/payouts", admin(h.handleListPayouts))
@@ -102,6 +100,7 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /users", admin(h.handleListUsers))
 	mux.Handle("POST /users/{id}/status", admin(h.handleUpdateUserStatus))
 	mux.Handle("POST /users/{id}/roles", admin(h.handleGrantUserRole))
+	mux.Handle("DELETE /users/{id}/roles", admin(h.handleRevokeUserRole))
 	mux.Handle("GET /users/verifications", admin(h.handleListVerifications))
 	mux.Handle("POST /users/verifications/{id}/approve", admin(h.handleApproveVerification))
 	mux.Handle("POST /users/verifications/{id}/reject", admin(h.handleRejectVerification))
@@ -325,38 +324,6 @@ func (h *Handler) handleDeleteTicketTier(w http.ResponseWriter, r *http.Request)
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Ticket tier deleted"})
 }
 
-func (h *Handler) handleGetVenueSections(w http.ResponseWriter, r *http.Request) {
-	eventID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
-		return
-	}
-	sections, err := h.service.GetVenueSections(eventID)
-	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load venue sections")
-		return
-	}
-	response.JSON(w, http.StatusOK, sections)
-}
-
-func (h *Handler) handleUpdateVenueSections(w http.ResponseWriter, r *http.Request) {
-	eventID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
-		return
-	}
-	var sections []*VenueSection
-	if err := json.NewDecoder(r.Body).Decode(&sections); err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
-		return
-	}
-	if err := h.service.UpdateVenueSections(eventID, sections); err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update venue sections")
-		return
-	}
-	response.JSON(w, http.StatusOK, map[string]string{"message": "Venue sections updated"})
-}
-
 func (h *Handler) handleListTransactions(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parsePagination(r, 50)
 	transactions, err := h.service.ListTransactions(limit, offset)
@@ -461,6 +428,36 @@ func (h *Handler) handleUpdateUserStatus(w http.ResponseWriter, r *http.Request)
 	response.JSON(w, http.StatusOK, map[string]string{"message": "User status updated"})
 }
 
+func (h *Handler) handleApproveVerification(w http.ResponseWriter, r *http.Request) {
+	h.setVerificationStatus(w, r, "Verified", "Verification approved")
+}
+
+func (h *Handler) handleRejectVerification(w http.ResponseWriter, r *http.Request) {
+	h.setVerificationStatus(w, r, "Suspended", "Verification rejected")
+}
+
+// setVerificationStatus approves or rejects a pending verification. The queue is
+// derived from users.verification_status, so the {id} is the user's own id and
+// this reuses UpdateUserStatus ("Verified" -> verified, "Suspended" -> rejected)
+// rather than a parallel data model.
+func (h *Handler) setVerificationStatus(w http.ResponseWriter, r *http.Request, status, successMsg string) {
+	actorID, ok := actorIDFromRequest(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
+		return
+	}
+	userID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Verification ID must be a valid integer")
+		return
+	}
+	if err := h.service.UpdateUserStatus(userID, status, actorID); err != nil {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": successMsg})
+}
+
 type grantRoleRequest struct {
 	RoleID  int  `json:"role_id"`
 	EventID *int `json:"event_id"`
@@ -492,6 +489,32 @@ func (h *Handler) handleGrantUserRole(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusCreated, map[string]string{"message": "Role granted"})
 }
 
+// handleRevokeUserRole removes a role_id from the target user, matching the
+// same event scope the grant used (event_id omitted/null -> the platform-wide
+// grant; an event_id -> that event's scoped grant).
+func (h *Handler) handleRevokeUserRole(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := actorIDFromRequest(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
+		return
+	}
+	userID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "User ID must be a valid integer")
+		return
+	}
+	var req grantRoleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
+		return
+	}
+	if err := h.service.RevokeUserRole(userID, req.RoleID, req.EventID, actorID); err != nil {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Role revoked"})
+}
+
 func (h *Handler) handleListVerifications(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parsePagination(r, 50)
 	verifications, err := h.service.ListVerifications(limit, offset)
@@ -500,45 +523,4 @@ func (h *Handler) handleListVerifications(w http.ResponseWriter, r *http.Request
 		return
 	}
 	response.JSON(w, http.StatusOK, verifications)
-}
-
-// handleApproveVerification and handleRejectVerification treat the
-// verification "application" ID as the user's own ID (see
-// Repository.ListVerifications) and reuse UpdateUserStatus rather than a
-// separate applications data model.
-
-func (h *Handler) handleApproveVerification(w http.ResponseWriter, r *http.Request) {
-	actorID, ok := actorIDFromRequest(r)
-	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
-		return
-	}
-	userID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Applicant ID must be a valid integer")
-		return
-	}
-	if err := h.service.UpdateUserStatus(userID, "Verified", actorID); err != nil {
-		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
-		return
-	}
-	response.JSON(w, http.StatusOK, map[string]string{"message": "Verification approved"})
-}
-
-func (h *Handler) handleRejectVerification(w http.ResponseWriter, r *http.Request) {
-	actorID, ok := actorIDFromRequest(r)
-	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
-		return
-	}
-	userID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Applicant ID must be a valid integer")
-		return
-	}
-	if err := h.service.UpdateUserStatus(userID, "Suspended", actorID); err != nil {
-		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
-		return
-	}
-	response.JSON(w, http.StatusOK, map[string]string{"message": "Verification rejected"})
 }

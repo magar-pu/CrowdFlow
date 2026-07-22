@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from 'react';
-import { User, VerificationApplication } from '@/types/admin';
+import React, { useEffect, useState } from 'react';
+import { ApiResponse, Event, User, VerificationApplication } from '@/types/admin';
 import UserDirectoryTable from './UserDirectoryTable';
 import VerificationQueue from './VerificationQueue';
 import UserDetailDrawer from './UserDetailDrawer';
@@ -10,9 +10,12 @@ import Pagination from '@/components/admin/shared/Pagination';
 interface UserManagementViewProps {
   users: User[];
   verifications: VerificationApplication[];
+  events: Event[];
   onApproveVerification: (id: string) => void;
   onRejectVerification: (id: string) => void;
   onToggleUserStatus: (userId: string, newStatus: 'Verified' | 'Suspended') => void;
+  onGrantRole: (userId: string, roleId: number, eventId: number | null) => Promise<ApiResponse<void>>;
+  onRevokeRole: (userId: string, roleId: number, eventId: number | null) => Promise<ApiResponse<void>>;
   page: number;
   hasNextPage: boolean;
   onPrevPage: () => void;
@@ -22,28 +25,38 @@ interface UserManagementViewProps {
 export default function UserManagementView({
   users,
   verifications,
+  events,
   onApproveVerification,
   onRejectVerification,
   onToggleUserStatus,
+  onGrantRole,
+  onRevokeRole,
   page,
   hasNextPage,
   onPrevPage,
   onNextPage
 }: UserManagementViewProps) {
   const [activeSubTab, setActiveSubTab] = useState<'directory' | 'queue'>('directory');
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+
+  // Derive the open user from the live `users` list rather than snapshotting it,
+  // so a status change or role grant/revoke (which refetches `users`) is
+  // reflected in the drawer immediately without manual patching.
+  const selectedUser = selectedUserId
+    ? users.find((u) => u.id === selectedUserId) ?? null
+    : null;
+
+  // Close the drawer if the selected user drops out of the list (e.g. paged away).
+  useEffect(() => {
+    if (selectedUserId && !users.some((u) => u.id === selectedUserId)) {
+      setSelectedUserId(null);
+    }
+  }, [users, selectedUserId]);
 
   const pendingCount = verifications.filter(v => v.status === 'Pending').length;
 
   const handleInspectUser = (user: User) => {
-    setSelectedUser(user);
-  };
-
-  const handleToggleStatusInDrawer = (userId: string, status: 'Verified' | 'Suspended') => {
-    onToggleUserStatus(userId, status);
-    if (selectedUser && selectedUser.id === userId) {
-      setSelectedUser({ ...selectedUser, status });
-    }
+    setSelectedUserId(user.id);
   };
 
   return (
@@ -100,10 +113,13 @@ export default function UserManagementView({
 
       {/* User Inspection Side Drawer Overlay */}
       {selectedUser && (
-        <UserDetailDrawer 
-          user={selectedUser} 
-          onClose={() => setSelectedUser(null)} 
-          onToggleStatus={handleToggleStatusInDrawer} 
+        <UserDetailDrawer
+          user={selectedUser}
+          events={events}
+          onClose={() => setSelectedUserId(null)}
+          onToggleStatus={onToggleUserStatus}
+          onGrantRole={onGrantRole}
+          onRevokeRole={onRevokeRole}
         />
       )}
     </div>

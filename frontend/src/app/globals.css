@@ -217,10 +217,11 @@
     box-shadow: 0 0 0 4px rgba(15, 23, 42, 0.1);
   }
 
-  /* ---- Venue Editor: Canvas Grid Background ----------------------------- */
+  /* ---- Venue Editor: Canvas Grid Background -----------------------------
+     Cell size and offset are set inline by SeatMapperCanvas so the dots track
+     the real snap step and stay aligned while panning/zooming. */
   .canvas-grid {
     background-image: radial-gradient(var(--color-border-subtle) 1px, transparent 1px);
-    background-size: 20px 20px;
   }
   
   /* laser check scanner laser effect */

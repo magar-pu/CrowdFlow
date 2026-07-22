@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Trash2, Plus, Rocket, Paintbrush, AlertTriangle, ChevronDown, ChevronUp, BarChart3, X } from "lucide-react";
 import type { PricingTier, VenueSection } from "@/types/ticket";
-import type { ValidationError } from "@/lib/store/venueEditorStore";
+import { useVenueEditorStore, type ValidationError } from "@/lib/store/venueEditorStore";
 import { cn } from "@/lib/utils";
 
 interface TierStats {
@@ -58,8 +58,8 @@ export function TicketConfigPanel({
   const [validation_errors, set_validation_errors] = useState<ValidationError[]>([]);
   const [expanded_tier_id, set_expanded_tier_id] = useState<string | null>(null);
 
-  // ── Compute tier stats from sections ──────────────────────────────────
-  const all_seats = sections.flatMap((s) => s.seats);
+  // ── Compute tier stats from the flat seat list ────────────────────────
+  const all_seats = useVenueEditorStore((s) => s.seats);
   const total_seats = all_seats.length;
   const unassigned_seats = all_seats.filter((s) => !s.tier_id).length;
 

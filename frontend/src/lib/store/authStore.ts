@@ -62,18 +62,54 @@ const MOCK_USERS: (AuthUser & { password: string })[] = [
 // Map backend/database custom legacy role names to client-side expected roles
 const DATABASE_ROLE_MAPPING: Record<string, string> = {
   "Event Organizer": "verified_organizer",
+  "Organizer": "verified_organizer",
+  "organizer": "verified_organizer",
+  "event_organizer": "verified_organizer",
+  "Super Admin": "super_admin",
+  "Admin": "super_admin",
+  "admin": "super_admin",
+  "superadmin": "super_admin",
+  "Auditor": "auditor",
+  "auditor": "auditor",
+  "User": "user",
+  "user": "user",
+  "Customer": "user",
 };
 
 /**
  * Automatically translates database role strings to client-friendly formats.
- * e.g., "Event Organizer" -> "verified_organizer", "Gate Scanner" -> "gate_scanner".
+ * e.g., "Event Organizer" -> "verified_organizer", "Super Admin" -> "super_admin".
  */
-
 export function normalizeUserRole(apiRole: string): string {
-  if (DATABASE_ROLE_MAPPING[apiRole]) {
-    return DATABASE_ROLE_MAPPING[apiRole];
+  if (!apiRole) return "user";
+  const trimmed = apiRole.trim();
+  if (DATABASE_ROLE_MAPPING[trimmed]) {
+    return DATABASE_ROLE_MAPPING[trimmed];
   }
-  return apiRole.toLowerCase().replace(/\s+/g, "_");
+  const slug = trimmed.toLowerCase().replace(/[\s-]+/g, "_");
+  if (DATABASE_ROLE_MAPPING[slug]) {
+    return DATABASE_ROLE_MAPPING[slug];
+  }
+  return slug;
+}
+
+/**
+ * Single source of truth for where a role lands after login. Accepts a raw
+ * or normalized role string; normalizes it, then maps to that role's console
+ * home. Every other role (user, gate_scanner, unknown) lands on the public
+ * home page.
+ */
+export function getRoleLandingPath(role: string): string {
+  switch (normalizeUserRole(role)) {
+    case "super_admin":
+      return "/admin";
+    case "verified_organizer":
+      return "/organizer";
+    case "auditor":
+      return "/auditor";
+    default:
+      return "/";
+  }
 }
 
 export const useAuthStore = create<AuthState>()(

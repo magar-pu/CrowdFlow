@@ -11,7 +11,9 @@ import (
 	"crowdflow-backend/internal/admin"
 	"crowdflow-backend/internal/auditor"
 	"crowdflow-backend/internal/auth"
+	"crowdflow-backend/internal/bankaccount"
 	"crowdflow-backend/internal/booking"
+	"crowdflow-backend/internal/delegation"
 	"crowdflow-backend/internal/event"
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/organizer"
@@ -20,11 +22,26 @@ import (
 	"crowdflow-backend/internal/platform/redisclient"
 	"crowdflow-backend/internal/resale"
 	"crowdflow-backend/internal/response"
+	"crowdflow-backend/internal/scanner"
 	"crowdflow-backend/internal/storage"
-	"crowdflow-backend/internal/user"
+	"crowdflow-backend/internal/ticket"
+	"crowdflow-backend/internal/venuelayout"
+
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
+
+// getDurationEnv reads a Go duration string (e.g. "15m", "720h") from the
+// environment, falling back to def when unset or unparseable.
+func getDurationEnv(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+		log.Printf("[WARN] invalid %s=%q; using default %s", key, v, def)
+	}
+	return def
+}
 
 func healthCheck(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -82,9 +99,18 @@ func main() {
 
 	// Register global system health route (intentionally unversioned)
 	mux.HandleFunc("GET /api/health", healthCheck(db))
+
+	// Development mode relaxes production-only guardrails (the Secure-cookie flag
+	// below, and the required-secret check here). Anything other than
+	// DEV_MODE=true is treated as production.
+	devMode := os.Getenv("DEV_MODE") == "true"
+
 	// Initialize Configuration for JWT & Google Client ID
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
+		if !devMode {
+			log.Fatalf("JWT_SECRET environment variable is required in production (set DEV_MODE=true to use the insecure development fallback)")
+		}
 		jwtSecret = "crowdflow_dev_jwt_secret"
 	}
 	googleClientID := os.Getenv("GOOGLE_CLIENT_ID")
@@ -121,17 +147,26 @@ func main() {
 	// Register feature routes
 	eventHandler.RegisterRoutes(apiV1, authMounter.Authenticate, authMounter.OptionalAuthenticate, authMounter.RequirePlatformRole, authMounter.RequireEventRole)
 
+	// Token lifetimes: short-lived access JWT refreshed via a long-lived,
+	// rotating, revocable refresh token (see internal/auth/session.go).
+	accessTTL := getDurationEnv("ACCESS_TOKEN_TTL", 15*time.Minute)
+	refreshTTL := getDurationEnv("REFRESH_TOKEN_TTL", 30*24*time.Hour)
+
 	// Initialize Authentication dependencies
 	authRepo := auth.NewPostgresRepository(db)
-	authService := auth.NewAuthService(authRepo, jwtSecret, oauthConfig)
-	isSecure := os.Getenv("DEV_MODE") != "true"
-	authHandler := auth.NewHandler(authService, isSecure)
+	sessionStore := auth.NewSessionStore(redisClient, refreshTTL)
+	authService := auth.NewAuthService(authRepo, jwtSecret, oauthConfig, sessionStore, accessTTL)
+	isSecure := !devMode
+	authHandler := auth.NewHandler(authService, isSecure, accessTTL, refreshTTL)
 
 	// Rate limit login attempts per IP to slow brute-force/credential-stuffing
 	loginRateLimit := middleware.RateLimit(redisClient, "login", 10, 15*time.Minute)
+	// Refresh is legitimate ~once per access-token lifetime per session; keep a
+	// generous per-IP ceiling to blunt abuse without harming users behind NAT.
+	refreshRateLimit := middleware.RateLimit(redisClient, "refresh", 60, 15*time.Minute)
 
 	// Register Authentication routes
-	authHandler.RegisterRoutes(apiV1, authMounter.Authenticate, loginRateLimit)
+	authHandler.RegisterRoutes(apiV1, authMounter.Authenticate, loginRateLimit, refreshRateLimit)
 
 	// Initialize Admin console dependencies
 	adminRepo := admin.NewPostgresRepository(db)
@@ -148,6 +183,22 @@ func main() {
 
 	// Register Booking routes
 	bookingHandler.RegisterRoutes(apiV1, authMounter.Authenticate)
+
+	// Initialize Ticket dependencies (My Tickets + Dynamic 10-Min QR Tokens)
+	ticketRepo := ticket.NewPostgresRepository(db)
+	ticketService := ticket.NewService(ticketRepo)
+	ticketHandler := ticket.NewHandler(ticketService)
+
+	// Register Ticket routes
+	ticketHandler.RegisterRoutes(apiV1, authMounter.Authenticate)
+
+	// Initialize Venue Layout dependencies (saved seat-map plans + geometry)
+	venueLayoutRepo := venuelayout.NewPostgresRepository(db)
+	venueLayoutService := venuelayout.NewLayoutService(venueLayoutRepo)
+	venueLayoutHandler := venuelayout.NewHandler(venueLayoutService)
+
+	// Register Venue Layout routes (organizer + super admin console)
+	venueLayoutHandler.RegisterRoutes(apiV1, authMounter.Authenticate, authMounter.RequirePlatformRole)
 
 	// Initialize Payment dependencies
 	paymentRepo := payment.NewPostgresRepository(db)
@@ -171,6 +222,19 @@ func main() {
 	// Register Organizer routes
 	organizerHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole, authMounter.RequireEventOwnership)
 
+	// Initialize Co-Organizer Delegation dependencies (owner-driven delegation + approval)
+	delegationRepo := delegation.NewPostgresRepository(db)
+	delegationService := delegation.NewDelegationService(delegationRepo)
+	delegationHandler := delegation.NewHandler(delegationService)
+
+	// Register Delegation routes (verified Event Organizer, on the organizer console)
+	delegationHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole)
+
+	// Register Delegation admin-oversight routes on the admin sub-router (Super Admin only)
+	delegationHandler.RegisterAdminRoutes(adminV1, func(f http.HandlerFunc) http.Handler {
+		return authMounter.Authenticate(authMounter.RequirePlatformRole("Super Admin")(f))
+	})
+
 	// Initialize Auditor portal dependencies
 	auditorRepo := auditor.NewPostgresRepository(db)
 	auditorService := auditor.NewAuditorService(auditorRepo)
@@ -179,13 +243,17 @@ func main() {
 	// Register Auditor routes (Auditor + Super Admin roles)
 	auditorHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole)
 
-	// Initialize User dependencies
-	userRepo := user.NewBankAccountRepository(db)
-	userService := user.NewBankAccountService(userRepo)
-	userHandler := user.NewBankAccountHandler(userService)
+	// Initialize Bank Account dependencies
+	bankAccountRepo := bankaccount.NewBankAccountRepository(db)
+	bankAccountService := bankaccount.NewBankAccountService(bankAccountRepo)
+	bankAccountHandler := bankaccount.NewBankAccountHandler(bankAccountService)
 
-	// Register User routes
-	userHandler.RegisterRoutes(mux, authMounter.Authenticate)
+	// Register Bank Account routes (nested under /api/users/me/)
+	bankAccountHandler.RegisterRoutes(mux, authMounter.Authenticate)
+
+	// Initialize and Register Scanner routes
+	scannerHandler := scanner.NewHandler(db)
+	scannerHandler.RegisterRoutes(mux)
 
 	// Initialize Resale Marketplace dependencies
 	resaleRepo := resale.NewPostgresRepository(db)

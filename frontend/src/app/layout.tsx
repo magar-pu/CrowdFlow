@@ -2,12 +2,16 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import type { Metadata } from "next";
-import "./globals.css";
 import { SessionProvider } from "@/components/auth/SessionProvider";
 
 export const metadata: Metadata = {
-  title: "Test Deployment",
-  description: "Test Deployment",
+  title: "CrowdFlow - Next-Generation Event Ticketing Ecosystem",
+  description: "Secure, transparent, and high-concurrency event ticketing, venue seat management, and dynamic QR check-ins.",
+  icons: {
+    icon: "/icon.png",
+    shortcut: "/icon.png",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({

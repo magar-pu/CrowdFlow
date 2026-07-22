@@ -10,7 +10,6 @@ import { BentoCollections } from "@/components/home-v3/BentoCollections";
 import { HomeFooterV3 } from "@/components/home-v3/HomeFooterV3";
 import { listEvents } from "@/lib/api/events";
 import type { TrendingEventCard } from "@/types/ticket";
-import { mockTrendingCardStats } from "@/mock/homeV2Data";
 
 const FALLBACK_COVER =
   "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=600&auto=format&fit=crop";
@@ -31,7 +30,7 @@ export default function HomePage() {
             city: evt.venue?.city ?? "Indonesia",
             category: evt.category ?? "other",
             starts_at: evt.starts_at,
-            ...mockTrendingCardStats(String(evt.event_id)),
+            starting_price: evt.starting_price ?? null,
           }));
           setTrendingEvents(mapped);
         }
@@ -53,9 +52,11 @@ export default function HomePage() {
           <SearchBar />
           
           <div className="px-6 lg:px-16 max-w-7xl mx-auto">
-            {/* API data available as 'trendingEvents' when you need to pass it to components */}
-            <UpcomingConcerts />
-            <TrendingEvents />
+            {/* Both grids render real events; each hides itself when empty.
+                FlashSaleEvents stays static — the backend has no flash-sale
+                concept to drive it from. */}
+            <UpcomingConcerts events={trendingEvents.slice(0, 4)} />
+            <TrendingEvents events={trendingEvents.slice(4, 8)} />
             <FlashSaleEvents />
             <StatsBanner />
             <BentoCollections />

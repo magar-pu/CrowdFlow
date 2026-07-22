@@ -94,20 +94,16 @@ func (s *AdminService) DeleteTicketTier(eventID, tierID int) error {
 	return s.repo.DeleteTicketTier(eventID, tierID)
 }
 
-func (s *AdminService) GetVenueSections(eventID int) ([]*VenueSection, error) {
-	return s.repo.GetVenueSections(eventID)
-}
-
-func (s *AdminService) UpdateVenueSections(eventID int, sections []*VenueSection) error {
-	return s.repo.UpdateVenueSections(eventID, sections)
-}
-
 func (s *AdminService) UpdateUserStatus(userID int, status string, actorID int) error {
 	return s.repo.UpdateUserStatus(userID, status, actorID)
 }
 
 func (s *AdminService) GrantUserRole(userID int, roleID int, eventID *int, actorID int) error {
 	return s.repo.GrantUserRole(userID, roleID, eventID, actorID)
+}
+
+func (s *AdminService) RevokeUserRole(userID int, roleID int, eventID *int, actorID int) error {
+	return s.repo.RevokeUserRole(userID, roleID, eventID, actorID)
 }
 
 func (s *AdminService) UpdateTransactionStatus(orderID string, status string, actorID int) error {

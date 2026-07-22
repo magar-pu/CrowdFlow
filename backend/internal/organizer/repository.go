@@ -43,7 +43,7 @@ func (r *PostgresRepository) Create(ctx context.Context, app *OrganizerApplicati
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING id, submitted_at
 	`
-	
+
 	var websiteVal *string
 	if app.Website != nil && *app.Website != "" {
 		websiteVal = app.Website
@@ -504,6 +504,12 @@ func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerI
 				e.Status = "Live"
 			} else if statusVal == "draft" {
 				e.Status = "Draft"
+			} else if statusVal == "rejected" {
+				e.Status = "Rejected"
+			} else if statusVal == "needs_revision" || statusVal == "need_revision" {
+				e.Status = "Need Revision"
+			} else if statusVal == "pending_review" {
+				e.Status = "In Review"
 			} else {
 				e.Status = "Scheduled"
 			}
@@ -549,6 +555,12 @@ func (r *PostgresRepository) GetOrganizerEvent(ctx context.Context, eventID int,
 		e.Status = "Live"
 	} else if statusVal == "draft" {
 		e.Status = "Draft"
+	} else if statusVal == "rejected" {
+		e.Status = "Rejected"
+	} else if statusVal == "needs_revision" || statusVal == "need_revision" {
+		e.Status = "Need Revision"
+	} else if statusVal == "pending_review" {
+		e.Status = "In Review"
 	} else {
 		e.Status = "Scheduled"
 	}
@@ -564,74 +576,6 @@ func (r *PostgresRepository) DeleteOrganizerEvent(ctx context.Context, eventID i
 		DELETE FROM events WHERE id = $1 AND organizer_id = $2 AND status = 'draft'
 	`, eventID, organizerID)
 	return err
-}
-
-func (r *PostgresRepository) GetVenueLayout(ctx context.Context, eventID int, organizerID int) ([]*VenueSection, error) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT vs.id, vs.section_name, vs.capacity,
-		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = $1 AND name = vs.section_name), 0) as sold,
-		       COALESCE((SELECT price FROM ticket_tiers WHERE event_id = $1 AND name = vs.section_name LIMIT 1), 0.00) as price
-		FROM venue_sections vs
-		JOIN events e ON e.venue_id = vs.venue_id
-		WHERE e.id = $1 AND e.organizer_id = $2
-		ORDER BY vs.id ASC
-	`, eventID, organizerID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	sections := []*VenueSection{}
-	index := 0
-	for rows.Next() {
-		var s VenueSection
-		var idVal int
-		err = rows.Scan(&idVal, &s.Name, &s.Capacity, &s.Sold, &s.Price)
-		if err == nil {
-			s.ID = strconv.Itoa(idVal)
-			// Enrich with vector coordinates for UI floorplan vector canvas rendering
-			// Maps exactly to the dimensions/placements of Moscone Center / Zilker Park in standard visual presets
-			if s.Name == "VIP Stage Front" || s.Name == "VIP" {
-				s.Type = "seats"
-				s.X = 180
-				s.Y = 110
-				s.Width = 240
-				s.Height = 60
-				s.Rows = 6
-				s.Cols = 10
-				s.Gate = "VIP Entrance"
-			} else if s.Name == "GA Field North" || s.Name == "General Admission" {
-				s.Type = "standing"
-				s.X = 60
-				s.Y = 190
-				s.Width = 140
-				s.Height = 110
-				s.Gate = "Gate A"
-			} else if s.Name == "GA Field South" {
-				s.Type = "standing"
-				s.X = 400
-				s.Y = 190
-				s.Width = 140
-				s.Height = 110
-				s.Gate = "Gate B"
-			} else {
-				s.Type = "seats"
-				s.X = 130
-				s.Y = 320
-				s.Width = 340
-				s.Height = 70
-				s.Rows = 7
-				s.Cols = 20
-				s.Gate = "Gate A"
-			}
-			sections = append(sections, &s)
-			index++
-		}
-	}
-	return sections, nil
 }
 
 func (r *PostgresRepository) ListTicketTiers(ctx context.Context, eventID int, organizerID int) ([]*OrganizerTicketTier, error) {
@@ -1276,7 +1220,7 @@ func (r *PostgresRepository) CreateOrganizerEvent(ctx context.Context, organizer
 			event_type_id, cover_image_url
 		) VALUES ($1, $2, $3, $4, $5, $6, 10.0, true, $7, $8, $9)
 		RETURNING id`
-	
+
 	var lastInsertID int
 	err = tx.QueryRowContext(ctx, queryEvent,
 		venueID, organizerID, event.Name, event.Description, eventStart, eventEnd,
@@ -1434,6 +1378,33 @@ func (r *PostgresRepository) PublishOrganizerEvent(ctx context.Context, eventID 
 		return nil
 	}
 
+	// Seating gate: a seated event (one with a bound layout) can only be
+	// submitted once EVERY seat in that layout has been painted with a ticket
+	// tier (i.e. has an event_seats_matrix row).
+	//
+	// This deliberately covers every seat. The previous rule skipped seats with
+	// no section, which meant an organizer could ship a layout where a chunk of
+	// seats was silently unsellable while the gate reported the event complete.
+	var layoutID sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT layout_id FROM events WHERE id = $1`, eventID).Scan(&layoutID); err != nil {
+		return err
+	}
+	if layoutID.Valid {
+		var untiered int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM seats s
+			WHERE s.layout_id = $1
+			  AND NOT EXISTS (
+				SELECT 1 FROM event_seats_matrix m WHERE m.event_id = $2 AND m.seat_id = s.id
+			  )
+		`, layoutID.Int64, eventID).Scan(&untiered); err != nil {
+			return err
+		}
+		if untiered > 0 {
+			return fmt.Errorf("%w: %d seat(s) are not assigned to a ticket tier", ErrSeatingIncomplete, untiered)
+		}
+	}
+
 	// Update status
 	_, err = tx.ExecContext(ctx, "UPDATE events SET status = 'pending_review', updated_at = now() WHERE id = $1 AND organizer_id = $2", eventID, organizerID)
 	if err != nil {
@@ -1504,132 +1475,6 @@ func (r *PostgresRepository) GetEventAnalytics(ctx context.Context, eventID int,
 	return &OrganizerAnalytics{Points: points}, nil
 }
 
-func (r *PostgresRepository) CreateVenueSection(ctx context.Context, eventID int, organizerID int, section *VenueSection) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	// Verify event and get its venue_id
-	var venueID int
-	err = tx.QueryRowContext(ctx, "SELECT venue_id FROM events WHERE id = $1 AND created_by = $2", eventID, organizerID).Scan(&venueID)
-	if err != nil {
-		return fmt.Errorf("event validation failed: %w", err)
-	}
-
-	// Insert into venue_sections
-	var sectionID int
-	err = tx.QueryRowContext(ctx, `
-		INSERT INTO venue_sections (venue_id, section_name, capacity)
-		VALUES ($1, $2, $3)
-		RETURNING id
-	`, venueID, section.Name, section.Capacity).Scan(&sectionID)
-	if err != nil {
-		return fmt.Errorf("failed to insert venue section: %w", err)
-	}
-
-	// Insert into ticket_tiers to keep ticket pricing/availability allocations in sync
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO ticket_tiers (event_id, name, price, allocation_limit, sales_start, sales_end)
-		VALUES ($1, $2, $3, $4, NOW(), NOW() + INTERVAL '30 days')
-	`, eventID, section.Name, section.Price, section.Capacity)
-	if err != nil {
-		return fmt.Errorf("failed to create ticket tier mapping: %w", err)
-	}
-
-	return tx.Commit()
-}
-
-func (r *PostgresRepository) UpdateVenueSection(ctx context.Context, eventID int, organizerID int, sectionID int, section *VenueSection) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	// Verify event owns this venue layout
-	var venueID int
-	err = tx.QueryRowContext(ctx, "SELECT venue_id FROM events WHERE id = $1 AND created_by = $2", eventID, organizerID).Scan(&venueID)
-	if err != nil {
-		return fmt.Errorf("event validation failed: %w", err)
-	}
-
-	// Get old section name
-	var oldName string
-	err = tx.QueryRowContext(ctx, "SELECT section_name FROM venue_sections WHERE id = $1 AND venue_id = $2", sectionID, venueID).Scan(&oldName)
-	if err != nil {
-		return fmt.Errorf("section not found: %w", err)
-	}
-
-	// Update venue section
-	_, err = tx.ExecContext(ctx, `
-		UPDATE venue_sections
-		SET section_name = $1, capacity = $2
-		WHERE id = $3 AND venue_id = $4
-	`, section.Name, section.Capacity, sectionID, venueID)
-	if err != nil {
-		return fmt.Errorf("failed to update venue section: %w", err)
-	}
-
-	// Update corresponding ticket tier
-	_, err = tx.ExecContext(ctx, `
-		UPDATE ticket_tiers
-		SET name = $1, allocation_limit = $2, price = $3
-		WHERE event_id = $4 AND name = $5
-	`, section.Name, section.Capacity, section.Price, eventID, oldName)
-	if err != nil {
-		return fmt.Errorf("failed to update ticket tier: %w", err)
-	}
-
-	return tx.Commit()
-}
-
-func (r *PostgresRepository) DeleteVenueSection(ctx context.Context, eventID int, organizerID int, sectionID int) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	// Verify event ownership
-	var venueID int
-	err = tx.QueryRowContext(ctx, "SELECT venue_id FROM events WHERE id = $1 AND created_by = $2", eventID, organizerID).Scan(&venueID)
-	if err != nil {
-		return fmt.Errorf("event validation failed: %w", err)
-	}
-
-	// Get section name
-	var name string
-	err = tx.QueryRowContext(ctx, "SELECT section_name FROM venue_sections WHERE id = $1 AND venue_id = $2", sectionID, venueID).Scan(&name)
-	if err != nil {
-		return fmt.Errorf("section not found: %w", err)
-	}
-
-	// Delete section
-	_, err = tx.ExecContext(ctx, "DELETE FROM venue_sections WHERE id = $1 AND venue_id = $2", sectionID, venueID)
-	if err != nil {
-		return fmt.Errorf("failed to delete venue section: %w", err)
-	}
-
-	// Delete corresponding ticket tier
-	_, err = tx.ExecContext(ctx, "DELETE FROM ticket_tiers WHERE event_id = $1 AND name = $2", eventID, name)
-	if err != nil {
-		return fmt.Errorf("failed to delete ticket tier: %w", err)
-	}
-
-	return tx.Commit()
-}
-
 func (r *PostgresRepository) CheckInAttendee(ctx context.Context, eventID int, organizerID int, qrToken string) (*CheckInResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -1652,7 +1497,7 @@ func (r *PostgresRepository) CheckInAttendee(ctx context.Context, eventID int, o
 		FROM tickets t
 		JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
 		JOIN events e ON tt.event_id = e.id
-		WHERE (t.qr_signature = $1 OR t.id::text = $1) AND e.id = $2 AND e.created_by = $3
+		WHERE (t.qr_signature = $1 OR t.id::text = $1) AND e.id = $2 AND e.organizer_id = $3
 	`, qrToken, eventID, organizerID).Scan(&tID, &fullName, &tierName, &currentStatus, &esmID)
 	if err != nil {
 		return nil, fmt.Errorf("ticket not found or not authorized for this event scan")
@@ -1754,3 +1599,127 @@ func (r *PostgresRepository) MarkNotificationsRead(ctx context.Context, userID i
 	return err
 }
 
+func (r *PostgresRepository) GetEventRevisions(ctx context.Context, eventID int, organizerID int) (*EventRevisionFeedback, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	var feedback EventRevisionFeedback
+	feedback.EventID = eventID
+
+	var dbStatus string
+	err := r.db.QueryRowContext(ctx, `SELECT status FROM events WHERE id = $1 AND organizer_id = $2`, eventID, organizerID).Scan(&dbStatus)
+	if err != nil {
+		return nil, err
+	}
+
+	if dbStatus == "approved" {
+		feedback.EventStatus = "Live"
+	} else if dbStatus == "draft" {
+		feedback.EventStatus = "Draft"
+	} else if dbStatus == "rejected" {
+		feedback.EventStatus = "Rejected"
+	} else if dbStatus == "needs_revision" || dbStatus == "need_revision" {
+		feedback.EventStatus = "Need Revision"
+	} else {
+		feedback.EventStatus = "Scheduled"
+	}
+
+	// Fetch auditor review stage & notes
+	_ = r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(notes, ''), COALESCE(assigned_auditor_name, ''), COALESCE(stage, '')
+		FROM auditor_event_reviews
+		WHERE event_id = $1
+	`, eventID).Scan(&feedback.AuditorNotes, &feedback.AssignedAuditorName, &feedback.Stage)
+
+	// Fetch auditor revision requests
+	revRows, err := r.db.QueryContext(ctx, `
+		SELECT id, category, title, description, required_action, priority, status, created_at,
+		       COALESCE(organizer_comment, ''), COALESCE(organizer_action_taken, ''), COALESCE(organizer_file, ''), COALESCE(responded_at::text, '')
+		FROM auditor_revisions
+		WHERE event_id = $1
+		ORDER BY created_at DESC
+	`, eventID)
+	if err == nil {
+		defer revRows.Close()
+		feedback.Revisions = []*AuditorRevisionItem{}
+		for revRows.Next() {
+			var rev AuditorRevisionItem
+			if err := revRows.Scan(
+				&rev.ID, &rev.Category, &rev.Title, &rev.Description, &rev.RequiredAction, &rev.Priority, &rev.Status, &rev.CreatedAt,
+				&rev.OrganizerComment, &rev.OrganizerActionTaken, &rev.OrganizerFile, &rev.RespondedAt,
+			); err == nil {
+				feedback.Revisions = append(feedback.Revisions, &rev)
+			}
+		}
+	}
+
+	// Fetch status logs
+	logRows, err := r.db.QueryContext(ctx, `
+		SELECT from_status, to_status, COALESCE(notes, ''), created_at
+		FROM event_status_log
+		WHERE event_id = $1
+		ORDER BY created_at DESC
+	`, eventID)
+	if err == nil {
+		defer logRows.Close()
+		feedback.StatusLogs = []*EventStatusLogItem{}
+		for logRows.Next() {
+			var l EventStatusLogItem
+			if err := logRows.Scan(&l.FromStatus, &l.ToStatus, &l.Notes, &l.CreatedAt); err == nil {
+				feedback.StatusLogs = append(feedback.StatusLogs, &l)
+			}
+		}
+	}
+
+	return &feedback, nil
+}
+
+func (r *PostgresRepository) RespondToEventRevision(ctx context.Context, eventID, revID, organizerID int, req RespondRevisionRequest) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	var exists bool
+	err := r.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND organizer_id = $2)`, eventID, organizerID).Scan(&exists)
+	if err != nil || !exists {
+		return fmt.Errorf("event not found or unauthorized")
+	}
+
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE auditor_revisions
+		SET status = 'Resubmitted',
+			organizer_comment = $1,
+			organizer_action_taken = $2,
+			organizer_file = $3,
+			responded_at = now(),
+			updated_at = now()
+		WHERE id = $4 AND event_id = $5
+	`, req.Comment, req.ActionTaken, req.ProofFile, revID, eventID)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("revision item not found")
+	}
+
+	_, _ = r.db.ExecContext(ctx, `UPDATE events SET status = 'pending_review', updated_at = now() WHERE id = $1`, eventID)
+
+	var eventName string
+	_ = r.db.QueryRowContext(ctx, `SELECT event_name FROM events WHERE id = $1`, eventID).Scan(&eventName)
+
+	auditorRows, err := r.db.QueryContext(ctx, `SELECT id FROM users WHERE role = 'auditor' OR role = 'admin'`)
+	if err == nil {
+		defer auditorRows.Close()
+		for auditorRows.Next() {
+			var auditorID int
+			if err := auditorRows.Scan(&auditorID); err == nil {
+				_, _ = r.db.ExecContext(ctx, `
+					INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
+					VALUES ($1, $2, $3, 'event', $4, FALSE, now())
+				`, auditorID, fmt.Sprintf("📩 Respon Revisi Event: %s", eventName), fmt.Sprintf("Organizer telah mengunggah perbaikan untuk revisi #%d.", revID), strconv.Itoa(eventID))
+			}
+		}
+	}
+
+	return nil
+}

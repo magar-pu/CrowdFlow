@@ -1,11 +1,11 @@
-openapi: 3.0.3
+﻿openapi: 3.0.3
 info:
   title: CrowdFlow Event Ticketing API
   description: |
     API documentation for the CrowdFlow Venue and Event Management platform.
 
     ### Security Architecture:
-    - **Session Authentication**: JWT access token set as a secure `HttpOnly` cookie named `access_token`.
+    - **Session Authentication**: A short-lived JWT access token is set as a secure `HttpOnly` cookie named `access_token` (Path `/`). It is paired with a long-lived, rotating, server-revocable `refresh_token` cookie (scoped to Path `/api/v1/auth`) which `POST /api/v1/auth/refresh` exchanges for a fresh access token once the access token expires.
     - **CSRF Protection**: State-changing endpoints require Double-Submit Cookie verification. The client extracts the value of the `csrf_token` cookie and submits it in the custom header `X-CSRF-Token`. Only `/api/v1/auth/login` and `/api/v1/auth/register` are exempt.
     - **Admin Console**: Every `/api/v1/admin/*` route requires the `Super Admin` platform role.
 
@@ -109,13 +109,14 @@ paths:
               $ref: '#/components/schemas/LoginRequest'
       responses:
         '200':
-          description: Successful authentication. Sets `access_token` and `csrf_token` cookies.
+          description: Successful authentication. Sets `access_token`, `refresh_token`, and `csrf_token` cookies. No token is returned in the JSON body.
           headers:
             Set-Cookie:
               description: |
-                Sets two cookies:
-                1. `access_token`: Secure HttpOnly JWT session token.
-                2. `csrf_token`: Client-readable cookie for CSRF double-submission.
+                Sets three cookies:
+                1. `access_token`: Short-lived HttpOnly JWT access token (Path `/`).
+                2. `refresh_token`: Long-lived HttpOnly rotating refresh token (Path `/api/v1/auth`).
+                3. `csrf_token`: Client-readable cookie for CSRF double-submission (Path `/`).
               schema:
                 type: string
                 example: access_token=eyJhbGciOi...; Path=/; HttpOnly; SameSite=Lax
@@ -163,6 +164,79 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/v1/auth/refresh:
+    post:
+      summary: Refresh Session
+      description: |
+        Rotates the refresh token and issues a new access token. Authenticated
+        purely via the `refresh_token` cookie (the `access_token` may be expired,
+        so `CookieAuth` is deliberately NOT required here). CSRF-protected like any
+        state-changing POST.
+
+        On success the refresh token is rotated and all three auth cookies
+        (`access_token`, `refresh_token`, `csrf_token`) are re-set. On any failure â€”
+        missing, expired, revoked, or replayed (reuse-detected) token â€” all auth
+        cookies are cleared and 401 is returned so the client falls back to a full
+        login.
+
+        Rate limited per client IP: at most 60 attempts per 15-minute window
+        (fixed-window counter in Redis; fails open on Redis outage).
+      security:
+        - RefreshCookie: []
+        - CSRFToken: []
+      responses:
+        '200':
+          description: Session refreshed. Rotates and re-sets the `access_token`, `refresh_token`, and `csrf_token` cookies.
+          headers:
+            Set-Cookie:
+              description: Re-sets all three auth cookies with a freshly minted access token and rotated refresh token.
+              schema:
+                type: string
+                example: access_token=eyJhbGciOi...; Path=/; HttpOnly; SameSite=Lax
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          user_id:
+                            type: string
+                            example: "12"
+                          email:
+                            type: string
+                            format: email
+                            example: admin@crowdflow.com
+                          full_name:
+                            type: string
+                            example: Richie Obhasa
+                          role:
+                            type: string
+                            description: Highest-privilege platform-wide role held by the user.
+                            enum: [User, Event Organizer, Super Admin]
+                            example: Super Admin
+        '401':
+          description: Refresh token missing, expired, revoked, or replayed (`UNAUTHORIZED`). All auth cookies are cleared.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF verification missing or failed (`CSRF_TOKEN_MISSING`, `CSRF_HEADER_MISSING`, `CSRF_TOKEN_MISMATCH`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded - more than 60 refresh attempts from this IP within 15 minutes (`RATE_LIMITED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/v1/auth/google/login:
     get:
       summary: Google OAuth Redirect
@@ -203,11 +277,12 @@ paths:
       responses:
         '307':
           description: |
-            Redirect outcome. On successful login the `oauth_state` cookie is cleared, `access_token` and
-            `csrf_token` session cookies are set, and the browser is redirected by platform role:
-            - `Event Organizer` → `/dashboard`
-            - `Super Admin` → `/admin`
-            - everyone else → `/`
+            Redirect outcome. On successful login the `oauth_state` cookie is cleared, the `access_token`,
+            `refresh_token`, and `csrf_token` session cookies are set, and the browser is redirected by platform role:
+            - `Super Admin` â†’ `/admin`
+            - `Auditor` â†’ `/auditor`
+            - `Event Organizer` â†’ `/dashboard`
+            - everyone else â†’ `/`
 
             If the email is already registered with native credentials, no session is created and the browser
             is redirected to `/login?error=PROVIDER_MISMATCH&provider=native`.
@@ -238,15 +313,20 @@ paths:
   /api/v1/auth/logout:
     post:
       summary: User Logout
-      description: Clears active user session cookies. Does not require an authenticated session, but does require CSRF verification (double-submit cookie).
+      description: |
+        Logs out the current session. Revokes the server-side refresh session (using the
+        `refresh_token` cookie) so the refresh token can no longer be used, then clears all
+        three auth cookies (`access_token`, `refresh_token`, `csrf_token`). Does not require an
+        authenticated access token, but does require CSRF verification (double-submit cookie).
+        Logout still succeeds even if server-side revocation fails.
       security:
         - CSRFToken: []
       responses:
         '200':
-          description: Successfully logged out. Clears `access_token` and `csrf_token` cookies.
+          description: Successfully logged out. Revokes the server-side refresh session and clears the `access_token`, `refresh_token`, and `csrf_token` cookies.
           headers:
             Set-Cookie:
-              description: Overwrites active cookies with MaxAge=-1 to delete them.
+              description: Overwrites all three auth cookies with MaxAge=-1 to delete them.
               schema:
                 type: string
           content:
@@ -264,6 +344,56 @@ paths:
                             example: Logged out successfully
         '403':
           description: CSRF verification missing or failed (`CSRF_TOKEN_MISSING`, `CSRF_HEADER_MISSING`, `CSRF_TOKEN_MISMATCH`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/logout-all:
+    post:
+      summary: Logout All Devices
+      description: |
+        Revokes every active session for the authenticated user (all devices), e.g. after a
+        suspected account compromise, then clears the current browser's auth cookies. Requires
+        an authenticated access token and CSRF verification.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      responses:
+        '200':
+          description: All sessions revoked. Clears the current browser's `access_token`, `refresh_token`, and `csrf_token` cookies.
+          headers:
+            Set-Cookie:
+              description: Overwrites all three auth cookies with MaxAge=-1 to delete them.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Logged out of all devices
+        '401':
+          description: Access token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF verification missing or failed (`CSRF_TOKEN_MISSING`, `CSRF_HEADER_MISSING`, `CSRF_TOKEN_MISMATCH`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to revoke sessions (`INTERNAL_SERVER_ERROR`).
           content:
             application/json:
               schema:
@@ -352,7 +482,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: 'Validation failed (`VALIDATION_FAILED`): full_name required and ≤255 chars, phone_number ≤50, location ≤255, bio ≤2000.'
+          description: 'Validation failed (`VALIDATION_FAILED`): full_name required and â‰¤255 chars, phone_number â‰¤50, location â‰¤255, bio â‰¤2000.'
           content:
             application/json:
               schema:
@@ -373,7 +503,7 @@ paths:
         - name: limit
           in: query
           required: false
-          description: Page size. Rounded up to the nearest multiple of 10 and capped at 100 (e.g. 7→10, 101→100). Defaults to 20 when absent or non-integer.
+          description: Page size. Rounded up to the nearest multiple of 10 and capped at 100 (e.g. 7â†’10, 101â†’100). Defaults to 20 when absent or non-integer.
           schema:
             type: integer
             default: 20
@@ -381,7 +511,7 @@ paths:
         - name: offset
           in: query
           required: false
-          description: Row offset. Floored to the nearest multiple of 10 (e.g. 15→10); negative values clamp to 0. Defaults to 0.
+          description: Row offset. Floored to the nearest multiple of 10 (e.g. 15â†’10); negative values clamp to 0. Defaults to 0.
           schema:
             type: integer
             default: 0
@@ -615,7 +745,12 @@ paths:
   /api/v1/events/{id}/seatmap:
     get:
       summary: Get Event Seat Map
-      description: Returns the live seat map for an event, grouped by section with per-seat availability state. No authentication required.
+      description: >-
+        Returns the live seat map for an event: the bound venue layout's
+        decorative geometry, priced sections with per-seat availability and
+        coordinates, and any tiers sold as general admission. Carries layout
+        geometry so buyers can render the map the organizer designed without
+        the organizer-gated layout endpoints. No authentication required.
       parameters:
         - name: id
           in: path
@@ -634,9 +769,7 @@ paths:
                   - type: object
                     properties:
                       data:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/SeatSection'
+                        $ref: '#/components/schemas/SeatMap'
         '400':
           description: Event ID must be a valid integer (`INVALID_ID`).
           content:
@@ -825,6 +958,265 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
           description: Platform role check failed - Event Organizer required (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Database/Internal error (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/venues/{id}/layouts:
+    get:
+      summary: List Venue Layouts
+      description: |
+        Lists the seat-map layouts a caller may pick for a venue: every `public` layout plus the
+        caller's own `event_exclusive` layouts. Summary shape only (no seats or sections).
+        Requires the Event Organizer or Super Admin platform role.
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the venue.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Layouts retrieved.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Layout'
+        '400':
+          description: Venue ID missing or not an integer (`INVALID_ID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Event Organizer or Super Admin required (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Database/Internal error (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: Create Venue Layout
+      description: |
+        Creates a new, empty layout claimed by the caller (`owner_user_id` = caller). Seats,
+        sections and geometry arrive via a subsequent save (PUT). Requires the Event Organizer
+        or Super Admin platform role.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the venue.
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLayoutRequest'
+      responses:
+        '201':
+          description: Layout created (starts empty, status `draft`).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Layout'
+        '400':
+          description: Venue ID not an integer (`INVALID_ID`), malformed JSON body (`BAD_REQUEST`), or invalid layout payload (`INVALID_INPUT`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Event Organizer or Super Admin required - or CSRF mismatch (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Venue not found (`NOT_FOUND`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Database/Internal error (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/venues/{id}/layouts/{lid}:
+    put:
+      summary: Save Venue Layout
+      description: |
+        Persists the whole editor state (geometry, sections and seats) in one transaction.
+        Sections and seats diff against what is stored: an element with a non-null `id` is
+        updated, a null `id` is inserted, and a stored row absent from the payload is deleted
+        (subject to in-use guards). Uses optimistic locking via `expected_updated_at`.
+        Requires the Event Organizer or Super Admin platform role, and the caller must own the layout.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the venue.
+          schema:
+            type: integer
+        - name: lid
+          in: path
+          required: true
+          description: The numeric database ID of the layout being saved.
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveLayoutRequest'
+      responses:
+        '200':
+          description: Layout saved. Returns the persisted layout plus the temp-id to real-id maps.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SaveLayoutResponse'
+        '400':
+          description: Venue/layout ID not an integer (`INVALID_ID`), malformed JSON body (`BAD_REQUEST`), or invalid layout payload (`INVALID_INPUT`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Event Organizer or Super Admin required - CSRF mismatch, or the caller does not own the layout (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Layout not found (`NOT_FOUND`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The layout changed since it was loaded (`STALE_LAYOUT`), or a deleted seat/section is still in use for an event (`SEAT_IN_USE`, `SECTION_IN_USE`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Database/Internal error (`INTERNAL_ERROR`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/layouts/{id}:
+    get:
+      summary: Load Venue Layout
+      description: |
+        Loads a single full layout: the layout header (with decorative geometry) plus every
+        section and seat belonging to it. The venue editor reads its whole state from this one
+        document. Requires the Event Organizer or Super Admin platform role; `event_exclusive`
+        layouts are only accessible to their owner.
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the layout.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Layout loaded.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/LayoutDetail'
+        '400':
+          description: Layout ID missing or not an integer (`INVALID_ID`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed - Event Organizer or Super Admin required - or the layout is event-exclusive and not owned by the caller (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Layout not found (`NOT_FOUND`).
           content:
             application/json:
               schema:
@@ -1240,7 +1632,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: 'Tier validation failed (`VALIDATION_FAILED`): name required (after trimming) and ≤100 chars, price must not be negative, capacity must be at least 1.'
+          description: 'Tier validation failed (`VALIDATION_FAILED`): name required (after trimming) and â‰¤100 chars, price must not be negative, capacity must be at least 1.'
           content:
             application/json:
               schema:
@@ -1252,118 +1644,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/admin/events/{id}/venue-sections:
-    get:
-      summary: Admin - Get Event Venue Sections
-      description: Returns the venue layout sections for an event. Requires the Super Admin platform role.
-      security:
-        - CookieAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: The numeric database ID of the event.
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: Venue sections retrieved.
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/StandardResponse'
-                  - type: object
-                    properties:
-                      data:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/VenueSection'
-        '400':
-          description: Event ID must be a valid integer (`INVALID_ID`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: Platform role check failed - Super Admin required (`FORBIDDEN`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Failed to load venue sections (`INTERNAL_ERROR`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-    put:
-      summary: Admin - Replace Event Venue Sections
-      description: Replaces the venue layout sections for an event with the submitted array. Requires the Super Admin platform role.
-      security:
-        - CookieAuth: []
-        - CSRFToken: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: The numeric database ID of the event.
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: array
-              items:
-                $ref: '#/components/schemas/VenueSection'
-      responses:
-        '200':
-          description: Venue sections updated.
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/StandardResponse'
-                  - type: object
-                    properties:
-                      data:
-                        type: object
-                        properties:
-                          message:
-                            type: string
-                            example: Venue sections updated
-        '400':
-          description: Event ID not an integer or invalid JSON body (`INVALID_ID`, `BAD_REQUEST`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: Platform role check failed (Super Admin required) or CSRF mismatch (`FORBIDDEN`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Failed to update venue sections (`INTERNAL_ERROR`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/admin/finance/transactions:
     get:
@@ -1424,7 +1704,7 @@ paths:
       summary: Admin - Update Transaction Status
       description: |
         Sets an order's status using the admin console's display vocabulary
-        (`Success` → paid, `Refunded` → refunded, `Pending` → pending). Any other value is rejected.
+        (`Success` â†’ paid, `Refunded` â†’ refunded, `Pending` â†’ pending). Any other value is rejected.
         The change is recorded in the admin activity log. Requires the Super Admin platform role.
       security:
         - CookieAuth: []
@@ -1710,7 +1990,7 @@ paths:
       summary: Admin - Update User Status
       description: |
         Sets a user's verification status using the admin console's display vocabulary
-        (`Verified` → verified, `Suspended` → rejected, `Pending` → pending_verification).
+        (`Verified` â†’ verified, `Suspended` â†’ rejected, `Pending` â†’ pending_verification).
         Any other value is rejected. The change is recorded in the admin activity log.
         Requires the Super Admin platform role.
       security:
@@ -2015,13 +2295,135 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/v1/admin/users/{id}/delegations:
+    get:
+      summary: Admin - List User Co-Organizer Delegations
+      description: |
+        Read-only Super Admin oversight of a user's co-organizer delegations: those the user granted
+        as an event owner (`owned`) and those delegated to the user as a co-organizer (`received`).
+        Delegations are created from the organizer console, not here. Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the target user.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The user's delegations, both directions.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          owned:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Delegation'
+                          received:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Delegation'
+        '400':
+          description: User ID not an integer (`BAD_REQUEST`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Session token missing/invalid (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed (Super Admin required) (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/delegations/{id}:
+    delete:
+      summary: Admin - Revoke Co-Organizer Delegation
+      description: |
+        Moderation revoke of any co-organizer delegation, regardless of ownership. Sets the delegation
+        status to `revoked` and notifies both the owner and the delegate. Requires the Super Admin platform role.
+      security:
+        - CookieAuth: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The numeric database ID of the delegation.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Delegation revoked.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StandardResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          revoked:
+                            type: boolean
+                            example: true
+        '401':
+          description: Session token missing/invalid (`UNAUTHORIZED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Platform role check failed (Super Admin required) or CSRF mismatch (`FORBIDDEN`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Delegation not found (`NOT_FOUND`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Delegation is already declined/revoked and cannot be revoked (`INVALID_STATE`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 components:
   securitySchemes:
     CookieAuth:
       type: apiKey
       in: cookie
       name: access_token
-      description: JWT authentication token.
+      description: Short-lived JWT access token. Sent on every request (Path `/`).
+    RefreshCookie:
+      type: apiKey
+      in: cookie
+      name: refresh_token
+      description: |
+        Long-lived, rotating, server-revocable refresh token. Scoped to Path
+        `/api/v1/auth`, so it is only sent to `/api/v1/auth/refresh` (to rotate)
+        and `/api/v1/auth/logout` (to revoke). Used by `POST /api/v1/auth/refresh`
+        to mint a new access token when the access token has expired.
     StateCookie:
       type: apiKey
       in: cookie
@@ -2327,6 +2729,15 @@ components:
         cover_image_url:
           type: string
           example: https://cdn.crowdflow.example/events/covers/1720000000000000000.jpg
+        starting_price:
+          type: number
+          format: double
+          nullable: true
+          description: >-
+            Cheapest ticket tier price for this event (MIN of ticket_tiers.price),
+            in IDR. Null when the event has no ticket tiers configured yet — which
+            is distinct from a genuinely free event priced at 0.
+          example: 250000
         venue:
           $ref: '#/components/schemas/VenueResponse'
         organizer:
@@ -2414,27 +2825,82 @@ components:
           type: string
           enum: [available, sold, held, blocked]
           example: available
+        pos_x:
+          type: number
+          format: double
+          nullable: true
+          description: >-
+            Seat coordinate within the venue layout. Null for seats that exist
+            relationally but were never placed in the venue editor; renderers
+            should skip those rather than drawing them at the origin.
+          example: 120.5
+        pos_y:
+          type: number
+          format: double
+          nullable: true
+          example: 88.0
 
-    SeatSection:
+    SeatMap:
+      type: object
+      description: >-
+        Full buyer-facing seating payload for one event. A ticket tier appears
+        in either `tiers` (assigned seating) or `ga_tiers` (general
+        admission), never both. Seat grouping is per-seat and event-scoped -
+        the venue layout itself is an untiered, reusable template.
+      properties:
+        layout:
+          nullable: true
+          description: The venue layout bound to this event; null when none is bound.
+          allOf:
+            - $ref: '#/components/schemas/SeatMapLayout'
+        tiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/SeatTier'
+        ga_tiers:
+          type: array
+          description: On-sale tiers with no assigned seats, sold by quantity.
+          items:
+            $ref: '#/components/schemas/TicketTier'
+
+    SeatMapLayout:
       type: object
       properties:
-        event_section_id:
+        layout_id:
           type: integer
-          example: 2
-        name:
-          type: string
-          example: Orchestra Left
+          example: 12
+        geometry:
+          type: object
+          description: >-
+            Opaque decorative geometry from venue_layouts.geometry - stage,
+            facilities and blueprint reference. Shape is owned by the venue
+            editor; consumers should treat unknown keys as pass-through.
+          additionalProperties: true
+
+    SeatTier:
+      type: object
+      description: One ticket tier with every seat assigned to it for this event.
+      properties:
         ticket_tier_id:
           type: integer
           example: 3
+        name:
+          type: string
+          example: Festival Gold
         price:
           type: number
           format: double
           example: 750000
+        color:
+          type: string
+          nullable: true
+          description: Drives the seat fill on the buyer's map; null when unset.
+          example: '#f59e0b'
         seats:
           type: array
           items:
             $ref: '#/components/schemas/Seat'
+
 
     HoldRequest:
       type: object
@@ -2547,12 +3013,12 @@ components:
           example: richie@crowdflow.com
         role:
           type: string
-          description: Lossy display mapping of platform roles ("Event Organizer"→Organizer, "Super Admin"→Admin, everything else→Buyer).
+          description: Lossy display mapping of platform roles ("Event Organizer"â†’Organizer, "Super Admin"â†’Admin, everything elseâ†’Buyer).
           enum: [Buyer, Seller, Organizer, Admin]
           example: Organizer
         status:
           type: string
-          description: Display mapping of users.verification_status (verified→Verified, rejected→Suspended, pending_verification→Pending).
+          description: Display mapping of users.verification_status (verifiedâ†’Verified, rejectedâ†’Suspended, pending_verificationâ†’Pending).
           enum: [Verified, Pending, Suspended]
           example: Verified
         joinedAt:
@@ -2764,27 +3230,6 @@ components:
           description: UI-only, not persisted.
           example: "#8b5cf6"
 
-    VenueSection:
-      type: object
-      description: Admin console venue layout section (camelCase, mirrors the admin frontend types). `occupied` is not computed yet and `color` is UI-only.
-      properties:
-        id:
-          type: string
-          example: "2"
-        name:
-          type: string
-          example: Orchestra Left
-        capacity:
-          type: integer
-          example: 150
-        occupied:
-          type: integer
-          description: Not computed yet - always 0.
-          example: 0
-        color:
-          type: string
-          description: UI-only, not persisted.
-          example: "#22c55e"
 
     StatusUpdateRequest:
       type: object
@@ -2810,3 +3255,257 @@ components:
           nullable: true
           description: Omit or set null for a platform-wide grant; set to an event ID for an event-scoped grant.
           example: null
+
+    Delegation:
+      type: object
+      description: |
+        A co-organizer delegation: an event owner ("author") delegates management of their events to
+        another verified organizer. Effective only once `status` is `active`. Co-organizers gain
+        management access only, never payouts.
+      properties:
+        id:
+          type: integer
+          example: 7
+        owner_id:
+          type: integer
+          description: The event owner (author) who granted the delegation.
+          example: 12
+        owner_name:
+          type: string
+          example: Jane Organizer
+        owner_email:
+          type: string
+          example: jane@example.com
+        delegate_id:
+          type: integer
+          description: The co-organizer receiving management access.
+          example: 34
+        delegate_name:
+          type: string
+          example: Sam Co-Organizer
+        delegate_email:
+          type: string
+          example: sam@example.com
+        scope:
+          type: string
+          enum: [all, specific]
+          description: '`all` covers the owner''s whole portfolio incl. future events; `specific` covers only the listed events.'
+          example: specific
+        status:
+          type: string
+          enum: [pending, active, declined, revoked]
+          example: active
+        requested_by:
+          type: integer
+          description: The user who initiated the delegation (owner, delegate, or admin).
+          example: 12
+        approved_by:
+          type: integer
+          nullable: true
+          description: The owner who approved the delegation; null until approved.
+          example: 12
+        note:
+          type: string
+          nullable: true
+          example: Helping run the summer festival series.
+        events:
+          type: array
+          description: Covered events (populated only for `scope=specific`).
+          items:
+            $ref: '#/components/schemas/DelegationEvent'
+        created_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+
+    DelegationEvent:
+      type: object
+      properties:
+        event_id:
+          type: integer
+          example: 42
+        name:
+          type: string
+          example: Summer Music Festival
+
+    Layout:
+      type: object
+      description: A saved seat-map plan for a venue. Returned as a summary by the list endpoint and embedded in LayoutDetail on load.
+      properties:
+        id:
+          type: integer
+          example: 12
+        venue_id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Main Floor Plan
+        schema_version:
+          type: integer
+          description: Geometry schema version, for forward-compatible migrations.
+          example: 1
+        geometry:
+          type: object
+          nullable: true
+          description: Opaque JSONB document holding decorative geometry (stage, facilities, blueprint ref, section shapes). Structure is not fixed by this API.
+        visibility:
+          type: string
+          enum: [public, event_exclusive]
+          example: public
+        owner_user_id:
+          type: integer
+          nullable: true
+          description: The user who owns an event-exclusive layout; null for public layouts.
+          example: null
+        status:
+          type: string
+          enum: [draft, published, archived]
+          example: draft
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-07-20T10:00:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-07-20T10:00:00Z'
+
+
+    LayoutSeat:
+      type: object
+      description: One physical seat's identity, position and optional section tag. The integer id is the canonical identity referenced by orders, tickets and the scanner.
+      properties:
+        id:
+          type: integer
+          example: 501
+        section_id:
+          type: integer
+          nullable: true
+          example: 4
+        row:
+          type: string
+          description: Display label only.
+          example: A
+        number:
+          type: string
+          description: Display label only.
+          example: "12"
+        pos_x:
+          type: number
+          format: double
+          nullable: true
+          example: 120.5
+        pos_y:
+          type: number
+          format: double
+          nullable: true
+          example: 88.0
+
+    LayoutDetail:
+      type: object
+      description: The full read shape returned when loading a layout - the Layout header plus every section and seat belonging to it.
+      allOf:
+        - $ref: '#/components/schemas/Layout'
+        - type: object
+          properties:
+            seats:
+              type: array
+              items:
+                $ref: '#/components/schemas/LayoutSeat'
+
+    CreateLayoutRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          example: Main Floor Plan
+        visibility:
+          type: string
+          enum: [public, event_exclusive]
+          description: Defaults to `public` when omitted.
+          example: public
+
+
+    SeatInput:
+      type: object
+      description: One seat in a save payload. `section_key` references a SectionInput in the SAME payload (real or temp), or is null for a section-free seat.
+      required:
+        - key
+        - row
+        - number
+      properties:
+        key:
+          type: string
+          example: seat-tmp-1
+        id:
+          type: integer
+          nullable: true
+          description: Real DB id for an existing seat; null to insert a new one.
+          example: null
+        row:
+          type: string
+          example: A
+        number:
+          type: string
+          example: "12"
+        pos_x:
+          type: number
+          format: double
+          nullable: true
+          example: 120.5
+        pos_y:
+          type: number
+          format: double
+          nullable: true
+          example: 88.0
+
+    SaveLayoutRequest:
+      type: object
+      description: The whole editor state in one document. Seats and sections diff against what is stored (insert/update/delete).
+      required:
+        - name
+        - expected_updated_at
+      properties:
+        name:
+          type: string
+          example: Main Floor Plan
+        visibility:
+          type: string
+          enum: [public, event_exclusive]
+          example: public
+        geometry:
+          type: object
+          nullable: true
+          description: Opaque JSONB document holding decorative geometry.
+        expected_updated_at:
+          type: string
+          format: date-time
+          description: The `updated_at` value the client loaded. The save is rejected with 409 (`STALE_LAYOUT`) if the layout changed since (optimistic locking).
+          example: '2026-07-20T10:00:00Z'
+        seats:
+          type: array
+          items:
+            $ref: '#/components/schemas/SeatInput'
+
+    SaveLayoutResponse:
+      type: object
+      description: The persisted layout plus the maps the client uses to reconcile its temporary keys to real DB ids. Only newly-inserted rows appear in the maps.
+      properties:
+        layout:
+          $ref: '#/components/schemas/LayoutDetail'
+        seat_id_map:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Client seat key -> new DB id, for inserted seats only.
+          example:
+            seat-tmp-1: 501

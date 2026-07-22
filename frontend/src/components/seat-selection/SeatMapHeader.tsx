@@ -13,7 +13,8 @@ interface SeatMapHeaderProps {
   event_date: string;
   event_time: string;
   event_venue: string;
-  initial_seconds?: number;
+  /** Seconds until the current hold lapses. Null hides the timer entirely. */
+  initial_seconds?: number | null;
   on_close: () => void;
   on_seat_guide?: () => void;
 }
@@ -23,18 +24,20 @@ export function SeatMapHeader({
   event_date,
   event_time,
   event_venue,
-  initial_seconds = 585,
+  initial_seconds = null,
   on_close,
   on_seat_guide,
 }: SeatMapHeaderProps) {
-  const [seconds_left, set_seconds_left] = useState(initial_seconds);
+  const [seconds_left, set_seconds_left] = useState(initial_seconds ?? 0);
 
   useEffect(() => {
+    if (initial_seconds == null) return;
+    set_seconds_left(initial_seconds);
     const interval = setInterval(() => {
       set_seconds_left((s) => Math.max(0, s - 1));
     }, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [initial_seconds]);
 
   const mins = String(Math.floor(seconds_left / 60)).padStart(2, "0");
   const secs = String(seconds_left % 60).padStart(2, "0");
@@ -64,18 +67,22 @@ export function SeatMapHeader({
 
       {/* Right — Timer + actions */}
       <div className="flex items-center gap-3">
-        {/* Timer box */}
-        <div className="flex items-center gap-2 rounded-lg border border-border-subtle px-3 py-2">
-          <div className="h-4 w-4 rounded-full border-2 border-secondary flex items-center justify-center">
-            <div className="h-1.5 w-1.5 rounded-full bg-secondary" />
+        {/* Timer box — only once something is actually held against a deadline.
+            It used to count down from a hardcoded 585s on every page load,
+            implying a reservation the buyer did not have. */}
+        {initial_seconds != null && (
+          <div className="flex items-center gap-2 rounded-lg border border-border-subtle px-3 py-2">
+            <div className="flex h-4 w-4 items-center justify-center rounded-full border-2 border-secondary">
+              <div className="h-1.5 w-1.5 rounded-full bg-secondary" />
+            </div>
+            <span className="font-headline-sm text-headline-sm font-bold tabular-nums text-text-primary">
+              {mins}:{secs}
+            </span>
+            <span className="hidden font-body-sm text-body-sm text-text-secondary sm:inline">
+              Kursi Anda ditahan
+            </span>
           </div>
-          <span className="font-headline-sm text-headline-sm font-bold tabular-nums text-text-primary">
-            {mins}:{secs}
-          </span>
-          <span className="hidden font-body-sm text-body-sm text-text-secondary sm:inline">
-            Your session will expire in
-          </span>
-        </div>
+        )}
 
         <button
           type="button"

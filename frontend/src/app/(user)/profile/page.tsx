@@ -22,6 +22,7 @@ import {
   BadgeCheck,
   Pencil,
   Settings,
+  RefreshCw,
 } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { getMe, updateProfile, UserProfileResponse } from "@/lib/api/auth";
@@ -224,34 +225,26 @@ export default function ProfilePage() {
             {/* Quick links */}
             <div className="overflow-hidden rounded-xl border border-border-subtle bg-white shadow-sm">
               <Link
-                href="/profile/payments"
+                href="/orders"
                 className="flex items-center justify-between px-4 py-3.5 transition-colors hover:bg-surface-container-low"
               >
                 <div className="flex items-center gap-3">
-                  <CreditCard size={18} className="text-text-secondary" />
-                  <span className="font-body-md text-body-md text-text-primary">Payment Methods</span>
+                  <Ticket size={18} className="text-text-secondary" />
+                  <span className="font-body-md text-body-md text-text-primary">Purchase History &amp; Tickets</span>
                 </div>
                 <ChevronRight size={16} className="text-text-secondary" />
               </Link>
               <div className="border-t border-border-subtle" />
               <Link
-                href="/profile/notifications"
+                href="/resale/my-listings"
                 className="flex items-center justify-between px-4 py-3.5 transition-colors hover:bg-surface-container-low"
               >
                 <div className="flex items-center gap-3">
-                  <Bell size={18} className="text-text-secondary" />
-                  <span className="font-body-md text-body-md text-text-primary">Notification Preferences</span>
+                  <RefreshCw size={18} className="text-text-secondary" />
+                  <span className="font-body-md text-body-md text-text-primary">My Resale Listings</span>
                 </div>
                 <ChevronRight size={16} className="text-text-secondary" />
               </Link>
-              <div className="border-t border-border-subtle" />
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 px-4 py-3.5 transition-colors hover:bg-surface-container-low"
-              >
-                <LogOut size={18} className="text-danger" />
-                <span className="font-body-md text-body-md text-danger">Sign Out</span>
-              </button>
             </div>
           </aside>
 

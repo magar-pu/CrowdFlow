@@ -15,7 +15,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Plus, Trash2, Copy, Square, Circle, Triangle, Scan, Coffee, Info, LogOut, PlusSquare, Tent, Utensils } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { VenueSection, VenueSeat, VenueShape, VenueFacility, FacilityIconType } from "@/types/ticket";
+import type { VenueSection, VenueSeat, VenueShape, VenueFacility, FacilityIconType, SeatArrangeForm } from "@/types/ticket";
 import { useVenueEditorStore } from "@/lib/store/venueEditorStore";
 
 interface SeatMapperCanvasProps {
@@ -34,25 +34,30 @@ export function SeatMapperCanvas({
   is_locked_mode = false,
 }: SeatMapperCanvasProps) {
   const { 
-    add_seat, delete_seat, duplicate_row, update_seat,
+    seats,
+    add_seat, fill_seats_in_rect, delete_seat, duplicate_row, update_seat,
     stage_shape, update_stage_shape, update_section_shape,
     drawing_mode, set_drawing_mode, add_new_section,
     multi_selected_seat_ids, set_multi_selected_seats, delete_multiple_seats,
+    capture_arrange_frame, translate_arrange_frame,
     selected_shape_id, set_selected_shape_id, move_selected_elements,
     update_section, generate_seats_for_section,
     facilities, update_facility, remove_facility,
-    blueprint,
-    pricing_tiers, selected_paint_tier_id, paint_seats
+    blueprint, update_blueprint,
+    pricing_tiers, selected_paint_tier_id, paint_seats, save_history,
+    grid_size_x, grid_size_y, show_grid
   } = useVenueEditorStore();
   const scale = zoom_level / 100;
 
-  // Flatten all seats for absolute rendering
-  const all_seats = sections.flatMap((section) =>
-    section.seats.map((seat) => {
-      const tier = pricing_tiers.find(t => t.tier_id === seat.tier_id);
-      return { ...seat, color: tier ? tier.color : (section.color || "#e2e8f0") };
-    })
-  );
+  // Seats are already flat. Colour comes from the assigned tier, falling back
+  // to the section tag's colour when the seat carries one.
+  const all_seats = seats.map((seat) => {
+    const tier = pricing_tiers.find(t => t.tier_id === seat.tier_id);
+    const section = seat.section_id
+      ? sections.find(s => s.section_id === seat.section_id)
+      : undefined;
+    return { ...seat, color: tier ? tier.color : (section?.color || "#e2e8f0") };
+  });
 
   // ── Canvas Panning & Selection State ─────────────────────────────────
   const [pan, set_pan] = useState({ x: 0, y: 0 });
@@ -96,6 +101,25 @@ export function SeatMapperCanvas({
   const [gen_cols, set_gen_cols] = useState(10);
   const [gen_curve, set_gen_curve] = useState(0);
 
+  // Snapshot the arrange frame in the store whenever the selection changes;
+  // the SeatArrangePanel (right sidebar) drives the layout from there.
+  const arrange_key = multi_selected_seat_ids.join(",");
+  useEffect(() => {
+    capture_arrange_frame(multi_selected_seat_ids);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrange_key]);
+
+  // Tracks an in-flight group drag so history is saved once, not per pointermove.
+  const group_drag_active = useRef(false);
+
+  // Drag origin for repositioning the blueprint layer.
+  const blueprint_drag = useRef<{
+    x: number;
+    y: number;
+    offset_x: number;
+    offset_y: number;
+  } | null>(null);
+
   const handle_pointer_down = (e: React.PointerEvent) => {
     const target = e.target as HTMLElement;
     if (target.closest('[role="button"]') || target.closest('button')) return;
@@ -125,7 +149,14 @@ export function SeatMapperCanvas({
       add_seat(target_id, canvas_x, canvas_y);
       set_drawing_mode("select");
       return;
-    } else if (drawing_mode === "select") {
+    } else if (
+      drawing_mode === "select" ||
+      drawing_mode === "paint" ||
+      (drawing_mode === "seat_array" && !is_locked_mode)
+    ) {
+      // Select, Paint and Seat Array all share the marquee. Paint is NOT gated
+      // on is_locked_mode — assigning tiers over a locked layout is exactly
+      // what the EO pricing mode is for.
       set_selection_box({ startX: canvas_x, startY: canvas_y, endX: canvas_x, endY: canvas_y });
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
       return;
@@ -161,11 +192,23 @@ export function SeatMapperCanvas({
       const minY = Math.min(selection_box.startY, selection_box.endY);
       const maxY = Math.max(selection_box.startY, selection_box.endY);
 
+      if (drawing_mode === "seat_array") {
+        // A drag fills the region; a tap (no real drag) falls back to one seat.
+        if (maxX - minX < 8 && maxY - minY < 8) {
+          add_seat("", minX, minY);
+        } else {
+          fill_seats_in_rect(minX, minY, maxX, maxY);
+        }
+        set_selection_box(null);
+        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+        return;
+      }
+
       // Check which seats fall into the bounding box
       const selected_ids = all_seats
         .filter((seat) => seat.x >= minX && seat.x <= maxX && seat.y >= minY && seat.y <= maxY)
         .map((seat) => seat.seat_id);
-      
+
       if (drawing_mode === "paint") {
         paint_seats(selected_ids, selected_paint_tier_id || undefined);
       } else {
@@ -203,7 +246,7 @@ export function SeatMapperCanvas({
             const has_locked = all_seats.some(s => multi_selected_seat_ids.includes(s.seat_id) && s.is_locked);
             if (!has_locked) delete_multiple_seats(multi_selected_seat_ids);
           } else if (selected_seat) {
-            const seat_is_locked = sections.find(s => s.section_id === selected_seat.section_id)?.seats.find(s => s.seat_id === selected_seat.seat_id)?.is_locked;
+            const seat_is_locked = seats.find(s => s.seat_id === selected_seat.seat_id)?.is_locked;
             if (!seat_is_locked) delete_seat(selected_seat.seat_id);
           } else if (selected_shape_id && selected_shape_id !== "stage") {
             const section_is_locked = sections.find(s => s.section_id === selected_shape_id)?.is_locked;
@@ -258,8 +301,19 @@ export function SeatMapperCanvas({
   return (
     <div
       ref={container_ref}
+      style={
+        show_grid
+          ? {
+              // Scale/offset the dots with the viewport so they line up with
+              // the coordinates seats actually snap to.
+              backgroundSize: `${grid_size_x * scale}px ${grid_size_y * scale}px`,
+              backgroundPosition: `${pan.x}px ${pan.y}px`,
+            }
+          : undefined
+      }
       className={cn(
-        "canvas-grid relative h-full w-full overflow-hidden bg-background",
+        "relative h-full w-full overflow-hidden bg-background",
+        show_grid && "canvas-grid",
         is_panning 
           ? "cursor-grabbing" 
           : drawing_mode === "pan"
@@ -281,34 +335,85 @@ export function SeatMapperCanvas({
           transformOrigin: "top left",
         }}
       >
-        {/* Render Marquee Selection Box */}
-        {selection_box && (
-          <div
-            className="absolute border border-primary bg-primary/20 pointer-events-none z-50"
-            style={{
-              left: Math.min(selection_box.startX, selection_box.endX),
-              top: Math.min(selection_box.startY, selection_box.endY),
-              width: Math.abs(selection_box.endX - selection_box.startX),
-              height: Math.abs(selection_box.endY - selection_box.startY),
-            }}
-          />
-        )}
+        {/* Render Marquee Selection Box. While painting it takes the active
+            tier's colour so it's obvious what's about to be applied. */}
+        {selection_box && (() => {
+          const paint_tier =
+            drawing_mode === "paint"
+              ? pricing_tiers.find((t) => t.tier_id === selected_paint_tier_id)
+              : undefined;
+          return (
+            <div
+              className={cn(
+                "absolute pointer-events-none z-50 border",
+                !paint_tier && "border-primary bg-primary/20"
+              )}
+              style={{
+                left: Math.min(selection_box.startX, selection_box.endX),
+                top: Math.min(selection_box.startY, selection_box.endY),
+                width: Math.abs(selection_box.endX - selection_box.startX),
+                height: Math.abs(selection_box.endY - selection_box.startY),
+                ...(paint_tier
+                  ? { borderColor: paint_tier.color, backgroundColor: `${paint_tier.color}33` }
+                  : {}),
+              }}
+            />
+          );
+        })()}
 
-        {/* Render Blueprint Background */}
-        {blueprint && (
-          <img
-            src={blueprint.image_url}
-            alt="Venue Blueprint"
-            className="absolute pointer-events-none z-0"
-            style={{
-              left: blueprint.offset_x,
-              top: blueprint.offset_y,
-              transform: `scale(${blueprint.scale})`,
-              transformOrigin: "top left",
-              opacity: blueprint.opacity,
-            }}
-          />
-        )}
+        {/* Render Blueprint Background. Draggable once unlocked; otherwise it
+            stays click-through so it can't swallow marquee drags. */}
+        {blueprint && (() => {
+          const can_move =
+            !blueprint.is_locked && !is_locked_mode && drawing_mode === "select";
+          return (
+            <img
+              src={blueprint.image_url}
+              alt="Venue Blueprint"
+              draggable={false}
+              className={cn(
+                "absolute z-0",
+                can_move
+                  ? "cursor-move outline-2 outline-dashed outline-primary/60"
+                  : "pointer-events-none"
+              )}
+              style={{
+                left: blueprint.offset_x,
+                top: blueprint.offset_y,
+                transform: `scale(${blueprint.scale})`,
+                transformOrigin: "top left",
+                opacity: blueprint.opacity,
+              }}
+              onPointerDown={(e) => {
+                if (!can_move) return;
+                e.stopPropagation();
+                blueprint_drag.current = {
+                  x: e.clientX,
+                  y: e.clientY,
+                  offset_x: blueprint.offset_x,
+                  offset_y: blueprint.offset_y,
+                };
+                (e.target as HTMLElement).setPointerCapture(e.pointerId);
+              }}
+              onPointerMove={(e) => {
+                const start = blueprint_drag.current;
+                if (!start) return;
+                e.stopPropagation();
+                // Screen delta -> canvas units, so it tracks the cursor at any zoom.
+                update_blueprint({
+                  offset_x: Math.round(start.offset_x + (e.clientX - start.x) / scale),
+                  offset_y: Math.round(start.offset_y + (e.clientY - start.y) / scale),
+                });
+              }}
+              onPointerUp={(e) => {
+                if (!blueprint_drag.current) return;
+                e.stopPropagation();
+                blueprint_drag.current = null;
+                (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+              }}
+            />
+          );
+        })()}
 
         {/* Render Stage Shape */}
         {stage_shape && (
@@ -319,7 +424,7 @@ export function SeatMapperCanvas({
             color="#0f172a"
             is_selected={selected_shape_id === "stage"}
             is_locked={!!stage_shape.is_locked || is_locked_mode}
-            disable_pointer_events={drawing_mode === "add_seat" || is_locked_mode}
+            disable_pointer_events={drawing_mode === "add_seat" || drawing_mode === "seat_array" || is_locked_mode}
             on_select={() => { if (!is_locked_mode) set_selected_shape_id("stage"); }}
             on_update={(updates) => { if (!is_locked_mode) update_stage_shape(updates); }}
           />
@@ -336,7 +441,7 @@ export function SeatMapperCanvas({
               color={section.color}
               is_selected={selected_shape_id === section.section_id}
               is_locked={!!section.is_locked || is_locked_mode}
-              disable_pointer_events={drawing_mode === "add_seat" || is_locked_mode}
+              disable_pointer_events={drawing_mode === "add_seat" || drawing_mode === "seat_array" || is_locked_mode}
               on_select={() => { if (!is_locked_mode) set_selected_shape_id(section.section_id); }}
               on_update={(updates) => { if (!is_locked_mode) update_section_shape(section.section_id, updates); }}
               on_label_change={(new_label) => { if (!is_locked_mode) update_section(section.section_id, { label: new_label }); }}
@@ -373,11 +478,35 @@ export function SeatMapperCanvas({
                 }
                 useVenueEditorStore.getState().set_multi_selected_seats(new_ids);
                 useVenueEditorStore.setState({ selected_seat: null }); // Clear single seat without wiping array
+              } else if (
+                multi_selected_seat_ids.length > 1 &&
+                multi_selected_seat_ids.includes(seat.seat_id)
+              ) {
+                // Pressing a seat that's already part of a group keeps the group
+                // intact so it can be dragged as a unit (and so the arrange
+                // toolbar doesn't vanish). Clicking a seat outside the group
+                // still collapses the selection to that seat, below.
               } else {
                 useVenueEditorStore.getState().select_seat(seat);
               }
             }}
             on_drag_end={(x, y) => { if (!is_locked_mode) update_seat(seat.seat_id, { x, y }); }}
+            is_group_drag={
+              multi_selected_seat_ids.length > 1 &&
+              multi_selected_seat_ids.includes(seat.seat_id)
+            }
+            on_group_drag={(dx, dy) => {
+              if (is_locked_mode) return;
+              // One history entry for the whole drag, captured on first move.
+              if (!group_drag_active.current) {
+                group_drag_active.current = true;
+                save_history();
+              }
+              move_selected_elements(dx, dy, false);
+              // Keep the arrange frame with the seats being dragged.
+              translate_arrange_frame(dx, dy);
+            }}
+            on_group_drag_end={() => { group_drag_active.current = false; }}
             is_locked_mode={is_locked_mode}
           />
         ))}
@@ -395,46 +524,6 @@ export function SeatMapperCanvas({
         ))}
 
         {/* Context Menu for multi-selected seats */}
-        {multi_selected_seat_ids.length > 1 && !is_locked_mode && (
-          (() => {
-            // Find bounding box to center the menu
-            const selected_seats = all_seats.filter((s) => multi_selected_seat_ids.includes(s.seat_id));
-            if (selected_seats.length === 0) return null;
-            const minX = Math.min(...selected_seats.map(s => s.x));
-            const maxX = Math.max(...selected_seats.map(s => s.x));
-            const minY = Math.min(...selected_seats.map(s => s.y));
-            const centerX = (minX + maxX) / 2 + 15; // +15 for half seat width
-            const topY = minY - 45;
-
-            // Check if any selected seat is locked
-            const has_locked = selected_seats.some((s) => s.is_locked);
-
-            return (
-              <div
-                className="absolute z-30 flex items-center gap-1 rounded-lg bg-primary p-1.5 text-on-primary shadow-xl"
-                style={{
-                  left: centerX,
-                  top: topY,
-                  transform: "translateX(-50%)",
-                }}
-              >
-                <span className="px-2 text-xs font-semibold">{multi_selected_seat_ids.length} selected</span>
-                {!has_locked && (
-                  <>
-                    <div className="mx-1 h-4 w-px bg-white/20" />
-                    <button
-                      type="button"
-                      onClick={() => delete_multiple_seats(multi_selected_seat_ids)}
-                      className="flex items-center gap-2 rounded-md px-3 py-1 text-xs font-medium text-red-200 transition-colors hover:bg-red-500/20"
-                    >
-                      <Trash2 size={14} /> Delete Selected
-                    </button>
-                  </>
-                )}
-              </div>
-            );
-          })()
-        )}
 
         {/* Context Menu (floating near single selected seat) */}
         {selected_seat && multi_selected_seat_ids.length <= 1 && !is_locked_mode && (
@@ -796,6 +885,10 @@ interface DraggableSeatDotProps {
   on_click: (e?: React.PointerEvent) => void;
   on_drag_end: (x: number, y: number) => void;
   is_locked_mode?: boolean;
+  /** True when this seat is part of a multi-selection being dragged as a unit. */
+  is_group_drag?: boolean;
+  on_group_drag?: (dx: number, dy: number) => void;
+  on_group_drag_end?: () => void;
 }
 
 function DraggableSeatDot({
@@ -805,10 +898,16 @@ function DraggableSeatDot({
   on_click,
   on_drag_end,
   is_locked_mode,
+  is_group_drag = false,
+  on_group_drag,
+  on_group_drag_end,
 }: DraggableSeatDotProps) {
   const [is_dragging, set_is_dragging] = useState(false);
   const [position, set_position] = useState({ x: seat.x, y: seat.y });
   const start_pos = useRef({ x: 0, y: 0 });
+  // Last position we emitted a group delta from — kept in a ref so the delta
+  // maths never races the store update that moves this seat.
+  const last_group_pos = useRef({ x: seat.x, y: seat.y });
   const snap_position = useVenueEditorStore((s) => s.snap_position);
 
   // Sync state if it changed from the properties panel
@@ -826,18 +925,29 @@ function DraggableSeatDot({
       x: e.clientX - position.x,
       y: e.clientY - position.y,
     };
+    last_group_pos.current = { x: position.x, y: position.y };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!is_dragging) return;
     e.stopPropagation();
-    const raw_x = e.clientX - start_pos.current.x;
-    const raw_y = e.clientY - start_pos.current.y;
-    set_position({
-      x: snap_position(raw_x),
-      y: snap_position(raw_y),
-    });
+    const next_x = snap_position(e.clientX - start_pos.current.x, "x");
+    const next_y = snap_position(e.clientY - start_pos.current.y, "y");
+
+    if (is_group_drag && on_group_drag) {
+      // Move the whole selection by the delta; the store moves this seat too,
+      // and the sync effect above pulls `position` back into line.
+      const dx = next_x - last_group_pos.current.x;
+      const dy = next_y - last_group_pos.current.y;
+      if (dx !== 0 || dy !== 0) {
+        last_group_pos.current = { x: next_x, y: next_y };
+        on_group_drag(dx, dy);
+      }
+      return;
+    }
+
+    set_position({ x: next_x, y: next_y });
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
@@ -845,6 +955,10 @@ function DraggableSeatDot({
     e.stopPropagation();
     set_is_dragging(false);
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    if (is_group_drag) {
+      on_group_drag_end?.();
+      return;
+    }
     on_drag_end(position.x, position.y);
   };
 
