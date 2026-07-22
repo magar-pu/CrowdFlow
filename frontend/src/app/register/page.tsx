@@ -22,6 +22,7 @@ import { AuthShell } from "@/components/auth/AuthShell";
 import { SignUpForm, type SignUpFormValues } from "@/components/auth/SignUpForm";
 import { AuthFooterLink } from "@/components/auth/AuthFooterLink";
 import { registerUser } from "@/lib/api/auth";
+import { getRoleLandingPath } from "@/lib/store/authStore";
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -56,7 +57,9 @@ export default function SignUpPage() {
       const result = await res.json();
 
       if (result.success) {
-        router.push("/");
+        // Route by role — a new signup is a plain user (→ /), but an existing
+        // higher-role account signing in via Google here lands on its console.
+        router.push(getRoleLandingPath(result.data?.role ?? ""));
       } else {
         set_error_message(result.error?.message ?? "Google Sign-In failed.");
       }
