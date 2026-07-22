@@ -34,7 +34,10 @@ services:
       - GOOGLE_CLIENT_ID=91716845059-1l96nahbcu7nb39k1sa9r4ev8p2nitdu.apps.googleusercontent.com
       - DEV_MODE=false
       - REDIS_ADDR=redis:6379
-      - DB_DSN=postgres://postgres:postgres@postgres:5432/crowdflow?sslmode=disable
+      # No DB_DSN here on purpose. It belongs to backend/.env, and an entry in
+      # this block would silently win over it — compose `environment:` overrides
+      # `env_file:`. A leftover override pointing at the removed `postgres`
+      # service is what put the backend in a crash loop.
     depends_on:
       redis:
         condition: service_healthy
