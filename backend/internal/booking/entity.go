@@ -34,40 +34,36 @@ type Seat struct {
 	PosY   *float64 `json:"pos_y"`
 }
 
-// SeatSection groups the seats belonging to one event_sections row (a
-// venue_sections row scoped to this specific event) together with the
-// ticket tier that prices it.
-//
-// Shape and Color are the section's decorative geometry from the venue
-// layout. Both are nil for tag-only sections that group seats commercially
-// without occupying an area on the map.
-type SeatSection struct {
-	EventSectionID int             `json:"event_section_id"`
-	SectionID      int             `json:"section_id"`
-	Name           string          `json:"name"`
-	TicketTierID   int             `json:"ticket_tier_id"`
-	Price          float64         `json:"price"`
-	Shape          json.RawMessage `json:"shape,omitempty"`
-	Color          *string         `json:"color"`
-	Seats          []Seat          `json:"seats"`
+// SeatTier groups every assigned seat an event sells under one ticket tier.
+// Tier is the only grouping a seat has: the venue layout is an untiered,
+// reusable template, and the tier assignment lives per-seat in
+// event_seats_matrix for this event alone.
+type SeatTier struct {
+	TicketTierID int     `json:"ticket_tier_id"`
+	Name         string  `json:"name"`
+	Price        float64 `json:"price"`
+	// Color drives the seat fill on the buyer's map. Nil when the organizer
+	// has not chosen one; renderers fall back to a neutral palette.
+	Color *string `json:"color"`
+	Seats []Seat  `json:"seats"`
 }
 
 // SeatMapLayout carries the event's bound venue layout: the decorative
-// geometry blob (stage, facilities, blueprint reference) that sits behind
-// the sections. Nil when the event has no layout bound.
+// geometry blob (stage, facilities, blueprint reference, zone outlines) that
+// sits behind the seats. Nil when the event has no layout bound.
 type SeatMapLayout struct {
 	LayoutID int             `json:"layout_id"`
 	Geometry json.RawMessage `json:"geometry"`
 }
 
 // SeatMap is the full buyer-facing seating payload for one event: the
-// layout backdrop, the priced sections with their seats, and any tiers sold
+// layout backdrop, the tiers with their assigned seats, and any tiers sold
 // as general admission (no assigned seats). A tier appears in exactly one of
-// Sections or GaTiers, never both.
+// Tiers or GaTiers, never both.
 type SeatMap struct {
-	Layout   *SeatMapLayout `json:"layout"`
-	Sections []*SeatSection `json:"sections"`
-	GaTiers  []*TicketTier  `json:"ga_tiers"`
+	Layout  *SeatMapLayout `json:"layout"`
+	Tiers   []*SeatTier    `json:"tiers"`
+	GaTiers []*TicketTier  `json:"ga_tiers"`
 }
 
 // HoldRequest holds either SeatIDs (assigned seating) or Quantity (general

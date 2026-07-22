@@ -13,18 +13,13 @@ import { ApiResponse } from "@/types/api";
  *   PUT    /api/v1/venues/{venueId}/layouts/{lid}    save/diff
  */
 
-/** A section row as stored on the server (decorative tag + optional shape). */
-export interface LayoutSection {
-  id: number;
-  section_name: string;
-  color: string | null;
-  shape?: unknown;
-}
-
-/** A physical seat row as stored on the server. */
+/**
+ * A physical seat row as stored on the server. A layout is an untiered,
+ * reusable template, so a seat carries position only — which ticket tier
+ * sells it is decided per event, never here.
+ */
 export interface LayoutSeat {
   id: number;
-  section_id: number | null;
   row: string;
   number: string;
   pos_x: number | null;
@@ -47,8 +42,39 @@ export interface LayoutSummary {
 
 /** Full read shape from GET /layouts/{id} — the editor's entire persisted state. */
 export interface LayoutDetail extends LayoutSummary {
-  sections: LayoutSection[];
   seats: LayoutSeat[];
+}
+
+/**
+ * The subset of a layout that is actually drawable.
+ *
+ * `LayoutDetail` satisfies this structurally, but so does the geometry carried
+ * on the public seat map (GET /events/{id}/seatmap), which has no reason to
+ * expose a layout's visibility, owner or audit timestamps to buyers. Renderers
+ * should take this rather than the full detail so both callers fit without
+ * inventing fields.
+ *
+ * Zone outlines live inside `geometry.zones` alongside the stage and
+ * facilities — they are decoration, not rows.
+ */
+export interface RenderableLayout {
+  /** Used for the accessible label only; omitted on the public seat map. */
+  name?: string;
+  geometry: Record<string, unknown>;
+  seats: LayoutSeat[];
+}
+
+/** One decorative zone outline, stored inside a layout's geometry blob. */
+export interface LayoutZone {
+  name: string;
+  color: string | null;
+  shape?: unknown;
+}
+
+/** Read the zone outlines out of a layout's geometry blob. */
+export function zonesOf(geometry: Record<string, unknown>): LayoutZone[] {
+  const zones = geometry?.zones;
+  return Array.isArray(zones) ? (zones as LayoutZone[]) : [];
 }
 
 export interface CreateLayoutRequest {
@@ -56,22 +82,11 @@ export interface CreateLayoutRequest {
   visibility?: "public" | "event_exclusive";
 }
 
-/** One section in a save payload. `key` is the client's stable handle; `id` is
- *  the real DB id when the section already exists (null = insert). */
-export interface SectionInput {
-  key: string;
-  id: number | null;
-  section_name: string;
-  color?: string | null;
-  shape?: unknown;
-}
-
-/** One seat in a save payload. `section_key` references a SectionInput.key in
- *  the same payload (or null for a section-free seat). */
+/** One seat in a save payload. `key` is the client's stable handle; `id` is the
+ *  real DB id when the seat already exists (null = insert). */
 export interface SeatInput {
   key: string;
   id: number | null;
-  section_key: string | null;
   row: string;
   number: string;
   pos_x: number | null;
@@ -84,15 +99,13 @@ export interface SaveLayoutRequest {
   geometry: Record<string, unknown>;
   /** The updated_at the client loaded — server rejects with 409 if stale. */
   expected_updated_at: string;
-  sections: SectionInput[];
   seats: SeatInput[];
 }
 
-/** Response from PUT save: the persisted layout plus the maps the client uses
- *  to reconcile temporary client keys to the new DB ids (inserts only). */
+/** Response from PUT save: the persisted layout plus the map the client uses
+ *  to reconcile temporary seat keys to the new DB ids (inserts only). */
 export interface SaveLayoutResponse {
   layout: LayoutDetail;
-  section_id_map: Record<string, number>;
   seat_id_map: Record<string, number>;
 }
 

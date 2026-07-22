@@ -59,14 +59,6 @@ func (s *LayoutService) SaveLayout(ctx context.Context, venueID, layoutID, userI
 	if req.ExpectedUpdatedAt.IsZero() {
 		return nil, fmt.Errorf("%w: expected_updated_at is required", ErrInvalidInput)
 	}
-	for _, sec := range req.Sections {
-		if strings.TrimSpace(sec.Key) == "" {
-			return nil, fmt.Errorf("%w: every section needs a key", ErrInvalidInput)
-		}
-		if strings.TrimSpace(sec.SectionName) == "" {
-			return nil, fmt.Errorf("%w: section %q needs a name", ErrInvalidInput, sec.Key)
-		}
-	}
 	for _, st := range req.Seats {
 		if strings.TrimSpace(st.Key) == "" {
 			return nil, fmt.Errorf("%w: every seat needs a key", ErrInvalidInput)

@@ -30,16 +30,19 @@ export interface SavePayloadInput extends EditorGeometry {
   name: string;
   visibility: "public" | "event_exclusive";
   expectedUpdatedAt: string;
-  sections: VenueSection[];
+  /** Decorative zone outlines; persisted inside `geometry`, not as rows. */
+  zones: VenueSection[];
   seats: VenueSeat[];
 }
 
 /**
- * Serialise the editor state into a SaveLayoutRequest. Seats/sections keep their
- * string client ids as `key`; `db_id` (when present) becomes the real `id` so
- * the backend updates rather than re-inserts. Decorative geometry (stage,
- * facilities, blueprint) rides along in the opaque `geometry` JSONB; section
- * shapes stay on the section rows.
+ * Serialise the editor state into a SaveLayoutRequest. Seats keep their string
+ * client ids as `key`; `db_id` (when present) becomes the real `id` so the
+ * backend updates rather than re-inserts.
+ *
+ * A layout is an untiered, reusable template, so seats carry position only.
+ * All decoration — stage, facilities, blueprint and the zone outlines — rides
+ * along in the opaque `geometry` JSONB rather than as rows.
  */
 export function buildSaveLayoutRequest(input: SavePayloadInput): SaveLayoutRequest {
   return {
@@ -47,22 +50,19 @@ export function buildSaveLayoutRequest(input: SavePayloadInput): SaveLayoutReque
     visibility: input.visibility,
     expected_updated_at: input.expectedUpdatedAt,
     geometry: {
-      schema_version: 2,
+      schema_version: 3,
       stage: input.stage_shape ?? null,
       facilities: input.facilities,
       blueprint: input.blueprint ?? null,
+      zones: input.zones.map((z) => ({
+        name: z.label,
+        color: z.color,
+        shape: z.shape ?? null,
+      })),
     },
-    sections: input.sections.map((s) => ({
-      key: s.section_id,
-      id: s.db_id ?? null,
-      section_name: s.label,
-      color: s.color,
-      shape: s.shape ?? null,
-    })),
     seats: input.seats.map((s) => ({
       key: s.seat_id,
       id: s.db_id ?? null,
-      section_key: s.section_id ?? null,
       row: s.row,
       number: String(s.number),
       pos_x: s.x,
@@ -72,26 +72,20 @@ export function buildSaveLayoutRequest(input: SavePayloadInput): SaveLayoutReque
 }
 
 /**
- * Fold the id maps returned by a save back into the seats/sections, stamping
- * db_id on the rows that were just inserted (matched by their client key).
- * Rows that already had a db_id (updates) aren't in the maps and pass through.
+ * Fold the seat id map returned by a save back into the seats, stamping db_id
+ * on the rows that were just inserted (matched by their client key). Seats that
+ * already had a db_id (updates) aren't in the map and pass through.
+ *
+ * Zones need no reconciliation — they are decoration inside the geometry blob,
+ * not rows with server-assigned ids.
  */
 export function reconcileSavedIds(
   seats: VenueSeat[],
-  sections: VenueSection[],
-  seatIdMap: Record<string, number>,
-  sectionIdMap: Record<string, number>
-): { seats: VenueSeat[]; sections: VenueSection[] } {
-  return {
-    seats: seats.map((s) =>
-      seatIdMap[s.seat_id] !== undefined ? { ...s, db_id: seatIdMap[s.seat_id] } : s
-    ),
-    sections: sections.map((s) =>
-      sectionIdMap[s.section_id] !== undefined
-        ? { ...s, db_id: sectionIdMap[s.section_id] }
-        : s
-    ),
-  };
+  seatIdMap: Record<string, number>
+): VenueSeat[] {
+  return seats.map((s) =>
+    seatIdMap[s.seat_id] !== undefined ? { ...s, db_id: seatIdMap[s.seat_id] } : s
+  );
 }
 
 /** The editor state produced by loading a persisted layout from the server. */
@@ -100,7 +94,8 @@ export interface HydratedLayout {
   layoutUpdatedAt: string;
   name: string;
   seats: VenueSeat[];
-  sections: VenueSection[];
+  /** Decorative zone outlines, read out of the geometry blob. */
+  zones: VenueSection[];
   stage_shape?: VenueShape;
   facilities?: VenueFacility[];
   blueprint?: VenueBlueprint;
@@ -117,6 +112,7 @@ export function layoutDetailToEditorState(detail: LayoutDetail): HydratedLayout 
     stage?: VenueShape | null;
     facilities?: VenueFacility[];
     blueprint?: VenueBlueprint | null;
+    zones?: { name: string; color: string | null; shape?: unknown }[];
   };
 
   return {
@@ -126,18 +122,18 @@ export function layoutDetailToEditorState(detail: LayoutDetail): HydratedLayout 
     stage_shape: geometry.stage ?? undefined,
     facilities: geometry.facilities ?? undefined,
     blueprint: geometry.blueprint ?? undefined,
-    sections: detail.sections.map((s) => ({
-      section_id: String(s.id),
-      db_id: s.id,
-      label: s.section_name,
-      color: s.color ?? "#888888",
-      section_code: s.section_name,
-      shape: (s.shape as VenueShape | undefined) ?? undefined,
+    // Zones come out of the geometry blob and have no db ids of their own; the
+    // index is a stable enough client key for a decoration-only list.
+    zones: (geometry.zones ?? []).map((z, i) => ({
+      section_id: `zone-${i}`,
+      label: z.name,
+      color: z.color ?? "#888888",
+      section_code: z.name,
+      shape: (z.shape as VenueShape | undefined) ?? undefined,
     })),
     seats: detail.seats.map((s) => ({
       seat_id: String(s.id),
       db_id: s.id,
-      section_id: s.section_id != null ? String(s.section_id) : null,
       row: s.row,
       number: Number(s.number) || 0,
       x: s.pos_x ?? 0,

@@ -14,7 +14,6 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { X } from "lucide-react";
 import { EditorSidebar } from "@/components/venue-editor/EditorSidebar";
-import { TicketConfigPanel } from "@/components/venue-editor/TicketConfigPanel";
 import { HierarchyPanel } from "@/components/venue-editor/HierarchyPanel";
 import { FacilityIconsPanel } from "@/components/venue-editor/FacilityIconsPanel";
 import { FloatingToolbar } from "@/components/venue-editor/FloatingToolbar";
@@ -56,18 +55,6 @@ function VenueDesignerEditor() {
     layout_name,
     set_venues,
     set_venue,
-    base_currency,
-    tax_rate,
-    set_currency,
-    set_tax_rate,
-    pricing_tiers,
-    selected_paint_tier_id,
-    set_selected_paint_tier_id,
-    add_pricing_tier,
-    update_pricing_tier,
-    remove_pricing_tier,
-    set_drawing_mode,
-    validate_for_publish,
   } = useVenueEditorStore();
 
   const [selected_hierarchy_section, set_selected_hierarchy_section] = useState<
@@ -177,25 +164,9 @@ function VenueDesignerEditor() {
                 />
                 <FloatingToolbar />
               </div>
-              <TicketConfigPanel
-                base_currency={base_currency}
-                tax_rate={tax_rate}
-                pricing_tiers={pricing_tiers}
-                sections={sections}
-                selected_paint_tier_id={selected_paint_tier_id}
-                on_tier_select={(id) => {
-                  set_selected_paint_tier_id(id);
-                  set_drawing_mode(id ? "paint" : "select");
-                }}
-                on_currency_change={set_currency}
-                on_tax_rate_change={set_tax_rate}
-                on_tier_add={add_pricing_tier}
-                on_tier_update={update_pricing_tier}
-                on_tier_remove={remove_pricing_tier}
-                on_save_draft={() => console.log("Save draft")}
-                on_publish={() => console.log("Publish event")}
-                on_validate={validate_for_publish}
-              />
+              {/* Ticket pricing is deliberately absent here. A venue layout is
+                  an untiered, reusable template; tiers are painted onto seats
+                  per event in the organizer workspace (WorkspaceSeatingAssign). */}
             </div>
           )}
 

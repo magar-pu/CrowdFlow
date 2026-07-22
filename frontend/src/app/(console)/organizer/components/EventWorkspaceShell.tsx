@@ -21,6 +21,7 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
   const [revisionFeedback, setRevisionFeedback] = useState<EventRevisionFeedback | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resubmitSuccess, setResubmitSuccess] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     const s = event?.status?.toLowerCase() || "";
@@ -35,15 +36,22 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
 
   const handleResubmit = async () => {
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
       const res = await publishOrganizerEvent(Number(eventId));
       if (res.success) {
         setResubmitSuccess(true);
         await fetchData();
         setTimeout(() => setResubmitSuccess(false), 3000);
+      } else {
+        // The server refuses submission while seats are unpriced
+        // (422 SEATING_INCOMPLETE). Surfacing the reason matters — otherwise
+        // the button just appears to do nothing.
+        setSubmitError(res.error?.message ?? "Failed to submit this event for review.");
       }
     } catch (err) {
       console.error("Failed to resubmit event:", err);
+      setSubmitError("Failed to submit this event for review. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -67,6 +75,11 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
   const sLower = event.status?.toLowerCase() || "";
   const isNeedRevision = sLower === "need revision" || sLower === "needs_revision";
   const isRejected = sLower === "rejected";
+  // A draft has never been sent to an auditor — the revision banner below only
+  // covers events that came back. Without this, a new event has no way to be
+  // submitted at all.
+  const isDraft = sLower === "draft" || sLower === "";
+  const isPendingReview = sLower === "pending_review" || sLower === "pending review";
 
   return (
     <>
@@ -76,6 +89,47 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
         setWorkspaceTab={(tab) => router.push(tab === 'overview' ? `/organizer/events/${eventId}` : `/organizer/events/${eventId}/${tab}`)}
         onBack={() => router.push('/organizer/events')}
       />
+
+      {/* Draft: not yet submitted to an auditor. */}
+      {isDraft && (
+        <div className="mt-4 p-5 rounded-xl border border-border-subtle bg-white shadow-sm text-left animate-fade-in">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h4 className="text-sm font-bold text-text-primary">Ready for review?</h4>
+              <p className="text-xs text-text-secondary mt-1">
+                This event is a draft and isn&apos;t visible to buyers. Submit it to send it to an
+                auditor for approval. Every seat in the venue layout must be priced first.
+              </p>
+            </div>
+
+            <button
+              onClick={handleResubmit}
+              disabled={isSubmitting}
+              className="flex shrink-0 items-center gap-2 px-4 py-2 bg-secondary hover:bg-secondary/90 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>{isSubmitting ? "Submitting..." : "Submit Event to Auditor"}</span>
+            </button>
+          </div>
+
+          {submitError && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+              <p className="text-xs font-semibold text-danger">{submitError}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Awaiting an auditor decision. */}
+      {isPendingReview && (
+        <div className="mt-4 rounded-xl border border-border-subtle bg-surface-container-low px-5 py-3 text-left animate-fade-in">
+          <p className="text-xs font-semibold text-text-secondary">
+            Submitted for review — an auditor is checking this event. You&apos;ll be notified if
+            changes are requested.
+          </p>
+        </div>
+      )}
 
       {/* Auditor Revision & Feedback Banner */}
       {(isNeedRevision || isRejected) && (
@@ -122,6 +176,13 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
               </button>
             </div>
           </div>
+
+          {submitError && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+              <p className="text-xs font-semibold text-danger">{submitError}</p>
+            </div>
+          )}
 
           {/* Detailed Auditor Feedback Notes */}
           {revisionFeedback?.auditorNotes && (

@@ -49,8 +49,6 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusConflict, "STALE_LAYOUT", "This layout changed since you loaded it; reload and try again")
 	case errors.Is(err, ErrSeatInUse):
 		response.Error(w, http.StatusConflict, "SEAT_IN_USE", err.Error())
-	case errors.Is(err, ErrSectionInUse):
-		response.Error(w, http.StatusConflict, "SECTION_IN_USE", err.Error())
 	case errors.Is(err, ErrInvalidInput):
 		response.Error(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
 	default:

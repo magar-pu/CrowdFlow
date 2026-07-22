@@ -90,8 +90,6 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /events/{id}/ticket-tiers", admin(h.handleGetTicketTiers))
 	mux.Handle("PUT /events/{id}/ticket-tiers", admin(h.handleUpdateTicketTiers))
 	mux.Handle("DELETE /events/{id}/ticket-tiers/{tierId}", admin(h.handleDeleteTicketTier))
-	mux.Handle("GET /events/{id}/venue-sections", admin(h.handleGetVenueSections))
-	mux.Handle("PUT /events/{id}/venue-sections", admin(h.handleUpdateVenueSections))
 
 	mux.Handle("GET /finance/transactions", admin(h.handleListTransactions))
 	mux.Handle("GET /finance/payouts", admin(h.handleListPayouts))
@@ -324,38 +322,6 @@ func (h *Handler) handleDeleteTicketTier(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Ticket tier deleted"})
-}
-
-func (h *Handler) handleGetVenueSections(w http.ResponseWriter, r *http.Request) {
-	eventID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
-		return
-	}
-	sections, err := h.service.GetVenueSections(eventID)
-	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load venue sections")
-		return
-	}
-	response.JSON(w, http.StatusOK, sections)
-}
-
-func (h *Handler) handleUpdateVenueSections(w http.ResponseWriter, r *http.Request) {
-	eventID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
-		return
-	}
-	var sections []*VenueSection
-	if err := json.NewDecoder(r.Body).Decode(&sections); err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
-		return
-	}
-	if err := h.service.UpdateVenueSections(eventID, sections); err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update venue sections")
-		return
-	}
-	response.JSON(w, http.StatusOK, map[string]string{"message": "Venue sections updated"})
 }
 
 func (h *Handler) handleListTransactions(w http.ResponseWriter, r *http.Request) {
