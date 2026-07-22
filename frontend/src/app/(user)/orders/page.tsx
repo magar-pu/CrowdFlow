@@ -364,6 +364,84 @@ export default function MyTicketsPage() {
           </div>
         </div>
 
+        {/* Payment Status Cards Section (Matching Screenshot 2) */}
+        <div className="mb-12 space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-text-primary">Payment Status</h2>
+              <p className="text-xs text-text-secondary">Track your current ticket reservations and purchase history.</p>
+            </div>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Card 1: Payment Successful */}
+            <div className="flex flex-col sm:flex-row items-center gap-4 rounded-2xl border border-border-subtle bg-white p-4 shadow-xs">
+              <img
+                src="https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=600&auto=format&fit=crop"
+                alt="Coldplay"
+                className="h-28 w-full sm:w-28 rounded-xl object-cover border border-border-subtle shrink-0"
+              />
+              <div className="flex-1 space-y-2 w-full">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2.5 py-0.5 text-[10px] font-bold text-success">
+                    <span className="h-1.5 w-1.5 rounded-full bg-success"></span> Payment Successful
+                  </span>
+                </div>
+                <h3 className="text-base font-bold text-text-primary leading-tight">
+                  Coldplay: Music of the Spheres
+                </h3>
+                <p className="text-[10px] font-mono text-text-secondary">Order #CF-202700456</p>
+                <div className="flex items-center justify-between pt-1 border-t border-border-subtle/50">
+                  <div className="text-[10px] text-text-secondary">
+                    <span className="block font-bold">DATE &amp; VENUE</span>
+                    <span>Oct 24, 2027 • National Stadium</span>
+                  </div>
+                  <Link
+                    href={`/orders/ORD-89241`}
+                    className="rounded-xl bg-black px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-black/90 transition-all"
+                  >
+                    View Ticket
+                  </Link>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: Waiting for Payment */}
+            <div className="flex flex-col sm:flex-row items-center gap-4 rounded-2xl border border-warning/30 bg-warning/5 p-4 shadow-xs relative">
+              <span className="absolute top-3 right-3 rounded-md bg-warning/20 px-2 py-0.5 font-mono text-[10px] font-bold text-warning-700">
+                2:53
+              </span>
+              <img
+                src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=600&auto=format&fit=crop"
+                alt="Java Jazz"
+                className="h-28 w-full sm:w-28 rounded-xl object-cover border border-border-subtle shrink-0"
+              />
+              <div className="flex-1 space-y-2 w-full">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-warning/20 px-2.5 py-0.5 text-[10px] font-bold text-warning-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-warning animate-ping"></span> Waiting for Payment
+                  </span>
+                </div>
+                <h3 className="text-base font-bold text-text-primary leading-tight">
+                  Java Jazz Festival 2027
+                </h3>
+                <p className="text-[10px] text-text-secondary leading-tight">
+                  Please complete your payment within the time limit to secure your seats.
+                </p>
+                <div className="flex items-center justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={() => alert("Redirecting to Midtrans Payment Gateway...")}
+                    className="rounded-xl bg-primary px-5 py-2 text-xs font-bold text-white shadow-xs hover:bg-primary/90 transition-all cursor-pointer"
+                  >
+                    Pay Now
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Carousel */}
         <div className="px-8 md:px-16">
           <TicketCarousel tickets={filtered} />

@@ -2,9 +2,6 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 export function middleware(request: NextRequest) {
-  // Best-effort "is there a session?" signal for routing.
-  // The access_token cookie lasts ~15m, while csrf_token and refresh_token
-  // (scoped to /api/v1/auth) represent durable active sessions.
   const accessToken = request.cookies.get("access_token")?.value;
   const csrfToken = request.cookies.get("csrf_token")?.value;
   const hasSessionSignal = Boolean(accessToken || csrfToken);
@@ -22,14 +19,14 @@ export function middleware(request: NextRequest) {
 
   const isAuthPath = pathname === "/login" || pathname === "/register";
 
-  // 1. If user is unauthenticated (no access/csrf token signal at all) and tries to access private routes
+  // 1. Unauthenticated users trying to access protected paths -> redirect to login
   if (isProtectedPath && !hasSessionSignal) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("from", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  // 2. If user is already authenticated and visits login/register, redirect to home/dashboard
+  // 2. Already authenticated users visiting login/register -> redirect away
   if (isAuthPath && hasSessionSignal) {
     return NextResponse.redirect(new URL("/", request.url));
   }
