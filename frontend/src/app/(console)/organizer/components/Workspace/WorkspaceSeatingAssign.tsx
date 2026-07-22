@@ -24,6 +24,7 @@ import {
 import { getLayout, type LayoutDetail } from "@/lib/api/venueLayouts";
 import { getSeatMap, seatStatesFrom, type SeatStatus } from "@/lib/api/booking";
 import { LayoutPreview } from "@/components/venue-editor/LayoutPreview";
+import { tierColorAt } from "@/lib/tierColors";
 
 interface WorkspaceSeatingAssignProps {
   eventId: number;
@@ -35,8 +36,8 @@ function formatPrice(p: number): string {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(p);
 }
 
-/** Distinct fallback colours so tiers stay tellable apart before any are set. */
-const TIER_PALETTE = ["#2563eb", "#f59e0b", "#16a34a", "#db2777", "#7c3aed", "#0891b2"];
+// Palette lives in lib/tierColors so the buyer's event-page map draws this
+// event in the same colours the organizer painted it in.
 
 export default function WorkspaceSeatingAssign({ eventId, layoutId }: WorkspaceSeatingAssignProps) {
   const [loading, setLoading] = useState(true);
@@ -110,7 +111,7 @@ export default function WorkspaceSeatingAssign({ eventId, layoutId }: WorkspaceS
   const tierColor = useCallback(
     (tierId: number) => {
       const i = tiers.findIndex((t) => Number(t.id) === tierId);
-      return TIER_PALETTE[(i < 0 ? 0 : i) % TIER_PALETTE.length];
+      return tierColorAt(i);
     },
     [tiers]
   );
