@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { TicketTier } from "../../types";
-import { Plus, Trash2, Layers, CheckCircle2, PackageOpen } from "lucide-react";
+import { Plus, Trash2, Layers, CheckCircle2 } from "lucide-react";
 
 interface WorkspaceTicketsProps {
   ticketTiers: TicketTier[];
@@ -37,13 +37,16 @@ export default function WorkspaceTickets({
     setShowAddForm(false);
   };
 
+  // No "remaining" here: for a seated event a tier's real capacity is however
+  // many seats are painted with it in the Venue tab, not this figure. Showing a
+  // headroom number derived from the manual allocation limit would contradict
+  // the seat map whenever the two disagree.
   const totalCapacity = ticketTiers.reduce((acc, t) => acc + t.capacity, 0);
   const totalSold = ticketTiers.reduce((acc, t) => acc + t.sold, 0);
-  const totalRemaining = totalCapacity - totalSold;
 
   return (
     <div className="space-y-6 text-left animate-fade-in">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="p-4 bg-white border border-border-subtle rounded-xl shadow-sm">
           <div className="flex justify-between items-start mb-2">
             <span className="text-xs font-bold text-text-secondary">Total Capacity</span>
@@ -57,13 +60,6 @@ export default function WorkspaceTickets({
             <div className="p-1.5 bg-secondary/10 border border-secondary/20 text-secondary rounded-lg"><CheckCircle2 className="w-4 h-4" /></div>
           </div>
           <h3 className="text-xl font-bold text-text-primary">{totalSold.toLocaleString()}</h3>
-        </div>
-        <div className="p-4 bg-white border border-border-subtle rounded-xl shadow-sm">
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-bold text-text-secondary">Remaining</span>
-            <div className="p-1.5 bg-success/10 border border-success/20 text-success rounded-lg"><PackageOpen className="w-4 h-4" /></div>
-          </div>
-          <h3 className="text-xl font-bold text-text-primary">{totalRemaining.toLocaleString()}</h3>
         </div>
       </div>
 
@@ -110,7 +106,6 @@ export default function WorkspaceTickets({
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {ticketTiers.map((tier) => {
-          const remaining = tier.capacity - tier.sold;
           const revenue = tier.sold * tier.price;
           return (
             <div key={tier.id} className="bg-white border border-border-subtle rounded-xl p-5 soft-shadow flex flex-col justify-between group">
@@ -134,15 +129,9 @@ export default function WorkspaceTickets({
                   <span className="text-[10px] text-on-surface-variant font-mono ml-1.5">/ ticket</span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 text-[10px] font-mono">
-                  <div>
-                    <span className="text-text-secondary block">Remaining</span>
-                    <span className="text-text-primary font-bold">{remaining.toLocaleString()}</span>
-                  </div>
-                  <div>
-                    <span className="text-text-secondary block">Tier Revenue</span>
-                    <span className="text-secondary font-bold">${revenue.toLocaleString()}</span>
-                  </div>
+                <div className="text-[10px] font-mono">
+                  <span className="text-text-secondary block">Tier Revenue</span>
+                  <span className="text-secondary font-bold">${revenue.toLocaleString()}</span>
                 </div>
 
                 {tier.salesEnd && (
