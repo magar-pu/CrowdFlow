@@ -16,7 +16,7 @@
 "use client";
 
 import { useMemo } from "react";
-import type { RenderableLayout } from "@/lib/api/venueLayouts";
+import { zonesOf, type RenderableLayout } from "@/lib/api/venueLayouts";
 import type { SeatStatus } from "@/lib/api/booking";
 import type { VenueShape } from "@/types/ticket";
 
@@ -27,6 +27,11 @@ interface LayoutPreviewProps {
   seat_states?: Map<number, SeatStatus>;
   /** Seat ids currently chosen by the buyer. */
   selected_seat_ids?: Set<number>;
+  /**
+   * Seat id -> fill colour, normally the colour of the ticket tier the seat is
+   * painted with. Absent on an untiered template, which renders neutral.
+   */
+  seat_colors?: Map<number, string>;
   /** Makes available seats clickable and keyboard-focusable. */
   on_seat_click?: (seat_id: number) => void;
   /** Pan/zoom from useSeatMap, applied as a single group transform. */
@@ -66,20 +71,19 @@ export function LayoutPreview({
   className,
   seat_states,
   selected_seat_ids,
+  seat_colors,
   on_seat_click,
   transform,
 }: LayoutPreviewProps) {
   const model = useMemo(() => {
     const stage = asShape((detail.geometry as Record<string, unknown>)?.stage);
-    const sections = detail.sections
-      .map((s) => ({ ...s, shapeGeom: asShape(s.shape) }))
-      .filter((s) => s.shapeGeom);
+    // Zones are decoration living in the geometry blob, not rows.
+    const zones = zonesOf(detail.geometry)
+      .map((z) => ({ ...z, shapeGeom: asShape(z.shape) }))
+      .filter((z) => z.shapeGeom);
     const seats = detail.seats.filter(
       (s) => typeof s.pos_x === "number" && typeof s.pos_y === "number"
     );
-
-    const sectionColor = new Map<number, string>();
-    detail.sections.forEach((s) => sectionColor.set(s.id, s.color ?? FALLBACK_SEAT_COLOR));
 
     // Bounding box over every drawable element so the viewBox auto-fits.
     let minX = Infinity;
@@ -93,7 +97,7 @@ export function LayoutPreview({
       maxY = Math.max(maxY, y + h);
     };
     if (stage) grow(stage.x, stage.y, stage.width, stage.height);
-    sections.forEach((s) => grow(s.shapeGeom!.x, s.shapeGeom!.y, s.shapeGeom!.width, s.shapeGeom!.height));
+    zones.forEach((z) => grow(z.shapeGeom!.x, z.shapeGeom!.y, z.shapeGeom!.width, z.shapeGeom!.height));
     seats.forEach((s) => grow(s.pos_x! - SEAT_RADIUS, s.pos_y! - SEAT_RADIUS, SEAT_RADIUS * 2, SEAT_RADIUS * 2));
 
     const isEmpty = !isFinite(minX);
@@ -101,7 +105,7 @@ export function LayoutPreview({
       ? "0 0 100 100"
       : `${minX - PADDING} ${minY - PADDING} ${maxX - minX + PADDING * 2} ${maxY - minY + PADDING * 2}`;
 
-    return { stage, sections, seats, sectionColor, viewBox, isEmpty };
+    return { stage, zones, seats, viewBox, isEmpty };
   }, [detail]);
 
   if (model.isEmpty) {
@@ -153,14 +157,14 @@ export function LayoutPreview({
         </g>
       )}
 
-      {/* Section shapes */}
-      {model.sections.map((s) => {
+      {/* Decorative zone outlines */}
+      {model.zones.map((s, i) => {
         const shape = s.shapeGeom!;
         const color = s.color ?? FALLBACK_SEAT_COLOR;
         const cx = shape.x + shape.width / 2;
         const isEllipse = shape.type === "ellipse";
         return (
-          <g key={`sec-${s.id}`}>
+          <g key={`zone-${i}-${s.name}`}>
             {isEllipse ? (
               <ellipse
                 cx={cx}
@@ -191,7 +195,7 @@ export function LayoutPreview({
               fontWeight="700"
               textAnchor="middle"
             >
-              {s.section_name}
+              {s.name}
             </text>
           </g>
         );
@@ -201,16 +205,24 @@ export function LayoutPreview({
       {model.seats.map((seat) => {
         const status = seat_states?.get(seat.id);
         const isSelected = selected_seat_ids?.has(seat.id) ?? false;
-        const isSelectable = isInteractive && status === "available";
+        // Committed states are off limits; everything else can be acted on.
+        // A seat with NO state yet is selectable on purpose — that is an
+        // unpainted seat in the organizer's editor, which must be clickable to
+        // get its first tier. Buyer seats always carry a status, so requiring
+        // "available" there is unchanged.
+        const isSelectable =
+          isInteractive && status !== "sold" && status !== "blocked" && status !== "held";
 
-        // Without seat_states this is the original section-colour render.
+        // Precedence: selection, then the tier's colour, then live status, then
+        // neutral. An untiered template hits the neutral branch, which is what
+        // a plain reusable layout should look like.
         let fill: string;
         if (isSelected) {
           fill = SELECTED_SEAT_COLOR;
+        } else if (seat_colors?.get(seat.id)) {
+          fill = seat_colors.get(seat.id)!;
         } else if (status) {
           fill = SEAT_COLOR[status];
-        } else if (seat.section_id != null) {
-          fill = model.sectionColor.get(seat.section_id) ?? FALLBACK_SEAT_COLOR;
         } else {
           fill = FALLBACK_SEAT_COLOR;
         }

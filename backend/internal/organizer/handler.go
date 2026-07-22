@@ -42,16 +42,12 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("PUT /api/notifications/read", authenticate(verifiedOrganizer(http.HandlerFunc(h.handleMarkNotificationsRead))))
 	mux.Handle("GET /api/organizer/events", authenticate(verifiedOrganizer(http.HandlerFunc(h.handleListEvents))))
 	mux.Handle("POST /api/organizer/events", authenticate(verifiedOrganizer(http.HandlerFunc(h.handleCreateEvent))))
-	
+
 	// Event specific endpoints with ownership check
 	mux.Handle("GET /api/organizer/events/{id}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetEvent)))))
 	mux.Handle("PUT /api/organizer/events/{id}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUpdateEvent)))))
 	mux.Handle("PATCH /api/organizer/events/{id}/publish", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handlePublishEvent)))))
 	mux.Handle("DELETE /api/organizer/events/{id}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleDeleteEvent)))))
-	mux.Handle("GET /api/organizer/events/{id}/venue", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetVenueLayout)))))
-	mux.Handle("POST /api/organizer/events/{id}/venue", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleCreateVenueSection)))))
-	mux.Handle("PUT /api/organizer/events/{id}/venue/{secId}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUpdateVenueSection)))))
-	mux.Handle("DELETE /api/organizer/events/{id}/venue/{secId}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleDeleteVenueSection)))))
 	mux.Handle("POST /api/organizer/events/{id}/checkin", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleCheckInAttendee)))))
 	mux.Handle("GET /api/organizer/events/{id}/analytics", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetEventAnalytics)))))
 	mux.Handle("GET /api/organizer/events/{id}/revisions", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetEventRevisions)))))
@@ -80,7 +76,7 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /api/organizer/finance", authenticate(verifiedOrganizer(http.HandlerFunc(h.handleGetFinanceSummary))))
 	mux.Handle("GET /api/organizer/payouts", authenticate(verifiedOrganizer(http.HandlerFunc(h.handleListPayouts))))
 	mux.Handle("POST /api/organizer/payout-request", authenticate(verifiedOrganizer(http.HandlerFunc(h.handleCreatePayoutRequest))))
-	
+
 	// Analytics
 	mux.Handle("GET /api/organizer/analytics", authenticate(verifiedOrganizer(http.HandlerFunc(h.handleGetAnalytics))))
 }
@@ -494,33 +490,6 @@ func (h *Handler) handleDeleteEvent(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Event deleted successfully"})
 }
 
-func (h *Handler) handleGetVenueLayout(w http.ResponseWriter, r *http.Request) {
-	claims, ok := middleware.GetClaims(r.Context())
-	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
-		return
-	}
-	userID, err := strconv.Atoi(claims.UserID)
-	if err != nil {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
-		return
-	}
-
-	eventID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
-		return
-	}
-
-	sections, err := h.service.GetVenueLayout(r.Context(), eventID, userID)
-	if err != nil {
-		log.Printf("GetVenueLayout error: %v", err)
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load venue layout")
-		return
-	}
-	response.JSON(w, http.StatusOK, sections)
-}
-
 func (h *Handler) handleListTicketTiers(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -914,111 +883,6 @@ func (h *Handler) handleGetEventAnalytics(w http.ResponseWriter, r *http.Request
 		return
 	}
 	response.JSON(w, http.StatusOK, analytics)
-}
-
-func (h *Handler) handleCreateVenueSection(w http.ResponseWriter, r *http.Request) {
-	claims, ok := middleware.GetClaims(r.Context())
-	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
-		return
-	}
-	userID, err := strconv.Atoi(claims.UserID)
-	if err != nil {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
-		return
-	}
-
-	eventID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
-		return
-	}
-
-	var req VenueSection
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse layout payload: "+err.Error())
-		return
-	}
-
-	err = h.service.CreateVenueSection(r.Context(), eventID, userID, &req)
-	if err != nil {
-		log.Printf("CreateVenueSection error: %v", err)
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create venue section: "+err.Error())
-		return
-	}
-	response.JSON(w, http.StatusCreated, map[string]string{"message": "Venue section layout created successfully"})
-}
-
-func (h *Handler) handleUpdateVenueSection(w http.ResponseWriter, r *http.Request) {
-	claims, ok := middleware.GetClaims(r.Context())
-	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
-		return
-	}
-	userID, err := strconv.Atoi(claims.UserID)
-	if err != nil {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
-		return
-	}
-
-	eventID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
-		return
-	}
-
-	sectionID, err := strconv.Atoi(r.PathValue("secId"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Section ID must be a valid integer")
-		return
-	}
-
-	var req VenueSection
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse layout payload: "+err.Error())
-		return
-	}
-
-	err = h.service.UpdateVenueSection(r.Context(), eventID, userID, sectionID, &req)
-	if err != nil {
-		log.Printf("UpdateVenueSection error: %v", err)
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update venue section: "+err.Error())
-		return
-	}
-	response.JSON(w, http.StatusOK, map[string]string{"message": "Venue section layout updated successfully"})
-}
-
-func (h *Handler) handleDeleteVenueSection(w http.ResponseWriter, r *http.Request) {
-	claims, ok := middleware.GetClaims(r.Context())
-	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
-		return
-	}
-	userID, err := strconv.Atoi(claims.UserID)
-	if err != nil {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
-		return
-	}
-
-	eventID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
-		return
-	}
-
-	sectionID, err := strconv.Atoi(r.PathValue("secId"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Section ID must be a valid integer")
-		return
-	}
-
-	err = h.service.DeleteVenueSection(r.Context(), eventID, userID, sectionID)
-	if err != nil {
-		log.Printf("DeleteVenueSection error: %v", err)
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete venue section: "+err.Error())
-		return
-	}
-	response.JSON(w, http.StatusOK, map[string]string{"message": "Venue section layout deleted successfully"})
 }
 
 func (h *Handler) handleCheckInAttendee(w http.ResponseWriter, r *http.Request) {

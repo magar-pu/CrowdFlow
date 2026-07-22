@@ -21,7 +21,6 @@ import {
   getTicketTiers,
   updateTicketTiers,
   deleteTicketTier,
-  getVenueSections,
   approveEvent,
   rejectEvent,
   setEventStatus,
@@ -35,10 +34,10 @@ import {
 } from '@/lib/api/admin/financeService';
 import { listSystemActivities } from '@/lib/api/admin/dashboardService';
 
-// Backend ticket_tiers/venue_sections rows don't carry a display color (it's
-// UI-only, never persisted - see repository.go), so real fetched rows are
-// assigned one client-side by cycling through the same palette the old mock
-// data used, rather than rendering with no color at all.
+// The admin console assigns display colours client-side by cycling a palette,
+// rather than rendering rows with no colour at all. (ticket_tiers does now have
+// a color column, used by the buyer seat map; this palette is the admin list's
+// own fallback and is independent of it.)
 const TIER_COLORS = [
   'border-pink-500 bg-pink-500/10 text-pink-400 hover:bg-pink-500/20',
   'border-cyan-500 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20',
@@ -196,9 +195,14 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     refreshActivities();
   }, [refreshActivities]);
 
-  // Ticket tiers and venue sections are backed by the real
-  // /api/v1/events/{id}/ticket-tiers and /venue-sections endpoints, fetched
-  // per event when its workspace is opened (see refreshWorkspaceData below).
+  // Ticket tiers are backed by the real /api/v1/events/{id}/ticket-tiers
+  // endpoint, fetched per event when its workspace is opened (see
+  // refreshWorkspaceData below).
+  //
+  // venueSections is now LOCAL-ONLY demo state for the scanner simulator.
+  // Venue sections were removed from the schema: a venue layout is an untiered
+  // reusable template and tier grouping is per-seat and event-scoped, so there
+  // is no /venue-sections endpoint to read any more.
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [ticketTiers, setTicketTiers] = useState<TicketTier[]>([]);
   const [venueSections, setVenueSections] = useState<VenueSection[]>([]);
@@ -216,7 +220,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     setWorkspaceLoading(true);
     setWorkspaceError(null);
 
-    const [tiersRes, sectionsRes] = await Promise.all([getTicketTiers(eventId), getVenueSections(eventId)]);
+    const tiersRes = await getTicketTiers(eventId);
 
     if (latestWorkspaceEventIdRef.current !== eventId) return;
 
@@ -224,12 +228,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       setTicketTiers(tiersRes.data.map((t, i) => ({ ...t, color: TIER_COLORS[i % TIER_COLORS.length] })));
     } else {
       setWorkspaceError(tiersRes.error?.message ?? 'Failed to load ticket tiers');
-    }
-
-    if (sectionsRes.success && sectionsRes.data) {
-      setVenueSections(sectionsRes.data.map((s, i) => ({ ...s, color: SECTION_COLORS[i % SECTION_COLORS.length] })));
-    } else {
-      setWorkspaceError((prev) => prev ?? sectionsRes.error?.message ?? 'Failed to load venue sections');
     }
 
     setWorkspaceLoading(false);
@@ -242,11 +240,9 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     refreshWorkspaceData(eventId);
   }, [refreshWorkspaceData]);
 
-  // Venue sections have no editable field in the current UI - "occupied" is
-  // an interactive block/simulate-entries demo, not a persisted column (see
-  // repository.go: VenueSection.Occupied is always 0 from the backend). So
-  // setVenueSections stays a local-only setter; only ticket tier edits are
-  // wired to a real mutation below.
+  // setVenueSections is a local-only setter feeding the scanner simulator's
+  // block/simulate-entries demo. Only ticket tier edits are wired to a real
+  // mutation below.
   const handleUpdateTiers = async (updatedTiers: TicketTier[]) => {
     if (!selectedEventId) return;
     const result = await updateTicketTiers(selectedEventId, updatedTiers);

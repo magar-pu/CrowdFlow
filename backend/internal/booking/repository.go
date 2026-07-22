@@ -67,7 +67,7 @@ func (r *PostgresRedisRepository) GetSeatMap(eventID int) (*SeatMap, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	sections, seatedTierIDs, err := r.seatMapSections(ctx, eventID)
+	tiers, seatedTierIDs, err := r.seatMapTiers(ctx, eventID)
 	if err != nil {
 		return nil, err
 	}
@@ -89,67 +89,56 @@ func (r *PostgresRedisRepository) GetSeatMap(eventID int) (*SeatMap, error) {
 		}
 	}
 
-	return &SeatMap{Layout: layout, Sections: sections, GaTiers: gaTiers}, nil
+	return &SeatMap{Layout: layout, Tiers: tiers, GaTiers: gaTiers}, nil
 }
 
-// seatMapSections loads the priced sections and their seats, also reporting
-// which ticket tiers are sold as assigned seating.
-func (r *PostgresRedisRepository) seatMapSections(ctx context.Context, eventID int) ([]*SeatSection, map[int]bool, error) {
+// seatMapTiers loads each ticket tier with the seats assigned to it for this
+// event, also reporting which tiers are sold as assigned seating. Grouping is
+// per-seat via event_seats_matrix - the venue layout itself is untiered.
+func (r *PostgresRedisRepository) seatMapTiers(ctx context.Context, eventID int) ([]*SeatTier, map[int]bool, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT es.id, es.section_id, vs.section_name, es.ticket_tier_id, tt.price,
-			vs.shape, vs.color,
+		SELECT tt.id, tt.name, tt.price, tt.color,
 			s.id, s.row_number, s.seat_number, esm.current_state, s.pos_x, s.pos_y
-		FROM event_sections es
-		JOIN venue_sections vs ON es.section_id = vs.id
-		JOIN ticket_tiers tt ON es.ticket_tier_id = tt.id
-		JOIN event_seats_matrix esm ON esm.event_section_id = es.id AND esm.event_id = es.event_id
+		FROM event_seats_matrix esm
+		JOIN ticket_tiers tt ON tt.id = esm.ticket_tier_id
 		JOIN seats s ON s.id = esm.seat_id
-		WHERE es.event_id = $1 AND es.is_active = true
-		ORDER BY vs.section_name, s.row_number, s.seat_number
+		WHERE esm.event_id = $1
+		ORDER BY tt.price, s.row_number, s.seat_number
 	`, eventID)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer rows.Close()
 
-	sectionsByID := make(map[int]*SeatSection)
+	tiersByID := make(map[int]*SeatTier)
 	seatedTierIDs := make(map[int]bool)
 	var order []int
 	for rows.Next() {
-		var eventSectionID, sectionID, tierID, seatID int
-		var sectionName, row, number, state string
+		var tierID, seatID int
+		var tierName, row, number, state string
 		var price float64
-		var shape []byte
 		var color sql.NullString
 		var posX, posY sql.NullFloat64
 		if err := rows.Scan(
-			&eventSectionID, &sectionID, &sectionName, &tierID, &price,
-			&shape, &color,
+			&tierID, &tierName, &price, &color,
 			&seatID, &row, &number, &state, &posX, &posY,
 		); err != nil {
 			return nil, nil, err
 		}
 
-		section, ok := sectionsByID[eventSectionID]
+		tier, ok := tiersByID[tierID]
 		if !ok {
-			section = &SeatSection{
-				EventSectionID: eventSectionID,
-				SectionID:      sectionID,
-				Name:           sectionName,
-				TicketTierID:   tierID,
-				Price:          price,
-				Seats:          []Seat{},
-			}
-			// A zero-length RawMessage marshals to invalid JSON, so only set
-			// Shape when the column actually held a value.
-			if len(shape) > 0 {
-				section.Shape = json.RawMessage(shape)
+			tier = &SeatTier{
+				TicketTierID: tierID,
+				Name:         tierName,
+				Price:        price,
+				Seats:        []Seat{},
 			}
 			if color.Valid {
-				section.Color = &color.String
+				tier.Color = &color.String
 			}
-			sectionsByID[eventSectionID] = section
-			order = append(order, eventSectionID)
+			tiersByID[tierID] = tier
+			order = append(order, tierID)
 			seatedTierIDs[tierID] = true
 		}
 
@@ -160,17 +149,17 @@ func (r *PostgresRedisRepository) seatMapSections(ctx context.Context, eventID i
 		if posY.Valid {
 			seat.PosY = &posY.Float64
 		}
-		section.Seats = append(section.Seats, seat)
+		tier.Seats = append(tier.Seats, seat)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, nil, err
 	}
 
-	sections := make([]*SeatSection, 0, len(order))
+	tiers := make([]*SeatTier, 0, len(order))
 	for _, id := range order {
-		sections = append(sections, sectionsByID[id])
+		tiers = append(tiers, tiersByID[id])
 	}
-	return sections, seatedTierIDs, nil
+	return tiers, seatedTierIDs, nil
 }
 
 // seatMapLayout loads the decorative geometry of the layout bound to the

@@ -128,12 +128,6 @@ export async function deleteTicketTier(eventId: string, tierId: string): Promise
   });
 }
 
-export async function getVenueSections(eventId: string): Promise<ApiResponse<VenueSection[]>> {
-  return apiRequest<VenueSection[]>(`/api/v1/admin/events/${eventId}/venue-sections`, {
-    method: "GET",
-  });
-}
-
 export async function updateVenueSections(eventId: string, sections: VenueSection[]): Promise<ApiResponse<void>> {
   return apiRequest<void>(`/api/v1/admin/events/${eventId}/venue-sections`, {
     method: "PUT",

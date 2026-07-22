@@ -58,8 +58,8 @@ export function useVenueLayoutPersistence() {
         return { ok: false, error: message };
       }
 
-      const { layout, seat_id_map, section_id_map } = res.data;
-      store.apply_saved_ids(seat_id_map, section_id_map);
+      const { layout, seat_id_map } = res.data;
+      store.apply_saved_ids(seat_id_map);
       store.set_layout_meta(layout.id, layout.updated_at);
       return { ok: true };
     } catch (e) {
