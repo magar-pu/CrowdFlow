@@ -15,11 +15,19 @@
  */
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
+import Script from "next/script";
 import { Navbar } from "@/components/layout/Navbar";
 import { CheckoutSummary } from "@/components/checkout/CheckoutSummary";
 import { mockEvent, mockOrder, mockTicketCategoryById } from "@/mock/eventData";
 import type { CartItem } from "@/types/ticket";
+import { createOrder } from "@/lib/api/payment";
+
+declare global {
+  interface Window {
+    snap: any;
+  }
+}
 
 // In the real app this comes from useCartStore() (Zustand). Hardcoded here
 // purely to demonstrate CheckoutSummary with realistic data shape.
@@ -51,43 +59,93 @@ const demo_cart_items: CartItem[] = [
 
 export default function CheckoutPage() {
   const router = useRouter();
+  const params = useParams();
   const [is_submitting, set_is_submitting] = useState(false);
 
-  function handle_confirm(payment_method: string) {
-    // TODO: replace with a real POST /api/v1/orders call once the Go
-    // backend exists. The 1.2s delay here just simulates network latency
-    // so the "Processing..." button state is visible during testing.
+  // Parse event_id from URL params or fallback to an existing DB event (id: 4)
+  const paramEventId = Array.isArray(params?.event_id) ? params.event_id[0] : params?.event_id;
+  const parsedId = parseInt(paramEventId as string, 10);
+  const targetEventId = (!isNaN(parsedId) && parsedId > 1) ? parsedId : 4;
+
+  async function handle_confirm(payment_method: string) {
     set_is_submitting(true);
     console.log("Confirmed with payment method:", payment_method);
-    setTimeout(() => {
-      // Add the ticket to local storage to simulate buying
-      const boughtTicket = {
-        ticket_id: "123e4567-e89b-12d3-a456-426614174001", // The mock ticket ID we seeded in DB
-        order_id: "ORD-NEW",
-        event_title: "Soundscape Festival 2026",
-        cover_image_url: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?q=80&w=900&auto=format&fit=crop",
-        date_label: "Sat, Sep 12 • 7:30 PM",
-        venue_name: "Gelora Bung Karno Stadium",
-        section_label: "102",
-        ticket_type: "VIP Experience",
-        quantity: 1,
-        status: "confirmed",
-        tab: "upcoming",
+    
+    try {
+      // 1. Call backend to create order and get snap_token
+      // Map UI payment method label to backend key
+      const paymentMethodMap: Record<string, string> = {
+        "Virtual Account": "virtual_account",
+        "QRIS": "qris",
+        "Credit/Debit Card": "credit_card",
       };
-      
-      const existingStr = localStorage.getItem('demo_tickets');
-      // Only add if it's not already in there to prevent duplicates during testing
-      const existing = existingStr ? JSON.parse(existingStr) : [];
-      if (!existing.find((t: any) => t.ticket_id === boughtTicket.ticket_id)) {
-        localStorage.setItem('demo_tickets', JSON.stringify([boughtTicket, ...existing]));
+      const res = await createOrder({
+        event_id: targetEventId,
+        payment_method: paymentMethodMap[payment_method] || undefined,
+        cart_items: demo_cart_items,
+      });
+
+      if (!res.success || !res.data?.snap_token) {
+        alert("Failed to create order: " + (res.error?.message || "Unknown error"));
+        set_is_submitting(false);
+        return;
       }
 
-      router.push(`/orders/${mockOrder.order_id}`);
-    }, 1200);
+      // 2. Open Midtrans Snap Popup
+      window.snap.pay(res.data.snap_token, {
+        onSuccess: function (result: any) {
+          console.log("Payment success:", result);
+          
+          // Add the ticket to local storage to simulate buying
+          const boughtTicket = {
+            ticket_id: "123e4567-e89b-12d3-a456-426614174001",
+            order_id: res.data?.order_id || "ORD-NEW",
+            event_title: "Soundscape Festival 2026",
+            cover_image_url: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?q=80&w=900&auto=format&fit=crop",
+            date_label: "Sat, Sep 12 • 7:30 PM",
+            venue_name: "Gelora Bung Karno Stadium",
+            section_label: "102",
+            ticket_type: "VIP Experience",
+            quantity: 1,
+            status: "confirmed",
+            tab: "upcoming",
+          };
+          
+          const existingStr = localStorage.getItem('demo_tickets');
+          const existing = existingStr ? JSON.parse(existingStr) : [];
+          if (!existing.find((t: any) => t.ticket_id === boughtTicket.ticket_id)) {
+            localStorage.setItem('demo_tickets', JSON.stringify([boughtTicket, ...existing]));
+          }
+
+          router.push(`/orders/${res.data?.order_id || mockOrder.order_id}`);
+        },
+        onPending: function (result: any) {
+          console.log("Payment pending:", result);
+          alert("Payment is pending. Please complete your payment.");
+          set_is_submitting(false);
+        },
+        onError: function (result: any) {
+          console.log("Payment error:", result);
+          alert("Payment failed!");
+          set_is_submitting(false);
+        },
+        onClose: function () {
+          console.log("Customer closed the popup without finishing the payment");
+          set_is_submitting(false);
+        },
+      });
+    } catch (err) {
+      console.error(err);
+      set_is_submitting(false);
+    }
   }
 
   return (
     <div className="min-h-screen bg-surface">
+      <Script
+        src="https://app.sandbox.midtrans.com/snap/snap.js"
+        data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY}
+      />
       <Navbar is_authenticated active_href="" />
       <CheckoutSummary
         event={mockEvent}

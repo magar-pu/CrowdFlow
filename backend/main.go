@@ -15,6 +15,7 @@ import (
 	"crowdflow-backend/internal/event"
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/organizer"
+	"crowdflow-backend/internal/payment"
 	"crowdflow-backend/internal/platform/database"
 	"crowdflow-backend/internal/platform/redisclient"
 	"crowdflow-backend/internal/resale"
@@ -147,6 +148,14 @@ func main() {
 
 	// Register Booking routes
 	bookingHandler.RegisterRoutes(apiV1, authMounter.Authenticate)
+
+	// Initialize Payment dependencies
+	paymentRepo := payment.NewPostgresRepository(db)
+	paymentService := payment.NewPaymentService(paymentRepo)
+	paymentHandler := payment.NewHandler(paymentService)
+
+	// Register Payment routes
+	paymentHandler.RegisterRoutes(apiV1, authMounter.Authenticate)
 
 	// Mount the versioned sub-routers onto the root mux. ServeMux matches the
 	// more specific /api/v1/admin/ pattern ahead of /api/v1/, so admin console
