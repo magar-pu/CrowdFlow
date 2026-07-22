@@ -51,6 +51,23 @@ export interface LayoutDetail extends LayoutSummary {
   seats: LayoutSeat[];
 }
 
+/**
+ * The subset of a layout that is actually drawable.
+ *
+ * `LayoutDetail` satisfies this structurally, but so does the geometry carried
+ * on the public seat map (GET /events/{id}/seatmap), which has no reason to
+ * expose a layout's visibility, owner or audit timestamps to buyers. Renderers
+ * should take this rather than the full detail so both callers fit without
+ * inventing fields.
+ */
+export interface RenderableLayout {
+  /** Used for the accessible label only; omitted on the public seat map. */
+  name?: string;
+  geometry: Record<string, unknown>;
+  sections: LayoutSection[];
+  seats: LayoutSeat[];
+}
+
 export interface CreateLayoutRequest {
   name: string;
   visibility?: "public" | "event_exclusive";
