@@ -18,11 +18,26 @@
 import { useState } from "react";
 import { Flame, CircleCheck, Ban, ArrowRight, Lock } from "lucide-react";
 import { formatIDR } from "@/lib/pricing";
-import type { TicketCategory } from "@/types/ticket";
 import { cn } from "@/lib/utils";
 
+/**
+ * The subset of a ticket category this card actually renders. Kept narrower
+ * than the full TicketCategory so real ticket tiers from
+ * GET /api/v1/events/{id}/ticket-tiers satisfy it without inventing the
+ * fields the API does not return (benefits, currency, quota_total,
+ * sale_channel). TicketCategory still satisfies this structurally.
+ */
+export interface TicketSelectionOption {
+  ticket_category_id: string;
+  name: string;
+  description: string;
+  face_value: number;
+  quota_remaining: number;
+  is_active: boolean;
+}
+
 interface TicketSelectionCardProps {
-  ticket_categories: TicketCategory[];
+  ticket_categories: TicketSelectionOption[];
   on_continue: (ticket_category_id: string) => void;
 }
 
@@ -52,6 +67,17 @@ export function TicketSelectionCard({
       </div>
 
       <div className="space-y-4 p-6">
+        {ticket_categories.length === 0 && (
+          <div className="flex flex-col items-center gap-2 py-8 text-center">
+            <Ban size={24} className="text-text-secondary" />
+            <p className="font-label-md text-label-md text-primary">
+              No tickets on sale
+            </p>
+            <p className="font-body-sm text-body-sm text-text-secondary">
+              Ticket sales for this event haven&apos;t opened yet, or have closed.
+            </p>
+          </div>
+        )}
         {ticket_categories.map((category) => {
           const is_sold_out =
             !category.is_active || category.quota_remaining === 0;

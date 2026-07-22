@@ -131,7 +131,9 @@ export function EventListingCard({ event }: EventListingCardProps) {
               Starting From
             </p>
             <p className="font-headline-sm text-text-primary">
-              {formatIDR(event.starting_price)}
+              {event.starting_price === null
+                ? "—"
+                : formatIDR(event.starting_price)}
             </p>
           </div>
           {is_sold_out ? (

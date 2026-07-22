@@ -7,11 +7,10 @@
  * Ticket Selection + Organizer card (4-col). Matches the
  * event_detail_eras_tour_manila Stitch screen end-to-end.
  *
- * Currently reads from mockEvent regardless of the [event_id] param —
- * swap the lookup for `getEvent(event_id)` (lib/api/events.ts) once the Go
- * endpoint exists. Next.js 16 passes `params` as a Promise, so the real
- * lookup will need `const { event_id } = await params` in a Server
- * Component wrapper, or `use(params)` here if this stays a Client Component.
+ * Reads the event from `getEvent(event_id)` and its ticket tiers from
+ * `listTicketTiers(event_id)` (both lib/api/events.ts). Neither falls back to
+ * mock data: a failed lookup renders the error state, and an event with no
+ * tiers on sale renders the card's empty state.
  */
 
 import { useRouter, useParams } from "next/navigation";
@@ -21,11 +20,13 @@ import { HomeFooterV3 } from "@/components/home-v3/HomeFooterV3";
 import { EventHero } from "@/components/event-detail/EventHero";
 import { AboutEventSection } from "@/components/event-detail/AboutEventSection";
 import { VenueInfoSection } from "@/components/event-detail/VenueInfoSection";
-import { TicketSelectionCard } from "@/components/event-detail/TicketSelectionCard";
+import {
+  TicketSelectionCard,
+  type TicketSelectionOption,
+} from "@/components/event-detail/TicketSelectionCard";
 import { OrganizerInfoCard } from "@/components/event-detail/OrganizerInfoCard";
 import { formatIDR } from "@/lib/pricing";
-import { mockEvent } from "@/mock/eventData";
-import { getEvent } from "@/lib/api/events";
+import { getEvent, listTicketTiers } from "@/lib/api/events";
 import { Event } from "@/types/ticket";
 import { Footer } from "@/components/layout/Footer";
 
@@ -34,6 +35,7 @@ export default function EventDetailPage() {
   const params = useParams();
   const event_id = params?.event_id;
   const [event, setEvent] = useState<Event | null>(null);
+  const [tiers, setTiers] = useState<TicketSelectionOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,16 +48,44 @@ export default function EventDetailPage() {
         if (res.success && res.data) {
           setEvent(res.data);
         } else {
-          // Fallback to mock data if not found in DB
-          setEvent({ ...mockEvent, event_id: id });
+          setError("Event tidak ditemukan");
         }
       })
       .catch(() => {
-        // Fallback to mock data on API error
-        setEvent({ ...mockEvent, event_id: id });
+        setError("Gagal memuat event. Silakan coba lagi.");
       })
       .finally(() => {
         setLoading(false);
+      });
+  }, [event_id]);
+
+  // Ticket tiers load independently of the event: the endpoint only returns
+  // tiers currently on sale, so an empty list is a legitimate "no tickets on
+  // sale" state rather than an error, and must not fall back to mock tiers.
+  useEffect(() => {
+    if (!event_id) return;
+
+    listTicketTiers(event_id as string)
+      .then((res) => {
+        if (res.success && res.data) {
+          setTiers(
+            res.data.map((t) => ({
+              ticket_category_id: String(t.ticket_tier_id),
+              name: t.name,
+              description: t.description,
+              face_value: t.price,
+              quota_remaining: t.quota_remaining,
+              // Every tier returned by this endpoint is public and inside its
+              // sales window, so it is on sale by definition.
+              is_active: true,
+            }))
+          );
+        } else {
+          setTiers([]);
+        }
+      })
+      .catch(() => {
+        setTiers([]);
       });
   }, [event_id]);
 
@@ -89,7 +119,7 @@ export default function EventDetailPage() {
   }
 
   const currentEvent = event;
-  const categories = currentEvent.ticket_categories || mockEvent.ticket_categories;
+  const categories = tiers;
   const active_categories = categories.filter((c) => c.is_active);
   const cheapest_price = Math.min(
     ...active_categories.map((c) => c.face_value)
@@ -116,7 +146,7 @@ export default function EventDetailPage() {
           <div className="flex flex-col gap-8 lg:col-span-8">
             <AboutEventSection
               description={currentEvent.description}
-              important_info={currentEvent.important_info || mockEvent.important_info}
+              important_info={currentEvent.important_info ?? []}
             />
             <VenueInfoSection venue={event.venue} event_id={event.event_id} />
           </div>
@@ -126,7 +156,9 @@ export default function EventDetailPage() {
               ticket_categories={categories}
               on_continue={handle_continue}
             />
-            <OrganizerInfoCard organizer={currentEvent.organizer || mockEvent.organizer} />
+            {currentEvent.organizer && (
+              <OrganizerInfoCard organizer={currentEvent.organizer} />
+            )}
           </div>
         </div>
       </main>

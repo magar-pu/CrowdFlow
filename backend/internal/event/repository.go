@@ -23,6 +23,7 @@ func (r *PostgresRepository) GetAll(limit, offset int) ([]*Event, error) {
 			e.id, e.venue_id, e.organizer_id, e.event_name, COALESCE(e.description, ''), e.event_start, e.event_end, 
 			e.entertainment_tax_rate, e.entertainment_tax_passed_to_buyer, e.status, e.created_at, e.updated_at, 
 			e.event_type_id, COALESCE(e.cover_image_url, ''),
+			(SELECT MIN(tt.price) FROM ticket_tiers tt WHERE tt.event_id = e.id),
 			v.id, COALESCE(v.name, ''), COALESCE(v.address, ''), COALESCE(v.city, ''), COALESCE(v.province, ''), COALESCE(v.total_capacity, 0),
 			u.id, COALESCE(up.full_name, ''), COALESCE(up.avatar_pic, '')
 		FROM events e
@@ -42,14 +43,15 @@ func (r *PostgresRepository) GetAll(limit, offset int) ([]*Event, error) {
 		var e Event
 		var eventTypeID sql.NullInt64
 		var coverImageURL sql.NullString
-		
+		var startingPrice sql.NullFloat64
+
 		var vID sql.NullInt64
 		var vName sql.NullString
 		var vAddress sql.NullString
 		var vCity sql.NullString
 		var vProvince sql.NullString
 		var vCapacity sql.NullInt64
-		
+
 		var oID sql.NullInt64
 		var oName sql.NullString
 		var oAvatar sql.NullString
@@ -57,7 +59,7 @@ func (r *PostgresRepository) GetAll(limit, offset int) ([]*Event, error) {
 		err := rows.Scan(
 			&e.ID, &e.VenueID, &e.OrganizerID, &e.EventName, &e.Description, &e.EventStart, &e.EventEnd,
 			&e.EntertainmentTaxRate, &e.EntertainmentTaxPassedToBuyer, &e.Status, &e.CreatedAt, &e.UpdatedAt,
-			&eventTypeID, &coverImageURL,
+			&eventTypeID, &coverImageURL, &startingPrice,
 			&vID, &vName, &vAddress, &vCity, &vProvince, &vCapacity,
 			&oID, &oName, &oAvatar,
 		)
@@ -69,6 +71,11 @@ func (r *PostgresRepository) GetAll(limit, offset int) ([]*Event, error) {
 		}
 		if coverImageURL.Valid {
 			e.CoverImageURL = coverImageURL.String
+		}
+		// Left nil when the event has no ticket tiers, so the client can tell
+		// "no tiers configured" apart from a free event.
+		if startingPrice.Valid {
+			e.StartingPrice = &startingPrice.Float64
 		}
 
 		if vID.Valid {
@@ -363,6 +370,3 @@ func (r *PostgresRepository) ListEventTypes() ([]*EventType, error) {
 	}
 	return eventTypes, nil
 }
-
-
-

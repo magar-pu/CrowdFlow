@@ -25,23 +25,27 @@ type EventType struct {
 }
 
 type Event struct {
-	ID                            int        `json:"event_id"`
-	VenueID                       int        `json:"venue_id"`
-	OrganizerID                   int        `json:"organizer_id"`
-	EventName                     string     `json:"title"` // Mapped to 'title' for frontend
-	Description                   string     `json:"description"`
-	EventStart                    time.Time  `json:"starts_at"` // Mapped to 'starts_at' for frontend
-	EventEnd                      time.Time  `json:"ends_at"`   // Mapped to 'ends_at' for frontend
-	EntertainmentTaxRate          float64    `json:"entertainment_tax_rate"`
-	EntertainmentTaxPassedToBuyer bool       `json:"entertainment_tax_passed_to_buyer"`
-	Status                        string     `json:"status"` // "draft", "pending_review", "approved", "rejected"
-	CreatedAt                     time.Time  `json:"created_at"`
-	UpdatedAt                     time.Time  `json:"updated_at"`
-	EventTypeID                   int        `json:"event_type_id"`
-	CoverImageURL                 string     `json:"cover_image_url"`
-	LayoutID                      *int       `json:"layout_id"` // bound venue layout; nil = none
-	Venue                         *Venue     `json:"venue,omitempty"`
-	Organizer                     *Organizer `json:"organizer,omitempty"`
+	ID                            int       `json:"event_id"`
+	VenueID                       int       `json:"venue_id"`
+	OrganizerID                   int       `json:"organizer_id"`
+	EventName                     string    `json:"title"` // Mapped to 'title' for frontend
+	Description                   string    `json:"description"`
+	EventStart                    time.Time `json:"starts_at"` // Mapped to 'starts_at' for frontend
+	EventEnd                      time.Time `json:"ends_at"`   // Mapped to 'ends_at' for frontend
+	EntertainmentTaxRate          float64   `json:"entertainment_tax_rate"`
+	EntertainmentTaxPassedToBuyer bool      `json:"entertainment_tax_passed_to_buyer"`
+	Status                        string    `json:"status"` // "draft", "pending_review", "approved", "rejected"
+	CreatedAt                     time.Time `json:"created_at"`
+	UpdatedAt                     time.Time `json:"updated_at"`
+	EventTypeID                   int       `json:"event_type_id"`
+	CoverImageURL                 string    `json:"cover_image_url"`
+	LayoutID                      *int      `json:"layout_id"` // bound venue layout; nil = none
+	// StartingPrice is the cheapest ticket tier for this event (MIN of
+	// ticket_tiers.price). nil when the event has no tiers yet, which is
+	// distinct from a genuine price of 0 — callers must not conflate them.
+	StartingPrice *float64   `json:"starting_price"`
+	Venue         *Venue     `json:"venue,omitempty"`
+	Organizer     *Organizer `json:"organizer,omitempty"`
 }
 
 type Repository interface {
@@ -64,5 +68,3 @@ type Service interface {
 	ListVenues() ([]*Venue, error)
 	ListEventTypes() ([]*EventType, error)
 }
-
-

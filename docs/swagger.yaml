@@ -2838,6 +2838,15 @@ components:
         cover_image_url:
           type: string
           example: https://cdn.crowdflow.example/events/covers/1720000000000000000.jpg
+        starting_price:
+          type: number
+          format: double
+          nullable: true
+          description: >-
+            Cheapest ticket tier price for this event (MIN of ticket_tiers.price),
+            in IDR. Null when the event has no ticket tiers configured yet — which
+            is distinct from a genuinely free event priced at 0.
+          example: 250000
         venue:
           $ref: '#/components/schemas/VenueResponse'
         organizer:

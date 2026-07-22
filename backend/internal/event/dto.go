@@ -64,12 +64,15 @@ type OrganizerResponse struct {
 
 // EventListResponse defines a optimized payload returned on event discovery list query (excludes description and tax rate)
 type EventListResponse struct {
-	ID            int                `json:"event_id"`
-	Title         string             `json:"title"`
-	EventStart    time.Time          `json:"starts_at"`
-	EventEnd      time.Time          `json:"ends_at"`
-	Category      string             `json:"category"`
-	CoverImageURL string             `json:"cover_image_url"`
+	ID            int       `json:"event_id"`
+	Title         string    `json:"title"`
+	EventStart    time.Time `json:"starts_at"`
+	EventEnd      time.Time `json:"ends_at"`
+	Category      string    `json:"category"`
+	CoverImageURL string    `json:"cover_image_url"`
+	// StartingPrice is the cheapest ticket tier price, or null when the event
+	// has no tiers configured yet.
+	StartingPrice *float64           `json:"starting_price"`
 	Venue         *VenueResponse     `json:"venue,omitempty"`
 	Organizer     *OrganizerResponse `json:"organizer,omitempty"`
 }
@@ -143,6 +146,7 @@ func MapEventToList(e *Event) *EventListResponse {
 		EventEnd:      e.EventEnd,
 		Category:      mapCategory(e.EventTypeID),
 		CoverImageURL: e.CoverImageURL,
+		StartingPrice: e.StartingPrice,
 		Venue:         MapVenue(e.Venue),
 		Organizer:     MapOrganizer(e.Organizer),
 	}

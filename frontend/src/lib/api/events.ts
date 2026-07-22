@@ -21,6 +21,29 @@ export async function getEvent(id: number | string): Promise<ApiResponse<Event>>
   });
 }
 
+/**
+ * A ticket tier as returned by the public listing endpoint. The backend only
+ * returns tiers that are currently on sale (visibility = 'public' and inside
+ * the sales window), so every tier here is purchasable by definition.
+ */
+export interface PublicTicketTier {
+  ticket_tier_id: number;
+  event_id: number;
+  name: string;
+  description: string;
+  price: number;
+  quota_remaining: number;
+  max_per_transaction: number;
+}
+
+export async function listTicketTiers(
+  eventId: number | string
+): Promise<ApiResponse<PublicTicketTier[]>> {
+  return apiRequest<PublicTicketTier[]>(`/api/v1/events/${eventId}/ticket-tiers`, {
+    method: "GET",
+  });
+}
+
 export async function createEvent(formData: FormData): Promise<ApiResponse<Event>> {
   return apiRequest<Event>("/api/v1/events", {
     method: "POST",

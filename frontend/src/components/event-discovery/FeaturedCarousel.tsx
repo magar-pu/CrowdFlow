@@ -103,7 +103,9 @@ export function FeaturedCarousel({ events }: FeaturedCarouselProps) {
                         Starting From
                       </p>
                       <p className="font-headline-md text-headline-md text-white">
-                        {formatIDR(event.starting_price)}
+                        {event.starting_price === null
+                          ? "—"
+                          : formatIDR(event.starting_price)}
                       </p>
                     </div>
                     <button
