@@ -37,7 +37,7 @@ services:
       # No DB_DSN here on purpose. It belongs to backend/.env, and an entry in
       # this block would silently win over it — compose `environment:` overrides
       # `env_file:`. A leftover override pointing at the removed `postgres`
-      # service is what put the backend in a crash loop.
+      # service is what put the backend in a crash loop
     depends_on:
       redis:
         condition: service_healthy
