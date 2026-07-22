@@ -2,16 +2,19 @@
  * components/home-v2/TrendingEventsSection.tsx
  *
  * "Event Paling Dinanti" section: category filter pills (functional —
- * filters the grid below) + a responsive card grid. All data comes from
- * the real GET /api/events response — no mock values.
+ * filters the grid below) + a responsive card grid. Title, image, city,
+ * category, and date come from the real GET /api/events response;
+ * rating/review-count/starting-price are placeholder values from
+ * mockTrendingCardStats() until the backend provides them.
  */
 
 "use client";
 
 import { useState } from "react";
 import Link from "next/link";
-import { MapPin, Calendar, ChevronRight } from "lucide-react";
+import { MapPin, Calendar, ChevronRight, Star } from "lucide-react";
 import type { TrendingEventCard } from "@/types/ticket";
+import { formatIDR } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 
 // Human-readable labels for the backend category strings from mapCategory().
@@ -50,7 +53,7 @@ export function TrendingEventsSection({
         <div className="mb-stack-lg flex items-end justify-between">
           <div className="min-w-0 flex-1">
             <h2 className="mb-2 font-headline-lg text-headline-lg text-text-primary">
-              Event Paling Dinanti
+              Most Anticipated Events
             </h2>
 
             {/* Category filter pills */}
@@ -119,14 +122,35 @@ export function TrendingEventsSection({
                   <h4 className="mb-3 line-clamp-2 font-headline-sm text-headline-sm text-text-primary transition-colors group-hover:text-secondary">
                     {event.title}
                   </h4>
-                  <div className="flex items-center gap-1.5 text-text-secondary">
-                    <Calendar size={14} className="shrink-0" />
-                    <span className="font-body-sm text-body-sm">
-                      {new Date(event.starts_at).toLocaleDateString("id-ID", {
+                  <div className="mb-3 flex items-center gap-1">
+                    <Calendar size={14} className="text-text-secondary" />
+                    <span className="text-label-sm text-text-secondary">
+                      {new Date(event.starts_at).toLocaleDateString("en-GB", {
                         day: "numeric",
                         month: "short",
                         year: "numeric",
                       })}
+                    </span>
+                  </div>
+                  <div className="mb-3 flex items-center gap-1">
+                    <Star size={14} fill="#F59E0B" className="text-warning" />
+                    <span className="font-label-sm text-label-sm text-text-primary">
+                      {event.rating.toFixed(1)}/5
+                    </span>
+                    <span className="text-label-sm text-text-secondary">
+                      (
+                      {event.review_count >= 1000
+                        ? `${(event.review_count / 1000).toFixed(1)}k`
+                        : event.review_count}{" "}
+                      reviews)
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-border-subtle pt-3">
+                    <span className="text-label-sm text-text-secondary">
+                      Starting from
+                    </span>
+                    <span className="font-headline-sm text-headline-sm font-bold text-secondary">
+                      {formatIDR(event.starting_price)}
                     </span>
                   </div>
                 </div>
@@ -136,7 +160,8 @@ export function TrendingEventsSection({
         ) : (
           <div className="rounded-xl border border-dashed border-border-subtle bg-white py-16 text-center">
             <p className="font-body-md text-body-md text-text-secondary">
-              Belum ada event untuk kategori ini.
+              No events yet for{" "}
+              {CATEGORY_LABELS[active_category] ?? active_category}.
             </p>
           </div>
         )}

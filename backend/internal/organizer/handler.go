@@ -63,6 +63,10 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("PUT /api/organizer/events/{id}/ticket-tiers/{tierId}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUpdateTicketTier)))))
 	mux.Handle("DELETE /api/organizer/events/{id}/ticket-tiers/{tierId}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleDeleteTicketTier)))))
 
+	// Seat overlay (bind a layout's sections to tiers; seed the seat matrix)
+	mux.Handle("GET /api/organizer/events/{id}/seating", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetSeating)))))
+	mux.Handle("PUT /api/organizer/events/{id}/seating", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleSeedSeating)))))
+
 	// Orders & Refunds
 	mux.Handle("GET /api/organizer/orders", authenticate(verifiedOrganizer(http.HandlerFunc(h.handleListOrders))))
 	mux.Handle("GET /api/organizer/orders/{id}", authenticate(verifiedOrganizer(http.HandlerFunc(h.handleGetOrderDetails))))
@@ -451,6 +455,10 @@ func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {
 
 	err = h.service.PublishOrganizerEvent(r.Context(), eventID, userID)
 	if err != nil {
+		if errors.Is(err, ErrSeatingIncomplete) {
+			response.Error(w, http.StatusUnprocessableEntity, "SEATING_INCOMPLETE", err.Error())
+			return
+		}
 		log.Printf("PublishOrganizerEvent error: %v", err)
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to publish event: "+err.Error())
 		return

@@ -1446,6 +1446,29 @@ func (r *PostgresRepository) PublishOrganizerEvent(ctx context.Context, eventID 
 		return nil
 	}
 
+	// Phase 5 seating gate: a seated event (one with a bound layout) can only be
+	// submitted once every sectioned seat has been assigned a tier (i.e. has an
+	// event_seats_matrix row). Section-less seats aren't sellable and are ignored.
+	var layoutID sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT layout_id FROM events WHERE id = $1`, eventID).Scan(&layoutID); err != nil {
+		return err
+	}
+	if layoutID.Valid {
+		var untiered int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM seats s
+			WHERE s.layout_id = $1 AND s.section_id IS NOT NULL
+			  AND NOT EXISTS (
+				SELECT 1 FROM event_seats_matrix m WHERE m.event_id = $2 AND m.seat_id = s.id
+			  )
+		`, layoutID.Int64, eventID).Scan(&untiered); err != nil {
+			return err
+		}
+		if untiered > 0 {
+			return fmt.Errorf("%w: %d seat(s) are not assigned to a ticket tier", ErrSeatingIncomplete, untiered)
+		}
+	}
+
 	// Update status
 	_, err = tx.ExecContext(ctx, "UPDATE events SET status = 'pending_review', updated_at = now() WHERE id = $1 AND organizer_id = $2", eventID, organizerID)
 	if err != nil {

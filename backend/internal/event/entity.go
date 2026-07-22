@@ -39,6 +39,7 @@ type Event struct {
 	UpdatedAt                     time.Time  `json:"updated_at"`
 	EventTypeID                   int        `json:"event_type_id"`
 	CoverImageURL                 string     `json:"cover_image_url"`
+	LayoutID                      *int       `json:"layout_id"` // bound venue layout; nil = none
 	Venue                         *Venue     `json:"venue,omitempty"`
 	Organizer                     *Organizer `json:"organizer,omitempty"`
 }
@@ -48,6 +49,7 @@ type Repository interface {
 	GetByID(id int) (*Event, error)
 	Create(event *Event) error
 	Update(event *Event) error
+	SetEventLayout(eventID int, layoutID *int) error
 	ListVenues() ([]*Venue, error)
 	ListEventTypes() ([]*EventType, error)
 }
@@ -57,6 +59,7 @@ type Service interface {
 	GetEventDetails(id int) (*Event, error)
 	CreateEvent(event *Event) error
 	UpdateEvent(event *Event) error
+	BindEventLayout(eventID int, layoutID *int) error
 	PublishEvent(id int) error
 	ListVenues() ([]*Venue, error)
 	ListEventTypes() ([]*EventType, error)

@@ -39,8 +39,8 @@ const CATEGORIES: CategoryItem[] = [
 
 export function CategoryIconsGrid() {
   return (
-    <section className="border-y border-border-subtle bg-surface-white px-margin-mobile py-stack-lg md:px-margin-desktop">
-      <div className="mx-auto grid max-w-container-max grid-cols-2 gap-6 md:grid-cols-4 lg:grid-cols-8">
+    <section className="border-y border-border-subtle bg-surface-white py-stack-lg">
+      <div className="mx-auto grid max-w-7xl w-full px-margin-mobile md:px-margin-desktop grid-cols-2 gap-6 md:grid-cols-4 lg:grid-cols-8">
         {CATEGORIES.map((category) => {
           const Icon = category.icon;
           return (

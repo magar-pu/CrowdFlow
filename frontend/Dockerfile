@@ -10,6 +10,8 @@ WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+ARG BACKEND_URL
+ENV BACKEND_URL=$BACKEND_URL
 RUN npm run build
 
 # prod run engine

@@ -65,6 +65,7 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /events/{id}", optionalAuthenticate(http.HandlerFunc(h.handleGetEvent)))
 	mux.Handle("POST /events", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleCreateEvent))))
 	mux.Handle("PUT /events/{id}", authenticate(requireEventRole("Event Organizer")(http.HandlerFunc(h.handleUpdateEvent))))
+	mux.Handle("PUT /events/{id}/layout", authenticate(requireEventRole("Event Organizer")(http.HandlerFunc(h.handleBindEventLayout))))
 	mux.Handle("PATCH /events/{id}/publish", authenticate(requireEventRole("Event Organizer")(http.HandlerFunc(h.handlePublishEvent))))
 	mux.Handle("GET /venues", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleListVenues))))
 	mux.Handle("GET /event-types", authenticate(requirePlatformRole("Event Organizer")(http.HandlerFunc(h.handleListEventTypes))))
@@ -138,6 +139,41 @@ func (h *Handler) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Event updated"})
+}
+
+// handleBindEventLayout binds (or unbinds, with a null layout_id) the event to
+// a venue layout. Ownership is enforced by requireEventRole; the service/repo
+// enforce that the layout belongs to the event's venue.
+func (h *Handler) handleBindEventLayout(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<16)
+	var req BindLayoutRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+		return
+	}
+
+	if err := h.service.BindEventLayout(id, req.LayoutID); err != nil {
+		switch {
+		case errors.Is(err, ErrEventNotFound):
+			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Event not found")
+		case errors.Is(err, ErrLayoutVenueMismatch):
+			response.Error(w, http.StatusUnprocessableEntity, "LAYOUT_VENUE_MISMATCH", "That layout does not belong to this event's venue")
+		default:
+			response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+		}
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]interface{}{
+		"message":   "Event layout updated",
+		"event_id":  id,
+		"layout_id": req.LayoutID,
+	})
 }
 
 func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {

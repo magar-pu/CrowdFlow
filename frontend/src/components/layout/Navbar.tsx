@@ -51,13 +51,16 @@ interface NavbarProps {
   active_href?: string;
   /** Override auth state — opsional, defaultnya baca dari Zustand store */
   is_authenticated?: boolean;
+  /** If true, navbar will be transparent at the top and become solid on scroll */
+  isTransparentOnTop?: boolean;
 }
 
-export function Navbar({ active_href = "/", is_authenticated: override }: NavbarProps) {
+export function Navbar({ active_href = "/", is_authenticated: override, isTransparentOnTop = false }: NavbarProps) {
   const router = useRouter();
   const { user, is_authenticated, logout } = useAuthStore();
   const [mobile_menu_open, set_mobile_menu_open] = useState(false);
   const [profile_open, set_profile_open] = useState(false);
+  const [is_scrolled, set_is_scrolled] = useState(false);
   const dropdown_ref = useRef<HTMLDivElement>(null);
 
   // Gunakan override kalau ada, fallback ke store
@@ -79,6 +82,16 @@ export function Navbar({ active_href = "/", is_authenticated: override }: Navbar
     return () => document.removeEventListener("mousedown", handle_outside);
   }, []);
 
+  useEffect(() => {
+    if (!isTransparentOnTop) return;
+    const handle_scroll = () => {
+      set_is_scrolled(window.scrollY > 50);
+    };
+    handle_scroll(); // check immediately
+    window.addEventListener("scroll", handle_scroll);
+    return () => window.removeEventListener("scroll", handle_scroll);
+  }, [isTransparentOnTop]);
+
   function handle_logout() {
     logout();
     set_profile_open(false);
@@ -91,25 +104,44 @@ export function Navbar({ active_href = "/", is_authenticated: override }: Navbar
     .slice(0, 2)
     .join("");
 
+  const is_transparent = isTransparentOnTop && !is_scrolled;
+
   return (
-    <nav className="sticky top-0 z-50 w-full border-b border-border-subtle bg-surface/80 backdrop-blur-xl">
-      <div className="mx-auto flex w-full max-w-container-max items-center justify-between px-margin-mobile py-4 md:px-margin-desktop">
+    <nav className={cn(
+      "z-50 w-full transition-all duration-300",
+      isTransparentOnTop ? "fixed top-0" : "sticky top-0",
+      is_transparent
+        ? "bg-transparent border-b-transparent"
+        : "border-b border-border-subtle bg-surface-white/90 backdrop-blur-xl shadow-[0_4px_6px_-1px_rgba(0,0,0,0.1),0_2px_4px_-1px_rgba(0,0,0,0.06)]"
+    )}>
+      <div className={cn(
+        "mx-auto flex w-full max-w-7xl items-center justify-between px-margin-mobile md:px-margin-desktop transition-all duration-300",
+        is_transparent ? "py-6" : "py-4"
+      )}>
 
         {/* Logo + Nav */}
         <div className="flex items-center gap-gutter">
-          <Link href="/" className="font-headline-md text-headline-md font-bold tracking-tight text-primary">
+          <Link href="/" className={cn(
+            "font-headline-md text-headline-md font-bold tracking-tight transition-colors",
+            is_transparent ? "text-white drop-shadow-sm" : "text-primary"
+          )}>
             CrowdFlow
           </Link>
           <div className="ml-8 hidden items-center gap-1 md:flex">
-            {NAV_LINKS.map((link) => (
+            {NAV_LINKS.filter(link => {
+              if (link.label === "Venue Editor") {
+                return (display_user.role as string) === "super_admin" || display_user.role === "verified_organizer";
+              }
+              return true;
+            }).map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
                 className={cn(
-                  "rounded-lg px-3 py-2 font-label-md text-label-md transition-all duration-200 hover:bg-surface-container-high",
+                  "rounded-lg px-3 py-2 font-label-md text-label-md transition-all duration-200",
                   active_href === link.href
-                    ? "font-semibold text-primary"
-                    : "text-text-secondary hover:text-primary"
+                    ? is_transparent ? "font-semibold text-white drop-shadow-sm" : "font-semibold text-primary"
+                    : is_transparent ? "text-white/90 drop-shadow-sm hover:text-white" : "text-text-secondary hover:text-primary hover:bg-surface-container-high"
                 )}
               >
                 {link.label}
@@ -123,11 +155,17 @@ export function Navbar({ active_href = "/", is_authenticated: override }: Navbar
           {auth ? (
             <>
               <button type="button" aria-label="Notifications"
-                className="rounded-full p-2 text-text-secondary transition-colors hover:bg-surface-container-high">
+                className={cn(
+                  "rounded-full p-2 transition-colors",
+                  is_transparent ? "text-white hover:bg-white/20" : "text-text-secondary hover:bg-surface-container-high"
+                )}>
                 <Bell size={20} />
               </button>
               <Link href="/orders" aria-label="My Tickets"
-                className="rounded-full p-2 text-text-secondary transition-colors hover:bg-surface-container-high">
+                className={cn(
+                  "rounded-full p-2 transition-colors",
+                  is_transparent ? "text-white hover:bg-white/20" : "text-text-secondary hover:bg-surface-container-high"
+                )}>
                 <Ticket size={20} />
               </Link>
 
@@ -136,7 +174,10 @@ export function Navbar({ active_href = "/", is_authenticated: override }: Navbar
                 <button
                   type="button"
                   onClick={() => set_profile_open((o) => !o)}
-                  className="flex items-center gap-2 rounded-xl px-3 py-1.5 transition-colors hover:bg-surface-container-high"
+                  className={cn(
+                    "flex items-center gap-2 rounded-xl px-3 py-1.5 transition-colors",
+                    is_transparent ? "hover:bg-white/20" : "hover:bg-surface-container-high"
+                  )}
                 >
                   {display_user.avatar_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -147,11 +188,15 @@ export function Navbar({ active_href = "/", is_authenticated: override }: Navbar
                       {initials}
                     </div>
                   )}
-                  <span className="max-w-[100px] truncate font-label-md text-label-md text-text-primary">
+                  <span className={cn(
+                    "max-w-[100px] truncate font-label-md text-label-md",
+                    is_transparent ? "text-white" : "text-text-primary"
+                  )}>
                     {display_user.full_name.split(" ")[0]}
                   </span>
                   <ChevronDown size={16} className={cn(
-                    "text-text-secondary transition-transform duration-200",
+                    "transition-transform duration-200",
+                    is_transparent ? "text-white" : "text-text-secondary",
                     profile_open && "rotate-180"
                   )} />
                 </button>
@@ -210,13 +255,21 @@ export function Navbar({ active_href = "/", is_authenticated: override }: Navbar
               </div>
             </>
           ) : (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-4">
               <Link href="/login"
-                className="font-label-md text-label-md text-text-secondary transition-colors hover:text-primary">
+                className={cn(
+                  "font-label-md text-label-md font-semibold transition-colors px-4 py-2",
+                  is_transparent ? "text-white hover:text-white" : "text-primary hover:text-accent-blue"
+                )}>
                 Sign In
               </Link>
               <Link href="/register"
-                className="rounded-lg bg-primary px-4 py-2 font-label-md text-label-md text-on-primary transition-all hover:bg-primary/90">
+                className={cn(
+                  "rounded-full px-6 py-2 font-label-md font-bold transition-all shadow-sm",
+                  is_transparent 
+                    ? "bg-white/20 text-white backdrop-blur-md hover:bg-white/30" 
+                    : "bg-accent-blue text-white hover:bg-blue-600"
+                )}>
                 Sign Up
               </Link>
             </div>
@@ -227,7 +280,10 @@ export function Navbar({ active_href = "/", is_authenticated: override }: Navbar
         <button type="button"
           aria-label={mobile_menu_open ? "Close menu" : "Open menu"}
           onClick={() => set_mobile_menu_open((o) => !o)}
-          className="flex items-center justify-center rounded-lg p-2 text-primary md:hidden">
+          className={cn(
+            "flex items-center justify-center rounded-lg p-2 md:hidden",
+            is_transparent ? "text-white" : "text-primary"
+          )}>
           {mobile_menu_open ? <X size={24} /> : <Menu size={24} />}
         </button>
       </div>
@@ -236,7 +292,12 @@ export function Navbar({ active_href = "/", is_authenticated: override }: Navbar
       {mobile_menu_open && (
         <div className="border-t border-border-subtle bg-surface-white px-margin-mobile py-4 md:hidden">
           <div className="flex flex-col gap-1">
-            {NAV_LINKS.map((link) => (
+            {NAV_LINKS.filter(link => {
+              if (link.label === "Venue Editor") {
+                return (display_user.role as string) === "super_admin" || display_user.role === "verified_organizer";
+              }
+              return true;
+            }).map((link) => (
               <Link key={link.href} href={link.href}
                 onClick={() => set_mobile_menu_open(false)}
                 className={cn(

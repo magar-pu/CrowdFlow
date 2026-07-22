@@ -4,9 +4,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/response"
@@ -17,24 +19,29 @@ import (
 var rolePriority = map[string]int{
 	"User":            1,
 	"Event Organizer": 2,
-	"Super Admin":     3,
+	"Auditor":         3,
+	"Super Admin":     4,
 }
 
 type Handler struct {
-	service *AuthService
-	secure  bool // Enforces Secure cookie flag (true in production, false in development)
+	service    *AuthService
+	secure     bool          // Enforces Secure cookie flag (true in production, false in development)
+	accessTTL  time.Duration // access_token cookie lifetime
+	refreshTTL time.Duration // refresh_token + csrf_token cookie lifetime
 }
 
-func NewHandler(service *AuthService, secure bool) *Handler {
-	return &Handler{service: service, secure: secure}
+func NewHandler(service *AuthService, secure bool, accessTTL, refreshTTL time.Duration) *Handler {
+	return &Handler{service: service, secure: secure, accessTTL: accessTTL, refreshTTL: refreshTTL}
 }
 
-func (h *Handler) RegisterRoutes(mux *http.ServeMux, authenticate func(http.Handler) http.Handler, rateLimitLogin func(http.Handler) http.Handler) {
+func (h *Handler) RegisterRoutes(mux *http.ServeMux, authenticate func(http.Handler) http.Handler, rateLimitLogin func(http.Handler) http.Handler, rateLimitRefresh func(http.Handler) http.Handler) {
 	mux.HandleFunc("POST /auth/register", h.handleRegister)
 	mux.Handle("POST /auth/login", rateLimitLogin(http.HandlerFunc(h.handleLogin)))
+	mux.Handle("POST /auth/refresh", rateLimitRefresh(http.HandlerFunc(h.handleRefresh)))
 	mux.HandleFunc("GET /auth/google/login", h.handleGoogleRedirect)
 	mux.HandleFunc("GET /auth/google/callback", h.handleGoogleCallback)
 	mux.HandleFunc("POST /auth/logout", h.handleLogout)
+	mux.Handle("POST /auth/logout-all", authenticate(http.HandlerFunc(h.handleLogoutAll)))
 	mux.Handle("GET /auth/me", authenticate(http.HandlerFunc(h.handleMe)))
 	mux.Handle("PUT /auth/me", authenticate(http.HandlerFunc(h.handleUpdateProfile)))
 }
@@ -45,29 +52,66 @@ func generateCSRFToken() string {
 	return hex.EncodeToString(b)
 }
 
-func (h *Handler) setAuthCookies(w http.ResponseWriter, token string) {
-	// 1. Set HttpOnly JWT Cookie
+func (h *Handler) setAuthCookies(w http.ResponseWriter, accessToken, refreshToken string) {
+	// 1. Short-lived access JWT, sent on every request (Path "/").
 	http.SetCookie(w, &http.Cookie{
 		Name:     "access_token",
-		Value:    token,
+		Value:    accessToken,
 		Path:     "/",
-		MaxAge:   86400, // 1 day
+		MaxAge:   int(h.accessTTL.Seconds()),
 		HttpOnly: true,
 		Secure:   h.secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	// 2. Set client-readable CSRF Cookie
+	// 2. Long-lived refresh token, scoped to the auth subtree so it is only
+	//    sent to /refresh (to rotate) and /logout (to revoke) — never on
+	//    ordinary API calls, limiting its exposure.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    refreshToken,
+		Path:     "/api/v1/auth",
+		MaxAge:   int(h.refreshTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   h.secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	// 3. Client-readable CSRF token (double-submit). Its lifetime matches the
+	//    refresh token so a POST /auth/refresh still has a CSRF cookie to
+	//    submit long after the access token has expired.
 	csrfToken := generateCSRFToken()
 	http.SetCookie(w, &http.Cookie{
 		Name:     "csrf_token",
 		Value:    csrfToken,
 		Path:     "/",
-		MaxAge:   86400, // 1 day
+		MaxAge:   int(h.refreshTTL.Seconds()),
 		HttpOnly: false, // Must be readable by Next.js client
 		Secure:   h.secure,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// clearAuthCookies expires all three auth cookies. Paths must match those set
+// in setAuthCookies, or the browser keeps the stale cookie.
+func (h *Handler) clearAuthCookies(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{Name: "access_token", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: h.secure, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: "refresh_token", Value: "", Path: "/api/v1/auth", MaxAge: -1, HttpOnly: true, Secure: h.secure, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: "csrf_token", Value: "", Path: "/", MaxAge: -1, HttpOnly: false, Secure: h.secure, SameSite: http.SameSiteLaxMode})
+}
+
+// resolveRoleName returns the user's highest-privilege platform role (roles
+// scoped to a specific event are ignored), defaulting to "User".
+func (h *Handler) resolveRoleName(userID int) string {
+	roleName := "User"
+	if mappings, err := h.service.repo.GetUserRolesAndPermissions(userID); err == nil {
+		for _, m := range mappings {
+			if m.EventID == nil && rolePriority[m.RoleName] > rolePriority[roleName] {
+				roleName = m.RoleName
+			}
+		}
+	}
+	return roleName
 }
 
 func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -109,25 +153,18 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, user, err := h.service.Login(req)
+	accessToken, refreshToken, user, err := h.service.Login(r.Context(), req)
 	if err != nil {
 		response.Error(w, http.StatusUnauthorized, "AUTHENTICATION_FAILED", err.Error())
 		return
 	}
 
 	// Set secure auth cookies instead of returning token in JSON body
-	h.setAuthCookies(w, token)
+	h.setAuthCookies(w, accessToken, refreshToken)
 
-	// Resolve the highest-privilege platform role for this user
 	roleName := "User"
 	if userID, err := strconv.Atoi(user.ID); err == nil {
-		if mappings, err := h.service.repo.GetUserRolesAndPermissions(userID); err == nil {
-			for _, m := range mappings {
-				if m.EventID == nil && rolePriority[m.RoleName] > rolePriority[roleName] {
-					roleName = m.RoleName
-				}
-			}
-		}
+		roleName = h.resolveRoleName(userID)
 	}
 
 	response.JSON(w, http.StatusOK, map[string]interface{}{
@@ -189,7 +226,7 @@ func (h *Handler) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Exchange code for JWT session token
-	token, user, err := h.service.HandleGoogleCallback(r.Context(), code)
+	accessToken, refreshToken, user, err := h.service.HandleGoogleCallback(r.Context(), code)
 	if err != nil {
 		if err.Error() == "PROVIDER_MISMATCH: native" {
 			http.Redirect(w, r, "/login?error=PROVIDER_MISMATCH&provider=native", http.StatusTemporaryRedirect)
@@ -200,55 +237,104 @@ func (h *Handler) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. Set authentication and CSRF session cookies
-	h.setAuthCookies(w, token)
+	h.setAuthCookies(w, accessToken, refreshToken)
 
-	// 5. Redirect browser based on user platform role
-	// Resolve the highest-privilege platform role for this user
+	// 5. Redirect browser based on user's highest-privilege platform role
 	roleName := "User"
 	if userID, err := strconv.Atoi(user.ID); err == nil {
-		if mappings, err := h.service.repo.GetUserRolesAndPermissions(userID); err == nil {
-			for _, m := range mappings {
-				if m.EventID == nil && rolePriority[m.RoleName] > rolePriority[roleName] {
-					roleName = m.RoleName
-				}
-			}
-		}
+		roleName = h.resolveRoleName(userID)
 	}
 
-	if roleName == "Event Organizer" {
-		http.Redirect(w, r, "/dashboard", http.StatusTemporaryRedirect)
-	} else if roleName == "Super Admin" {
+	switch roleName {
+	case "Super Admin":
 		http.Redirect(w, r, "/admin", http.StatusTemporaryRedirect)
-	} else {
+	case "Auditor":
+		http.Redirect(w, r, "/auditor", http.StatusTemporaryRedirect)
+	case "Event Organizer":
+		http.Redirect(w, r, "/dashboard", http.StatusTemporaryRedirect)
+	default:
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 	}
 }
 
+// handleRefresh rotates the refresh token and issues a new access token. It
+// authenticates purely via the refresh_token cookie (the access token may be
+// expired), and is CSRF-protected like any state-changing POST. Any failure —
+// missing, expired, revoked, or replayed token — clears all cookies and
+// returns 401 so the client falls back to a full login.
+func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("refresh_token")
+	if err != nil || cookie.Value == "" {
+		h.clearAuthCookies(w)
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Refresh token is missing")
+		return
+	}
+
+	accessToken, refreshToken, user, err := h.service.RefreshTokens(r.Context(), cookie.Value)
+	if err != nil {
+		h.clearAuthCookies(w)
+		if errors.Is(err, ErrRefreshTokenReuse) {
+			// A rotated token was replayed — possible theft. The family is
+			// already revoked; surface it for monitoring.
+			log.Printf("[SECURITY] refresh token reuse detected")
+		}
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Session expired. Please log in again.")
+		return
+	}
+
+	h.setAuthCookies(w, accessToken, refreshToken)
+
+	roleName := "User"
+	if userID, err := strconv.Atoi(user.ID); err == nil {
+		roleName = h.resolveRoleName(userID)
+	}
+
+	response.JSON(w, http.StatusOK, map[string]interface{}{
+		"user_id":   user.ID,
+		"email":     user.Email,
+		"full_name": user.FullName,
+		"role":      roleName,
+	})
+}
+
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
-	// 1. Clear access_token cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     "access_token",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1, // Deletes the cookie
-		HttpOnly: true,
-		Secure:   h.secure,
-		SameSite: http.SameSiteLaxMode,
-	})
+	// Revoke the server-side session so the refresh token can't be reused.
+	// Logout still succeeds (cookies cleared) even if revocation errors.
+	if cookie, err := r.Cookie("refresh_token"); err == nil && cookie.Value != "" {
+		if err := h.service.Logout(r.Context(), cookie.Value); err != nil {
+			log.Printf("[WARN] logout: revoke session: %v", err)
+		}
+	}
 
-	// 2. Clear csrf_token cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     "csrf_token",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1, // Deletes the cookie
-		HttpOnly: false,
-		Secure:   h.secure,
-		SameSite: http.SameSiteLaxMode,
-	})
-
+	h.clearAuthCookies(w)
 	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "Logged out successfully",
+	})
+}
+
+// handleLogoutAll revokes every session for the authenticated user (all
+// devices), e.g. after a suspected compromise.
+func (h *Handler) handleLogoutAll(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User is not authenticated")
+		return
+	}
+
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user ID in token claims")
+		return
+	}
+
+	if err := h.service.LogoutAll(r.Context(), userID); err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", "Failed to revoke sessions")
+		return
+	}
+
+	h.clearAuthCookies(w)
+	response.JSON(w, http.StatusOK, map[string]string{
+		"message": "Logged out of all devices",
 	})
 }
 
@@ -271,15 +357,7 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve the highest-privilege platform role for this user
-	roleName := "User"
-	if mappings, err := h.service.repo.GetUserRolesAndPermissions(userID); err == nil {
-		for _, m := range mappings {
-			if m.EventID == nil && rolePriority[m.RoleName] > rolePriority[roleName] {
-				roleName = m.RoleName
-			}
-		}
-	}
+	roleName := h.resolveRoleName(userID)
 
 	stats, err := h.service.repo.GetProfileStats(userID)
 	if err != nil {
@@ -371,4 +449,3 @@ func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		"message": "Profile updated successfully",
 	})
 }
-

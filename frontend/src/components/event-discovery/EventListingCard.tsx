@@ -47,7 +47,9 @@ export function EventListingCard({ event }: EventListingCardProps) {
   const is_sold_out = event.badge === "sold_out";
 
   return (
-    <div className="group flex h-full flex-col overflow-hidden rounded-xl border border-border-subtle bg-surface-white shadow-sm transition-all hover:shadow-xl">
+    <div className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-border-subtle bg-surface-white shadow-sm transition-all hover:shadow-xl">
+      {/* Full card clickable overlay */}
+      <Link href={`/events/${event.event_id}`} className="absolute inset-0 z-0" aria-label={`View ${event.title}`} />
       <div className="relative aspect-video overflow-hidden">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -77,9 +79,13 @@ export function EventListingCard({ event }: EventListingCardProps) {
         </div>
         <button
           type="button"
-          onClick={() => set_is_favorited((fav) => !fav)}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            set_is_favorited((fav) => !fav);
+          }}
           aria-label={is_favorited ? "Remove from favorites" : "Add to favorites"}
-          className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur transition-all hover:bg-white hover:text-danger"
+          className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur transition-all hover:bg-white hover:text-danger"
         >
           <Heart size={20} fill={is_favorited ? "currentColor" : "none"} />
         </button>
@@ -119,10 +125,10 @@ export function EventListingCard({ event }: EventListingCardProps) {
           )}
         </div>
 
-        <div className="mt-auto flex items-center justify-between border-t border-border-subtle pt-6">
-          <div>
+        <div className="relative z-10 mt-auto flex items-center justify-between border-t border-border-subtle pt-6">
+          <div className="pointer-events-none">
             <p className="text-[11px] uppercase tracking-wider text-text-secondary">
-              Mulai Dari
+              Starting From
             </p>
             <p className="font-headline-sm text-text-primary">
               {formatIDR(event.starting_price)}

@@ -90,7 +90,7 @@ export function useSeatMap({
     [zoom, set_zoom_clamped]
   );
 
-  const select_section = useCallback((section_id: string, label: string) => {
+  const select_section = useCallback((section_id: string | null, label: string | null = null) => {
     set_active_section_id(section_id);
     set_active_section_label(label);
     if (typeof window !== "undefined" && window.innerWidth < 768) {

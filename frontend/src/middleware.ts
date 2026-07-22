@@ -2,7 +2,15 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 export function middleware(request: NextRequest) {
-  const token = request.cookies.get("access_token")?.value;
+  // Best-effort "is there a session?" signal for routing only — the backend
+  // remains the real authorization gate (see AGENTS.md: frontend is never
+  // trusted). The access_token is short-lived (~15m) and the refresh_token is
+  // path-scoped to /api/v1/auth so it is invisible here; csrf_token is the
+  // durable, Path=/ cookie that lives for the whole session, so either being
+  // present means the user still has (or can silently refresh) a session.
+  const token =
+    request.cookies.get("access_token")?.value ||
+    request.cookies.get("csrf_token")?.value;
   const { pathname } = request.nextUrl;
 
   // 1. Define path groupings
@@ -12,7 +20,8 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/checkout") ||
     pathname.startsWith("/admin") ||
     pathname.startsWith("/auditor") ||
-    pathname.startsWith("/organizer");
+    pathname.startsWith("/organizer") ||
+    pathname.startsWith("/venue-designer");
 
   const isAuthPath = pathname === "/login" || pathname === "/register";
 
@@ -41,6 +50,7 @@ export const config = {
     "/admin/:path*",
     "/auditor/:path*",
     "/organizer/:path*",
+    "/venue-designer/:path*",
     "/login",
     "/register",
   ],
