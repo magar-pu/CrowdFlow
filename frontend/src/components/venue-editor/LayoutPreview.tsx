@@ -1,26 +1,50 @@
 /**
  * components/venue-editor/LayoutPreview.tsx
  *
- * Read-only, store-free render of a persisted venue layout (LayoutDetail): the
- * stage, section shapes, and seat dots, auto-fit into an SVG viewBox. No editor
- * store, no interactivity — safe to drop anywhere a layout needs to be shown
- * (event workspace canvas now; attendee seat maps later).
+ * Store-free render of a venue layout: the stage, section shapes, and seat
+ * dots, auto-fit into an SVG viewBox. Used in two places, and deliberately the
+ * same component in both so buyers see exactly the map the organizer designed:
+ *
+ *   - organizer workspace  — read-only, no optional props
+ *   - attendee seat map    — pass seat_states / selected_seat_ids /
+ *                            on_seat_click / transform to make it interactive
+ *
+ * Every interactive prop is optional; omitting them all preserves the original
+ * read-only behaviour exactly (seats coloured by section, nothing clickable).
  */
 
 "use client";
 
 import { useMemo } from "react";
-import type { LayoutDetail } from "@/lib/api/venueLayouts";
+import type { RenderableLayout } from "@/lib/api/venueLayouts";
+import type { SeatStatus } from "@/lib/api/booking";
 import type { VenueShape } from "@/types/ticket";
 
 interface LayoutPreviewProps {
-  detail: LayoutDetail;
+  detail: RenderableLayout;
   className?: string;
+  /** Seat id -> live availability. Absent = colour seats by section instead. */
+  seat_states?: Map<number, SeatStatus>;
+  /** Seat ids currently chosen by the buyer. */
+  selected_seat_ids?: Set<number>;
+  /** Makes available seats clickable and keyboard-focusable. */
+  on_seat_click?: (seat_id: number) => void;
+  /** Pan/zoom from useSeatMap, applied as a single group transform. */
+  transform?: { zoom: number; pan_x: number; pan_y: number };
 }
 
 const SEAT_RADIUS = 6;
 const PADDING = 40;
 const FALLBACK_SEAT_COLOR = "#94a3b8";
+
+/** Seat fill by live state. Selected wins over everything. */
+const SEAT_COLOR: Record<SeatStatus, string> = {
+  available: "#22c55e",
+  sold: "#cbd5e1",
+  held: "#f59e0b",
+  blocked: "#94a3b8",
+};
+const SELECTED_SEAT_COLOR = "#2563eb";
 
 /** Narrow an unknown JSONB value to a VenueShape when it has usable geometry. */
 function asShape(value: unknown): VenueShape | null {
@@ -37,7 +61,14 @@ function asShape(value: unknown): VenueShape | null {
   return o as unknown as VenueShape;
 }
 
-export function LayoutPreview({ detail, className }: LayoutPreviewProps) {
+export function LayoutPreview({
+  detail,
+  className,
+  seat_states,
+  selected_seat_ids,
+  on_seat_click,
+  transform,
+}: LayoutPreviewProps) {
   const model = useMemo(() => {
     const stage = asShape((detail.geometry as Record<string, unknown>)?.stage);
     const sections = detail.sections
@@ -81,14 +112,21 @@ export function LayoutPreview({ detail, className }: LayoutPreviewProps) {
     );
   }
 
+  const isInteractive = on_seat_click != null;
+  // useSeatMap owns the clamping; this only applies the result.
+  const groupTransform = transform
+    ? `translate(${transform.pan_x} ${transform.pan_y}) scale(${transform.zoom})`
+    : undefined;
+
   return (
     <svg
       viewBox={model.viewBox}
       preserveAspectRatio="xMidYMid meet"
       className={`h-full w-full ${className ?? ""}`}
-      role="img"
-      aria-label={`Seat map for ${detail.name}`}
+      role={isInteractive ? "group" : "img"}
+      aria-label={detail.name ? `Seat map for ${detail.name}` : "Seat map"}
     >
+      <g transform={groupTransform}>
       {/* Stage */}
       {model.stage && (
         <g>
@@ -160,15 +198,56 @@ export function LayoutPreview({ detail, className }: LayoutPreviewProps) {
       })}
 
       {/* Seats */}
-      {model.seats.map((seat) => (
-        <circle
-          key={`seat-${seat.id}`}
-          cx={seat.pos_x!}
-          cy={seat.pos_y!}
-          r={SEAT_RADIUS}
-          fill={seat.section_id != null ? model.sectionColor.get(seat.section_id) ?? FALLBACK_SEAT_COLOR : FALLBACK_SEAT_COLOR}
-        />
-      ))}
+      {model.seats.map((seat) => {
+        const status = seat_states?.get(seat.id);
+        const isSelected = selected_seat_ids?.has(seat.id) ?? false;
+        const isSelectable = isInteractive && status === "available";
+
+        // Without seat_states this is the original section-colour render.
+        let fill: string;
+        if (isSelected) {
+          fill = SELECTED_SEAT_COLOR;
+        } else if (status) {
+          fill = SEAT_COLOR[status];
+        } else if (seat.section_id != null) {
+          fill = model.sectionColor.get(seat.section_id) ?? FALLBACK_SEAT_COLOR;
+        } else {
+          fill = FALLBACK_SEAT_COLOR;
+        }
+
+        return (
+          <circle
+            key={`seat-${seat.id}`}
+            cx={seat.pos_x!}
+            cy={seat.pos_y!}
+            r={SEAT_RADIUS}
+            fill={fill}
+            className={isSelectable ? "cursor-pointer" : undefined}
+            // Sold/held/blocked seats stay visible but inert.
+            style={isInteractive && !isSelectable && !isSelected ? { opacity: 0.55 } : undefined}
+            role={isSelectable ? "button" : undefined}
+            tabIndex={isSelectable ? 0 : undefined}
+            aria-pressed={isSelectable ? isSelected : undefined}
+            aria-label={
+              isInteractive
+                ? `Row ${seat.row} seat ${seat.number}${status ? `, ${status}` : ""}`
+                : undefined
+            }
+            onClick={isSelectable ? () => on_seat_click!(seat.id) : undefined}
+            onKeyDown={
+              isSelectable
+                ? (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      on_seat_click!(seat.id);
+                    }
+                  }
+                : undefined
+            }
+          />
+        );
+      })}
+      </g>
     </svg>
   );
 }
