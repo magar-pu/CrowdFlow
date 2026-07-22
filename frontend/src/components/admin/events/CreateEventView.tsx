@@ -23,8 +23,8 @@ const createEventSchema = z
     ends_at: z.string().min(1, 'End date & time is required'),
     entertainment_tax_rate: z
       .string()
-      .refine((v) => v !== '' && !isNaN(Number(v)) && Number(v) >= 0, {
-        message: 'Enter a valid tax rate (0 or greater)',
+      .refine((v) => v !== '' && !isNaN(Number(v)) && Number(v) >= 0 && Number(v) <= 100, {
+        message: 'Enter a valid tax rate between 0 and 100',
       }),
     entertainment_tax_passed_to_buyer: z.boolean(),
   })
@@ -256,6 +256,7 @@ export default function CreateEventView({ onBack, onCreated }: CreateEventViewPr
                 type="number"
                 step="0.01"
                 min="0"
+                max="100"
                 className={inputClass}
                 {...register('entertainment_tax_rate')}
               />

@@ -34,36 +34,7 @@ interface MyTicketCard {
 
 // ── Fallback data ─────────────────────────────────────────────────────────
 
-const MOCK_TICKETS: MyTicketCard[] = [
-  {
-    ticket_id: "tkt_001",
-    order_id: "ORD-89241",
-    event_title: "Global Soundscapes: Music Festival 2026",
-    cover_image_url:
-      "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=800&auto=format&fit=crop",
-    date_label: "Sat, Aug 15 • 2:00 PM",
-    venue_name: "Metropolis Grand Park",
-    section_label: "Main Stage",
-    ticket_type: "VIP All-Access Pass",
-    quantity: 1,
-    status: "confirmed",
-    tab: "upcoming",
-  },
-  {
-    ticket_id: "tkt_002",
-    order_id: "ORD-89242",
-    event_title: "Symphony in the City: Autumn Series",
-    cover_image_url:
-      "https://images.unsplash.com/photo-1507838153414-b4b713384a76?q=80&w=800&auto=format&fit=crop",
-    date_label: "Fri, Sep 10 • 7:30 PM",
-    venue_name: "The Heritage Concert Hall",
-    section_label: "Section A",
-    ticket_type: "Orchestra Premium",
-    quantity: 1,
-    status: "confirmed",
-    tab: "upcoming",
-  },
-];
+const MOCK_TICKETS: MyTicketCard[] = [];
 
 const TABS: { key: TicketTab; label: string }[] = [
   { key: "upcoming", label: "Upcoming" },

@@ -60,7 +60,7 @@ export function HeroSlider() {
                   <p className="text-white/90 text-lg mb-8 max-w-lg">
                     {slide.description}
                   </p>
-                  <button className="bg-accent-blue text-white px-8 py-3 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-accent-blue/90 transition-all shadow-lg">
+                  <button suppressHydrationWarning className="bg-accent-blue text-white px-8 py-3 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-accent-blue/90 transition-all shadow-lg">
                     Get Tickets <ArrowRight size={18} />
                   </button>
                 </div>

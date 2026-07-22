@@ -35,13 +35,13 @@ export function ResaleHeroSearch() {
           The Secure Way to Buy &amp; Sell Tickets.
         </h1>
         <p className="mb-12 max-w-2xl font-body-lg text-body-lg text-text-secondary">
-          Every ticket on the CrowdFlow Resale Marketplace is
-          cryptographically verified and transferred instantly to your
-          account. No fakes. No stress.
+          Buy and sell tickets safely with other fans. Every transaction on 
+          the CrowdFlow Resale Marketplace is 100% protected by our secure 
+          platform.
         </p>
 
         {/* Search bar */}
-        <div className="flex w-full max-w-4xl flex-col gap-2 rounded-2xl border border-border-subtle bg-surface-white p-2 shadow-[0_8px_30px_rgb(0,0,0,0.06)] transition-all focus-within:border-secondary focus-within:shadow-[0_8px_30px_rgba(29,78,216,0.1)] focus-within:ring-2 focus-within:ring-secondary/20 md:flex-row md:rounded-full">
+        <div className="group flex w-full max-w-4xl flex-col gap-2 rounded-2xl border border-border-subtle bg-surface-white p-2 shadow-xl transition-all duration-300 hover:shadow-2xl focus-within:-translate-y-1 focus-within:border-secondary focus-within:shadow-[0_20px_40px_rgba(29,78,216,0.15)] focus-within:ring-4 focus-within:ring-secondary/10 md:flex-row md:rounded-full">
           <div className="hidden flex-1 items-center border-r border-border-subtle/50 px-4 py-2 md:flex">
             <Search size={20} className="mr-3 text-text-secondary" />
             <input
@@ -68,6 +68,21 @@ export function ResaleHeroSearch() {
           >
             Find Resale Tickets
           </button>
+        </div>
+
+        <div className="mt-10 flex items-center justify-center">
+          <div className="inline-flex items-center gap-4 rounded-full border border-border-subtle bg-surface-container-low/50 px-4 py-2 shadow-sm backdrop-blur-md transition-all hover:bg-surface-container-low/80">
+            <span className="font-body-sm font-medium text-text-secondary">
+              Got a spare ticket?
+            </span>
+            <div className="h-4 w-px bg-border-subtle"></div>
+            <button
+              type="button"
+              className="flex items-center gap-1 font-label-sm font-semibold text-primary transition-colors hover:text-secondary"
+            >
+              List it for sale <span aria-hidden="true">&rarr;</span>
+            </button>
+          </div>
         </div>
       </div>
     </section>

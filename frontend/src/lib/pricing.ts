@@ -40,9 +40,13 @@ import type {
     { type: "flat" | "percentage"; value: number }
   > = {
     credit_card: { type: "percentage", value: 0.029 },
-    debit_card: { type: "percentage", value: 0.015 },
-    virtual_account: { type: "flat", value: 4_000 },
-    e_wallet: { type: "percentage", value: 0.02 },
+    bca_va: { type: "flat", value: 4_000 },
+    bni_va: { type: "flat", value: 4_000 },
+    bri_va: { type: "flat", value: 4_000 },
+    mandiri_bill: { type: "flat", value: 4_000 },
+    permata_va: { type: "flat", value: 4_000 },
+    gopay: { type: "percentage", value: 0.02 },
+    shopeepay: { type: "percentage", value: 0.02 },
     qris: { type: "percentage", value: 0.007 },
   };
   

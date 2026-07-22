@@ -28,9 +28,13 @@ export type TicketSaleChannel = "primary" | "resale";
 
 export type PaymentMethod =
   | "credit_card"
-  | "debit_card"
-  | "virtual_account"
-  | "e_wallet"
+  | "bca_va"
+  | "bni_va"
+  | "bri_va"
+  | "mandiri_bill"
+  | "permata_va"
+  | "gopay"
+  | "shopeepay"
   | "qris";
 
 export type Currency = "IDR";

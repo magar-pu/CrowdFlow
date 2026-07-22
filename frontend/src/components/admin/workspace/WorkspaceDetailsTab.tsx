@@ -30,8 +30,8 @@ const detailsSchema = z
     ends_at: z.string().min(1, 'End date & time is required'),
     entertainment_tax_rate: z
       .string()
-      .refine((v) => v !== '' && !isNaN(Number(v)) && Number(v) >= 0, {
-        message: 'Enter a valid tax rate (0 or greater)',
+      .refine((v) => v !== '' && !isNaN(Number(v)) && Number(v) >= 0 && Number(v) <= 100, {
+        message: 'Enter a valid tax rate between 0 and 100',
       }),
     entertainment_tax_passed_to_buyer: z.boolean(),
   })
@@ -259,7 +259,7 @@ export default function WorkspaceDetailsTab({ event, onSaved }: WorkspaceDetails
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className={labelClass}>Entertainment Tax Rate (%)</label>
-                <input type="number" step="0.01" min="0" className={inputClass} {...register('entertainment_tax_rate')} />
+                <input type="number" step="0.01" min="0" max="100" className={inputClass} {...register('entertainment_tax_rate')} />
                 {errors.entertainment_tax_rate && <p className={errorClass}>{errors.entertainment_tax_rate.message}</p>}
               </div>
             </div>

@@ -235,6 +235,7 @@ func (h *Handler) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, res)
 }
 
+
 func (h *Handler) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	if idStr == "" {

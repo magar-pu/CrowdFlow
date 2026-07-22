@@ -7,12 +7,12 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ['172.17.224.1'],
   async rewrites() {
     const isProd = process.env.NODE_ENV === 'production';
+    const backendUrl = process.env.BACKEND_URL || (isProd ? 'http://backend:8080' : 'http://localhost:8080');
+    
     const rules = [
       {
         source: '/api/:path*',
-        destination: isProd
-          ? 'http://backend:8080/api/:path*'
-          : 'http://localhost:8081/api/:path*',
+        destination: `${backendUrl}/api/:path*`,
       },
     ];
     if (!isProd) {
@@ -22,6 +22,21 @@ const nextConfig: NextConfig = {
       });
     }
     return rules;
+  },
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+        port: '9000',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+        pathname: '/**',
+      }
+    ],
   },
 };
 
