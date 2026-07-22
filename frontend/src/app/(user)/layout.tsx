@@ -8,7 +8,7 @@ export default function UserLayout({
   children: React.ReactNode;
 }) {
   return (
-    <AuthGuard requiredRole="user">
+    <AuthGuard>
       {children}
     </AuthGuard>
   );

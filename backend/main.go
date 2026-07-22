@@ -22,6 +22,7 @@ import (
 	"crowdflow-backend/internal/response"
 	"crowdflow-backend/internal/scanner"
 	"crowdflow-backend/internal/storage"
+	"crowdflow-backend/internal/ticket"
 	"crowdflow-backend/internal/venuelayout"
 
 	"golang.org/x/oauth2"
@@ -180,6 +181,14 @@ func main() {
 
 	// Register Booking routes
 	bookingHandler.RegisterRoutes(apiV1, authMounter.Authenticate)
+
+	// Initialize Ticket dependencies (My Tickets + Dynamic 10-Min QR Tokens)
+	ticketRepo := ticket.NewPostgresRepository(db)
+	ticketService := ticket.NewService(ticketRepo)
+	ticketHandler := ticket.NewHandler(ticketService)
+
+	// Register Ticket routes
+	ticketHandler.RegisterRoutes(apiV1, authMounter.Authenticate)
 
 	// Initialize Venue Layout dependencies (saved seat-map plans + geometry)
 	venueLayoutRepo := venuelayout.NewPostgresRepository(db)

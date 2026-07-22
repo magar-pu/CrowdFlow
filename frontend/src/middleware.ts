@@ -2,18 +2,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 export function middleware(request: NextRequest) {
-  // Best-effort "is there a session?" signal for routing only — the backend
-  // remains the real authorization gate (see AGENTS.md: frontend is never
-  // trusted). The access_token is short-lived (~15m) and the refresh_token is
-  // path-scoped to /api/v1/auth so it is invisible here; csrf_token is the
-  // durable, Path=/ cookie that lives for the whole session, so either being
-  // present means the user still has (or can silently refresh) a session.
-  const token =
-    request.cookies.get("access_token")?.value ||
-    request.cookies.get("csrf_token")?.value;
+  const accessToken = request.cookies.get("access_token")?.value;
+  const csrfToken = request.cookies.get("csrf_token")?.value;
+  const hasSessionSignal = Boolean(accessToken || csrfToken);
+
   const { pathname } = request.nextUrl;
 
-  // 1. Define path groupings
   const isProtectedPath =
     pathname.startsWith("/profile") ||
     pathname.startsWith("/orders") ||
@@ -25,16 +19,15 @@ export function middleware(request: NextRequest) {
 
   const isAuthPath = pathname === "/login" || pathname === "/register";
 
-  // 2. If user is unauthenticated and tries to access private routes, redirect to login
-  if (isProtectedPath && !token) {
+  // 1. Unauthenticated users trying to access protected paths -> redirect to login
+  if (isProtectedPath && !hasSessionSignal) {
     const loginUrl = new URL("/login", request.url);
-    // Persist original destination to redirect back after login if desired
     loginUrl.searchParams.set("from", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  // 3. If user is already authenticated and visits login/register, redirect to home
-  if (isAuthPath && token) {
+  // 2. Already authenticated users visiting login/register -> redirect away
+  if (isAuthPath && hasSessionSignal) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 

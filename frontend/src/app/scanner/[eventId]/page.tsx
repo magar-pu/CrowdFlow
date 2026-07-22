@@ -99,6 +99,7 @@ export default function StandaloneScannerPage() {
   useEffect(() => {
     const tokenToVerify = initialToken || localStorage.getItem(`scanner_token_${eventIdNum}`) || "";
     if (tokenToVerify) {
+      if (!inputToken) setInputToken(tokenToVerify);
       handleVerifyToken(tokenToVerify);
     }
   }, [initialToken, eventIdNum]);
@@ -355,10 +356,13 @@ export default function StandaloneScannerPage() {
                   type="text"
                   value={inputToken}
                   onChange={(e) => setInputToken(e.target.value)}
-                  placeholder="e.g. CF-SCAN-1328"
+                  placeholder="e.g. CF-SCAN-ADMIN123"
                   className="w-full h-10 pl-9 pr-3 border border-border-subtle rounded-xl text-xs bg-white text-text-primary font-mono outline-none focus:border-primary transition-all uppercase"
                 />
               </div>
+              <p className="text-[10px] text-text-secondary mt-1">
+                Enter your Handheld Access Code (e.g. <code className="font-mono text-primary font-bold">CF-SCAN-ADMIN123</code>). Do not enter ticket QR tokens here.
+              </p>
             </div>
 
             {authError && (

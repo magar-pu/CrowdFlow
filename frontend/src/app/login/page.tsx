@@ -25,9 +25,21 @@ const BACKEND_READY = true; // Flip ke true setelah Go backend live
 function SignInPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login, set_user_from_api } = useAuthStore();
+  const { user, is_authenticated, login, set_user_from_api } = useAuthStore();
   const [error_message, set_error_message] = useState("");
   const [success_message, set_success_message] = useState("");
+
+  // Redirect away if already authenticated
+  useEffect(() => {
+    if (is_authenticated && user) {
+      const from = searchParams.get("from");
+      if (from && from !== "/login") {
+        router.replace(from);
+      } else {
+        router.replace(getRoleLandingPath(user.role));
+      }
+    }
+  }, [is_authenticated, user, router, searchParams]);
 
   // Check URL query parameters for Google OAuth callback errors and registration success
   useEffect(() => {
