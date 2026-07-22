@@ -1,65 +1,70 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useEffect, useState } from "react";
+import { Navbar } from "@/components/layout/Navbar";
+import { HeroSlider } from "@/components/home-v3/HeroSlider";
+import { SearchBar } from "@/components/home-v3/SearchBar";
+import { UpcomingConcerts } from "@/components/home-v3/UpcomingConcerts";
+import { StatsBanner } from "@/components/home-v3/StatsBanner";
+import { BentoCollections } from "@/components/home-v3/BentoCollections";
+import { HomeFooterV3 } from "@/components/home-v3/HomeFooterV3";
+import { listEvents } from "@/lib/api/events";
+import type { TrendingEventCard } from "@/types/ticket";
+
+const FALLBACK_COVER =
+  "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=600&auto=format&fit=crop";
+import { TrendingEvents } from "@/components/home-v3/TrendingEvents";
+import { FlashSaleEvents } from "@/components/home-v3/FlashSaleEvents";
+
+export default function HomePage() {
+  const [trendingEvents, setTrendingEvents] = useState<TrendingEventCard[]>([]);
+
+  useEffect(() => {
+    listEvents(20)
+      .then((res) => {
+        if (res.success && res.data) {
+          const mapped: TrendingEventCard[] = res.data.map((evt) => ({
+            event_id: String(evt.event_id),
+            title: evt.title,
+            cover_image_url: evt.cover_image_url || FALLBACK_COVER,
+            city: evt.venue?.city ?? "Indonesia",
+            category: evt.category ?? "other",
+            starts_at: evt.starts_at,
+            starting_price: evt.starting_price ?? null,
+          }));
+          setTrendingEvents(mapped);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load trending events:", err);
+      });
+  }, []);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file. Hello my name is Gerald, Im from Cyber 1
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+    <div className="min-h-screen bg-surface">
+      <Navbar active_href="/" isTransparentOnTop={true} />
+      
+      <main className="w-full">
+        <HeroSlider />
+        
+        {/* Dashboard Content */}
+        <div className="relative z-10 bg-surface min-h-screen pb-20">
+          <SearchBar />
+          
+          <div className="px-6 lg:px-16 max-w-7xl mx-auto">
+            {/* Both grids render real events; each hides itself when empty.
+                FlashSaleEvents stays static — the backend has no flash-sale
+                concept to drive it from. */}
+            <UpcomingConcerts events={trendingEvents.slice(0, 4)} />
+            <TrendingEvents events={trendingEvents.slice(4, 8)} />
+            <FlashSaleEvents />
+            <StatsBanner />
+            <BentoCollections />
+          </div>
         </div>
       </main>
+      
+      <HomeFooterV3 />
     </div>
   );
 }

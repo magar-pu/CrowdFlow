@@ -1,26 +1,276 @@
-@import "tailwindcss";
+/**
+ * app/globals.css
+ *
+ * Tailwind CSS v4 — CSS-first configuration. There is no tailwind.config.ts
+ * in this project; every design token lives here as a CSS variable inside
+ * @theme, and Tailwind generates the matching utility classes automatically
+ * (e.g. --color-surface generates bg-surface / text-surface / border-surface).
+ *
+ * Tokens transcribed from the CrowdFlow Stitch design system (white theme).
+ * Source: stitch_comprehensive_ui_ux_design/crowdflow_1/DESIGN.md +
+ * secure_checkout/code.html. Do not hand-pick arbitrary hex values in
+ * components — always reference these semantic tokens.
+ */
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+ @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+ @import "tailwindcss";
+ 
+ @theme {
+   /* ---- Colors -------------------------------------------------------- */
+   /* Surfaces */
+   --color-surface: #f7f9fb;
+   --color-surface-dim: #d8dadc;
+   --color-surface-bright: #f7f9fb;
+   --color-surface-white: #ffffff;
+   --color-surface-container-lowest: #ffffff;
+   --color-surface-container-low: #f2f4f6;
+   --color-surface-container: #eceef0;
+   --color-surface-container-high: #e6e8ea;
+   --color-surface-container-highest: #e0e3e5;
+   --color-surface-variant: #e0e3e5;
+ 
+   /* Foreground / on-* roles */
+   --color-on-surface: #191c1e;
+   --color-on-surface-variant: #45464d;
+   --color-inverse-surface: #2d3133;
+   --color-inverse-on-surface: #eff1f3;
+ 
+   /* Outlines */
+   --color-outline: #76777d;
+   --color-outline-variant: #c6c6cd;
+   --color-border-subtle: #e2e8f0;
+ 
+   /* Brand */
+   --color-primary: #0f172a; /* deep navy — primary buttons, headlines */
+   --color-on-primary: #ffffff;
+   --color-primary-container: #131b2e;
+   --color-on-primary-container: #7c839b;
+ 
+   --color-secondary: #1d4ed8; /* action blue — links, focus states, nav highlight */
+   --color-on-secondary: #ffffff;
+   --color-secondary-container: #4069f2;
+   --color-on-secondary-container: #fffbff;
+ 
+   --color-tertiary: #14b8a6; /* teal — AI features, accents */
+   --color-on-tertiary: #ffffff;
+   --color-tertiary-container: #00201c;
+   --color-on-tertiary-container: #009485;
+ 
+   /* Semantic */
+   --color-success: #22c55e;
+   --color-on-success: #ffffff;
+   --color-warning: #f59e0b;
+   --color-on-warning: #ffffff;
+   --color-danger: #ef4444;
+   --color-error: #ba1a1a;
+   --color-on-error: #ffffff;
+   --color-error-container: #ffdad6;
+   --color-on-error-container: #93000a;
+ 
+   /* Background + text aliases used throughout Stitch markup */
+   --color-background: #f7f9fb;
+   --color-on-background: #191c1e;
+   --color-text-primary: #0f172a;
+   --color-text-secondary: #64748b;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+   /* Venue Editor section zone colors */
+   --color-accent-blue: #3b82f6;
+   --color-vip-purple: #8b5cf6;
+   --color-gold-yellow: #eab308;
+   --color-ga-green: #22c55e;
+ 
+   /* ---- Border radius --------------------------------------------------- */
+   --radius-sm: 0.25rem;
+   --radius-DEFAULT: 0.5rem; /* 8px — buttons & inputs */
+   --radius-md: 0.75rem;
+   --radius-lg: 1rem; /* 16px — cards & event banners */
+   --radius-xl: 1.5rem; /* 24px — modals & large UI blocks */
+   --radius-full: 9999px;
+ 
+   /* ---- Spacing ----------------------------------------------------------- */
+   --spacing-container-max: 1280px;
+   --spacing-gutter: 1.5rem;
+   --spacing-margin-mobile: 1rem;
+   --spacing-margin-desktop: 2.5rem;
+   --spacing-stack-sm: 0.5rem;
+   --spacing-stack-md: 1rem;
+   --spacing-stack-lg: 2rem;
+   --spacing-section-gap: 5rem;
+ 
+   /* ---- Typography ---------------------------------------------------- */
+   --font-sans: "Inter", sans-serif;
+ 
+   --text-headline-xl: 48px;
+   --text-headline-xl--line-height: 56px;
+   --text-headline-xl--letter-spacing: -0.02em;
+   --text-headline-xl--font-weight: 700;
+ 
+   --text-headline-lg: 32px;
+   --text-headline-lg--line-height: 40px;
+   --text-headline-lg--letter-spacing: -0.02em;
+   --text-headline-lg--font-weight: 700;
+ 
+   --text-headline-lg-mobile: 28px;
+   --text-headline-lg-mobile--line-height: 36px;
+   --text-headline-lg-mobile--font-weight: 700;
+ 
+   --text-headline-md: 24px;
+   --text-headline-md--line-height: 32px;
+   --text-headline-md--letter-spacing: -0.01em;
+   --text-headline-md--font-weight: 600;
+ 
+   --text-headline-sm: 20px;
+   --text-headline-sm--line-height: 28px;
+   --text-headline-sm--font-weight: 600;
+ 
+   --text-body-lg: 18px;
+   --text-body-lg--line-height: 28px;
+   --text-body-lg--font-weight: 400;
+ 
+   --text-body-md: 16px;
+   --text-body-md--line-height: 24px;
+   --text-body-md--font-weight: 400;
+ 
+   --text-body-sm: 14px;
+   --text-body-sm--line-height: 20px;
+   --text-body-sm--font-weight: 400;
+ 
+   --text-label-md: 14px;
+   --text-label-md--line-height: 20px;
+   --text-label-md--letter-spacing: 0.05em;
+   --text-label-md--font-weight: 600;
+ 
+   --text-label-sm: 12px;
+   --text-label-sm--line-height: 16px;
+   --text-label-sm--font-weight: 500;
+ 
+   /* ---- Shadows --------------------------------------------------------- */
+   /* "Stripe-style": small sharp shadow + large soft low-opacity blur (Level 2) */
+   --shadow-elevated: 0 1px 2px 0 rgba(15, 23, 42, 0.04),
+     0 8px 24px -4px rgba(15, 23, 42, 0.06);
+   /* Level 3 overlay — deep diffused shadow with navy tint */
+   --shadow-overlay: 0 20px 40px -8px rgba(15, 23, 42, 0.1);
+ }
+ 
+ @layer base {
+   body {
+     background-color: var(--color-surface);
+     color: var(--color-text-primary);
+     font-family: var(--font-sans);
+     -webkit-font-smoothing: antialiased;
+   }
+ 
+   /* Visible keyboard focus, kept consistent with the secondary (action blue) token */
+   :focus-visible {
+     outline: 2px solid var(--color-secondary);
+     outline-offset: 2px;
+   }
+ 
+   @media (prefers-reduced-motion: reduce) {
+     *,
+     *::before,
+     *::after {
+       animation-duration: 0.01ms !important;
+       animation-iteration-count: 1 !important;
+       transition-duration: 0.01ms !important;
+       scroll-behavior: auto !important;
+     }
+   }
+ }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer utilities {
+  .glass-card {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(226, 232, 240, 0.8);
   }
-}
+  .shimmer {
+    background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.4) 50%, rgba(255,255,255,0) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 3s infinite;
+  }
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* ---- Venue Editor: Seat Dots ---------------------------------------- */
+  .seat-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    background-color: var(--color-surface-container-high);
+    cursor: pointer;
+    transition: all 150ms ease;
+    border: 1px solid transparent;
+  }
+  .seat-dot:hover {
+    transform: scale(1.3);
+    box-shadow: 0 0 0 2px var(--color-accent-blue);
+  }
+  .seat-dot.active {
+    background-color: var(--color-accent-blue);
+  }
+  .seat-dot.selected {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px rgba(15, 23, 42, 0.1);
+  }
+
+  /* ---- Venue Editor: Canvas Grid Background -----------------------------
+     Cell size and offset are set inline by SeatMapperCanvas so the dots track
+     the real snap step and stay aligned while panning/zooming. */
+  .canvas-grid {
+    background-image: radial-gradient(var(--color-border-subtle) 1px, transparent 1px);
+  }
+  
+  /* laser check scanner laser effect */
+  @keyframes scanline {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(145px);
+    }
+  }
+
+  .animate-scanline {
+    animation: scanline 2.5s ease-in-out infinite;
+  }
+
+  /* staggered cards fadeIn transitions */
+  @keyframes fadeIn {
+    from { 
+      opacity: 0; 
+      transform: translateY(6px); 
+    }
+    to { 
+      opacity: 1; 
+      transform: translateY(0); 
+    }
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .animate-spin-slow {
+    animation: spin 12s linear infinite;
+  }
+
+  /* Custom shadow cards */
+  .soft-shadow {
+    box-shadow: 0px 1px 2px rgba(15, 23, 42, 0.05), 0px 4px 12px rgba(15, 23, 42, 0.03);
+  }
+
+  .deep-shadow {
+    box-shadow: 0px 10px 25px -5px rgba(15, 23, 42, 0.08), 0px 8px 10px -6px rgba(15, 23, 42, 0.08);
+  }
+
+  /* Status text backgrounds */
+  .status-paid { background-color: #DCFCE7; color: #166534; }
+  .status-pending { background-color: #FEF3C7; color: #92400E; }
+  .status-failed { background-color: #FEE2E2; color: #991B1B; }
+  .status-refunded { background-color: #F1F5F9; color: #475569; }
+  .status-resale { background-color: #F3E8FF; color: #6B21A8; }
 }

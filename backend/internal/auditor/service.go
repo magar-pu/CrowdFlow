@@ -1,0 +1,334 @@
+package auditor
+
+import (
+	"context"
+	"fmt"
+	"strings"
+)
+
+// AuditorService implements Service with business validation.
+type AuditorService struct {
+	repo Repository
+}
+
+func NewAuditorService(repo Repository) *AuditorService {
+	return &AuditorService{repo: repo}
+}
+
+// ---- Dashboard ----
+
+func (s *AuditorService) GetDashboard(ctx context.Context) (*DashboardResponse, error) {
+	stats, err := s.repo.GetDashboardStats(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	activity, err := s.repo.ListRecentActivity(ctx, 10)
+	if err != nil {
+		return nil, err
+	}
+
+	queue, err := s.repo.ListReviewQueue(ctx, 4)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DashboardResponse{
+		Stats:          *stats,
+		RecentActivity: dereferenceActivity(activity),
+		ReviewQueue:    dereferenceReviews(queue),
+	}, nil
+}
+
+func (s *AuditorService) ListActivity(ctx context.Context, page, limit int) ([]*Activity, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+	return s.repo.ListRecentActivity(ctx, limit)
+}
+
+// ---- Event Reviews ----
+
+func (s *AuditorService) ListEventReviews(ctx context.Context, filters EventReviewFilters) ([]*EventReview, error) {
+	if filters.Limit <= 0 {
+		filters.Limit = 20
+	}
+	if filters.Page <= 0 {
+		filters.Page = 1
+	}
+	return s.repo.ListEventReviews(ctx, filters)
+}
+
+func (s *AuditorService) GetEventReview(ctx context.Context, eventID int) (*EventReview, error) {
+	if eventID <= 0 {
+		return nil, ErrNotFound
+	}
+	return s.repo.GetEventReview(ctx, eventID)
+}
+
+func (s *AuditorService) ApproveEventReview(ctx context.Context, eventID, actorID int, notes string) error {
+	if eventID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	return s.repo.ApproveEventReview(ctx, eventID, actorID, notes)
+}
+
+func (s *AuditorService) RejectEventReview(ctx context.Context, eventID, actorID int, reason, notes string) error {
+	if eventID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	if strings.TrimSpace(reason) == "" {
+		return ErrValidation
+	}
+	return s.repo.RejectEventReview(ctx, eventID, actorID, reason, notes)
+}
+
+func (s *AuditorService) RequestEventChanges(ctx context.Context, eventID, actorID int, notes string) error {
+	if eventID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	if strings.TrimSpace(notes) == "" {
+		return ErrValidation
+	}
+	return s.repo.RequestEventChanges(ctx, eventID, actorID, notes)
+}
+
+func (s *AuditorService) UpdateEventReviewStage(ctx context.Context, eventID, actorID int, stage ReviewStage) error {
+	if eventID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	validStages := map[ReviewStage]bool{
+		StageSubmitted:            true,
+		StageDocumentVerification: true,
+		StageEventValidation:      true,
+		StageFinalApproval:        true,
+	}
+	if !validStages[stage] {
+		return ErrValidation
+	}
+	return s.repo.UpdateEventReviewStage(ctx, eventID, actorID, stage)
+}
+
+func (s *AuditorService) AddEventRevision(ctx context.Context, eventID, actorID int, req AddRevisionRequest) error {
+	if eventID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	if strings.TrimSpace(req.Title) == "" {
+		return ErrValidation
+	}
+	if strings.TrimSpace(req.Description) == "" {
+		return ErrValidation
+	}
+	if strings.TrimSpace(req.RequiredAction) == "" {
+		return ErrValidation
+	}
+	return s.repo.AddEventRevision(ctx, eventID, actorID, req)
+}
+
+func (s *AuditorService) UpdateRevisionStatus(ctx context.Context, revID, actorID int, status string) error {
+	if revID <= 0 || actorID <= 0 || strings.TrimSpace(status) == "" {
+		return ErrValidation
+	}
+	return s.repo.UpdateRevisionStatus(ctx, revID, actorID, status)
+}
+
+func (s *AuditorService) VerifyReviewDocument(ctx context.Context, docID, actorID int) error {
+	if docID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	return s.repo.VerifyReviewDocument(ctx, docID, actorID)
+}
+
+func (s *AuditorService) RejectReviewDocument(ctx context.Context, docID, actorID int, reason string) error {
+	if docID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	if strings.TrimSpace(reason) == "" {
+		return ErrValidation
+	}
+	return s.repo.RejectReviewDocument(ctx, docID, actorID, reason)
+}
+
+// ---- Documents ----
+
+func (s *AuditorService) ListDocuments(ctx context.Context, filters DocumentFilters) ([]*Document, error) {
+	if filters.Limit <= 0 {
+		filters.Limit = 20
+	}
+	if filters.Page <= 0 {
+		filters.Page = 1
+	}
+	return s.repo.ListDocuments(ctx, filters)
+}
+
+func (s *AuditorService) GetDocument(ctx context.Context, docID int) (*Document, error) {
+	if docID <= 0 {
+		return nil, ErrNotFound
+	}
+	return s.repo.GetDocument(ctx, docID)
+}
+
+func (s *AuditorService) VerifyDocument(ctx context.Context, docID, actorID int) error {
+	if docID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	return s.repo.VerifyDocument(ctx, docID, actorID)
+}
+
+func (s *AuditorService) RejectDocument(ctx context.Context, docID, actorID int, reason string) error {
+	if docID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	if strings.TrimSpace(reason) == "" {
+		return ErrValidation
+	}
+	return s.repo.RejectDocument(ctx, docID, actorID, reason)
+}
+
+// ---- Organizer Verification ----
+
+func (s *AuditorService) ListOrganizers(ctx context.Context, filters OrganizerFilters) ([]*OrganizerVerification, error) {
+	if filters.Limit <= 0 {
+		filters.Limit = 20
+	}
+	if filters.Page <= 0 {
+		filters.Page = 1
+	}
+	return s.repo.ListOrganizers(ctx, filters)
+}
+
+func (s *AuditorService) GetOrganizer(ctx context.Context, appID int) (*OrganizerVerification, error) {
+	if appID <= 0 {
+		return nil, ErrNotFound
+	}
+	return s.repo.GetOrganizer(ctx, appID)
+}
+
+func (s *AuditorService) ApproveOrganizer(ctx context.Context, appID, actorID int, notes string) error {
+	if appID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	return s.repo.ApproveOrganizer(ctx, appID, actorID, notes)
+}
+
+func (s *AuditorService) RejectOrganizer(ctx context.Context, appID, actorID int, reason, notes string) error {
+	if appID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	if strings.TrimSpace(reason) == "" {
+		return ErrValidation
+	}
+	return s.repo.RejectOrganizer(ctx, appID, actorID, reason, notes)
+}
+
+func (s *AuditorService) UpdateOrganizerStatus(ctx context.Context, appID, actorID int, req UpdateOrganizerStatusRequest) error {
+	if appID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	status := strings.ToLower(req.Status)
+	validStatuses := map[string]bool{
+		"pending": true, "in_review": true, "in review": true, "approved": true, "verified": true, "rejected": true, "suspended": true, "need revision": true, "need_revision": true, "needs_revision": true,
+	}
+	if !validStatuses[status] {
+		return ErrValidation
+	}
+	return s.repo.UpdateOrganizerStatus(ctx, appID, actorID, req)
+}
+
+// ---- Payout Verification ----
+
+func (s *AuditorService) ListPayouts(ctx context.Context, filters PayoutFilters) ([]*AuditorPayout, error) {
+	if filters.Limit <= 0 {
+		filters.Limit = 20
+	}
+	if filters.Page <= 0 {
+		filters.Page = 1
+	}
+	return s.repo.ListPayouts(ctx, filters)
+}
+
+func (s *AuditorService) GetPayout(ctx context.Context, payoutID int) (*AuditorPayout, error) {
+	if payoutID <= 0 {
+		return nil, ErrNotFound
+	}
+	return s.repo.GetPayout(ctx, payoutID)
+}
+
+func (s *AuditorService) ApprovePayout(ctx context.Context, payoutID, actorID int, req ApprovePayoutRequest) error {
+	if payoutID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	return s.repo.ApprovePayout(ctx, payoutID, actorID, req)
+}
+
+func (s *AuditorService) RejectPayout(ctx context.Context, payoutID, actorID int, req RejectPayoutRequest) error {
+	if payoutID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	if strings.TrimSpace(req.Reason) == "" {
+		return ErrValidation
+	}
+	return s.repo.RejectPayout(ctx, payoutID, actorID, req)
+}
+
+func (s *AuditorService) HoldPayout(ctx context.Context, payoutID, actorID int, req HoldPayoutRequest) error {
+	if payoutID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	if strings.TrimSpace(req.Reason) == "" {
+		return ErrValidation
+	}
+	return s.repo.HoldPayout(ctx, payoutID, actorID, req)
+}
+
+func (s *AuditorService) ListEventRevisions(ctx context.Context, eventID int) ([]Revision, error) {
+	if eventID <= 0 {
+		return nil, ErrValidation
+	}
+	review, err := s.repo.GetEventReview(ctx, eventID)
+	if err != nil {
+		return nil, err
+	}
+	return review.Revisions, nil
+}
+
+// ---- Notification Methods ----
+
+func (s *AuditorService) ListNotifications(ctx context.Context, userID int) ([]*AuditorNotification, error) {
+	if userID <= 0 {
+		return nil, fmt.Errorf("%w: invalid user ID", ErrValidation)
+	}
+	return s.repo.ListNotifications(ctx, userID)
+}
+
+func (s *AuditorService) MarkNotificationsRead(ctx context.Context, userID int, notificationIDs []int) error {
+	if userID <= 0 {
+		return fmt.Errorf("%w: invalid user ID", ErrValidation)
+	}
+	return s.repo.MarkNotificationsRead(ctx, userID, notificationIDs)
+}
+
+// ---- Slice helpers (avoid nil JSON) ----
+
+func dereferenceActivity(items []*Activity) []Activity {
+	out := make([]Activity, 0, len(items))
+	for _, a := range items {
+		if a != nil {
+			out = append(out, *a)
+		}
+	}
+	return out
+}
+
+func dereferenceReviews(items []*EventReview) []EventReview {
+	out := make([]EventReview, 0, len(items))
+	for _, r := range items {
+		if r != nil {
+			out = append(out, *r)
+		}
+	}
+	return out
+}

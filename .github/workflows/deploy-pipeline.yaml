@@ -1,0 +1,59 @@
+name: Deployment
+
+on:
+  push:
+    branches: [main, dev]
+
+# One job per environment rather than one job branching on github.ref_name.
+# The previous single job picked its path with `if [ "$ref" = "main"]` — the
+# missing space before `]` makes bash fail the test instead of matching, so
+# every push fell through to the else branch and main deployed dev's code to
+# the sandbox. Splitting the jobs removes that class of mistake: each one names
+# its own branch, path and script, and `environment:` can differ between them.
+jobs:
+  deploy-production:
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    # Pauses the run until a required reviewer approves it. Needs a one-time
+    # setup: Settings → Environments → New environment → "production", then add
+    # yourself under "Required reviewers". Without that environment the job runs
+    # unpaused, so create it before relying on the gate.
+    environment: production
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          # Abort on the first failing command instead of running on and
+          # reporting success.
+          script_stop: true
+          script: |
+            cd /var/www/crowdflow-production/app
+            bash deploy-main.sh
+
+      - name: Summary
+        run: |
+          echo "Deployed **production** from \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-sandbox:
+    if: github.ref_name == 'dev'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script_stop: true
+          script: |
+            cd /var/www/crowdflow-sandbox/app
+            bash deploy-dev.sh
+
+      - name: Summary
+        run: |
+          echo "Deployed **sandbox** from \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"

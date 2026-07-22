@@ -5,6 +5,7 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # Local Dependency Directories
+**/node_modules/
 node_modules/
 jspm_packages/
 
