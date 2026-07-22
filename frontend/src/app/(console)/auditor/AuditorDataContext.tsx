@@ -5,7 +5,6 @@ import {
   EventSubmission, DocumentReview, RevisionEntry, OrganizerVerification,
   PayoutRequest, OrganizerStatus, PayoutStatus, ReviewStage, AuditorActivity,
 } from "./types";
-import { INITIAL_SUBMISSIONS, INITIAL_DOCUMENT_REVIEWS, ACTIVITY_LOG, INITIAL_ORGANIZERS, INITIAL_PAYOUTS } from "./data";
 import {
   getDashboardData,
   listEventReviews,
@@ -62,11 +61,15 @@ interface AuditorDataValue {
 const AuditorDataContext = createContext<AuditorDataValue | null>(null);
 
 export function AuditorDataProvider({ children }: { children: React.ReactNode }) {
-  const [submissions, setSubmissions] = useState<EventSubmission[]>(INITIAL_SUBMISSIONS);
-  const [documents, setDocuments] = useState<DocumentReview[]>(INITIAL_DOCUMENT_REVIEWS);
-  const [organizers, setOrganizers] = useState<OrganizerVerification[]>(INITIAL_ORGANIZERS);
-  const [payouts, setPayouts] = useState<PayoutRequest[]>(INITIAL_PAYOUTS);
-  const [activity, setActivity] = useState<AuditorActivity[]>(ACTIVITY_LOG);
+  // Deliberately empty, NOT seeded with mock rows. Seeding meant an empty
+  // queue still rendered fake submissions with non-numeric ids ("SUB-3021"),
+  // and clicking one asked the API for a review id it could never parse — so
+  // a working, idle console looked like a broken one.
+  const [submissions, setSubmissions] = useState<EventSubmission[]>([]);
+  const [documents, setDocuments] = useState<DocumentReview[]>([]);
+  const [organizers, setOrganizers] = useState<OrganizerVerification[]>([]);
+  const [payouts, setPayouts] = useState<PayoutRequest[]>([]);
+  const [activity, setActivity] = useState<AuditorActivity[]>([]);
   const [notifications, setNotifications] = useState<AuditorNotification[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);

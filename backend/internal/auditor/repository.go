@@ -119,7 +119,9 @@ func (r *PostgresAuditorRepository) ListRecentActivity(ctx context.Context, limi
 	}
 	defer rows.Close()
 
-	var activities []*Activity
+	// Non-nil so an empty queue serialises as [] rather than null: clients
+	// guard on truthiness and a null would look like a failed request.
+	activities := make([]*Activity, 0)
 	for rows.Next() {
 		var act Activity
 		var createdAt time.Time
@@ -191,7 +193,7 @@ func (r *PostgresAuditorRepository) ListReviewQueue(ctx context.Context, limit i
 	}
 	defer rows.Close()
 
-	var reviews []*EventReview
+	reviews := make([]*EventReview, 0)
 	for rows.Next() {
 		var rev EventReview
 		var submittedAt, lastUpdated time.Time
@@ -293,7 +295,7 @@ func (r *PostgresAuditorRepository) ListEventReviews(ctx context.Context, filter
 		LEFT JOIN auditor_event_reviews ear ON ear.event_id = e.id
 		WHERE e.status IN ('pending_review', 'approved', 'rejected')
 	`
-	
+
 	args := []interface{}{}
 	argIndex := 1
 
@@ -325,7 +327,7 @@ func (r *PostgresAuditorRepository) ListEventReviews(ctx context.Context, filter
 	}
 	defer rows.Close()
 
-	var reviews []*EventReview
+	reviews := make([]*EventReview, 0)
 	for rows.Next() {
 		var rev EventReview
 		var submittedAt, lastUpdated time.Time
@@ -778,14 +780,14 @@ func (r *PostgresAuditorRepository) RejectEventReview(ctx context.Context, event
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO event_approval_log (event_id, auditor_id, decision, notes)
 		VALUES ($1, $2, 'rejected', NULLIF($3, ''))
-	`, eventID, actorID, reason + " | " + notes); err != nil {
+	`, eventID, actorID, reason+" | "+notes); err != nil {
 		return err
 	}
 
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO event_status_log (event_id, actor_id, from_status, to_status, notes)
 		VALUES ($1, $2, $3::event_status, 'rejected', NULLIF($4, ''))
-	`, eventID, actorID, fromStatus, reason + " | " + notes); err != nil {
+	`, eventID, actorID, fromStatus, reason+" | "+notes); err != nil {
 		return err
 	}
 
@@ -843,7 +845,7 @@ func (r *PostgresAuditorRepository) RequestEventChanges(ctx context.Context, eve
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO event_status_log (event_id, actor_id, from_status, to_status, notes)
 		VALUES ($1, $2, $3::event_status, 'needs_revision'::event_status, NULLIF($4, ''))
-	`, eventID, actorID, fromStatus, "Changes Requested: " + notes); err != nil {
+	`, eventID, actorID, fromStatus, "Changes Requested: "+notes); err != nil {
 		return err
 	}
 
@@ -1141,7 +1143,7 @@ func (r *PostgresAuditorRepository) ListDocuments(ctx context.Context, filters D
 	}
 	defer rows.Close()
 
-	var docs []*Document
+	docs := make([]*Document, 0)
 	for rows.Next() {
 		var doc Document
 		var dbStatus string
@@ -1326,7 +1328,7 @@ func (r *PostgresAuditorRepository) ListOrganizers(ctx context.Context, filters 
 	}
 	defer rows.Close()
 
-	var list []*OrganizerVerification
+	list := make([]*OrganizerVerification, 0)
 	for rows.Next() {
 		var org OrganizerVerification
 		var submittedAt, lastAct time.Time
@@ -1724,7 +1726,7 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 	}
 	defer rows.Close()
 
-	var list []*AuditorPayout
+	list := make([]*AuditorPayout, 0)
 	for rows.Next() {
 		var p AuditorPayout
 		var reqTime, eventTime time.Time
@@ -1747,14 +1749,14 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 		p.Status = string(dbStatus)
 		p.RequestDate = formatTime(reqTime)
 		p.EventDate = eventTime.Format("2006-01-02 15:04")
-		
+
 		riskScore := 20
 		if p.RequestedAmount > 1000000.0 {
 			riskScore = 40
 		}
 		p.RiskScore = riskScore
 		p.RiskLevel = computeRiskLevel(100 - riskScore)
-		
+
 		list = append(list, &p)
 	}
 
@@ -1848,20 +1850,20 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 	netRevenue := grossRevenue - platformFee - gatewayFee - taxAmount
 
 	p.SalesSummary = PayoutSales{
-		TicketsSold:     ticketsSold,
-		GrossRevenue:    grossRevenue,
-		PlatformFee:     platformFee,
-		GatewayFee:      gatewayFee,
+		TicketsSold:      ticketsSold,
+		GrossRevenue:     grossRevenue,
+		PlatformFee:      platformFee,
+		GatewayFee:       gatewayFee,
 		EntertainmentTax: taxAmount,
-		RefundAmount:    0.0,
-		NetRevenue:      netRevenue,
+		RefundAmount:     0.0,
+		NetRevenue:       netRevenue,
 	}
 
 	// Calculate Risk Score & Level
 	riskScore := 20
 	hasAlert := false
 	alertMsg := ""
-	
+
 	if netRevenue > 100000.0 {
 		riskScore = 45
 	}
@@ -2139,4 +2141,3 @@ func formatBannerURL(rawURL string) string {
 	}
 	return base + "/" + cleaned
 }
-

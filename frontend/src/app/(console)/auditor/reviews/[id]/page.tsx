@@ -38,13 +38,22 @@ export default function AuditorReviewDetailPage() {
 
   const [submission, setSubmission] = useState<EventSubmission | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [viewingDoc, setViewingDoc] = useState<{ id?: number | string; name: string; category: string; status: string } | null>(null);
 
   const loadDetail = async () => {
     try {
       setLoading(true);
+      setLoadError(null);
       const res = await getEventReview(params.id);
-      if (res.success && res.data) {
+      if (!res.success || !res.data) {
+        // Without this the page rendered "Submission not found" for every
+        // failure mode — 403, 500 and a genuinely missing id looked identical,
+        // which made the auditor console impossible to diagnose.
+        setLoadError(res.error?.message ?? "Failed to load this event review.");
+        return;
+      }
+      {
         const raw = res.data;
         const mappedSubmission: EventSubmission = {
           id: String(raw.id),
@@ -248,6 +257,7 @@ export default function AuditorReviewDetailPage() {
       }
     } catch (err) {
       console.error("Failed to load event review details:", err);
+      setLoadError("Failed to load this event review. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -397,8 +407,12 @@ export default function AuditorReviewDetailPage() {
   if (!submission) {
     return (
       <div className="bg-white border border-border-subtle rounded-xl p-10 text-center animate-fade-in">
-        <p className="text-sm font-bold text-text-primary">Submission not found</p>
-        <p className="text-xs text-text-secondary mt-1">"{params.id}" does not match any event submission.</p>
+        <p className="text-sm font-bold text-text-primary">
+          {loadError ? "Couldn't load this review" : "Submission not found"}
+        </p>
+        <p className="text-xs text-text-secondary mt-1">
+          {loadError ?? `"${params.id}" does not match any event submission.`}
+        </p>
         <button
           onClick={() => router.push('/auditor/reviews')}
           className="mt-3 text-xs font-bold text-secondary hover:underline cursor-pointer"
