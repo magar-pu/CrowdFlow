@@ -40,7 +40,11 @@ const PAYMENT_METHOD_OPTIONS: {
   label: string;
   icon: typeof Landmark;
 }[] = [
-  { value: "virtual_account", label: "Virtual Account", icon: Landmark },
+  { value: "bca_va", label: "BCA Virtual Account", icon: Landmark },
+  { value: "bni_va", label: "BNI Virtual Account", icon: Landmark },
+  { value: "mandiri_bill", label: "Mandiri Bill", icon: Landmark },
+  { value: "gopay", label: "GoPay", icon: QrCode },
+  { value: "shopeepay", label: "ShopeePay", icon: QrCode },
   { value: "qris", label: "QRIS", icon: QrCode },
   { value: "credit_card", label: "Credit/Debit Card", icon: CreditCard },
 ];
@@ -66,7 +70,7 @@ export function CheckoutSummary({
   is_submitting = false,
 }: CheckoutSummaryProps) {
   const [selected_payment_method, set_selected_payment_method] =
-    useState<PaymentMethod>("virtual_account");
+    useState<PaymentMethod>("bca_va");
   const [promo_code, set_promo_code] = useState("");
 
   const breakdown = useMemo(

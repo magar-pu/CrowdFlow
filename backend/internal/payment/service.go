@@ -66,14 +66,9 @@ func (s *PaymentService) CreateMidtransTransaction(ctx context.Context, userID i
 
 	// 2. Map selected payment method to Midtrans enabled payments
 	var enabledPayments []snap.SnapPaymentType
-	switch req.PaymentMethod {
-	case "virtual_account":
-		enabledPayments = []snap.SnapPaymentType{"bca_va", "bni_va", "bri_va", "mandiri_bill", "permata_va", "other_va"}
-	case "qris":
-		enabledPayments = []snap.SnapPaymentType{"gopay", "qris", "shopeepay"}
-	case "credit_card":
-		enabledPayments = []snap.SnapPaymentType{"credit_card"}
-	default:
+	if req.PaymentMethod != "" {
+		enabledPayments = []snap.SnapPaymentType{snap.SnapPaymentType(req.PaymentMethod)}
+	} else {
 		enabledPayments = nil
 	}
 

@@ -73,15 +73,9 @@ export default function CheckoutPage() {
     
     try {
       // 1. Call backend to create order and get snap_token
-      // Map UI payment method label to backend key
-      const paymentMethodMap: Record<string, string> = {
-        "Virtual Account": "virtual_account",
-        "QRIS": "qris",
-        "Credit/Debit Card": "credit_card",
-      };
       const res = await createOrder({
         event_id: targetEventId,
-        payment_method: paymentMethodMap[payment_method] || undefined,
+        payment_method: payment_method,
         cart_items: demo_cart_items,
       });
 
