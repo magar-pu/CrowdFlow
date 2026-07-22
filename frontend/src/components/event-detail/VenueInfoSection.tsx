@@ -9,11 +9,8 @@
  * - Venue Maps & Navigation (transport guide + nearby facilities)
  */
 
-import Link from "next/link";
 import {
   Map,
-  ArrowRight,
-  Users,
   DoorOpen,
   LogOut,
   Car,
@@ -25,6 +22,7 @@ import {
   Navigation,
 } from "lucide-react";
 import type { Venue } from "@/types/ticket";
+import { VenueLayoutPreview } from "@/components/event-detail/VenueLayoutPreview";
 
 interface VenueInfoSectionProps {
   venue: Venue;
@@ -141,67 +139,8 @@ export function VenueInfoSection({ venue, event_id }: VenueInfoSectionProps) {
           </div>
         </div>
 
-        {/* Venue Layout Preview */}
-        <div>
-          <h3 className="mb-3 font-label-md text-label-md font-bold text-text-primary">
-            Venue Layout Preview
-          </h3>
-          <div className="group relative overflow-hidden rounded-xl border border-border-subtle bg-[#0F172A]" style={{ height: 220 }}>
-            {/* Dark arena preview SVG */}
-            <svg viewBox="0 0 600 220" className="h-full w-full opacity-80">
-              <rect width="600" height="220" fill="#0F172A" />
-              <ellipse cx="300" cy="130" rx="260" ry="100" fill="none" stroke="#1E40AF" strokeWidth="2" opacity="0.5" />
-              <ellipse cx="300" cy="125" rx="220" ry="82" fill="#1E293B" stroke="#2563EB" strokeWidth="1.5" opacity="0.6" />
-              <ellipse cx="300" cy="118" rx="170" ry="62" fill="#172554" stroke="#3B82F6" strokeWidth="1" opacity="0.5" />
-              <rect x="240" y="45" width="120" height="38" rx="4" fill="#1D4ED8" opacity="0.8" />
-              <text x="300" y="68" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold" letterSpacing="3">STAGE</text>
-              {/* Dots representing seats */}
-              {Array.from({ length: 80 }, (_, i) => {
-                const angle = (i / 80) * Math.PI;
-                const r = 155 + (i % 3) * 22;
-                const cx = 300 + r * Math.cos(angle - Math.PI / 2) * 1.6;
-                const cy = 118 + r * Math.sin(angle - Math.PI / 2) * 0.65;
-                return <circle key={i} cx={cx} cy={cy} r="2.5" fill="#60A5FA" opacity="0.6" />;
-              })}
-              {/* Legend */}
-              {[
-                { color: "#3B82F6", label: "Stage" },
-                { color: "#6D28D9", label: "VIP" },
-                { color: "#1D4ED8", label: "Premium" },
-                { color: "#065F46", label: "GA" },
-                { color: "#92400E", label: "Restroom" },
-                { color: "#DC2626", label: "Emergency Exit" },
-              ].map((item, i) => (
-                <g key={item.label} transform={`translate(${390}, ${30 + i * 22})`}>
-                  <rect width="10" height="10" rx="2" fill={item.color} />
-                  <text x="15" y="9" fill="#94A3B8" fontSize="9">{item.label}</text>
-                </g>
-              ))}
-            </svg>
-
-            {/* CTA overlay */}
-            <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-              <Link
-                href={`/events/${event_id}/venue`}
-                className="flex items-center gap-2 rounded-xl border border-white/30 bg-white/20 px-5 py-2.5 font-label-md text-label-md text-white backdrop-blur-sm transition-all hover:bg-white/30"
-              >
-                <Map size={16} />
-                View Full Venue Layout
-              </Link>
-            </div>
-
-            {/* Always visible button */}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
-              <Link
-                href={`/events/${event_id}/venue`}
-                className="flex items-center gap-2 rounded-xl border border-white/20 bg-black/40 px-5 py-2.5 font-label-md text-label-md text-white backdrop-blur-sm transition-all hover:bg-black/60"
-              >
-                <Map size={16} />
-                View Full Venue Layout
-              </Link>
-            </div>
-          </div>
-        </div>
+        {/* Venue Layout Preview — the event's real bound layout, not a mockup. */}
+        <VenueLayoutPreview event_id={event_id} />
       </div>
 
       {/* ── Venue Maps & Navigation Card ── */}

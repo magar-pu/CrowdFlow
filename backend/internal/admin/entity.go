@@ -40,8 +40,8 @@ type RoleAssignment struct {
 }
 
 type User struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
 	Email string `json:"email"`
 	// Role is a single collapsed label for list badges: the user's one console
 	// role, "Mixed" when they hold more than one distinct console role, or
@@ -157,8 +157,6 @@ type Repository interface {
 	GetTicketTiers(eventID int) ([]*TicketTier, error)
 	UpdateTicketTiers(eventID int, tiers []*TicketTier) error
 	DeleteTicketTier(eventID, tierID int) error
-	GetVenueSections(eventID int) ([]*VenueSection, error)
-	UpdateVenueSections(eventID int, sections []*VenueSection) error
 	UpdateUserStatus(userID int, status string, actorID int) error
 	GrantUserRole(userID int, roleID int, eventID *int, actorID int) error
 	RevokeUserRole(userID int, roleID int, eventID *int, actorID int) error
@@ -183,8 +181,6 @@ type Service interface {
 	GetTicketTiers(eventID int) ([]*TicketTier, error)
 	UpdateTicketTiers(eventID int, tiers []*TicketTier) error
 	DeleteTicketTier(eventID, tierID int) error
-	GetVenueSections(eventID int) ([]*VenueSection, error)
-	UpdateVenueSections(eventID int, sections []*VenueSection) error
 	UpdateUserStatus(userID int, status string, actorID int) error
 	GrantUserRole(userID int, roleID int, eventID *int, actorID int) error
 	RevokeUserRole(userID int, roleID int, eventID *int, actorID int) error

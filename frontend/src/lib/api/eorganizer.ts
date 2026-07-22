@@ -233,13 +233,13 @@ export async function deleteTicketTier(eventId: number, tierId: number): Promise
   });
 }
 
-// Seat overlay (Phase 4): assign the bound layout's sections to ticket tiers,
-// which seeds the per-seat availability matrix booking reads from.
-export interface SectionSeating {
-  venue_section_id: number;
-  section_name: string;
+// Seat overlay: paint the event's ticket tiers onto individual seats of its
+// bound layout, which seeds the per-seat availability matrix booking reads
+// from. The layout itself is an untiered, reusable template.
+export interface TierSeating {
+  ticket_tier_id: number;
+  tier_name: string;
   seat_count: number;
-  ticket_tier_id: number | null;
   available: number;
   sold: number;
   blocked: number;
@@ -247,12 +247,14 @@ export interface SectionSeating {
 
 export interface EventSeating {
   layout_id: number | null;
-  sections: SectionSeating[];
+  tiers: TierSeating[];
+  total_seats: number;
+  /** Seats in the bound layout with no tier yet — these block submission. */
   untiered_seats: number;
 }
 
 export interface SeatingAssignment {
-  venue_section_id: number;
+  seat_ids: number[];
   ticket_tier_id: number;
 }
 

@@ -14,13 +14,17 @@ var (
 	ErrForbidden    = errors.New("not allowed to access this venue layout")
 	ErrStale        = errors.New("venue layout was modified since it was loaded")
 	ErrSeatInUse    = errors.New("cannot delete a seat that is already in use for an event")
-	ErrSectionInUse = errors.New("cannot delete a section that is already in use for an event")
 	ErrInvalidInput = errors.New("invalid venue layout payload")
 )
 
-// Layout is one saved seat-map plan for a venue. The decorative geometry
-// (stage, facilities, blueprint ref, section shapes) lives in Geometry as an
-// opaque JSONB document; per-seat positions are stored relationally on seats.
+// Layout is one saved seat-map plan for a venue - a REUSABLE TEMPLATE of pure
+// geometry. The decorative geometry (stage, facilities, blueprint ref, zone
+// outlines) lives in Geometry as an opaque JSONB document; per-seat positions
+// are stored relationally on seats.
+//
+// A template carries no ticket tiers and no colouring: tier grouping is
+// event-scoped and per-seat (event_seats_matrix), so one template can serve
+// many events with entirely different pricing.
 type Layout struct {
 	ID            int             `json:"id"`
 	VenueID       int             `json:"venue_id"`
@@ -34,25 +38,18 @@ type Layout struct {
 	UpdatedAt     time.Time       `json:"updated_at"`
 }
 
-// Seat is one physical seat's identity, position and (optional) section tag.
-// The canonical identity is the integer ID - the same value orders, tickets and
-// the scanner already reference. Row/Number are display labels only.
+// Seat is one physical seat's identity and position. The canonical identity is
+// the integer ID - the same value orders, tickets and the scanner already
+// reference. Row/Number are display labels only.
+//
+// A seat has no grouping of its own: which ticket tier sells it is decided per
+// event in event_seats_matrix, never on the template.
 type Seat struct {
-	ID        int      `json:"id"`
-	SectionID *int     `json:"section_id"`
-	Row       string   `json:"row"`
-	Number    string   `json:"number"`
-	PosX      *float64 `json:"pos_x"`
-	PosY      *float64 `json:"pos_y"`
-}
-
-// Section is the commercial/decorative grouping a seat can be tagged with.
-// Shape is optional decorative geometry; it may be null for pure tag sections.
-type Section struct {
-	ID    int             `json:"id"`
-	Name  string          `json:"section_name"`
-	Color *string         `json:"color"`
-	Shape json.RawMessage `json:"shape,omitempty"`
+	ID     int      `json:"id"`
+	Row    string   `json:"row"`
+	Number string   `json:"number"`
+	PosX   *float64 `json:"pos_x"`
+	PosY   *float64 `json:"pos_y"`
 }
 
 type Repository interface {
@@ -69,8 +66,8 @@ type Repository interface {
 
 	// SaveLayout persists the whole editor state in one transaction: it locks
 	// the layout, enforces ownership and the optimistic-lock check, then diffs
-	// sections and seats (insert/update/delete) and returns the id maps. It may
-	// return ErrNotFound, ErrForbidden, ErrStale, ErrSeatInUse or ErrSectionInUse.
+	// seats (insert/update/delete) and returns the id map. It may return
+	// ErrNotFound, ErrForbidden, ErrStale or ErrSeatInUse.
 	SaveLayout(ctx context.Context, venueID, layoutID, userID int, req SaveLayoutRequest) (*SaveLayoutResponse, error)
 }
 

@@ -491,6 +491,10 @@ func mapEventReviewStatus(dbStatus string) string {
 		return "Approved"
 	case "rejected":
 		return "Rejected"
+	case "needs_revision":
+		// Matches the 'Changes Requested' member of the frontend's status union
+		// and its filter tab in ReviewsView.
+		return "Changes Requested"
 	default:
 		return "Pending"
 	}

@@ -365,11 +365,8 @@ interface VenueEditorStore {
   // ── Backend persistence (venuelayout) ─────────────────────────────────
   /** Serialise the current editor state into a SaveLayoutRequest DTO. */
   build_save_request: () => SaveLayoutRequest;
-  /** Stamp real DB ids onto newly-inserted seats/sections after a save. */
-  apply_saved_ids: (
-    seat_id_map: Record<string, number>,
-    section_id_map: Record<string, number>
-  ) => void;
+  /** Stamp real DB ids onto newly-inserted seats after a save. */
+  apply_saved_ids: (seat_id_map: Record<string, number>) => void;
   /** Record the layout id + optimistic-lock token (after create or save). */
   set_layout_meta: (layout_id: number, updated_at: string) => void;
   /** Set who can read the layout (owner-only vs public). */
@@ -1250,21 +1247,16 @@ export const useVenueEditorStore = create<VenueEditorStore>()(
       stage_shape: s.stage_shape,
       facilities: s.facilities,
       blueprint: s.blueprint,
-      sections: s.sections,
+      zones: s.sections,
       seats: s.seats,
     });
   },
 
-  apply_saved_ids: (seat_id_map, section_id_map) => {
-    set((state) => {
-      const { seats, sections } = reconcileSavedIds(
-        state.seats,
-        state.sections,
-        seat_id_map,
-        section_id_map
-      );
-      return { seats, sections, last_saved_at: Date.now() };
-    });
+  apply_saved_ids: (seat_id_map) => {
+    set((state) => ({
+      seats: reconcileSavedIds(state.seats, seat_id_map),
+      last_saved_at: Date.now(),
+    }));
   },
 
   set_layout_meta: (layout_id, updated_at) => {
@@ -1287,7 +1279,7 @@ export const useVenueEditorStore = create<VenueEditorStore>()(
       layout_visibility: detail.visibility,
       layout_name: h.name,
       seats: h.seats,
-      sections: h.sections,
+      sections: h.zones,
       stage_shape: h.stage_shape ?? state.stage_shape,
       facilities: h.facilities ?? state.facilities,
       blueprint: h.blueprint ?? state.blueprint,

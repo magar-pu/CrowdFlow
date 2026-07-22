@@ -154,7 +154,7 @@ export default function WorkspaceLayoutBinder({ eventId }: WorkspaceLayoutBinder
 
       {detail && (
         <p className="text-[11px] font-mono text-text-secondary">
-          {detail.name} · {detail.seats.length} seats · {detail.sections.length} sections
+          {detail.name} · {detail.seats.length} seats
         </p>
       )}
     </div>

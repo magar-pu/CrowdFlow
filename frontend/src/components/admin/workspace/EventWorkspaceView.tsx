@@ -1,13 +1,12 @@
 "use client";
 
 import React, { useState } from 'react';
-import { ArrowLeft, Check, ShieldAlert, X, Zap, Shield, Activity, Ticket, Map, Smartphone, Settings, FileEdit } from 'lucide-react';
+import { ArrowLeft, Check, ShieldAlert, X, Zap, Shield, Activity, Ticket, Smartphone, Settings, FileEdit } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Event, Scanner, TicketTier, VenueSection, Transaction } from '@/types/admin';
 import RejectReasonModal from '@/components/admin/shared/RejectReasonModal';
 import WorkspaceLiveTrackerTab from './WorkspaceLiveTrackerTab';
 import WorkspaceTicketTiersTab from './WorkspaceTicketTiersTab';
-import WorkspaceVenueLayoutTab from './WorkspaceVenueLayoutTab';
 import WorkspaceScannerAppTab from './WorkspaceScannerAppTab';
 import WorkspaceSettingsTab from './WorkspaceSettingsTab';
 import WorkspaceDetailsTab from './WorkspaceDetailsTab';
@@ -32,7 +31,7 @@ interface EventWorkspaceViewProps {
   onDetailsSaved: () => void | Promise<void>;
 }
 
-type WorkspaceTab = 'overview' | 'tickets' | 'venue' | 'scanners' | 'details' | 'settings';
+type WorkspaceTab = 'overview' | 'tickets' | 'scanners' | 'details' | 'settings';
 
 const STATUS_BADGE_CLASS: Record<Event['status'], string> = {
   Active: 'bg-success/10 text-success border-success/20',
@@ -208,7 +207,6 @@ export default function EventWorkspaceView({
         {([
           { id: 'overview', name: 'Live Tracker', icon: Activity },
           { id: 'tickets', name: 'Ticket Tiers', icon: Ticket },
-          { id: 'venue', name: 'Venue Layout', icon: Map },
           { id: 'scanners', name: 'Handheld Scanners', icon: Smartphone },
           { id: 'details', name: 'Event Details', icon: FileEdit },
           { id: 'settings', name: 'Security Config', icon: Settings },
@@ -242,9 +240,6 @@ export default function EventWorkspaceView({
       )}
       {activeTab === 'tickets' && (
         <WorkspaceTicketTiersTab ticketTiers={ticketTiers} onUpdateTiers={onUpdateTiers} onDeleteTier={onDeleteTier} />
-      )}
-      {activeTab === 'venue' && (
-        <WorkspaceVenueLayoutTab venueSections={venueSections} onUpdateSections={onUpdateSections} />
       )}
       {activeTab === 'scanners' && (
         <WorkspaceScannerAppTab 

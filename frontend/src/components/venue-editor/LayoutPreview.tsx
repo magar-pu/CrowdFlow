@@ -1,26 +1,55 @@
 /**
  * components/venue-editor/LayoutPreview.tsx
  *
- * Read-only, store-free render of a persisted venue layout (LayoutDetail): the
- * stage, section shapes, and seat dots, auto-fit into an SVG viewBox. No editor
- * store, no interactivity — safe to drop anywhere a layout needs to be shown
- * (event workspace canvas now; attendee seat maps later).
+ * Store-free render of a venue layout: the stage, section shapes, and seat
+ * dots, auto-fit into an SVG viewBox. Used in two places, and deliberately the
+ * same component in both so buyers see exactly the map the organizer designed:
+ *
+ *   - organizer workspace  — read-only, no optional props
+ *   - attendee seat map    — pass seat_states / selected_seat_ids /
+ *                            on_seat_click / transform to make it interactive
+ *
+ * Every interactive prop is optional; omitting them all preserves the original
+ * read-only behaviour exactly (seats coloured by section, nothing clickable).
  */
 
 "use client";
 
 import { useMemo } from "react";
-import type { LayoutDetail } from "@/lib/api/venueLayouts";
+import { zonesOf, type RenderableLayout } from "@/lib/api/venueLayouts";
+import type { SeatStatus } from "@/lib/api/booking";
 import type { VenueShape } from "@/types/ticket";
 
 interface LayoutPreviewProps {
-  detail: LayoutDetail;
+  detail: RenderableLayout;
   className?: string;
+  /** Seat id -> live availability. Absent = colour seats by section instead. */
+  seat_states?: Map<number, SeatStatus>;
+  /** Seat ids currently chosen by the buyer. */
+  selected_seat_ids?: Set<number>;
+  /**
+   * Seat id -> fill colour, normally the colour of the ticket tier the seat is
+   * painted with. Absent on an untiered template, which renders neutral.
+   */
+  seat_colors?: Map<number, string>;
+  /** Makes available seats clickable and keyboard-focusable. */
+  on_seat_click?: (seat_id: number) => void;
+  /** Pan/zoom from useSeatMap, applied as a single group transform. */
+  transform?: { zoom: number; pan_x: number; pan_y: number };
 }
 
 const SEAT_RADIUS = 6;
 const PADDING = 40;
 const FALLBACK_SEAT_COLOR = "#94a3b8";
+
+/** Seat fill by live state. Selected wins over everything. */
+const SEAT_COLOR: Record<SeatStatus, string> = {
+  available: "#22c55e",
+  sold: "#cbd5e1",
+  held: "#f59e0b",
+  blocked: "#94a3b8",
+};
+const SELECTED_SEAT_COLOR = "#2563eb";
 
 /** Narrow an unknown JSONB value to a VenueShape when it has usable geometry. */
 function asShape(value: unknown): VenueShape | null {
@@ -37,18 +66,24 @@ function asShape(value: unknown): VenueShape | null {
   return o as unknown as VenueShape;
 }
 
-export function LayoutPreview({ detail, className }: LayoutPreviewProps) {
+export function LayoutPreview({
+  detail,
+  className,
+  seat_states,
+  selected_seat_ids,
+  seat_colors,
+  on_seat_click,
+  transform,
+}: LayoutPreviewProps) {
   const model = useMemo(() => {
     const stage = asShape((detail.geometry as Record<string, unknown>)?.stage);
-    const sections = detail.sections
-      .map((s) => ({ ...s, shapeGeom: asShape(s.shape) }))
-      .filter((s) => s.shapeGeom);
+    // Zones are decoration living in the geometry blob, not rows.
+    const zones = zonesOf(detail.geometry)
+      .map((z) => ({ ...z, shapeGeom: asShape(z.shape) }))
+      .filter((z) => z.shapeGeom);
     const seats = detail.seats.filter(
       (s) => typeof s.pos_x === "number" && typeof s.pos_y === "number"
     );
-
-    const sectionColor = new Map<number, string>();
-    detail.sections.forEach((s) => sectionColor.set(s.id, s.color ?? FALLBACK_SEAT_COLOR));
 
     // Bounding box over every drawable element so the viewBox auto-fits.
     let minX = Infinity;
@@ -62,7 +97,7 @@ export function LayoutPreview({ detail, className }: LayoutPreviewProps) {
       maxY = Math.max(maxY, y + h);
     };
     if (stage) grow(stage.x, stage.y, stage.width, stage.height);
-    sections.forEach((s) => grow(s.shapeGeom!.x, s.shapeGeom!.y, s.shapeGeom!.width, s.shapeGeom!.height));
+    zones.forEach((z) => grow(z.shapeGeom!.x, z.shapeGeom!.y, z.shapeGeom!.width, z.shapeGeom!.height));
     seats.forEach((s) => grow(s.pos_x! - SEAT_RADIUS, s.pos_y! - SEAT_RADIUS, SEAT_RADIUS * 2, SEAT_RADIUS * 2));
 
     const isEmpty = !isFinite(minX);
@@ -70,7 +105,7 @@ export function LayoutPreview({ detail, className }: LayoutPreviewProps) {
       ? "0 0 100 100"
       : `${minX - PADDING} ${minY - PADDING} ${maxX - minX + PADDING * 2} ${maxY - minY + PADDING * 2}`;
 
-    return { stage, sections, seats, sectionColor, viewBox, isEmpty };
+    return { stage, zones, seats, viewBox, isEmpty };
   }, [detail]);
 
   if (model.isEmpty) {
@@ -81,14 +116,21 @@ export function LayoutPreview({ detail, className }: LayoutPreviewProps) {
     );
   }
 
+  const isInteractive = on_seat_click != null;
+  // useSeatMap owns the clamping; this only applies the result.
+  const groupTransform = transform
+    ? `translate(${transform.pan_x} ${transform.pan_y}) scale(${transform.zoom})`
+    : undefined;
+
   return (
     <svg
       viewBox={model.viewBox}
       preserveAspectRatio="xMidYMid meet"
       className={`h-full w-full ${className ?? ""}`}
-      role="img"
-      aria-label={`Seat map for ${detail.name}`}
+      role={isInteractive ? "group" : "img"}
+      aria-label={detail.name ? `Seat map for ${detail.name}` : "Seat map"}
     >
+      <g transform={groupTransform}>
       {/* Stage */}
       {model.stage && (
         <g>
@@ -115,14 +157,14 @@ export function LayoutPreview({ detail, className }: LayoutPreviewProps) {
         </g>
       )}
 
-      {/* Section shapes */}
-      {model.sections.map((s) => {
+      {/* Decorative zone outlines */}
+      {model.zones.map((s, i) => {
         const shape = s.shapeGeom!;
         const color = s.color ?? FALLBACK_SEAT_COLOR;
         const cx = shape.x + shape.width / 2;
         const isEllipse = shape.type === "ellipse";
         return (
-          <g key={`sec-${s.id}`}>
+          <g key={`zone-${i}-${s.name}`}>
             {isEllipse ? (
               <ellipse
                 cx={cx}
@@ -153,22 +195,71 @@ export function LayoutPreview({ detail, className }: LayoutPreviewProps) {
               fontWeight="700"
               textAnchor="middle"
             >
-              {s.section_name}
+              {s.name}
             </text>
           </g>
         );
       })}
 
       {/* Seats */}
-      {model.seats.map((seat) => (
-        <circle
-          key={`seat-${seat.id}`}
-          cx={seat.pos_x!}
-          cy={seat.pos_y!}
-          r={SEAT_RADIUS}
-          fill={seat.section_id != null ? model.sectionColor.get(seat.section_id) ?? FALLBACK_SEAT_COLOR : FALLBACK_SEAT_COLOR}
-        />
-      ))}
+      {model.seats.map((seat) => {
+        const status = seat_states?.get(seat.id);
+        const isSelected = selected_seat_ids?.has(seat.id) ?? false;
+        // Committed states are off limits; everything else can be acted on.
+        // A seat with NO state yet is selectable on purpose — that is an
+        // unpainted seat in the organizer's editor, which must be clickable to
+        // get its first tier. Buyer seats always carry a status, so requiring
+        // "available" there is unchanged.
+        const isSelectable =
+          isInteractive && status !== "sold" && status !== "blocked" && status !== "held";
+
+        // Precedence: selection, then the tier's colour, then live status, then
+        // neutral. An untiered template hits the neutral branch, which is what
+        // a plain reusable layout should look like.
+        let fill: string;
+        if (isSelected) {
+          fill = SELECTED_SEAT_COLOR;
+        } else if (seat_colors?.get(seat.id)) {
+          fill = seat_colors.get(seat.id)!;
+        } else if (status) {
+          fill = SEAT_COLOR[status];
+        } else {
+          fill = FALLBACK_SEAT_COLOR;
+        }
+
+        return (
+          <circle
+            key={`seat-${seat.id}`}
+            cx={seat.pos_x!}
+            cy={seat.pos_y!}
+            r={SEAT_RADIUS}
+            fill={fill}
+            className={isSelectable ? "cursor-pointer" : undefined}
+            // Sold/held/blocked seats stay visible but inert.
+            style={isInteractive && !isSelectable && !isSelected ? { opacity: 0.55 } : undefined}
+            role={isSelectable ? "button" : undefined}
+            tabIndex={isSelectable ? 0 : undefined}
+            aria-pressed={isSelectable ? isSelected : undefined}
+            aria-label={
+              isInteractive
+                ? `Row ${seat.row} seat ${seat.number}${status ? `, ${status}` : ""}`
+                : undefined
+            }
+            onClick={isSelectable ? () => on_seat_click!(seat.id) : undefined}
+            onKeyDown={
+              isSelectable
+                ? (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      on_seat_click!(seat.id);
+                    }
+                  }
+                : undefined
+            }
+          />
+        );
+      })}
+      </g>
     </svg>
   );
 }

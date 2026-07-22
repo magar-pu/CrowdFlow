@@ -1644,118 +1644,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/v1/admin/events/{id}/venue-sections:
-    get:
-      summary: Admin - Get Event Venue Sections
-      description: Returns the venue layout sections for an event. Requires the Super Admin platform role.
-      security:
-        - CookieAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: The numeric database ID of the event.
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: Venue sections retrieved.
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/StandardResponse'
-                  - type: object
-                    properties:
-                      data:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/VenueSection'
-        '400':
-          description: Event ID must be a valid integer (`INVALID_ID`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: Platform role check failed - Super Admin required (`FORBIDDEN`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Failed to load venue sections (`INTERNAL_ERROR`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-    put:
-      summary: Admin - Replace Event Venue Sections
-      description: Replaces the venue layout sections for an event with the submitted array. Requires the Super Admin platform role.
-      security:
-        - CookieAuth: []
-        - CSRFToken: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: The numeric database ID of the event.
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: array
-              items:
-                $ref: '#/components/schemas/VenueSection'
-      responses:
-        '200':
-          description: Venue sections updated.
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/StandardResponse'
-                  - type: object
-                    properties:
-                      data:
-                        type: object
-                        properties:
-                          message:
-                            type: string
-                            example: Venue sections updated
-        '400':
-          description: Event ID not an integer or invalid JSON body (`INVALID_ID`, `BAD_REQUEST`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Session token missing, invalid, or expired (`UNAUTHORIZED`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: Platform role check failed (Super Admin required) or CSRF mismatch (`FORBIDDEN`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Failed to update venue sections (`INTERNAL_ERROR`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/admin/finance/transactions:
     get:
@@ -2956,18 +2844,19 @@ components:
       type: object
       description: >-
         Full buyer-facing seating payload for one event. A ticket tier appears
-        in either `sections` (assigned seating) or `ga_tiers` (general
-        admission), never both.
+        in either `tiers` (assigned seating) or `ga_tiers` (general
+        admission), never both. Seat grouping is per-seat and event-scoped -
+        the venue layout itself is an untiered, reusable template.
       properties:
         layout:
           nullable: true
           description: The venue layout bound to this event; null when none is bound.
           allOf:
             - $ref: '#/components/schemas/SeatMapLayout'
-        sections:
+        tiers:
           type: array
           items:
-            $ref: '#/components/schemas/SeatSection'
+            $ref: '#/components/schemas/SeatTier'
         ga_tiers:
           type: array
           description: On-sale tiers with no assigned seats, sold by quantity.
@@ -2988,41 +2877,30 @@ components:
             editor; consumers should treat unknown keys as pass-through.
           additionalProperties: true
 
-    SeatSection:
+    SeatTier:
       type: object
+      description: One ticket tier with every seat assigned to it for this event.
       properties:
-        event_section_id:
-          type: integer
-          example: 2
-        section_id:
-          type: integer
-          description: The underlying venue_sections row this event section maps to.
-          example: 9
-        name:
-          type: string
-          example: Orchestra Left
         ticket_tier_id:
           type: integer
           example: 3
+        name:
+          type: string
+          example: Festival Gold
         price:
           type: number
           format: double
           example: 750000
-        shape:
-          type: object
-          nullable: true
-          description: >-
-            Decorative geometry for the section. Omitted for tag-only sections
-            that group seats commercially without occupying map area.
-          additionalProperties: true
         color:
           type: string
           nullable: true
+          description: Drives the seat fill on the buyer's map; null when unset.
           example: '#f59e0b'
         seats:
           type: array
           items:
             $ref: '#/components/schemas/Seat'
+
 
     HoldRequest:
       type: object
@@ -3352,27 +3230,6 @@ components:
           description: UI-only, not persisted.
           example: "#8b5cf6"
 
-    VenueSection:
-      type: object
-      description: Admin console venue layout section (camelCase, mirrors the admin frontend types). `occupied` is not computed yet and `color` is UI-only.
-      properties:
-        id:
-          type: string
-          example: "2"
-        name:
-          type: string
-          example: Orchestra Left
-        capacity:
-          type: integer
-          example: 150
-        occupied:
-          type: integer
-          description: Not computed yet - always 0.
-          example: 0
-        color:
-          type: string
-          description: UI-only, not persisted.
-          example: "#22c55e"
 
     StatusUpdateRequest:
       type: object
@@ -3520,24 +3377,6 @@ components:
           format: date-time
           example: '2026-07-20T10:00:00Z'
 
-    Section:
-      type: object
-      description: A commercial/decorative grouping a seat can be tagged with.
-      properties:
-        id:
-          type: integer
-          example: 4
-        section_name:
-          type: string
-          example: Orchestra Left
-        color:
-          type: string
-          nullable: true
-          example: "#22c55e"
-        shape:
-          type: object
-          nullable: true
-          description: Optional decorative geometry for the section; may be omitted/null for pure tag sections.
 
     LayoutSeat:
       type: object
@@ -3576,10 +3415,6 @@ components:
         - $ref: '#/components/schemas/Layout'
         - type: object
           properties:
-            sections:
-              type: array
-              items:
-                $ref: '#/components/schemas/Section'
             seats:
               type: array
               items:
@@ -3599,32 +3434,6 @@ components:
           description: Defaults to `public` when omitted.
           example: public
 
-    SectionInput:
-      type: object
-      description: One section in a save payload. `key` is the client's stable handle used to resolve SeatInput.section_key and to build section_id_map in the response; `id` is the real DB id when the section already exists.
-      required:
-        - key
-        - section_name
-      properties:
-        key:
-          type: string
-          example: sec-tmp-1
-        id:
-          type: integer
-          nullable: true
-          description: Real DB id for an existing section; null to insert a new one.
-          example: null
-        section_name:
-          type: string
-          example: Orchestra Left
-        color:
-          type: string
-          nullable: true
-          example: "#22c55e"
-        shape:
-          type: object
-          nullable: true
-          description: Optional decorative geometry for the section.
 
     SeatInput:
       type: object
@@ -3642,10 +3451,6 @@ components:
           nullable: true
           description: Real DB id for an existing seat; null to insert a new one.
           example: null
-        section_key:
-          type: string
-          nullable: true
-          example: sec-tmp-1
         row:
           type: string
           example: A
@@ -3686,10 +3491,6 @@ components:
           format: date-time
           description: The `updated_at` value the client loaded. The save is rejected with 409 (`STALE_LAYOUT`) if the layout changed since (optimistic locking).
           example: '2026-07-20T10:00:00Z'
-        sections:
-          type: array
-          items:
-            $ref: '#/components/schemas/SectionInput'
         seats:
           type: array
           items:
@@ -3701,13 +3502,6 @@ components:
       properties:
         layout:
           $ref: '#/components/schemas/LayoutDetail'
-        section_id_map:
-          type: object
-          additionalProperties:
-            type: integer
-          description: Client section key -> new DB id, for inserted sections only.
-          example:
-            sec-tmp-1: 4
         seat_id_map:
           type: object
           additionalProperties:
