@@ -21,7 +21,7 @@ func (s *BookingService) ListTicketTiers(eventID int) ([]*TicketTier, error) {
 	return s.repo.ListTicketTiers(eventID)
 }
 
-func (s *BookingService) GetSeatMap(eventID int) ([]*SeatSection, error) {
+func (s *BookingService) GetSeatMap(eventID int) (*SeatMap, error) {
 	return s.repo.GetSeatMap(eventID)
 }
 

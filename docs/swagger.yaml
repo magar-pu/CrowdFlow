@@ -745,7 +745,12 @@ paths:
   /api/v1/events/{id}/seatmap:
     get:
       summary: Get Event Seat Map
-      description: Returns the live seat map for an event, grouped by section with per-seat availability state. No authentication required.
+      description: >-
+        Returns the live seat map for an event: the bound venue layout's
+        decorative geometry, priced sections with per-seat availability and
+        coordinates, and any tiers sold as general admission. Carries layout
+        geometry so buyers can render the map the organizer designed without
+        the organizer-gated layout endpoints. No authentication required.
       parameters:
         - name: id
           in: path
@@ -764,9 +769,7 @@ paths:
                   - type: object
                     properties:
                       data:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/SeatSection'
+                        $ref: '#/components/schemas/SeatMap'
         '400':
           description: Event ID must be a valid integer (`INVALID_ID`).
           content:
@@ -2934,6 +2937,56 @@ components:
           type: string
           enum: [available, sold, held, blocked]
           example: available
+        pos_x:
+          type: number
+          format: double
+          nullable: true
+          description: >-
+            Seat coordinate within the venue layout. Null for seats that exist
+            relationally but were never placed in the venue editor; renderers
+            should skip those rather than drawing them at the origin.
+          example: 120.5
+        pos_y:
+          type: number
+          format: double
+          nullable: true
+          example: 88.0
+
+    SeatMap:
+      type: object
+      description: >-
+        Full buyer-facing seating payload for one event. A ticket tier appears
+        in either `sections` (assigned seating) or `ga_tiers` (general
+        admission), never both.
+      properties:
+        layout:
+          nullable: true
+          description: The venue layout bound to this event; null when none is bound.
+          allOf:
+            - $ref: '#/components/schemas/SeatMapLayout'
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/SeatSection'
+        ga_tiers:
+          type: array
+          description: On-sale tiers with no assigned seats, sold by quantity.
+          items:
+            $ref: '#/components/schemas/TicketTier'
+
+    SeatMapLayout:
+      type: object
+      properties:
+        layout_id:
+          type: integer
+          example: 12
+        geometry:
+          type: object
+          description: >-
+            Opaque decorative geometry from venue_layouts.geometry - stage,
+            facilities and blueprint reference. Shape is owned by the venue
+            editor; consumers should treat unknown keys as pass-through.
+          additionalProperties: true
 
     SeatSection:
       type: object
@@ -2941,6 +2994,10 @@ components:
         event_section_id:
           type: integer
           example: 2
+        section_id:
+          type: integer
+          description: The underlying venue_sections row this event section maps to.
+          example: 9
         name:
           type: string
           example: Orchestra Left
@@ -2951,6 +3008,17 @@ components:
           type: number
           format: double
           example: 750000
+        shape:
+          type: object
+          nullable: true
+          description: >-
+            Decorative geometry for the section. Omitted for tag-only sections
+            that group seats commercially without occupying map area.
+          additionalProperties: true
+        color:
+          type: string
+          nullable: true
+          example: '#f59e0b'
         seats:
           type: array
           items:
@@ -3471,7 +3539,7 @@ components:
           nullable: true
           description: Optional decorative geometry for the section; may be omitted/null for pure tag sections.
 
-    Seat:
+    LayoutSeat:
       type: object
       description: One physical seat's identity, position and optional section tag. The integer id is the canonical identity referenced by orders, tickets and the scanner.
       properties:
@@ -3515,7 +3583,7 @@ components:
             seats:
               type: array
               items:
-                $ref: '#/components/schemas/Seat'
+                $ref: '#/components/schemas/LayoutSeat'
 
     CreateLayoutRequest:
       type: object
