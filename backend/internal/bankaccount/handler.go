@@ -1,4 +1,4 @@
-package user
+package bankaccount
 
 import (
 	"encoding/json"

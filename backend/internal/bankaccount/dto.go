@@ -1,4 +1,4 @@
-package user
+package bankaccount
 
 type AddBankAccountRequest struct {
 	BankName          string `json:"bank_name"`

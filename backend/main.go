@@ -11,6 +11,7 @@ import (
 	"crowdflow-backend/internal/admin"
 	"crowdflow-backend/internal/auditor"
 	"crowdflow-backend/internal/auth"
+	"crowdflow-backend/internal/bankaccount"
 	"crowdflow-backend/internal/booking"
 	"crowdflow-backend/internal/delegation"
 	"crowdflow-backend/internal/event"
@@ -21,7 +22,6 @@ import (
 	"crowdflow-backend/internal/response"
 	"crowdflow-backend/internal/scanner"
 	"crowdflow-backend/internal/storage"
-	"crowdflow-backend/internal/user"
 	"crowdflow-backend/internal/venuelayout"
 
 	"golang.org/x/oauth2"
@@ -224,13 +224,13 @@ func main() {
 	// Register Auditor routes (Auditor + Super Admin roles)
 	auditorHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole)
 
-	// Initialize User dependencies
-	userRepo := user.NewBankAccountRepository(db)
-	userService := user.NewBankAccountService(userRepo)
-	userHandler := user.NewBankAccountHandler(userService)
+	// Initialize Bank Account dependencies
+	bankAccountRepo := bankaccount.NewBankAccountRepository(db)
+	bankAccountService := bankaccount.NewBankAccountService(bankAccountRepo)
+	bankAccountHandler := bankaccount.NewBankAccountHandler(bankAccountService)
 
-	// Register User routes
-	userHandler.RegisterRoutes(mux, authMounter.Authenticate)
+	// Register Bank Account routes (nested under /api/users/me/)
+	bankAccountHandler.RegisterRoutes(mux, authMounter.Authenticate)
 
 	// Initialize and Register Scanner routes
 	scannerHandler := scanner.NewHandler(db)
