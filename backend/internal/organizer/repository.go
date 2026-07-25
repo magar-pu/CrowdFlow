@@ -2079,7 +2079,7 @@ func (r *PostgresRepository) RespondToEventRevision(ctx context.Context, eventID
 				_, _ = r.db.ExecContext(ctx, `
 					INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
 					VALUES ($1, $2, $3, 'event', $4, FALSE, now())
-				`, auditorID, fmt.Sprintf("📩 Respon Revisi Event: %s", eventName), fmt.Sprintf("Organizer telah mengunggah perbaikan untuk revisi #%d.", revID), strconv.Itoa(eventID))
+				`, auditorID, fmt.Sprintf("📩 Revision Response: %s", eventName), fmt.Sprintf("The organizer uploaded a fix for revision #%d.", revID), strconv.Itoa(eventID))
 			}
 		}
 	}

@@ -805,11 +805,11 @@ func (r *PostgresAuditorRepository) ApproveEventReview(ctx context.Context, even
 	// do what it looked like it did - it silently poisoned the tx and the
 	// approval came back as "commit unexpectedly resulted in rollback".
 	go func() {
-		msg := fmt.Sprintf("Event %q telah disetujui oleh auditor.", eventName)
+		msg := fmt.Sprintf("Event %q has been approved by an auditor.", eventName)
 		if organizerUserID > 0 {
-			_ = r.CreateNotification(context.Background(), organizerUserID, "✅ Event Disetujui!", msg, "event", strconv.Itoa(eventID))
+			_ = r.CreateNotification(context.Background(), organizerUserID, "✅ Event Approved!", msg, "event", strconv.Itoa(eventID))
 		}
-		_ = r.CreateNotificationForAuditors(context.Background(), "✅ Event Disetujui", msg, "event", strconv.Itoa(eventID))
+		_ = r.CreateNotificationForAuditors(context.Background(), "✅ Event Approved", msg, "event", strconv.Itoa(eventID))
 	}()
 
 	return nil
@@ -870,10 +870,10 @@ func (r *PostgresAuditorRepository) RejectEventReview(ctx context.Context, event
 	// After the commit - see the note in ApproveEventReview.
 	go func() {
 		if organizerUserID > 0 {
-			_ = r.CreateNotification(context.Background(), organizerUserID, "❌ Event Ditolak",
-				fmt.Sprintf("Event %q ditolak oleh Auditor. Alasan: %s. Catatan: %s", eventName, reason, notes), "event", strconv.Itoa(eventID))
+			_ = r.CreateNotification(context.Background(), organizerUserID, "❌ Event Rejected",
+				fmt.Sprintf("Event %q was rejected by an auditor. Reason: %s. Notes: %s", eventName, reason, notes), "event", strconv.Itoa(eventID))
 		}
-		_ = r.CreateNotificationForAuditors(context.Background(), "❌ Event Ditolak", fmt.Sprintf("Event %q telah ditolak. Alasan: %s", eventName, reason), "event", strconv.Itoa(eventID))
+		_ = r.CreateNotificationForAuditors(context.Background(), "❌ Event Rejected", fmt.Sprintf("Event %q has been rejected. Reason: %s", eventName, reason), "event", strconv.Itoa(eventID))
 	}()
 
 	return nil
@@ -937,8 +937,8 @@ func (r *PostgresAuditorRepository) RequestEventChanges(ctx context.Context, eve
 	// After the commit - see the note in ApproveEventReview.
 	go func() {
 		if organizerUserID > 0 {
-			_ = r.CreateNotification(context.Background(), organizerUserID, "⚠️ Perlu Revisi Event",
-				fmt.Sprintf("Event %q memerlukan revisi. Catatan Auditor: %s", eventName, notes), "event", strconv.Itoa(eventID))
+			_ = r.CreateNotification(context.Background(), organizerUserID, "⚠️ Event Revision Required",
+				fmt.Sprintf("Event %q requires revision. Auditor notes: %s", eventName, notes), "event", strconv.Itoa(eventID))
 		}
 	}()
 
@@ -1003,7 +1003,7 @@ func (r *PostgresAuditorRepository) AddEventRevision(ctx context.Context, eventI
 		_, _ = r.db.ExecContext(ctx, `
 			INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
 			VALUES ($1, $2, $3, 'event', $4, FALSE, now())
-		`, organizerUserID, fmt.Sprintf("⚠️ Perlu Revisi: %s", req.Title), fmt.Sprintf("Event %q memerlukan tindakan: %s (%s)", eventName, req.RequiredAction, req.Description), strconv.Itoa(eventID))
+		`, organizerUserID, fmt.Sprintf("⚠️ Revision Required: %s", req.Title), fmt.Sprintf("Event %q requires action: %s (%s)", eventName, req.RequiredAction, req.Description), strconv.Itoa(eventID))
 	}
 
 	return nil
@@ -1039,7 +1039,7 @@ func (r *PostgresAuditorRepository) UpdateRevisionStatus(ctx context.Context, re
 			_, _ = r.db.ExecContext(ctx, `
 				INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
 				VALUES ($1, $2, $3, 'event', $4, FALSE, now())
-			`, organizerUserID, fmt.Sprintf("✅ Revisi Disetujui: %s", title), fmt.Sprintf("Auditor telah menyetujui perbaikan revisi untuk event %q.", eventName), strconv.Itoa(eventID))
+			`, organizerUserID, fmt.Sprintf("✅ Revision Approved: %s", title), fmt.Sprintf("An auditor approved the revision fix for event %q.", eventName), strconv.Itoa(eventID))
 		}
 	} else if status == "Sent" || status == "Draft" {
 		_, _ = r.db.ExecContext(ctx, `UPDATE events SET status = 'needs_revision', updated_at = now() WHERE id = $1`, eventID)
@@ -1047,7 +1047,7 @@ func (r *PostgresAuditorRepository) UpdateRevisionStatus(ctx context.Context, re
 			_, _ = r.db.ExecContext(ctx, `
 				INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
 				VALUES ($1, $2, $3, 'event', $4, FALSE, now())
-			`, organizerUserID, fmt.Sprintf("⚠️ Perlu Revisi Tambahan: %s", title), fmt.Sprintf("Auditor meminta perbaikan tambahan untuk event %q.", eventName), strconv.Itoa(eventID))
+			`, organizerUserID, fmt.Sprintf("⚠️ Further Revision Required: %s", title), fmt.Sprintf("An auditor requested further changes for event %q.", eventName), strconv.Itoa(eventID))
 		}
 	} else if status == "Rejected" {
 		_, _ = r.db.ExecContext(ctx, `UPDATE events SET status = 'rejected', updated_at = now() WHERE id = $1`, eventID)
@@ -1055,7 +1055,7 @@ func (r *PostgresAuditorRepository) UpdateRevisionStatus(ctx context.Context, re
 			_, _ = r.db.ExecContext(ctx, `
 				INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
 				VALUES ($1, $2, $3, 'event', $4, FALSE, now())
-			`, organizerUserID, fmt.Sprintf("❌ Perbaikan Ditolak: %s", title), fmt.Sprintf("Auditor menolak hasil perbaikan revisi untuk event %q.", eventName), strconv.Itoa(eventID))
+			`, organizerUserID, fmt.Sprintf("❌ Revision Rejected: %s", title), fmt.Sprintf("An auditor rejected the submitted revision for event %q.", eventName), strconv.Itoa(eventID))
 		}
 	}
 
@@ -2014,7 +2014,7 @@ func (r *PostgresAuditorRepository) ApprovePayout(ctx context.Context, payoutID,
 	}
 
 	go func() {
-		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Disetujui", fmt.Sprintf("Payout #%d telah disetujui.", payoutID), "payout", strconv.Itoa(payoutID))
+		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Approved", fmt.Sprintf("Payout #%d has been approved.", payoutID), "payout", strconv.Itoa(payoutID))
 	}()
 
 	return nil
@@ -2054,7 +2054,7 @@ func (r *PostgresAuditorRepository) RejectPayout(ctx context.Context, payoutID, 
 	}
 
 	go func() {
-		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Ditolak", fmt.Sprintf("Payout #%d telah ditolak. Alasan: %s", payoutID, req.Reason), "payout", strconv.Itoa(payoutID))
+		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Rejected", fmt.Sprintf("Payout #%d was rejected. Reason: %s", payoutID, req.Reason), "payout", strconv.Itoa(payoutID))
 	}()
 
 	return nil
@@ -2094,7 +2094,7 @@ func (r *PostgresAuditorRepository) HoldPayout(ctx context.Context, payoutID, ac
 	}
 
 	go func() {
-		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Ditahan", fmt.Sprintf("Payout #%d telah ditahan. Alasan: %s", payoutID, req.Reason), "payout", strconv.Itoa(payoutID))
+		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout On Hold", fmt.Sprintf("Payout #%d has been put on hold. Reason: %s", payoutID, req.Reason), "payout", strconv.Itoa(payoutID))
 	}()
 
 	return nil
