@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Globe, Mail, Share2, Tv2, ChevronRight, Download, DollarSign, Ticket, UserCheck, Timer, ArrowUpRight, ArrowDownRight, PieChart } from "lucide-react";
+import { Download, DollarSign, Ticket, UserCheck, Timer, ArrowUpRight, ArrowDownRight, PieChart } from "lucide-react";
 import {
   getEventAnalytics,
   getEventCheckInStats,
@@ -51,13 +51,6 @@ export default function WorkspaceAnalytics({ eventId }: { eventId?: string }) {
     };
     fetchAnalytics();
   }, [eventId, dateRange]);
-
-  const channels = [
-    { name: "Direct / Portal Search", icon: Globe, visitors: 4210, conversion: "43%", revenue: "$121,500" },
-    { name: "Newsletter Campaign", icon: Mail, visitors: 3105, conversion: "32%", revenue: "$81,200" },
-    { name: "Partner Promos", icon: Share2, visitors: 1980, conversion: "21%", revenue: "$52,400" },
-    { name: "Social Ad Retargeting", icon: Tv2, visitors: 1220, conversion: "18%", revenue: "$29,800" }
-  ];
 
   // Check-ins bucketed by the hour they happened, from ticket_checkins.
   const peakData = (checkIns?.hourly ?? []).map((h) => ({ hour: h.hour, attendees: h.scans }));
@@ -248,7 +241,7 @@ export default function WorkspaceAnalytics({ eventId }: { eventId?: string }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         <div className="p-5 bg-white border border-border-subtle rounded-xl flex flex-col justify-between shadow-sm">
           <div>
             <h4 className="text-sm font-bold text-text-primary mb-1">Peak Entrance Hour Flow</h4>
@@ -317,44 +310,6 @@ export default function WorkspaceAnalytics({ eventId }: { eventId?: string }) {
                 </defs>
               </svg>
               )}
-            </div>
-          </div>
-        </div>
-
-        <div className="p-5 bg-white border border-border-subtle rounded-xl flex flex-col justify-between shadow-sm">
-          <div>
-            <h4 className="text-sm font-bold text-text-primary mb-1">Top Performing Channels</h4>
-            <p className="text-xs text-text-secondary mb-4">Identify top traffic conversion pathways</p>
-
-            <div className="divide-y divide-border-subtle">
-              {channels.map((chan, i) => {
-                const Icon = chan.icon;
-                return (
-                  <div key={i} className="py-3 flex items-center justify-between text-xs hover:bg-surface-container-low/50 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-secondary/10 border border-secondary/20 text-secondary rounded-lg shadow-sm">
-                        <Icon className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <p className="font-bold text-text-primary">{chan.name}</p>
-                        <p className="text-[10px] text-on-surface-variant font-mono">{chan.visitors.toLocaleString()} Visited</p>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-6 items-center text-right font-mono text-xs">
-                      <div>
-                        <span className="text-[10px] text-on-surface-variant block font-bold">CVR</span>
-                        <span className="font-bold text-text-primary">{chan.conversion}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-on-surface-variant block font-bold">REVENUE</span>
-                        <span className="font-bold text-secondary">{chan.revenue}</span>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-on-surface-variant" />
-                    </div>
-                  </div>
-                );
-              })}
             </div>
           </div>
         </div>

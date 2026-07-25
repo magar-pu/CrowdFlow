@@ -412,6 +412,9 @@ func (s *OrganizerService) DeleteOrganizerEvent(ctx context.Context, eventID int
 	return s.repo.DeleteOrganizerEvent(ctx, eventID, organizerID)
 }
 
+// defaultMaxPerOrder mirrors the ticket_tiers.max_ticket_per_user column default.
+const defaultMaxPerOrder = 4
+
 func (s *OrganizerService) ListTicketTiers(ctx context.Context, eventID int, organizerID int) ([]*OrganizerTicketTier, error) {
 	return s.repo.ListTicketTiers(ctx, eventID, organizerID)
 }
@@ -425,6 +428,12 @@ func (s *OrganizerService) CreateTicketTier(ctx context.Context, eventID int, or
 	}
 	if tier.Capacity <= 0 {
 		return fmt.Errorf("%w: ticket capacity must be greater than zero", ErrValidation)
+	}
+	// max_ticket_per_user is NOT NULL DEFAULT 4, but an explicit 0 from a caller
+	// that omits the field would override that default with "uncapped". Fall
+	// back to the column default instead.
+	if tier.MaxPerOrder <= 0 {
+		tier.MaxPerOrder = defaultMaxPerOrder
 	}
 	return s.repo.CreateTicketTier(ctx, eventID, organizerID, tier)
 }
@@ -531,6 +540,59 @@ func validateVenueSelection(event *OrganizerEvent) error {
 	}
 	// No venue at all is fine on a draft.
 	return nil
+}
+
+// maxCoverImageBytes caps a cover upload. Matches the event package's own cover
+// handler so the two entry points can't disagree on what's acceptable.
+const maxCoverImageBytes = 10 << 20
+
+// UploadEventCover stores new cover art in the PUBLIC bucket and points the
+// event at it. The creation wizard only ever carried the picked file's *name*
+// into cover_image_url, which produced a broken URL like "poster.jpg"; this is
+// the path that actually persists an image.
+//
+// The previous object is intentionally left in the bucket: cover_image_url is
+// public and may already be cached by a CDN or referenced by a shared link, and
+// an event page rendering a 404 is worse than an orphaned object.
+func (s *OrganizerService) UploadEventCover(ctx context.Context, eventID int, organizerID int, upload *CoverImageUpload) (string, error) {
+	if len(upload.Content) == 0 {
+		return "", fmt.Errorf("%w: cover image is empty", ErrValidation)
+	}
+	if len(upload.Content) > maxCoverImageBytes {
+		return "", fmt.Errorf("%w: cover image exceeds the 10MB limit", ErrValidation)
+	}
+
+	// Sniff the real type rather than trusting the extension or the client's
+	// Content-Type, both of which are caller-controlled.
+	contentType := http.DetectContentType(upload.Content)
+	switch contentType {
+	case "image/png", "image/jpeg", "image/webp":
+	default:
+		return "", fmt.Errorf("%w: cover image must be PNG, JPG, or WebP", ErrValidation)
+	}
+
+	ext := strings.ToLower(filepath.Ext(upload.Filename))
+	if ext == "" {
+		switch contentType {
+		case "image/png":
+			ext = ".png"
+		case "image/webp":
+			ext = ".webp"
+		default:
+			ext = ".jpg"
+		}
+	}
+
+	objectKey := fmt.Sprintf("events/covers/%d_%d%s", eventID, time.Now().UnixNano(), ext)
+	if err := s.storage.UploadPublicFile(ctx, objectKey, bytes.NewReader(upload.Content), contentType); err != nil {
+		return "", fmt.Errorf("failed to upload cover image: %w", err)
+	}
+
+	url := s.storage.GetPublicURL(objectKey)
+	if err := s.repo.SetEventCoverImage(ctx, eventID, organizerID, url); err != nil {
+		return "", err
+	}
+	return url, nil
 }
 
 // SetEventVenue binds the event to a venue from the workspace's Venue tab.

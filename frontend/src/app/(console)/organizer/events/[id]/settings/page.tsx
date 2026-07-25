@@ -6,10 +6,16 @@ import WorkspaceSettings from "../../../components/Workspace/WorkspaceSettings";
 import { useOrganizerData } from "../../../OrganizerDataContext";
 import { deleteOrganizerEvent, updateOrganizerEvent } from "@/lib/api/eorganizer";
 
+// Cover art is locked only while an auditor holds the event: swapping the image
+// mid-review changes what they are reviewing. A live event stays editable —
+// refreshing cover art on a running event is ordinary marketing, and the
+// backend imposes no restriction of its own.
+const COVER_LOCKED_STATUSES = new Set(["in review", "scheduled"]);
+
 export default function OrganizerEventSettingsPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { events, fetchData, pushToast, staffList, handleAddStaff, handleDeleteStaff } = useOrganizerData();
+  const { events, fetchData, pushToast } = useOrganizerData();
   const event = events.find((e) => e.id === params.id);
   const eventId = Number(params.id);
 
@@ -43,6 +49,7 @@ export default function OrganizerEventSettingsPage() {
 
   // The backend only deletes drafts; anything submitted has an audit trail.
   const canDelete = event?.status === "Draft";
+  const coverReadOnly = COVER_LOCKED_STATUSES.has((event?.status ?? "").toLowerCase());
 
   const handleDeleteEvent = async () => {
     const res = await deleteOrganizerEvent(eventId);
@@ -60,18 +67,19 @@ export default function OrganizerEventSettingsPage() {
     <EventWorkspaceShell eventId={params.id} activeTab="settings">
       {event && (
         <WorkspaceSettings
+          eventId={eventId}
           eventName={event.name}
           initial={{
             category: event.category,
             description: event.description,
             startDate: event.startDate,
+            image: event.image,
           }}
           onSaveGeneral={handleSaveGeneral}
           onDeleteEvent={handleDeleteEvent}
           canDelete={canDelete}
-          staffList={staffList}
-          onAddStaff={handleAddStaff}
-          onDeleteStaff={handleDeleteStaff}
+          coverReadOnly={coverReadOnly}
+          onCoverUploaded={fetchData}
         />
       )}
     </EventWorkspaceShell>

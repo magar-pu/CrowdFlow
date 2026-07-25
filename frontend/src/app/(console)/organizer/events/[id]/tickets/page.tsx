@@ -79,7 +79,9 @@ export default function OrganizerEventTicketsPage() {
       price: tier.price,
       capacity: tier.capacity,
       status: tier.status ?? "On Sale",
-      maxPerOrder: tier.maxPerOrder ?? 10,
+      // 0 lets the backend fall back to the ticket_tiers column default (4)
+      // rather than writing "uncapped".
+      maxPerOrder: tier.maxPerOrder ?? 0,
       salesStart: tier.salesStart ?? "",
       salesEnd: tier.salesEnd ?? "",
       description: tier.description ?? "",

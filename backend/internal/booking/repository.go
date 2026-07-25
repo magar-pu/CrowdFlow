@@ -241,6 +241,23 @@ func (r *PostgresRedisRepository) IsAssignedSeating(ticketTierID int) (bool, err
 	return exists, err
 }
 
+// GetMaxPerOrder reads the tier's per-order cap. A missing tier reports 0
+// (uncapped) rather than an error: CreateHold's later inventory calls are what
+// authoritatively reject an unknown tier.
+func (r *PostgresRedisRepository) GetMaxPerOrder(ticketTierID int) (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var max int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT max_ticket_per_user FROM ticket_tiers WHERE id = $1
+	`, ticketTierID).Scan(&max)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return max, err
+}
+
 func seatLockKey(eventID, seatID int) string {
 	return fmt.Sprintf("lock:event:%d:seat:%d", eventID, seatID)
 }

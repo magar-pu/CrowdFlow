@@ -26,6 +26,8 @@ export default function WorkspaceTickets({
   const [newTierPrice, setNewTierPrice] = useState(150000);
   const [newTierCapacity, setNewTierCapacity] = useState(500);
   const [newTierSalesEnd, setNewTierSalesEnd] = useState("");
+  // Per-order cap (ticket_tiers.max_ticket_per_user). 4 is the column default.
+  const [newTierMaxPerOrder, setNewTierMaxPerOrder] = useState(4);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,10 +39,12 @@ export default function WorkspaceTickets({
       capacity: newTierCapacity,
       status: "On Sale",
       color: "#3B82F6",
+      maxPerOrder: newTierMaxPerOrder,
       salesEnd: newTierSalesEnd || undefined,
     });
     setNewTierName("");
     setNewTierSalesEnd("");
+    setNewTierMaxPerOrder(4);
     setShowAddForm(false);
   };
 
@@ -150,10 +154,26 @@ export default function WorkspaceTickets({
                 <input type="number" value={newTierCapacity} onChange={(e) => setNewTierCapacity(Number(e.target.value))} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
               </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Sales Deadline</label>
-              <input type="date" value={newTierSalesEnd} onChange={(e) => setNewTierSalesEnd(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Sales Deadline</label>
+                <input type="date" value={newTierSalesEnd} onChange={(e) => setNewTierSalesEnd(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Max Per Order</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={newTierMaxPerOrder}
+                  onChange={(e) => setNewTierMaxPerOrder(Number(e.target.value))}
+                  className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none"
+                />
+              </div>
             </div>
+            <p className="text-[10px] text-text-secondary">
+              Buyers cannot put more than <strong>{newTierMaxPerOrder > 0 ? newTierMaxPerOrder : 4}</strong> of this
+              ticket in a single order.
+            </p>
             <button type="submit" className="w-full bg-secondary hover:bg-secondary/90 text-white text-xs font-bold py-2 rounded-lg transition-colors cursor-pointer">Create Tier</button>
           </div>
         </form>
@@ -199,6 +219,13 @@ export default function WorkspaceTickets({
                     </p>
                   ) : (
                     <p className="text-xs text-on-surface-variant font-mono mt-0.5">Allocation limit: {tier.capacity.toLocaleString()}</p>
+                  )}
+                  {tier.maxPerOrder && tier.maxPerOrder > 0 ? (
+                    <p className="text-xs text-on-surface-variant font-mono mt-0.5">
+                      Max {tier.maxPerOrder.toLocaleString()} per order
+                    </p>
+                  ) : (
+                    <p className="text-xs text-amber-600 font-mono mt-0.5">No per-order limit</p>
                   )}
                 </div>
 

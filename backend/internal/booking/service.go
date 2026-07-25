@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -35,6 +36,7 @@ func (s *BookingService) CreateHold(req HoldRequest) (*Hold, error) {
 		return nil, err
 	}
 
+	requested := req.Quantity
 	if assigned {
 		if len(req.SeatIDs) == 0 {
 			return nil, errors.New("seat_ids is required for assigned-seating tiers")
@@ -42,6 +44,7 @@ func (s *BookingService) CreateHold(req HoldRequest) (*Hold, error) {
 		if req.Quantity > 0 {
 			return nil, errors.New("quantity must not be set for assigned-seating tiers")
 		}
+		requested = len(req.SeatIDs)
 	} else {
 		if req.Quantity <= 0 {
 			return nil, errors.New("quantity is required for general admission tiers")
@@ -49,6 +52,18 @@ func (s *BookingService) CreateHold(req HoldRequest) (*Hold, error) {
 		if len(req.SeatIDs) > 0 {
 			return nil, errors.New("seat_ids must not be set for general admission tiers")
 		}
+	}
+
+	// The organizer's per-order cap (Tickets tab). It was previously only
+	// reported to the buyer as max_per_transaction and never checked, so the
+	// setting had no effect. Enforced before any inventory is acquired so a
+	// rejected request leaves nothing held. A cap of 0 means uncapped.
+	maxPerOrder, err := s.repo.GetMaxPerOrder(req.TicketTierID)
+	if err != nil {
+		return nil, err
+	}
+	if maxPerOrder > 0 && requested > maxPerOrder {
+		return nil, fmt.Errorf("this ticket type is limited to %d per order", maxPerOrder)
 	}
 
 	holdToken := generateHoldToken()

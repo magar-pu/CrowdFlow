@@ -676,9 +676,13 @@ func (r *PostgresRepository) UpdateTicketTier(ctx context.Context, eventID int, 
 		end = time.Now().AddDate(0, 1, 0)
 	}
 
+	// Callers may send a partial tier that omits maxPerOrder, which arrives as 0.
+	// Treat that as "leave the existing cap alone" rather than writing 0, which
+	// the booking service reads as uncapped.
 	query := `
 		UPDATE ticket_tiers
-		SET name = $1, description = $2, price = $3, allocation_limit = $4, sales_start = $5, sales_end = $6, max_ticket_per_user = $7
+		SET name = $1, description = $2, price = $3, allocation_limit = $4, sales_start = $5, sales_end = $6,
+		    max_ticket_per_user = CASE WHEN $7 > 0 THEN $7 ELSE max_ticket_per_user END
 		WHERE id = $8 AND event_id = $9
 	`
 	_, err = r.db.ExecContext(ctx, query, tier.Name, tier.Description, tier.Price, tier.Capacity, start, end, tier.MaxPerOrder, tierID, eventID)
@@ -1540,6 +1544,31 @@ func (r *PostgresRepository) SetEventVenue(ctx context.Context, eventID int, org
 	}
 
 	return tx.Commit()
+}
+
+// SetEventCoverImage writes the resolved public URL of a freshly uploaded cover
+// onto the event. Deliberately a targeted UPDATE rather than a round-trip
+// through UpdateOrganizerEvent, which writes every column it receives and would
+// blank anything the caller left out of the payload.
+func (r *PostgresRepository) SetEventCoverImage(ctx context.Context, eventID int, organizerID int, url string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE events SET cover_image_url = $1, updated_at = now()
+		WHERE id = $2 AND organizer_id = $3
+	`, url, eventID, organizerID)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (r *PostgresRepository) PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error {

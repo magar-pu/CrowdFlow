@@ -48,8 +48,8 @@ export default function EventsView({ events, onCreateEvent, onOpenWorkspace }: E
               className="bg-white border border-border-subtle rounded-xl flex flex-col overflow-hidden soft-shadow group transition-all duration-300 hover:shadow-lg hover:border-outline"
             >
               <div
-                className="h-44 w-full bg-cover bg-center relative"
-                style={{ backgroundImage: `url('${event.image}')` }}
+                className="h-44 w-full bg-cover bg-center relative bg-surface-container-low"
+                style={event.image ? { backgroundImage: `url('${event.image}')` } : undefined}
               >
                 <div className="absolute top-4 right-4">
                   <span className={`backdrop-blur-sm border px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-sm font-mono text-[9px] font-bold ${

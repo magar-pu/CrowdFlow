@@ -18,9 +18,18 @@ interface StepBasicInfoProps {
   setEndDate: (v: string) => void;
   endTime: string;
   setEndTime: (v: string) => void;
-  coverImageName: string | null;
-  setCoverImageName: (v: string | null) => void;
+  /**
+   * The picked file itself, not just its name — the wizard uploads it to the
+   * new event's /cover endpoint once the draft has an id.
+   */
+  coverFile: File | null;
+  setCoverFile: (v: File | null) => void;
 }
+
+// Matches the backend's accepted set. The service sniffs the real content type
+// regardless; this is a convenience check, not the guard.
+const ACCEPTED_COVER_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const MAX_COVER_BYTES = 10 * 1024 * 1024;
 
 export default function StepBasicInfo({
   name, setName,
@@ -30,10 +39,11 @@ export default function StepBasicInfo({
   startTime, setStartTime,
   endDate, setEndDate,
   endTime, setEndTime,
-  coverImageName, setCoverImageName,
+  coverFile, setCoverFile,
 }: StepBasicInfoProps) {
   const [isDraggingCover, setIsDraggingCover] = useState(false);
   const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null);
+  const [coverError, setCoverError] = useState<string | null>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
   const [eventTypes, setEventTypes] = useState<EventType[]>([]);
@@ -49,11 +59,20 @@ export default function StepBasicInfo({
     return () => { cancelled = true; };
   }, []);
 
-  // Preview is a local object URL for the picked file. The file itself isn't
-  // uploaded here (only its name is carried forward), so this stays component-
-  // local and is revoked when replaced or on unmount to avoid leaks.
+  // Preview is a local object URL for the picked file, revoked when replaced or
+  // on unmount to avoid leaks. The file is held by the wizard and uploaded after
+  // the draft is created, since the upload endpoint needs the new event's id.
   const applyCoverFile = (file: File) => {
-    setCoverImageName(file.name);
+    if (!ACCEPTED_COVER_TYPES.includes(file.type)) {
+      setCoverError('Cover art must be a PNG, JPG, or WebP image.');
+      return;
+    }
+    if (file.size > MAX_COVER_BYTES) {
+      setCoverError('Cover art must be 10MB or smaller.');
+      return;
+    }
+    setCoverError(null);
+    setCoverFile(file);
     setCoverPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(file);
@@ -61,7 +80,8 @@ export default function StepBasicInfo({
   };
 
   const clearCover = () => {
-    setCoverImageName(null);
+    setCoverError(null);
+    setCoverFile(null);
     setCoverPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return null;
@@ -158,7 +178,7 @@ export default function StepBasicInfo({
                 </button>
               </div>
               <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="font-medium text-text-primary truncate">{coverImageName}</span>
+                <span className="font-medium text-text-primary truncate">{coverFile?.name}</span>
                 <button
                   type="button"
                   onClick={() => coverInputRef.current?.click()}
@@ -180,8 +200,14 @@ export default function StepBasicInfo({
             >
               <ImageIcon className="w-6 h-6 text-on-surface-variant" />
               <p className="text-xs text-text-secondary font-medium text-center">Drag & drop cover art, or click to browse</p>
-              <p className="text-[10px] text-on-surface-variant font-mono">PNG, JPG, WEBP</p>
+              <p className="text-[10px] text-on-surface-variant font-mono">PNG, JPG, WEBP · max 10MB</p>
             </div>
+          )}
+
+          {coverError && (
+            <p className="flex items-start gap-1.5 text-[11px] text-danger">
+              <X className="w-3.5 h-3.5 shrink-0 mt-px" /> {coverError}
+            </p>
           )}
         </div>
       </div>

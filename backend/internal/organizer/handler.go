@@ -48,6 +48,7 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /api/organizer/events/{id}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetEvent)))))
 	mux.Handle("PUT /api/organizer/events/{id}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUpdateEvent)))))
 	mux.Handle("PUT /api/organizer/events/{id}/venue", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleSetEventVenue)))))
+	mux.Handle("POST /api/organizer/events/{id}/cover", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUploadEventCover)))))
 	mux.Handle("PATCH /api/organizer/events/{id}/publish", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handlePublishEvent)))))
 	mux.Handle("DELETE /api/organizer/events/{id}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleDeleteEvent)))))
 	mux.Handle("POST /api/organizer/events/{id}/checkin", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleCheckInAttendee)))))
@@ -480,6 +481,64 @@ func (h *Handler) handleSetEventVenue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Event venue updated successfully"})
+}
+
+// handleUploadEventCover replaces the event's cover art. Multipart, one file
+// under "file", mirroring the Documents tab's upload shape.
+func (h *Handler) handleUploadEventCover(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
+		return
+	}
+
+	eventID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+
+	// 12MB reader leaves headroom over the service's 10MB file cap for
+	// multipart framing.
+	r.Body = http.MaxBytesReader(w, r.Body, 12<<20)
+	if err := r.ParseMultipartForm(12 << 20); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse upload: file too large or malformed")
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "A file is required under the 'file' field")
+		return
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to read uploaded file")
+		return
+	}
+
+	url, err := h.service.UploadEventCover(r.Context(), eventID, userID, &CoverImageUpload{
+		Filename: header.Filename,
+		Content:  content,
+	})
+	if err != nil {
+		if errors.Is(err, ErrValidation) {
+			response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+			return
+		}
+		log.Printf("UploadEventCover error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to upload cover image")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, CoverImageResponse{ImageURL: url})
 }
 
 func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {

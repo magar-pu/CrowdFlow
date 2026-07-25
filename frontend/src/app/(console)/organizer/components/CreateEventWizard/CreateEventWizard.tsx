@@ -5,7 +5,12 @@ import StepBasicInfo from './StepBasicInfo';
 
 interface CreateEventWizardProps {
   onCancel: () => void;
-  onSubmitSuccess: (newEvent: CreateEventDraft) => void;
+  /**
+   * The cover file is passed separately from the draft: it can only be uploaded
+   * once the event exists and has an id, so the caller creates the draft first
+   * and then posts the file to that event's /cover endpoint.
+   */
+  onSubmitSuccess: (newEvent: CreateEventDraft, coverFile: File | null) => void | Promise<void>;
 }
 
 // This form only creates a DRAFT from the event's basic info. The venue, ticket
@@ -15,6 +20,7 @@ interface CreateEventWizardProps {
 // which refuses an event that still has no venue.
 export default function CreateEventWizard({ onCancel, onSubmitSuccess }: CreateEventWizardProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   // Basic Info
   const [eventName, setEventName] = useState('');
@@ -24,7 +30,7 @@ export default function CreateEventWizard({ onCancel, onSubmitSuccess }: CreateE
   const [startTime, setStartTime] = useState('');
   const [endDate, setEndDate] = useState('');
   const [endTime, setEndTime] = useState('');
-  const [coverImageName, setCoverImageName] = useState<string | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
 
   const validate = (): boolean => {
     setErrorMsg(null);
@@ -50,12 +56,19 @@ export default function CreateEventWizard({ onCancel, onSubmitSuccess }: CreateE
     // Capacity is derived later from the seats you price in the workspace.
     capacity: 0,
     status: "Draft",
-    image: coverImageName ? coverImageName : "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&auto=format",
+    // A picked file is uploaded after creation and overwrites this, so the
+    // stock image only ever survives when no cover was chosen.
+    image: coverFile ? "" : "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&auto=format",
   });
 
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
     if (!validate()) return;
-    onSubmitSuccess(buildDraftPayload());
+    setSubmitting(true);
+    try {
+      await onSubmitSuccess(buildDraftPayload(), coverFile);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -79,9 +92,10 @@ export default function CreateEventWizard({ onCancel, onSubmitSuccess }: CreateE
             </button>
             <button
               onClick={handleSaveDraft}
-              className="flex items-center gap-1.5 px-4 py-1.5 bg-primary hover:bg-primary/90 text-white text-xs font-bold rounded-lg shadow-sm transition-colors cursor-pointer"
+              disabled={submitting}
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg shadow-sm transition-colors cursor-pointer"
             >
-              <Save className="w-3.5 h-3.5" /> Save Draft &amp; Continue
+              <Save className="w-3.5 h-3.5" /> {submitting ? 'Saving…' : 'Save Draft & Continue'}
             </button>
           </div>
         </div>
@@ -102,16 +116,17 @@ export default function CreateEventWizard({ onCancel, onSubmitSuccess }: CreateE
           startTime={startTime} setStartTime={setStartTime}
           endDate={endDate} setEndDate={setEndDate}
           endTime={endTime} setEndTime={setEndTime}
-          coverImageName={coverImageName} setCoverImageName={setCoverImageName}
+          coverFile={coverFile} setCoverFile={setCoverFile}
         />
       </main>
 
       <footer className="flex justify-end items-center border-t border-border-subtle pt-6">
         <button
           onClick={handleSaveDraft}
-          className="flex items-center gap-1.5 px-5 py-2.5 bg-primary hover:bg-primary/90 text-white text-xs font-bold rounded-lg shadow-sm transition-colors cursor-pointer"
+          disabled={submitting}
+          className="flex items-center gap-1.5 px-5 py-2.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg shadow-sm transition-colors cursor-pointer"
         >
-          <Save className="w-3.5 h-3.5" /> Save Draft &amp; Continue Setup <ArrowRight className="w-4 h-4 text-white" />
+          <Save className="w-3.5 h-3.5" /> {submitting ? 'Saving…' : 'Save Draft & Continue Setup'} <ArrowRight className="w-4 h-4 text-white" />
         </button>
       </footer>
     </div>

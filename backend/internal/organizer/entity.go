@@ -112,6 +112,20 @@ type EventDocumentUpload struct {
 	Content  []byte
 }
 
+// CoverImageUpload is one event cover-art file on its way to the PUBLIC bucket.
+// Unlike EventDocumentUpload this is deliberately world-readable: the URL is
+// rendered on the public event page.
+type CoverImageUpload struct {
+	Filename string
+	Content  []byte
+}
+
+// CoverImageResponse returns the resolved public URL so the workspace can swap
+// its local blob: preview for the persisted image.
+type CoverImageResponse struct {
+	ImageURL string `json:"imageUrl"`
+}
+
 // EventDocumentsResponse is the Documents tab payload: every slot the UI can
 // render, whether filled or not, plus the derived submission readiness.
 type EventDocumentsResponse struct {
@@ -507,6 +521,7 @@ type Repository interface {
 	CreateOrganizerEvent(ctx context.Context, organizerID int, event *OrganizerEvent) error
 	UpdateOrganizerEvent(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
 	SetEventVenue(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
+	SetEventCoverImage(ctx context.Context, eventID int, organizerID int, url string) error
 	PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	ListTicketTiers(ctx context.Context, eventID int, organizerID int) ([]*OrganizerTicketTier, error)
@@ -553,6 +568,7 @@ type Service interface {
 	CreateOrganizerEvent(ctx context.Context, organizerID int, event *OrganizerEvent) error
 	UpdateOrganizerEvent(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
 	SetEventVenue(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
+	UploadEventCover(ctx context.Context, eventID int, organizerID int, upload *CoverImageUpload) (string, error)
 	PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	GetEventSeating(ctx context.Context, eventID int, organizerID int) (*EventSeatingResponse, error)

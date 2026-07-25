@@ -519,6 +519,28 @@ export async function uploadEventDocument(
   });
 }
 
+export interface EventCoverImage {
+  imageUrl: string;
+}
+
+/**
+ * Replaces the event's cover art. The file goes to the PUBLIC bucket (it is
+ * rendered on the public event page), unlike event documents which are private.
+ * Returns the persisted URL so the caller can drop its local blob: preview.
+ */
+export async function uploadEventCover(
+  eventId: number,
+  file: File
+): Promise<ApiResponse<EventCoverImage>> {
+  const body = new FormData();
+  body.append("file", file);
+
+  return apiRequest<EventCoverImage>(`/api/organizer/events/${eventId}/cover`, {
+    method: "POST",
+    body,
+  });
+}
+
 /** Mints a short-lived link for one document. Call this on an explicit view action. */
 export async function getEventDocumentUrl(
   eventId: number,
