@@ -2,27 +2,24 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Bell, HelpCircle, CheckCircle, ShieldAlert, X, ChevronDown, LogOut, QrCode } from 'lucide-react';
+import { Bell, ShieldAlert, X, ChevronDown, LogOut, QrCode } from 'lucide-react';
 import { SecurityAlert } from '@/types/admin';
 import { useAuthStore } from '@/lib/store/authStore';
 import { format_role_label, get_initials } from '@/lib/utils/user-display';
 
 interface HeaderProps {
   alerts: SecurityAlert[];
-  onSearch?: (query: string) => void;
   onClearAlert?: (id: string) => void;
 }
 
 export default function Header({
   alerts,
-  onSearch,
   onClearAlert,
 }: HeaderProps) {
   const router = useRouter();
   const { user, logout } = useAuthStore();
   const [showNotifications, setShowNotifications] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [searchVal, setSearchVal] = useState('');
   const profileRef = useRef<HTMLDivElement>(null);
 
   const display_user = user ?? {
@@ -52,12 +49,6 @@ export default function Header({
     router.push('/login');
   };
 
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setSearchVal(val);
-    if (onSearch) onSearch(val);
-  };
-
   const handleClearAll = () => {
     if (alerts.length > 0 && onClearAlert) {
       alerts.forEach(alert => onClearAlert(alert.id));
@@ -68,38 +59,8 @@ export default function Header({
 
   return (
     <header className="sticky top-0 z-10 flex min-h-[72px] w-full items-center justify-between gap-3 border-b border-border-subtle bg-surface-white/95 px-4 py-3 backdrop-blur-md sm:px-6">
-      {/* Search Bar */}
-      <div className="flex flex-1 items-center max-w-[180px] xs:max-w-xs sm:max-w-md md:max-w-lg">
-        <div className="relative w-full">
-          <Search className="absolute top-3 left-3.5 h-4.5 w-4.5 text-text-secondary" />
-          <input
-            id="global-search-input"
-            type="text"
-            placeholder="Search users, events, transactions..."
-            value={searchVal}
-            onChange={handleSearchChange}
-            className="h-11 w-full rounded-lg border border-border-subtle bg-surface px-4 pl-10.5 text-sm text-text-primary outline-none transition-all duration-200 placeholder:text-text-secondary focus:border-secondary focus:bg-surface-white focus:ring-2 focus:ring-secondary/20"
-          />
-        </div>
-      </div>
-
       {/* Right Side Tools */}
       <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-        {/* System Health Status */}
-        <div className="hidden items-center gap-1.5 rounded-full border border-success/20 bg-success/5 px-3 py-1 text-xs font-medium text-success sm:flex">
-          <CheckCircle className="h-3.5 w-3.5" />
-          <span>Operational</span>
-        </div>
-
-        {/* Support Hub Button */}
-        <button 
-          onClick={() => alert('Accessing the Admin operations manual: standard operations and escalation protocols.')}
-          className="hidden rounded-lg p-2 text-text-secondary transition-all duration-200 hover:bg-surface-container-low hover:text-text-primary cursor-pointer sm:block"
-          title="System Help Manual"
-        >
-          <HelpCircle className="h-5 w-5" />
-        </button>
-
         {/* Notifications Alert Popover */}
         <div className="relative">
           <button

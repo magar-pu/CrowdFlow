@@ -1,6 +1,7 @@
 import React from 'react';
 import { EventItem } from '../types';
 import { Filter, Calendar, Plus, CalendarDays, MapPin, ArrowRight } from 'lucide-react';
+import { formatIDR } from "@/lib/pricing";
 
 interface EventsViewProps {
   events: EventItem[];
@@ -86,7 +87,7 @@ export default function EventsView({ events, onCreateEvent, onOpenWorkspace }: E
                   <div>
                     <div className="font-mono text-[9px] text-on-surface-variant mb-0.5">Revenue</div>
                     <div className="font-sans text-xs font-bold text-text-primary">
-                      ${typeof event.revenue === 'number' ? event.revenue.toLocaleString() : event.revenue}
+                      {typeof event.revenue === 'number' ? formatIDR(event.revenue) : event.revenue}
                     </div>
                   </div>
                   <div>

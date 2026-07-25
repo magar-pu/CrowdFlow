@@ -8,6 +8,7 @@ import {
   type EventCheckInStats,
   type OrganizerTicketTier,
 } from "@/lib/api/eorganizer";
+import { formatIDR } from "@/lib/pricing";
 
 // The backend has no tier colour; assign a stable one per position, matching the
 // Tickets tab so a tier keeps the same colour across the workspace.
@@ -92,7 +93,7 @@ export default function WorkspaceAnalytics({ eventId }: { eventId?: string }) {
   const avgScan = checkIns && checkIns.avgScanMs > 0 ? `${(checkIns.avgScanMs / 1000).toFixed(2)}s` : '—';
 
   const performanceMetrics = [
-    { label: 'Total Revenue', value: `$${totalSales.toLocaleString()}`, delta: 'Cumulative earnings', up: true, icon: DollarSign },
+    { label: 'Total Revenue', value: formatIDR(totalSales), delta: 'Cumulative earnings', up: true, icon: DollarSign },
     { label: 'Tickets Sold', value: totalTickets.toLocaleString(), delta: 'Issued credentials', up: true, icon: Ticket },
     {
       label: 'Attendance Rate',

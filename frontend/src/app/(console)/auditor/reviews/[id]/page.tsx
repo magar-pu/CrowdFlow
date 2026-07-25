@@ -12,10 +12,13 @@ import {
   requestEventChanges,
   verifyReviewDocument,
   rejectReviewDocument,
+  verifyEventReviewDocument,
+  rejectEventReviewDocument,
+  getReviewDocumentUrl,
   updateEventReviewStage,
   addEventRevision
 } from "@/lib/api/auditor";
-import { EventSubmission } from "../../types";
+import { EventSubmission, ReviewDocument, docKey } from "../../types";
 import { CheckCircle2, AlertTriangle, X } from "lucide-react";
 
 // Map backend lowercase status to frontend uppercase status
@@ -29,6 +32,11 @@ function mapDocStatus(backendStatus: string): "VERIFIED" | "WAITING REVIEW" | "R
       return 'WAITING REVIEW';
     default: return 'READY';
   }
+}
+
+/** Resolves a document by its key, falling back to name for legacy call sites. */
+function findDoc(docs: ReviewDocument[] | undefined, keyOrName: string): ReviewDocument | undefined {
+  return docs?.find((d) => docKey(d) === keyOrName || d.name === keyOrName);
 }
 
 export default function AuditorReviewDetailPage() {
@@ -78,10 +86,14 @@ export default function AuditorReviewDetailPage() {
           ],
           documents: (raw.documents || []).map((doc: any) => ({
             id: String(doc.id),
+            // Per-event documents and account-level ones share an id space, so the
+            // source travels with every document and keys every mutation.
+            source: doc.source === "event" ? "event" : "organizer",
             name: doc.name || "document.pdf",
             category: doc.category || "Supporting Documents",
             uploadDate: doc.uploadDate || "2026-07-20",
             status: mapDocStatus(doc.status),
+            reviewNotes: doc.reviewNotes || "",
             fileUrl: doc.fileUrl || "",
           })),
           venue: raw.venue || "Default Venue",
@@ -306,45 +318,81 @@ export default function AuditorReviewDetailPage() {
     }
   };
 
-  const handleVerifySubmissionDocAction = async (submissionId: string, docIdOrName: string) => {
-    const doc = submission?.documents.find(d => d.id === docIdOrName || d.name === docIdOrName);
-    const targetDocId = doc?.id || docIdOrName;
-    if (!targetDocId) return;
+  /**
+   * Opens the actual file behind a document.
+   *
+   * `doc.fileUrl` is a private-bucket OBJECT KEY, not a fetchable link — opening
+   * it directly never worked. A signed URL is minted per click and expires in
+   * about two minutes.
+   *
+   * The tab is opened synchronously BEFORE awaiting, or the browser treats the
+   * later window.open as an unsolicited popup and blocks it.
+   */
+  const handleOpenDocumentFile = async (doc: ReviewDocument) => {
+    if (!doc.id) return;
+    const tab = window.open("", "_blank", "noopener,noreferrer");
 
-    const res = await verifyReviewDocument(submissionId, targetDocId);
-    if (res.success) {
-      setSubmission((prev) => {
-        if (!prev) return null;
-        const updatedDocs = prev.documents.map((d) =>
-          d.id === targetDocId || d.name === docIdOrName ? { ...d, status: "VERIFIED" as const } : d
-        );
-        return { ...prev, documents: updatedDocs };
-      });
-      setToast({ message: "Dokumen berhasil diverifikasi!", type: "success" });
-      await loadDetail();
+    const res = await getReviewDocumentUrl(params.id, doc.id, doc.source ?? "organizer");
+    if (!res.success || !res.data) {
+      tab?.close();
+      setToast({ message: "Could not open this document: " + (res.error?.message || "unknown error"), type: "error" });
+      return;
+    }
+
+    if (tab) {
+      tab.location.assign(res.data.url);
     } else {
-      setToast({ message: "Gagal verifikasi dokumen: " + (res.error?.message || "terjadi kesalahan"), type: "error" });
+      window.location.assign(res.data.url);
     }
   };
 
-  const handleRejectSubmissionDocAction = async (submissionId: string, docIdOrName: string, reason: string = "Invalid document details") => {
-    const doc = submission?.documents.find(d => d.id === docIdOrName || d.name === docIdOrName);
-    const targetDocId = doc?.id || docIdOrName;
+  const handleVerifySubmissionDocAction = async (submissionId: string, docKeyOrName: string) => {
+    const doc = findDoc(submission?.documents, docKeyOrName);
+    const targetDocId = doc?.id;
     if (!targetDocId) return;
 
-    const res = await rejectReviewDocument(submissionId, targetDocId, reason);
+    // Route by source: the two document tables have overlapping ids, so sending
+    // an event document to the organizer endpoint would verify a different file.
+    const res =
+      doc.source === "event"
+        ? await verifyEventReviewDocument(submissionId, targetDocId)
+        : await verifyReviewDocument(submissionId, targetDocId);
     if (res.success) {
       setSubmission((prev) => {
         if (!prev) return null;
         const updatedDocs = prev.documents.map((d) =>
-          d.id === targetDocId || d.name === docIdOrName ? { ...d, status: "REJECTED" as const } : d
+          docKey(d) === docKey(doc) ? { ...d, status: "VERIFIED" as const } : d
         );
         return { ...prev, documents: updatedDocs };
       });
-      setToast({ message: "Dokumen ditolak!", type: "error" });
+      setToast({ message: "Document verified successfully.", type: "success" });
       await loadDetail();
     } else {
-      setToast({ message: "Gagal menolak dokumen: " + (res.error?.message || "terjadi kesalahan"), type: "error" });
+      setToast({ message: "Failed to verify document: " + (res.error?.message || "unknown error"), type: "error" });
+    }
+  };
+
+  const handleRejectSubmissionDocAction = async (submissionId: string, docKeyOrName: string, reason: string = "Invalid document details") => {
+    const doc = findDoc(submission?.documents, docKeyOrName);
+    const targetDocId = doc?.id;
+    if (!targetDocId) return;
+
+    const res =
+      doc.source === "event"
+        ? await rejectEventReviewDocument(submissionId, targetDocId, reason)
+        : await rejectReviewDocument(submissionId, targetDocId, reason);
+    if (res.success) {
+      setSubmission((prev) => {
+        if (!prev) return null;
+        const updatedDocs = prev.documents.map((d) =>
+          docKey(d) === docKey(doc) ? { ...d, status: "REJECTED" as const, reviewNotes: reason } : d
+        );
+        return { ...prev, documents: updatedDocs };
+      });
+      setToast({ message: "Document rejected.", type: "error" });
+      await loadDetail();
+    } else {
+      setToast({ message: "Failed to reject document: " + (res.error?.message || "unknown error"), type: "error" });
     }
   };
 
@@ -477,6 +525,7 @@ export default function AuditorReviewDetailPage() {
         onVerifyDocument={handleVerifySubmissionDocAction}
         onRejectDocument={handleRejectSubmissionDocAction}
         onViewDocument={(doc) => setViewingDoc(doc)}
+        onOpenDocumentFile={handleOpenDocumentFile}
         onChangeStage={handleChangeSubmissionStageAction}
         onAddRevision={handleAddRevisionAction}
         onRefresh={loadDetail}

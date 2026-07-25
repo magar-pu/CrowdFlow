@@ -30,6 +30,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import {
   deleteEventDocument,
+  getEventDocumentUrl,
   listEventDocuments,
   uploadEventDocument,
   type EventDocument,
@@ -194,6 +195,37 @@ export default function WorkspaceDocuments({ eventId, readOnly = false }: Worksp
     await load();
   };
 
+  /**
+   * Fetches a view link and follows it.
+   *
+   * The tab is opened synchronously, BEFORE awaiting, because a window.open()
+   * that happens after an await is no longer attributable to the click and gets
+   * blocked as a popup. The blank tab is then pointed at the signed URL, or
+   * closed if minting failed.
+   */
+  const handleView = async (type: EventDocumentType, doc: EventDocument) => {
+    setSlotError((prev) => ({ ...prev, [type]: undefined }));
+    const tab = window.open("", "_blank", "noopener,noreferrer");
+
+    const res = await getEventDocumentUrl(eventId, doc.id);
+
+    if (!res.success || !res.data) {
+      tab?.close();
+      setSlotError((prev) => ({
+        ...prev,
+        [type]: res.error?.message ?? "Could not open this document.",
+      }));
+      return;
+    }
+
+    if (tab) {
+      tab.location.assign(res.data.url);
+    } else {
+      // Popup blocked despite the synchronous open — fall back to this tab.
+      window.location.assign(res.data.url);
+    }
+  };
+
   const handleDelete = async (type: EventDocumentType, doc: EventDocument) => {
     if (!window.confirm(`Remove "${doc.file_name}"? You will need to upload it again before this event can be submitted.`)) {
       return;
@@ -226,7 +258,7 @@ export default function WorkspaceDocuments({ eventId, readOnly = false }: Worksp
             <h3 className="text-base font-bold text-text-primary">Documents</h3>
             <p className="text-xs text-text-secondary">
               Paperwork an auditor needs before this event can be approved. Files are stored
-              privately — links expire after 15 minutes.
+              privately; View creates a link that expires within a couple of minutes.
             </p>
           </div>
           {!loading && data && (
@@ -303,7 +335,11 @@ export default function WorkspaceDocuments({ eventId, readOnly = false }: Worksp
                         : "border-dashed border-border-subtle bg-surface-container-low"
                   }`}
                 >
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  {/* items-center so the action group sits centred against the
+                      card's full height rather than pinned to the top — the
+                      description block is what sets that height, and it varies
+                      per slot. */}
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div className="flex items-start gap-3">
                       <Icon
                         className={`mt-0.5 h-4 w-4 shrink-0 ${doc ? "text-secondary" : "text-on-surface-variant"}`}
@@ -365,15 +401,14 @@ export default function WorkspaceDocuments({ eventId, readOnly = false }: Worksp
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
-                      {doc?.url && (
-                        <a
-                          href={doc.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                      {doc && (
+                        <button
+                          type="button"
+                          onClick={() => handleView(slot.type, doc)}
                           className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border-subtle bg-white px-3 text-xs font-bold text-text-primary transition-colors hover:bg-surface-container"
                         >
                           <Download className="h-3.5 w-3.5" /> View
-                        </a>
+                        </button>
                       )}
 
                       <input

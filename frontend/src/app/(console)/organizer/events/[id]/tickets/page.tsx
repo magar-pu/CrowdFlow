@@ -10,7 +10,9 @@ import {
   createTicketTier,
   updateTicketTier,
   deleteTicketTier,
+  getEventSeating,
   type OrganizerTicketTier,
+  type EventSeating,
 } from "@/lib/api/eorganizer";
 
 // Ticket tiers are the real, event-scoped rows from ticket_tiers (the seating
@@ -38,6 +40,9 @@ export default function OrganizerEventTicketsPage() {
   const params = useParams<{ id: string }>();
   const eventId = Number(params.id);
   const [tiers, setTiers] = useState<TicketTier[]>([]);
+  // Seat-map figures back the "Seats Priced" tile: real capacity is however many
+  // seats carry a tier, not the sum of the tiers' allocation limits.
+  const [seating, setSeating] = useState<EventSeating | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,12 +54,18 @@ export default function OrganizerEventTicketsPage() {
     }
     setLoading(true);
     setError(null);
-    const res = await listTicketTiers(eventId);
+    const [res, seatingRes] = await Promise.all([
+      listTicketTiers(eventId),
+      getEventSeating(eventId),
+    ]);
     if (res.success && res.data) {
       setTiers(res.data.map(toTicketTier));
     } else {
       setError(res.error?.message ?? "Failed to load ticket tiers");
     }
+    // A missing seat map is the normal state of a draft, not an error — the tile
+    // renders "No seat map yet" rather than failing the whole tab.
+    setSeating(seatingRes.success && seatingRes.data ? seatingRes.data : null);
     setLoading(false);
   }, [eventId]);
 
@@ -101,6 +112,7 @@ export default function OrganizerEventTicketsPage() {
       ) : (
         <WorkspaceTickets
           ticketTiers={tiers}
+          seating={seating}
           onCreateTier={handleCreate}
           onUpdateTier={handleUpdate}
           onDeleteTier={handleDelete}

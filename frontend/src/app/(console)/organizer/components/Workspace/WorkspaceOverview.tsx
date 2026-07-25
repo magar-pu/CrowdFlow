@@ -2,6 +2,7 @@ import React from "react";
 import { DollarSign, Ticket, Gauge, RotateCcw, ArrowUpRight } from "lucide-react";
 import { EventItem, LogEntry } from "../../types";
 import type { AnalyticsPoint, OrganizerOrder } from "@/lib/api/eorganizer";
+import { formatIDR } from "@/lib/pricing";
 
 /** Matches the ranges the analytics endpoint understands. */
 export type Range = '7d' | '30d' | '90d';
@@ -72,7 +73,7 @@ export default function WorkspaceOverview({
             <span className="text-xs font-bold text-text-secondary">Gross Revenue</span>
             <div className="p-1.5 bg-secondary/10 border border-secondary/20 text-secondary rounded-lg"><DollarSign className="w-4 h-4" /></div>
           </div>
-          <h3 className="text-xl font-bold text-text-primary">${totalRevenue.toLocaleString()}</h3>
+          <h3 className="text-xl font-bold text-text-primary">{formatIDR(totalRevenue)}</h3>
           <p className="text-[10px] text-text-secondary font-mono mt-1 flex items-center gap-1">
             <span className="text-success font-bold flex items-center"><ArrowUpRight className="w-3 h-3" /></span>
             {orders.filter(o => o.status === 'Paid').length} paid orders
@@ -104,7 +105,7 @@ export default function WorkspaceOverview({
             <span className="text-xs font-bold text-text-secondary">Refunds</span>
             <div className="p-1.5 bg-danger/10 border border-danger/20 text-danger rounded-lg"><RotateCcw className="w-4 h-4" /></div>
           </div>
-          <h3 className="text-xl font-bold text-text-primary">${refundsAmount.toLocaleString()}</h3>
+          <h3 className="text-xl font-bold text-text-primary">{formatIDR(refundsAmount)}</h3>
           <p className="text-[10px] text-text-secondary font-mono mt-1">{refundsCount} orders refunded</p>
         </div>
       </div>
@@ -207,7 +208,7 @@ export default function WorkspaceOverview({
                   <td className="p-3 font-mono font-bold text-text-primary" title={tx.id}>{tx.id.slice(0, 8)}</td>
                   <td className="p-3 text-text-secondary">{tx.customerName}</td>
                   <td className="p-3 font-medium text-text-primary">{tx.ticketType || '—'}</td>
-                  <td className="p-3 text-right font-mono font-semibold">${tx.amount.toLocaleString()}</td>
+                  <td className="p-3 text-right font-mono font-semibold">{formatIDR(tx.amount)}</td>
                   <td className="p-3 text-right">
                     <span className={`px-2 py-0.5 rounded font-mono text-[8px] font-bold border ${statusStyle(tx.status)}`}>
                       {tx.status}

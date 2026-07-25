@@ -469,8 +469,17 @@ export interface EventDocument {
   /** Auditor's reason, present only when status is "rejected". */
   review_notes?: string;
   uploaded_at: string;
-  /** Short-lived presigned URL (15 min). Absent if the file could not be signed. */
-  url?: string;
+}
+
+/**
+ * A freshly minted view link. Deliberately NOT part of the list payload: a
+ * presigned URL is a bearer credential — anyone holding it reads the file with no
+ * identity check — so one is fetched only when a specific document is opened.
+ */
+export interface EventDocumentURL {
+  url: string;
+  /** Seconds until the link stops working. */
+  expires_in: number;
 }
 
 export interface EventDocumentsResponse {
@@ -507,6 +516,16 @@ export async function uploadEventDocument(
   return apiRequest<EventDocument>(`/api/organizer/events/${eventId}/documents`, {
     method: "POST",
     body,
+  });
+}
+
+/** Mints a short-lived link for one document. Call this on an explicit view action. */
+export async function getEventDocumentUrl(
+  eventId: number,
+  docId: number
+): Promise<ApiResponse<EventDocumentURL>> {
+  return apiRequest<EventDocumentURL>(`/api/organizer/events/${eventId}/documents/${docId}/url`, {
+    method: "GET",
   });
 }
 

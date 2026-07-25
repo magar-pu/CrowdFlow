@@ -4,15 +4,24 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
+
+	"crowdflow-backend/internal/storage"
 )
+
+// documentURLTTL matches the organizer console's window. A presigned URL is a
+// bearer credential — whoever holds it reads the file with no identity check —
+// and these documents carry NIK, so links are minted per view and die quickly.
+const documentURLTTL = 2 * time.Minute
 
 // AuditorService implements Service with business validation.
 type AuditorService struct {
-	repo Repository
+	repo    Repository
+	storage *storage.S3Storage
 }
 
-func NewAuditorService(repo Repository) *AuditorService {
-	return &AuditorService{repo: repo}
+func NewAuditorService(repo Repository, storage *storage.S3Storage) *AuditorService {
+	return &AuditorService{repo: repo, storage: storage}
 }
 
 // ---- Dashboard ----
@@ -150,6 +159,55 @@ func (s *AuditorService) RejectReviewDocument(ctx context.Context, docID, actorI
 		return ErrValidation
 	}
 	return s.repo.RejectReviewDocument(ctx, docID, actorID, reason)
+}
+
+// ---- Per-event documents ----
+//
+// Kept separate from the ReviewDocument pair above because event_documents and
+// organizer_documents are distinct tables with overlapping SERIAL ids. The
+// (source, id) pair is what identifies a document; an id alone does not.
+
+func (s *AuditorService) VerifyEventDocument(ctx context.Context, docID, actorID int) error {
+	if docID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	return s.repo.VerifyEventDocument(ctx, docID, actorID)
+}
+
+func (s *AuditorService) RejectEventDocument(ctx context.Context, docID, actorID int, reason string) error {
+	if docID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	// The reason is not optional: it is what the organizer sees in the Documents
+	// tab explaining what to fix, and a rejected document blocks resubmission.
+	if strings.TrimSpace(reason) == "" {
+		return ErrValidation
+	}
+	return s.repo.RejectEventDocument(ctx, docID, actorID, reason)
+}
+
+// GetDocumentViewURL mints a short-lived link for one document from either
+// source. Until this existed the review payload carried raw object keys in
+// `fileUrl`, which are not fetchable — the auditor could not open anything.
+func (s *AuditorService) GetDocumentViewURL(ctx context.Context, source string, docID int) (*DocumentURL, error) {
+	if docID <= 0 {
+		return nil, ErrValidation
+	}
+	if source != DocSourceEvent && source != DocSourceOrganizer {
+		return nil, ErrValidation
+	}
+
+	path, err := s.repo.GetDocumentPath(ctx, source, docID)
+	if err != nil {
+		return nil, err
+	}
+
+	url, err := s.storage.GetPresignedURL(ctx, path, documentURLTTL)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DocumentURL{URL: url, ExpiresIn: int(documentURLTTL.Seconds())}, nil
 }
 
 // ---- Documents ----

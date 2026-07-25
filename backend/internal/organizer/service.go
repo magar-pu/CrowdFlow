@@ -248,6 +248,19 @@ func (s *OrganizerService) isValidDocumentType(contentType string) bool {
 // not media; 10MB is generous for a multi-page PDF.
 const maxEventDocumentBytes = 10 << 20
 
+// eventDocumentURLTTL is how long a minted view link stays valid.
+//
+// A presigned URL is a bearer credential: whoever holds it can read the file with
+// no identity check at all. These documents carry NIK, so the window is kept to
+// the time it takes a browser to follow the link — not the length of a work
+// session. It is minted only on an explicit view request (never handed out in
+// list responses), so a short TTL costs nothing.
+//
+// Two minutes rather than one to absorb clock skew between us and the S3/R2
+// endpoint, which invalidates a signature outright. Expiry is evaluated when the
+// request starts, so a slow download of a large PDF is unaffected.
+const eventDocumentURLTTL = 2 * time.Minute
+
 func (s *OrganizerService) ListEventDocuments(ctx context.Context, eventID int) (*EventDocumentsResponse, error) {
 	docs, err := s.repo.ListEventDocuments(ctx, eventID)
 	if err != nil {
@@ -261,9 +274,10 @@ func (s *OrganizerService) ListEventDocuments(ctx context.Context, eventID int) 
 		if doc.Status != "rejected" {
 			present[doc.DocumentType] = true
 		}
-		if url, err := s.storage.GetPresignedURL(ctx, doc.FilePath, 15*time.Minute); err == nil {
-			doc.PresignedURL = url
-		}
+		// Deliberately NOT presigned here. Listing the tab used to mint a live
+		// link for every document whether or not anyone opened one, which put
+		// four bearer credentials into a response (and into browser history,
+		// devtools, and any log that captured it) on every page load.
 	}
 
 	missing := []string{}
@@ -335,10 +349,27 @@ func (s *OrganizerService) UploadEventDocument(ctx context.Context, eventID int,
 		_ = s.storage.DeletePrivateFile(ctx, replaced)
 	}
 
-	if url, err := s.storage.GetPresignedURL(ctx, doc.FilePath, 15*time.Minute); err == nil {
-		doc.PresignedURL = url
-	}
 	return doc, nil
+}
+
+// GetEventDocumentURL mints a short-lived view link for one document. Separated
+// from the list call on purpose: a link is only ever created when someone
+// actually asks to open that specific file.
+func (s *OrganizerService) GetEventDocumentURL(ctx context.Context, eventID int, docID int) (*EventDocumentURL, error) {
+	doc, err := s.repo.GetEventDocument(ctx, eventID, docID)
+	if err != nil {
+		return nil, err
+	}
+
+	url, err := s.storage.GetPresignedURL(ctx, doc.FilePath, eventDocumentURLTTL)
+	if err != nil {
+		return nil, err
+	}
+
+	return &EventDocumentURL{
+		URL:       url,
+		ExpiresIn: int(eventDocumentURLTTL.Seconds()),
+	}, nil
 }
 
 func (s *OrganizerService) DeleteEventDocument(ctx context.Context, eventID int, docID int) error {

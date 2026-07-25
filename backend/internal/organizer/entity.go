@@ -90,10 +90,18 @@ type EventDocument struct {
 	FileName     string    `json:"file_name"`
 	FileSize     int64     `json:"file_size"`
 	ContentType  string    `json:"content_type"`
-	Status       string    `json:"status"`
-	ReviewNotes  *string   `json:"review_notes,omitempty"`
-	UploadedAt   time.Time `json:"uploaded_at"`
-	PresignedURL string    `json:"url,omitempty"`
+	Status      string    `json:"status"`
+	ReviewNotes *string   `json:"review_notes,omitempty"`
+	UploadedAt  time.Time `json:"uploaded_at"`
+}
+
+// EventDocumentURL is a freshly minted view link. Never embedded in a list
+// response — a presigned URL is a bearer credential, so one is created only when
+// a specific document is explicitly opened.
+type EventDocumentURL struct {
+	URL string `json:"url"`
+	// Seconds until the link stops working, so the UI can say so.
+	ExpiresIn int `json:"expires_in"`
 }
 
 // EventDocumentUpload carries a single file from the multipart handler to the
@@ -574,6 +582,7 @@ type Service interface {
 	// Per-event documents
 	ListEventDocuments(ctx context.Context, eventID int) (*EventDocumentsResponse, error)
 	UploadEventDocument(ctx context.Context, eventID int, userID int, upload *EventDocumentUpload) (*EventDocument, error)
+	GetEventDocumentURL(ctx context.Context, eventID int, docID int) (*EventDocumentURL, error)
 	DeleteEventDocument(ctx context.Context, eventID int, docID int) error
 }
 

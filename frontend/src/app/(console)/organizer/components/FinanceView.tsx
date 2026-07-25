@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { DollarSign, Landmark, ArrowUpRight } from 'lucide-react';
 import { getFinanceSummary, listPayouts, createPayoutRequest, OrganizerFinance, OrganizerPayout } from '@/lib/api/eorganizer';
 import { useOrganizerData } from '../OrganizerDataContext';
+import { formatIDR } from "@/lib/pricing";
 
 export default function FinanceView() {
   const { events } = useOrganizerData();
@@ -35,7 +36,7 @@ export default function FinanceView() {
     }
     const targetEvent = events[0];
     const maxFunds = summary ? summary.payoutBalance : 0;
-    const amountStr = prompt(`Enter withdrawal amount (Maximum: $${maxFunds.toLocaleString()}):`);
+    const amountStr = prompt(`Enter withdrawal amount (Maximum: ${formatIDR(maxFunds)}):`);
     if (!amountStr) return;
     
     const amount = parseFloat(amountStr);

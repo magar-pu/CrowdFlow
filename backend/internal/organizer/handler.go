@@ -60,6 +60,7 @@ func (h *Handler) RegisterRoutes(
 	// Per-event document submissions
 	mux.Handle("GET /api/organizer/events/{id}/documents", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleListEventDocuments)))))
 	mux.Handle("POST /api/organizer/events/{id}/documents", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUploadEventDocument)))))
+	mux.Handle("GET /api/organizer/events/{id}/documents/{docId}/url", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetEventDocumentURL)))))
 	mux.Handle("DELETE /api/organizer/events/{id}/documents/{docId}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleDeleteEventDocument)))))
 
 	// Ticket Tiers Management
@@ -1233,6 +1234,37 @@ func (h *Handler) handleUploadEventDocument(w http.ResponseWriter, r *http.Reque
 	}
 
 	response.JSON(w, http.StatusCreated, doc)
+}
+
+// handleGetEventDocumentURL mints a short-lived link for ONE document. Kept off
+// the list endpoint deliberately: presigned URLs are bearer credentials, so one
+// is created only when a specific file is explicitly opened.
+func (h *Handler) handleGetEventDocumentURL(w http.ResponseWriter, r *http.Request) {
+	eventID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+	docID, err := strconv.Atoi(r.PathValue("docId"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Document ID must be a valid integer")
+		return
+	}
+
+	link, err := h.service.GetEventDocumentURL(r.Context(), eventID, docID)
+	if err != nil {
+		if errors.Is(err, ErrDocumentNotFound) {
+			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Document not found for this event")
+			return
+		}
+		log.Printf("GetEventDocumentURL error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to generate a view link")
+		return
+	}
+
+	// A live credential must never be cached by a proxy or the browser.
+	w.Header().Set("Cache-Control", "no-store")
+	response.JSON(w, http.StatusOK, link)
 }
 
 func (h *Handler) handleDeleteEventDocument(w http.ResponseWriter, r *http.Request) {

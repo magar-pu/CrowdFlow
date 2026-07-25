@@ -1,6 +1,7 @@
 import React from 'react';
 import { DollarSign, Ticket, CalendarDays, Users, ClipboardCheck, Repeat, TrendingUp, Minus, MapPin, Plus, RefreshCw } from 'lucide-react';
 import { useOrganizerData } from '../OrganizerDataContext';
+import { formatIDR } from "@/lib/pricing";
 
 interface DashboardViewProps {
   onCreateEvent: () => void;
@@ -15,7 +16,7 @@ export default function DashboardView({ onCreateEvent, onNavigateToView }: Dashb
   const kpis = [
     {
       title: 'Total Revenue',
-      value: dashboardData ? `$${dashboardData.stats.totalRevenue.toLocaleString()}` : '$0',
+      value: dashboardData ? formatIDR(dashboardData.stats.totalRevenue) : formatIDR(0),
       change: 'Total cumulative earnings',
       icon: DollarSign,
       isPositive: true,
@@ -36,7 +37,7 @@ export default function DashboardView({ onCreateEvent, onNavigateToView }: Dashb
     },
     {
       title: 'Gross Sales',
-      value: dashboardData ? `$${dashboardData.stats.grossSales.toLocaleString()}` : '$0',
+      value: dashboardData ? formatIDR(dashboardData.stats.grossSales) : formatIDR(0),
       change: 'Raw ticketing volume',
       icon: DollarSign,
       isPositive: true,
@@ -145,7 +146,7 @@ export default function DashboardView({ onCreateEvent, onNavigateToView }: Dashb
                 <path d="M0,80 Q20,72 40,65 T80,48 T100,45" fill="none" stroke="var(--color-secondary)" strokeWidth="2.5" strokeLinecap="round" />
               </svg>
               <div className="absolute left-0 top-0 bottom-0 flex flex-col justify-between text-[8px] text-on-surface-variant font-mono leading-none">
-                <span>$1.5M</span><span>$1.0M</span><span>$500k</span><span>$0</span>
+                <span>Rp 1,5M</span><span>Rp 1M</span><span>Rp 500rb</span><span>Rp 0</span>
               </div>
               <div className="absolute -bottom-6 left-0 right-0 flex justify-between text-[9px] text-on-surface-variant font-mono">
                 <span>Oct 1</span><span>Oct 10</span><span>Oct 20</span><span>Oct 30</span>
@@ -179,7 +180,7 @@ export default function DashboardView({ onCreateEvent, onNavigateToView }: Dashb
                         <div className="font-bold text-text-primary">{order.customerName}</div>
                         <div className="text-[10px] text-on-surface-variant">{order.eventName}</div>
                       </td>
-                      <td className="p-3 text-right font-semibold font-mono">${order.amount.toFixed(2)}</td>
+                      <td className="p-3 text-right font-semibold font-mono">{formatIDR(order.amount)}</td>
                       <td className="p-3">
                         <span className={`px-2 py-0.5 rounded font-mono text-[8px] font-bold ${
                           isPaid ? 'status-paid' : 'status-pending'

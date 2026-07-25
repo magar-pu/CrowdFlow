@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Search, Menu, CheckCircle, HelpCircle } from 'lucide-react';
+import { Bell, Menu } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/authStore';
 import { useRouter } from 'next/navigation';
 import { listAuditorNotifications, markAuditorNotificationsRead, AuditorNotification } from '@/lib/api/auditor';
@@ -8,8 +8,6 @@ interface HeaderProps {
   title: string;
   subtitle?: string;
   onOpenMenu?: () => void;
-  searchQuery?: string;
-  setSearchQuery?: (query: string) => void;
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -36,8 +34,6 @@ export default function Header({
   title,
   subtitle,
   onOpenMenu,
-  searchQuery = '',
-  setSearchQuery,
 }: HeaderProps) {
   const router = useRouter();
   const [showNotifications, setShowNotifications] = useState(false);
@@ -121,33 +117,7 @@ export default function Header({
         </div>
       </div>
 
-      {setSearchQuery && (
-        <div className="hidden sm:flex items-center gap-2 border border-border-subtle rounded-lg px-3 py-1.5 w-64 bg-surface-container-low focus-within:bg-white focus-within:border-outline transition-colors">
-          <Search className="w-3.5 h-3.5 text-on-surface-variant" />
-          <input
-            type="text"
-            placeholder="Search submissions, reviews..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-transparent text-xs text-text-primary outline-none placeholder-on-surface-variant"
-          />
-        </div>
-      )}
-
       <div className="flex items-center gap-4">
-        <div className="hidden lg:flex items-center gap-1.5 rounded-full border border-success/20 bg-success/5 px-3 py-1 text-xs font-medium text-success">
-          <CheckCircle className="h-3.5 w-3.5" />
-          <span>Operational</span>
-        </div>
-
-        <button
-          onClick={() => alert('CrowdFlow Auditor Help Center: review guidelines, escalation paths, and compliance policy references.')}
-          className="hidden sm:flex rounded-lg p-2 text-text-secondary transition-colors hover:bg-surface-container-low hover:text-text-primary cursor-pointer"
-          title="Help"
-        >
-          <HelpCircle className="w-4 h-4" />
-        </button>
-
         <div className="relative">
           <button
             onClick={handleToggleNotifications}
