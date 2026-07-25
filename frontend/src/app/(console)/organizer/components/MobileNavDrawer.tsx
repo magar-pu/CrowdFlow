@@ -1,6 +1,10 @@
+"use client";
+
 import React from 'react';
 import { AppView } from '../types';
-import { LayoutDashboard, Calendar, Receipt, Users, UserCog, DollarSign, BarChart3, Settings, Plus, Workflow, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useAuthStore } from '@/lib/store/authStore';
+import { LayoutDashboard, Calendar, Receipt, Users, UserCog, DollarSign, BarChart3, Settings, Plus, Workflow, X, LogOut } from 'lucide-react';
 
 interface MobileNavDrawerProps {
   isOpen: boolean;
@@ -22,6 +26,15 @@ const NAV_ITEMS = [
 ];
 
 export default function MobileNavDrawer({ isOpen, onClose, currentView, setView, onCreateEventClick }: MobileNavDrawerProps) {
+  const router = useRouter();
+  const { logout } = useAuthStore();
+
+  const handleLogout = async () => {
+    onClose();
+    await logout();
+    router.push('/login');
+  };
+
   const isWorkspace = currentView === 'workspace';
 
   return (
@@ -74,13 +87,22 @@ export default function MobileNavDrawer({ isOpen, onClose, currentView, setView,
         </nav>
 
         <div className="border-t border-border-subtle p-4">
-          <button
-            onClick={() => { onClose(); (onCreateEventClick ?? (() => setView('create-event')))(); }}
-            className="w-full bg-primary hover:bg-primary-container text-on-primary py-2.5 px-4 rounded-lg font-sans text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Create Event
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => { onClose(); (onCreateEventClick ?? (() => setView('create-event')))(); }}
+              className="w-full bg-primary hover:bg-primary-container text-on-primary py-2.5 px-4 rounded-lg font-sans text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Create Event
+            </button>
+            <button
+              onClick={handleLogout}
+              className="w-full flex min-h-11 items-center gap-3 rounded-lg px-4 py-2.5 font-sans text-sm font-medium text-text-secondary transition-all duration-200 hover:bg-danger/5 hover:text-danger cursor-pointer"
+            >
+              <LogOut className="w-4 h-4 shrink-0" />
+              <span>Log out</span>
+            </button>
+          </div>
         </div>
       </aside>
     </>

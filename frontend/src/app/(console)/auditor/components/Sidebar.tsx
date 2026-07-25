@@ -1,6 +1,10 @@
+"use client";
+
 import React from 'react';
 import { AuditorView } from '../types';
-import { LayoutDashboard, ClipboardCheck, Bell, Settings, ShieldCheck, ChevronLeft, ChevronRight, Users2, DollarSign, Database } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useAuthStore } from '@/lib/store/authStore';
+import { LayoutDashboard, ClipboardCheck, Bell, Settings, ShieldCheck, ChevronLeft, ChevronRight, Users2, DollarSign, Database, LogOut } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 interface SidebarProps {
@@ -31,6 +35,14 @@ export default function Sidebar({
   pendingDocumentsCount,
   pendingOrganizersCount,
 }: SidebarProps) {
+  const router = useRouter();
+  const { logout } = useAuthStore();
+
+  const handleLogout = async () => {
+    await logout();
+    router.push('/login');
+  };
+
   const badgeFor = (view: AuditorView) => {
     if (view === 'reviews') return pendingReviewsCount > 0 ? pendingReviewsCount : undefined;
     if (view === 'documents') return pendingDocumentsCount > 0 ? pendingDocumentsCount : undefined;
@@ -110,6 +122,21 @@ export default function Sidebar({
           );
         })}
       </nav>
+
+      <div className="border-t border-border-subtle p-4">
+        <div className={`flex flex-col gap-2 ${isCollapsed ? 'items-center' : ''}`}>
+          <button
+            onClick={handleLogout}
+            className={`flex min-h-11 items-center rounded-lg font-sans text-sm font-medium text-text-secondary transition-all duration-200 hover:bg-danger/5 hover:text-danger cursor-pointer ${
+              isCollapsed ? 'w-10 h-10 justify-center px-0' : 'w-full gap-3 px-4 py-2.5'
+            }`}
+            title={isCollapsed ? 'Log out' : undefined}
+          >
+            <LogOut className="w-4 h-4 shrink-0" />
+            {!isCollapsed && <span>Log out</span>}
+          </button>
+        </div>
+      </div>
     </aside>
   );
 }
