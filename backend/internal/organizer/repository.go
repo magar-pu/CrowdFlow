@@ -3,6 +3,7 @@ package organizer
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -1604,6 +1605,40 @@ func (r *PostgresRepository) PublishOrganizerEvent(ctx context.Context, eventID 
 		}
 	}
 
+	// Document gate: an auditor cannot evaluate an event without its proposal,
+	// crowd permit and PIC identification. A rejected document does NOT satisfy
+	// the gate — it has to be replaced before the event can go back for review.
+	rows, err := tx.QueryContext(ctx, `
+		SELECT document_type FROM event_documents
+		WHERE event_id = $1 AND status <> 'rejected'
+	`, eventID)
+	if err != nil {
+		return err
+	}
+	present := map[string]bool{}
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			rows.Close()
+			return err
+		}
+		present[t] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	var missing []string
+	for _, t := range RequiredEventDocumentTypes {
+		if !present[t] {
+			missing = append(missing, EventDocumentLabel(t))
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("%w: upload %s in the Documents tab before submitting", ErrDocumentsIncomplete, strings.Join(missing, ", "))
+	}
+
 	// Update status
 	_, err = tx.ExecContext(ctx, "UPDATE events SET status = 'pending_review', updated_at = now() WHERE id = $1 AND organizer_id = $2", eventID, organizerID)
 	if err != nil {
@@ -2050,4 +2085,128 @@ func (r *PostgresRepository) RespondToEventRevision(ctx context.Context, eventID
 	}
 
 	return nil
+}
+
+// ============================================================================
+// Per-event documents
+// ============================================================================
+
+const eventDocumentSelect = `
+	SELECT id, event_id, document_type, file_path, file_name, file_size,
+	       content_type, status, review_notes, uploaded_at
+	FROM event_documents`
+
+func scanEventDocument(s interface{ Scan(...any) error }) (*EventDocument, error) {
+	doc := &EventDocument{}
+	err := s.Scan(
+		&doc.ID, &doc.EventID, &doc.DocumentType, &doc.FilePath, &doc.FileName,
+		&doc.FileSize, &doc.ContentType, &doc.Status, &doc.ReviewNotes, &doc.UploadedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
+func (r *PostgresRepository) ListEventDocuments(ctx context.Context, eventID int) ([]*EventDocument, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	rows, err := r.db.QueryContext(ctx, eventDocumentSelect+`
+		WHERE event_id = $1
+		ORDER BY uploaded_at DESC`, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Non-nil so an event with no documents serialises as [] rather than null.
+	docs := []*EventDocument{}
+	for rows.Next() {
+		doc, err := scanEventDocument(rows)
+		if err != nil {
+			return nil, err
+		}
+		docs = append(docs, doc)
+	}
+	return docs, rows.Err()
+}
+
+func (r *PostgresRepository) GetEventDocument(ctx context.Context, eventID int, docID int) (*EventDocument, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// event_id is part of the predicate, not just the id: the route's ownership
+	// middleware guards the EVENT, so a document id from another event must not
+	// resolve here.
+	doc, err := scanEventDocument(r.db.QueryRowContext(ctx, eventDocumentSelect+`
+		WHERE id = $1 AND event_id = $2`, docID, eventID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrDocumentNotFound
+	}
+	return doc, err
+}
+
+// UpsertEventDocument writes the row for (event_id, document_type), replacing any
+// existing one. It returns the object key of the file it displaced, if any, so the
+// caller can delete the orphan from the private bucket.
+//
+// Re-uploading also resets status to 'pending_verification' and clears the auditor's
+// review notes — a replaced file has not been reviewed, and leaving a stale
+// 'verified' would let an organizer swap an approved document after the fact.
+func (r *PostgresRepository) UpsertEventDocument(ctx context.Context, doc *EventDocument, uploadedBy int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var replaced sql.NullString
+	err := r.db.QueryRowContext(ctx, `
+		SELECT file_path FROM event_documents WHERE event_id = $1 AND document_type = $2
+	`, doc.EventID, doc.DocumentType).Scan(&replaced)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+
+	err = r.db.QueryRowContext(ctx, `
+		INSERT INTO event_documents
+			(event_id, document_type, file_path, file_name, file_size, content_type, uploaded_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (event_id, document_type) DO UPDATE SET
+			file_path    = EXCLUDED.file_path,
+			file_name    = EXCLUDED.file_name,
+			file_size    = EXCLUDED.file_size,
+			content_type = EXCLUDED.content_type,
+			uploaded_by  = EXCLUDED.uploaded_by,
+			uploaded_at  = CURRENT_TIMESTAMP,
+			status       = 'pending_verification',
+			review_notes = NULL,
+			reviewed_at  = NULL,
+			reviewed_by  = NULL
+		RETURNING id, status, uploaded_at
+	`,
+		doc.EventID, doc.DocumentType, doc.FilePath, doc.FileName,
+		doc.FileSize, doc.ContentType, uploadedBy,
+	).Scan(&doc.ID, &doc.Status, &doc.UploadedAt)
+	if err != nil {
+		return "", err
+	}
+
+	if replaced.Valid && replaced.String != doc.FilePath {
+		return replaced.String, nil
+	}
+	return "", nil
+}
+
+// DeleteEventDocument removes the row and returns the object key to purge.
+func (r *PostgresRepository) DeleteEventDocument(ctx context.Context, eventID int, docID int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var filePath string
+	err := r.db.QueryRowContext(ctx, `
+		DELETE FROM event_documents WHERE id = $1 AND event_id = $2 RETURNING file_path
+	`, docID, eventID).Scan(&filePath)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrDocumentNotFound
+	}
+	return filePath, err
 }

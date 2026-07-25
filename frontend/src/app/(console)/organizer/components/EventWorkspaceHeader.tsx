@@ -1,6 +1,6 @@
 import React from 'react';
 import { EventItem } from '../types';
-import { ArrowLeft, CalendarDays, MapPin, LayoutDashboard, Ticket, Map, Radio, TrendingUp, Settings2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, CalendarDays, MapPin, LayoutDashboard, Ticket, Map, Radio, TrendingUp, Settings2, AlertTriangle, FileText } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 interface EventWorkspaceHeaderProps {
@@ -13,6 +13,7 @@ interface EventWorkspaceHeaderProps {
 const TABS: { id: string; label: string; icon: LucideIcon }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'revisions', label: 'Revisions', icon: AlertTriangle },
+  { id: 'documents', label: 'Documents', icon: FileText },
   { id: 'tickets', label: 'Tickets', icon: Ticket },
   { id: 'venue', label: 'Venue', icon: Map },
   { id: 'scanner', label: 'Scanner', icon: Radio },

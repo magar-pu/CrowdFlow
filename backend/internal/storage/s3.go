@@ -129,6 +129,17 @@ func (s *S3Storage) UploadPrivateFile(ctx context.Context, key string, file io.R
 	return err
 }
 
+// DeletePrivateFile removes an object from the private bucket. Used when a document
+// is replaced or deleted, so the superseded file does not linger in storage after
+// the row that pointed at it is gone.
+func (s *S3Storage) DeletePrivateFile(ctx context.Context, key string) error {
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.privateBucket),
+		Key:    aws.String(key),
+	})
+	return err
+}
+
 // GetPublicURL returns the accessible edge CDN URL for a given object key in the public bucket
 func (s *S3Storage) GetPublicURL(key string) string {
 	if s.publicBase != "" {

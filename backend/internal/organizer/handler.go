@@ -57,6 +57,11 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /api/organizer/events/{id}/revisions", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetEventRevisions)))))
 	mux.Handle("POST /api/organizer/events/{id}/revisions/{revId}/respond", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleRespondEventRevision)))))
 
+	// Per-event document submissions
+	mux.Handle("GET /api/organizer/events/{id}/documents", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleListEventDocuments)))))
+	mux.Handle("POST /api/organizer/events/{id}/documents", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUploadEventDocument)))))
+	mux.Handle("DELETE /api/organizer/events/{id}/documents/{docId}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleDeleteEventDocument)))))
+
 	// Ticket Tiers Management
 	mux.Handle("GET /api/organizer/events/{id}/ticket-tiers", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleListTicketTiers)))))
 	mux.Handle("POST /api/organizer/events/{id}/ticket-tiers", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleCreateTicketTier)))))
@@ -502,6 +507,10 @@ func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, ErrSeatingIncomplete) {
 			response.Error(w, http.StatusUnprocessableEntity, "SEATING_INCOMPLETE", err.Error())
+			return
+		}
+		if errors.Is(err, ErrDocumentsIncomplete) {
+			response.Error(w, http.StatusUnprocessableEntity, "DOCUMENTS_INCOMPLETE", err.Error())
 			return
 		}
 		log.Printf("PublishOrganizerEvent error: %v", err)
@@ -1140,4 +1149,113 @@ func (h *Handler) handleRespondEventRevision(w http.ResponseWriter, r *http.Requ
 	}
 
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Revision response submitted successfully"})
+}
+
+// ============================================================================
+// Per-event documents
+// ============================================================================
+
+func (h *Handler) handleListEventDocuments(w http.ResponseWriter, r *http.Request) {
+	eventID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+
+	docs, err := h.service.ListEventDocuments(r.Context(), eventID)
+	if err != nil {
+		log.Printf("ListEventDocuments error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load event documents")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, docs)
+}
+
+func (h *Handler) handleUploadEventDocument(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
+		return
+	}
+
+	eventID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+
+	// One document per request, keyed by its type. The 12MB reader leaves headroom
+	// over the service's 10MB file cap for multipart framing.
+	r.Body = http.MaxBytesReader(w, r.Body, 12<<20)
+	if err := r.ParseMultipartForm(12 << 20); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse upload: file too large or malformed")
+		return
+	}
+
+	docType := r.FormValue("document_type")
+	if docType == "" {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "document_type is required")
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "A file is required under the 'file' field")
+		return
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to read uploaded file")
+		return
+	}
+
+	doc, err := h.service.UploadEventDocument(r.Context(), eventID, userID, &EventDocumentUpload{
+		Type:     docType,
+		Filename: header.Filename,
+		Content:  content,
+	})
+	if err != nil {
+		if errors.Is(err, ErrValidation) {
+			response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+			return
+		}
+		log.Printf("UploadEventDocument error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to upload document")
+		return
+	}
+
+	response.JSON(w, http.StatusCreated, doc)
+}
+
+func (h *Handler) handleDeleteEventDocument(w http.ResponseWriter, r *http.Request) {
+	eventID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+	docID, err := strconv.Atoi(r.PathValue("docId"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Document ID must be a valid integer")
+		return
+	}
+
+	if err := h.service.DeleteEventDocument(r.Context(), eventID, docID); err != nil {
+		if errors.Is(err, ErrDocumentNotFound) {
+			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Document not found for this event")
+			return
+		}
+		log.Printf("DeleteEventDocument error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete document")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Document deleted successfully"})
 }

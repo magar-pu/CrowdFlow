@@ -240,6 +240,118 @@ func (s *OrganizerService) isValidDocumentType(contentType string) bool {
 		contentType == "image/webp"
 }
 
+// ============================================================================
+// Per-event documents
+// ============================================================================
+
+// maxEventDocumentBytes caps a single upload. Documents are scans of paperwork,
+// not media; 10MB is generous for a multi-page PDF.
+const maxEventDocumentBytes = 10 << 20
+
+func (s *OrganizerService) ListEventDocuments(ctx context.Context, eventID int) (*EventDocumentsResponse, error) {
+	docs, err := s.repo.ListEventDocuments(ctx, eventID)
+	if err != nil {
+		return nil, err
+	}
+
+	present := map[string]bool{}
+	for _, doc := range docs {
+		// A rejected document does not count towards completeness — the publish
+		// gate applies the same rule, so the tab must agree with it.
+		if doc.Status != "rejected" {
+			present[doc.DocumentType] = true
+		}
+		if url, err := s.storage.GetPresignedURL(ctx, doc.FilePath, 15*time.Minute); err == nil {
+			doc.PresignedURL = url
+		}
+	}
+
+	missing := []string{}
+	for _, t := range RequiredEventDocumentTypes {
+		if !present[t] {
+			missing = append(missing, t)
+		}
+	}
+
+	return &EventDocumentsResponse{
+		Documents: docs,
+		Required:  RequiredEventDocumentTypes,
+		Missing:   missing,
+		Complete:  len(missing) == 0,
+	}, nil
+}
+
+func (s *OrganizerService) UploadEventDocument(ctx context.Context, eventID int, userID int, upload *EventDocumentUpload) (*EventDocument, error) {
+	docType := strings.ToUpper(strings.TrimSpace(upload.Type))
+	if !IsValidEventDocumentType(docType) {
+		return nil, fmt.Errorf("%w: unknown document type %q", ErrValidation, upload.Type)
+	}
+	if len(upload.Content) == 0 {
+		return nil, fmt.Errorf("%w: %s file is empty", ErrValidation, EventDocumentLabel(docType))
+	}
+	if len(upload.Content) > maxEventDocumentBytes {
+		return nil, fmt.Errorf("%w: %s exceeds the 10MB limit", ErrValidation, EventDocumentLabel(docType))
+	}
+
+	contentType := http.DetectContentType(upload.Content)
+	if !s.isValidDocumentType(contentType) {
+		return nil, fmt.Errorf("%w: invalid format for %s (must be PDF, PNG, or JPG)", ErrValidation, EventDocumentLabel(docType))
+	}
+
+	ext := filepath.Ext(upload.Filename)
+	if ext == "" {
+		if contentType == "application/pdf" {
+			ext = ".pdf"
+		} else {
+			ext = ".png"
+		}
+	}
+
+	// Private bucket only. These carry NIK (protected personal data under UU PDP)
+	// and are read back through short-lived presigned URLs, never GetPublicURL.
+	objectKey := fmt.Sprintf("events/%d/documents/%d_%s%s", eventID, time.Now().UnixNano(), strings.ToLower(docType), ext)
+	if err := s.storage.UploadPrivateFile(ctx, objectKey, bytes.NewReader(upload.Content), contentType); err != nil {
+		return nil, fmt.Errorf("failed to upload %s: %w", EventDocumentLabel(docType), err)
+	}
+
+	doc := &EventDocument{
+		EventID:      eventID,
+		DocumentType: docType,
+		FilePath:     objectKey,
+		FileName:     filepath.Base(upload.Filename),
+		FileSize:     int64(len(upload.Content)),
+		ContentType:  contentType,
+	}
+
+	replaced, err := s.repo.UpsertEventDocument(ctx, doc, userID)
+	if err != nil {
+		// The object is already in the bucket; drop it rather than leave an
+		// orphan no row points at.
+		_ = s.storage.DeletePrivateFile(ctx, objectKey)
+		return nil, err
+	}
+	if replaced != "" {
+		// Best effort: a surviving orphan costs storage, not correctness.
+		_ = s.storage.DeletePrivateFile(ctx, replaced)
+	}
+
+	if url, err := s.storage.GetPresignedURL(ctx, doc.FilePath, 15*time.Minute); err == nil {
+		doc.PresignedURL = url
+	}
+	return doc, nil
+}
+
+func (s *OrganizerService) DeleteEventDocument(ctx context.Context, eventID int, docID int) error {
+	filePath, err := s.repo.DeleteEventDocument(ctx, eventID, docID)
+	if err != nil {
+		return err
+	}
+	if filePath != "" {
+		_ = s.storage.DeletePrivateFile(ctx, filePath)
+	}
+	return nil
+}
+
 func (s *OrganizerService) populatePresignedURLs(ctx context.Context, app *OrganizerApplication) {
 	for _, doc := range app.Documents {
 		url, err := s.storage.GetPresignedURL(ctx, doc.FilePath, 15*time.Minute)

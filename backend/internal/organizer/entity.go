@@ -3,6 +3,7 @@ package organizer
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 )
 
@@ -22,7 +23,95 @@ var (
 	// (it is picked in the workspace, not the creation wizard), but an event
 	// cannot be submitted for review without one.
 	ErrVenueRequired = errors.New("event has no venue")
+
+	// ErrDocumentsIncomplete guards the publish step alongside the venue and
+	// seating gates: an auditor cannot evaluate an event without its proposal,
+	// crowd permit and PIC identification.
+	ErrDocumentsIncomplete = errors.New("required event documents are missing")
+
+	ErrDocumentNotFound = errors.New("event document not found")
 )
+
+// Per-event document types. These are distinct from the ACCOUNT-level documents
+// in organizer_documents (KTP/NPWP/NIB), which an organizer submits once when
+// applying and which are reused across every event they run.
+const (
+	DocTypeEventProposal = "EVENT_PROPOSAL" // Proposal Kegiatan
+	DocTypeCrowdPermit   = "CROWD_PERMIT"   // Izin Keramaian
+	DocTypePICID         = "PIC_ID"         // Fotokopi KTP Penanggung Jawab
+	DocTypeVenuePermit   = "VENUE_PERMIT"   // Izin Penggunaan Tempat
+)
+
+// RequiredEventDocumentTypes must all be present before an event may be submitted
+// for review. VENUE_PERMIT is deliberately excluded — it only applies when the
+// organizer does not own the venue, which nothing in the schema can determine.
+var RequiredEventDocumentTypes = []string{
+	DocTypeEventProposal,
+	DocTypeCrowdPermit,
+	DocTypePICID,
+}
+
+// AllEventDocumentTypes is the closed set the API accepts.
+var AllEventDocumentTypes = []string{
+	DocTypeEventProposal,
+	DocTypeCrowdPermit,
+	DocTypePICID,
+	DocTypeVenuePermit,
+}
+
+func IsValidEventDocumentType(t string) bool {
+	return slices.Contains(AllEventDocumentTypes, t)
+}
+
+// EventDocumentLabel renders a document type for humans. Error messages reach the
+// organizer verbatim via the publish banner, so they cannot read EVENT_PROPOSAL.
+func EventDocumentLabel(t string) string {
+	switch t {
+	case DocTypeEventProposal:
+		return "Event Proposal"
+	case DocTypeCrowdPermit:
+		return "Crowd Permit (Izin Keramaian)"
+	case DocTypePICID:
+		return "PIC Identification (KTP)"
+	case DocTypeVenuePermit:
+		return "Venue Usage Permit"
+	default:
+		return t
+	}
+}
+
+// EventDocument is one row of event_documents. FilePath is a private-bucket
+// object key and is never serialised; readers get a short-lived PresignedURL.
+type EventDocument struct {
+	ID           int       `json:"id"`
+	EventID      int       `json:"event_id"`
+	DocumentType string    `json:"document_type"`
+	FilePath     string    `json:"-"`
+	FileName     string    `json:"file_name"`
+	FileSize     int64     `json:"file_size"`
+	ContentType  string    `json:"content_type"`
+	Status       string    `json:"status"`
+	ReviewNotes  *string   `json:"review_notes,omitempty"`
+	UploadedAt   time.Time `json:"uploaded_at"`
+	PresignedURL string    `json:"url,omitempty"`
+}
+
+// EventDocumentUpload carries a single file from the multipart handler to the
+// service, which is what actually writes it to the private bucket.
+type EventDocumentUpload struct {
+	Type     string
+	Filename string
+	Content  []byte
+}
+
+// EventDocumentsResponse is the Documents tab payload: every slot the UI can
+// render, whether filled or not, plus the derived submission readiness.
+type EventDocumentsResponse struct {
+	Documents []*EventDocument `json:"documents"`
+	Required  []string         `json:"required"`
+	Missing   []string         `json:"missing"`
+	Complete  bool             `json:"complete"`
+}
 
 type OrganizerApplication struct {
 	ID                int                  `json:"id"`
@@ -435,6 +524,12 @@ type Repository interface {
 	MarkNotificationsRead(ctx context.Context, userID int, notificationIDs []int) error
 	GetEventRevisions(ctx context.Context, eventID int, organizerID int) (*EventRevisionFeedback, error)
 	RespondToEventRevision(ctx context.Context, eventID, revID, organizerID int, req RespondRevisionRequest) error
+
+	// Per-event documents
+	ListEventDocuments(ctx context.Context, eventID int) ([]*EventDocument, error)
+	UpsertEventDocument(ctx context.Context, doc *EventDocument, uploadedBy int) (string, error)
+	GetEventDocument(ctx context.Context, eventID int, docID int) (*EventDocument, error)
+	DeleteEventDocument(ctx context.Context, eventID int, docID int) (string, error)
 }
 
 type Service interface {
@@ -475,6 +570,11 @@ type Service interface {
 	RespondToEventRevision(ctx context.Context, eventID, revID, organizerID int, req RespondRevisionRequest) error
 	ListNotifications(ctx context.Context, userID int) ([]*Notification, error)
 	MarkNotificationsRead(ctx context.Context, userID int, notificationIDs []int) error
+
+	// Per-event documents
+	ListEventDocuments(ctx context.Context, eventID int) (*EventDocumentsResponse, error)
+	UploadEventDocument(ctx context.Context, eventID int, userID int, upload *EventDocumentUpload) (*EventDocument, error)
+	DeleteEventDocument(ctx context.Context, eventID int, docID int) error
 }
 
 func MapApplication(app *OrganizerApplication) *ApplicationResponse {

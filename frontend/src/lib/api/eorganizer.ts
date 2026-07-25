@@ -442,6 +442,80 @@ export async function getEventCheckInStats(eventId: number): Promise<ApiResponse
   });
 }
 
+/* ------------------------------------------------------------------ *
+ * Per-event documents
+ *
+ * Distinct from the ACCOUNT-level documents (KTP/NPWP/NIB) an organizer
+ * submits once when applying. These are re-submitted per event and are what
+ * the auditor evaluates before approving it.
+ * ------------------------------------------------------------------ */
+
+export type EventDocumentType =
+  | "EVENT_PROPOSAL"
+  | "CROWD_PERMIT"
+  | "PIC_ID"
+  | "VENUE_PERMIT";
+
+export type EventDocumentStatus = "pending_verification" | "verified" | "rejected";
+
+export interface EventDocument {
+  id: number;
+  event_id: number;
+  document_type: EventDocumentType;
+  file_name: string;
+  file_size: number;
+  content_type: string;
+  status: EventDocumentStatus;
+  /** Auditor's reason, present only when status is "rejected". */
+  review_notes?: string;
+  uploaded_at: string;
+  /** Short-lived presigned URL (15 min). Absent if the file could not be signed. */
+  url?: string;
+}
+
+export interface EventDocumentsResponse {
+  documents: EventDocument[];
+  /** Types that must be present before the event may be submitted for review. */
+  required: EventDocumentType[];
+  /** Required types still missing or rejected. */
+  missing: EventDocumentType[];
+  complete: boolean;
+}
+
+export async function listEventDocuments(eventId: number): Promise<ApiResponse<EventDocumentsResponse>> {
+  return apiRequest<EventDocumentsResponse>(`/api/organizer/events/${eventId}/documents`, {
+    method: "GET",
+  });
+}
+
+/**
+ * Uploads one document. Re-uploading a type REPLACES the existing file and resets
+ * its review status, so there is no separate "update" call.
+ *
+ * Sends FormData deliberately — apiRequest leaves the Content-Type unset for
+ * FormData so the browser can write the multipart boundary itself.
+ */
+export async function uploadEventDocument(
+  eventId: number,
+  documentType: EventDocumentType,
+  file: File
+): Promise<ApiResponse<EventDocument>> {
+  const body = new FormData();
+  body.append("document_type", documentType);
+  body.append("file", file);
+
+  return apiRequest<EventDocument>(`/api/organizer/events/${eventId}/documents`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function deleteEventDocument(eventId: number, docId: number): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/documents/${docId}`, {
+    method: "DELETE",
+  });
+}
+
 export async function createVenueSection(eventId: number, section: Omit<VenueSection, "id" | "sold">): Promise<ApiResponse<void>> {
   return apiRequest<void>(`/api/organizer/events/${eventId}/venue`, {
     method: "POST",
