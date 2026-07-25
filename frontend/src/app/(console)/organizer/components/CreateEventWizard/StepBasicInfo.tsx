@@ -1,6 +1,7 @@
-import React, { useRef, useState } from 'react';
-import { DocumentStatus } from '../../types';
-import { Bold, Italic, List, Link2, MapPin, Globe2, Image as ImageIcon, UploadCloud, X, FileText } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import Image from 'next/image';
+import { MapPin, Globe2, Image as ImageIcon, X } from 'lucide-react';
+import { listEventTypes, EventType } from '@/lib/api/eorganizer';
 
 interface StepBasicInfoProps {
   name: string;
@@ -25,16 +26,7 @@ interface StepBasicInfoProps {
   setStreamingLink: (v: string) => void;
   coverImageName: string | null;
   setCoverImageName: (v: string | null) => void;
-  documents: DocumentStatus[];
-  setDocuments: (v: DocumentStatus[]) => void;
 }
-
-const DOC_CATEGORIES: DocumentStatus['category'][] = [
-  'Permits & Licenses',
-  'Vendor & Venue Contracts',
-  'Artist & Talent Agreements',
-  'Supporting Documents',
-];
 
 export default function StepBasicInfo({
   name, setName,
@@ -48,29 +40,52 @@ export default function StepBasicInfo({
   address, setAddress,
   streamingLink, setStreamingLink,
   coverImageName, setCoverImageName,
-  documents, setDocuments,
 }: StepBasicInfoProps) {
   const [isDraggingCover, setIsDraggingCover] = useState(false);
-  const [draggingCategory, setDraggingCategory] = useState<string | null>(null);
+  const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+
+  const [eventTypes, setEventTypes] = useState<EventType[]>([]);
+  const [typesLoading, setTypesLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    listEventTypes().then((res) => {
+      if (cancelled) return;
+      if (res.success && res.data) setEventTypes(res.data);
+      setTypesLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Preview is a local object URL for the picked file. The file itself isn't
+  // uploaded here (only its name is carried forward), so this stays component-
+  // local and is revoked when replaced or on unmount to avoid leaks.
+  const applyCoverFile = (file: File) => {
+    setCoverImageName(file.name);
+    setCoverPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+  };
+
+  const clearCover = () => {
+    setCoverImageName(null);
+    setCoverPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  };
+
+  useEffect(() => {
+    return () => { if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl); };
+  }, [coverPreviewUrl]);
 
   const handleCoverDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingCover(false);
     const file = e.dataTransfer.files?.[0];
-    if (file) setCoverImageName(file.name);
-  };
-
-  const handleDocDrop = (e: React.DragEvent, cat: DocumentStatus['category']) => {
-    e.preventDefault();
-    setDraggingCategory(null);
-    const file = e.dataTransfer.files?.[0];
-    if (!file) return;
-    setDocuments([...documents, { name: file.name, type: file.type || 'FILE', status: 'READY', category: cat }]);
-  };
-
-  const handleDocRemove = (idx: number) => {
-    setDocuments(documents.filter((_, i) => i !== idx));
+    if (file) applyCoverFile(file);
   };
 
   return (
@@ -87,51 +102,35 @@ export default function StepBasicInfo({
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Category</label>
-              <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none cursor-pointer">
-                <option value="">-- Select Category --</option>
-                <option value="Conference">Conference</option>
-                <option value="Festival">Festival</option>
-                <option value="Workshop">Workshop</option>
+              <select value={category} onChange={(e) => setCategory(e.target.value)} disabled={typesLoading} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
+                <option value="">{typesLoading ? 'Loading categories…' : '-- Select Category --'}</option>
+                {eventTypes.map((t) => (
+                  <option key={t.event_type_id} value={t.event_type}>{t.event_type}</option>
+                ))}
               </select>
             </div>
           </div>
 
           <div className="space-y-1.5">
             <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Description</label>
-            <div className="border border-border-subtle rounded-lg overflow-hidden">
-              <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border-subtle bg-surface-container-low">
-                <button type="button" title="Bold" className="p-1.5 rounded text-text-secondary hover:bg-white hover:text-text-primary transition-colors cursor-pointer">
-                  <Bold className="w-3.5 h-3.5" />
-                </button>
-                <button type="button" title="Italic" className="p-1.5 rounded text-text-secondary hover:bg-white hover:text-text-primary transition-colors cursor-pointer">
-                  <Italic className="w-3.5 h-3.5" />
-                </button>
-                <button type="button" title="List" className="p-1.5 rounded text-text-secondary hover:bg-white hover:text-text-primary transition-colors cursor-pointer">
-                  <List className="w-3.5 h-3.5" />
-                </button>
-                <button type="button" title="Link" className="p-1.5 rounded text-text-secondary hover:bg-white hover:text-text-primary transition-colors cursor-pointer">
-                  <Link2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} className="w-full p-3 text-xs bg-white outline-none resize-none" placeholder="e.g. Join us for a night of rock music featuring top local and international bands." />
-            </div>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} className="w-full p-3 text-xs bg-white border border-border-subtle rounded-lg outline-none resize-none" placeholder="e.g. Join us for a night of rock music featuring top local and international bands." />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Start Date</label>
+              <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Event Start Date</label>
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
             </div>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Start Time</label>
+              <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Event Start Time</label>
               <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
             </div>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">End Date</label>
+              <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Event End Date</label>
               <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
             </div>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">End Time</label>
+              <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Event End Time</label>
               <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
             </div>
           </div>
@@ -186,96 +185,57 @@ export default function StepBasicInfo({
       </div>
 
       <div className="space-y-6">
-        {/* Credentials & Documents */}
-        <div className="bg-white border border-border-subtle rounded-xl p-5 soft-shadow space-y-4">
-          <h3 className="text-sm font-bold text-text-primary">Credentials & Documents</h3>
-
-          <div className="space-y-4">
-            {DOC_CATEGORIES.map((cat) => (
-              <div key={cat} className="space-y-2">
-                <label className="text-[10px] font-mono font-bold text-text-secondary uppercase block">{cat}</label>
-                <label
-                  onDragOver={(e) => { e.preventDefault(); setDraggingCategory(cat ?? null); }}
-                  onDragLeave={() => setDraggingCategory(null)}
-                  onDrop={(e) => handleDocDrop(e, cat)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed cursor-pointer transition-colors ${
-                    draggingCategory === cat ? 'border-secondary bg-secondary/5' : 'border-border-subtle hover:bg-surface-container-low'
-                  }`}
-                >
-                  <input
-                    type="file"
-                    accept=".pdf,.doc,.docx"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) setDocuments([...documents, { name: file.name, type: 'PDF/DOCX', status: 'READY', category: cat }]);
-                    }}
-                  />
-                  <UploadCloud className="w-3.5 h-3.5 text-on-surface-variant shrink-0" />
-                  <span className="text-[10px] text-on-surface-variant font-mono">Upload PDF / DOCX</span>
-                </label>
-              </div>
-            ))}
-          </div>
-
-          <div className="pt-2 border-t border-border-subtle space-y-3">
-            {documents.length === 0 ? (
-              <p className="text-[10px] text-on-surface-variant font-mono">No documents uploaded yet.</p>
-            ) : (
-              documents.map((doc, idx) => (
-                <div key={idx} className="flex justify-between items-center text-xs gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <FileText className="w-3.5 h-3.5 text-on-surface-variant shrink-0" />
-                    <div className="min-w-0">
-                      <p className="font-bold text-text-primary truncate">{doc.name}</p>
-                      <span className="text-[9px] text-on-surface-variant font-mono">{doc.category}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={`px-2 py-0.5 rounded-full font-mono text-[8px] font-bold ${
-                      doc.status === 'VERIFIED' ? 'bg-success/10 text-success' : 'bg-secondary/10 text-secondary'
-                    }`}>
-                      {doc.status}
-                    </span>
-                    <button onClick={() => handleDocRemove(idx)} className="text-on-surface-variant hover:text-danger transition-colors cursor-pointer">
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
         {/* Cover Image */}
         <div className="bg-white border border-border-subtle rounded-xl p-5 soft-shadow space-y-4">
           <h3 className="text-sm font-bold text-text-primary">Event Cover Image</h3>
-          <div
-            onDragOver={(e) => { e.preventDefault(); setIsDraggingCover(true); }}
-            onDragLeave={() => setIsDraggingCover(false)}
-            onDrop={handleCoverDrop}
-            onClick={() => coverInputRef.current?.click()}
-            className={`flex flex-col items-center justify-center gap-2 h-32 rounded-lg border-2 border-dashed cursor-pointer transition-colors ${
-              isDraggingCover ? 'border-secondary bg-secondary/5' : 'border-border-subtle hover:bg-surface-container-low'
-            }`}
-          >
-            <input
-              ref={coverInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={(e) => e.target.files?.[0] && setCoverImageName(e.target.files[0].name)}
-            />
-            <ImageIcon className="w-6 h-6 text-on-surface-variant" />
-            <p className="text-xs text-text-secondary font-medium text-center">Drag & drop cover art, or click to browse</p>
-            <p className="text-[10px] text-on-surface-variant font-mono">PNG, JPG, WEBP</p>
-          </div>
-          {coverImageName && (
-            <div className="flex items-center justify-between px-3 py-2 bg-surface-container-low border border-border-subtle rounded-lg text-xs">
-              <span className="font-medium text-text-primary truncate">{coverImageName}</span>
-              <button onClick={() => setCoverImageName(null)} className="text-on-surface-variant hover:text-danger transition-colors cursor-pointer">
-                <X className="w-3.5 h-3.5" />
-              </button>
+
+          <input
+            ref={coverInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={(e) => e.target.files?.[0] && applyCoverFile(e.target.files[0])}
+          />
+
+          {coverPreviewUrl ? (
+            <div className="space-y-2">
+              <div className="relative w-full h-40 rounded-lg overflow-hidden border border-border-subtle bg-surface-container-low group">
+                {/* Local object URL for the just-picked file — unoptimized so
+                    Next doesn't try to run it through the image optimizer. */}
+                <Image src={coverPreviewUrl} alt="Cover preview" fill unoptimized className="object-cover" />
+                <button
+                  type="button"
+                  onClick={clearCover}
+                  className="absolute top-2 right-2 flex items-center justify-center w-7 h-7 rounded-full bg-black/60 text-white hover:bg-danger transition-colors cursor-pointer"
+                  aria-label="Remove cover image"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="font-medium text-text-primary truncate">{coverImageName}</span>
+                <button
+                  type="button"
+                  onClick={() => coverInputRef.current?.click()}
+                  className="shrink-0 font-semibold text-secondary hover:underline cursor-pointer"
+                >
+                  Replace
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div
+              onDragOver={(e) => { e.preventDefault(); setIsDraggingCover(true); }}
+              onDragLeave={() => setIsDraggingCover(false)}
+              onDrop={handleCoverDrop}
+              onClick={() => coverInputRef.current?.click()}
+              className={`flex flex-col items-center justify-center gap-2 h-32 rounded-lg border-2 border-dashed cursor-pointer transition-colors ${
+                isDraggingCover ? 'border-secondary bg-secondary/5' : 'border-border-subtle hover:bg-surface-container-low'
+              }`}
+            >
+              <ImageIcon className="w-6 h-6 text-on-surface-variant" />
+              <p className="text-xs text-text-secondary font-medium text-center">Drag & drop cover art, or click to browse</p>
+              <p className="text-[10px] text-on-surface-variant font-mono">PNG, JPG, WEBP</p>
             </div>
           )}
         </div>

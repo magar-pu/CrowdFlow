@@ -180,6 +180,20 @@ export async function deleteOrganizerEvent(eventId: number): Promise<ApiResponse
   });
 }
 
+// Event types drive the Category dropdown. The create endpoint resolves an
+// event's category by NAME (event_types.event_type), so the dropdown submits
+// the type name — not the id.
+export interface EventType {
+  event_type_id: number;
+  event_type: string;
+}
+
+export async function listEventTypes(): Promise<ApiResponse<EventType[]>> {
+  return apiRequest<EventType[]>("/api/v1/event-types", {
+    method: "GET",
+  });
+}
+
 export async function createOrganizerEvent(event: Omit<OrganizerEvent, "id" | "sold" | "revenue">): Promise<ApiResponse<OrganizerEvent>> {
   return apiRequest<OrganizerEvent>("/api/organizer/events", {
     method: "POST",

@@ -34,7 +34,7 @@ interface OrganizerDataValue {
   toast: Toast | null;
   pushToast: (message: string, type?: Toast['type']) => void;
 
-  handleCreateEvent: (wizardEvent: Omit<EventItem, "id" | "sold" | "revenue">) => void;
+  handleCreateEvent: (wizardEvent: Omit<EventItem, "id" | "sold" | "revenue">) => Promise<string | null>;
   handleUpdateEventName: (eventId: string, newName: string) => void;
   handleResetData: () => void;
   handleTriggerLiveScan: () => void;
@@ -163,7 +163,7 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
 
   const pushToast = (message: string, type: Toast['type'] = 'info') => setToast({ message, type });
 
-  const handleCreateEvent = async (wizardEvent: Omit<EventItem, "id" | "sold" | "revenue">) => {
+  const handleCreateEvent = async (wizardEvent: Omit<EventItem, "id" | "sold" | "revenue">): Promise<string | null> => {
     const res = await createOrganizerEvent({
       name: wizardEvent.name,
       category: wizardEvent.category,
@@ -188,8 +188,10 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
         await publishOrganizerEvent(Number(res.data.id));
       }
       await fetchData();
+      return String(res.data.id);
     } else {
       pushToast(`Failed to deploy event: ${res.error?.message || "Unknown error"}`, 'warning');
+      return null;
     }
   };
 
