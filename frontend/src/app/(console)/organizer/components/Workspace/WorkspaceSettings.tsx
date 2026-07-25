@@ -7,7 +7,17 @@ import {
 
 interface WorkspaceSettingsProps {
   eventName: string;
-  onUpdateEventName: (newName: string) => void;
+  /** The event's persisted fields, so the form opens on real values. */
+  initial: {
+    category: string;
+    description: string;
+    startDate: string;
+  };
+  /** Saves the General Event Info card; resolves false when the save failed. */
+  onSaveGeneral: (values: { name: string; category: string; description: string; startDate: string }) => Promise<boolean>;
+  /** Deletes the event for real. Only drafts can be deleted. */
+  onDeleteEvent: () => Promise<boolean>;
+  canDelete: boolean;
   staffList: Staff[];
   onAddStaff: (staff: Staff) => void;
   onDeleteStaff: (id: string) => void;
@@ -29,19 +39,25 @@ const BRAND_COLORS = ['#0f172a', '#1d4ed8', '#7c3aed', '#db2777', '#059669', '#d
 
 export default function WorkspaceSettings({
   eventName,
-  onUpdateEventName,
+  initial,
+  onSaveGeneral,
+  onDeleteEvent,
+  canDelete,
   staffList,
   onAddStaff,
   onDeleteStaff
 }: WorkspaceSettingsProps) {
   const [name, setName] = useState(eventName);
   const [slug, setSlug] = useState(eventName.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
-  const [category, setCategory] = useState('Conference');
+  const [category, setCategory] = useState(initial.category);
   const [organizer, setOrganizer] = useState('CrowdFlow Presents');
-  const [description, setDescription] = useState('Join us for keynotes and workshop labs.');
-  const [eventDate, setEventDate] = useState('2024-12-15');
+  const [description, setDescription] = useState(initial.description);
+  const [eventDate, setEventDate] = useState(initial.startDate);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [timezone, setTimezone] = useState('America/Los_Angeles');
-  const [location, setLocation] = useState('Moscone Center, SF');
+  // No Location field here: the venue is set in the Venue tab, which persists it.
+  // This one was hardcoded and never read or saved.
 
   const [isPublic, setIsPublic] = useState(true);
   const [isFeatured, setIsFeatured] = useState(false);
@@ -66,9 +82,20 @@ export default function WorkspaceSettings({
   const [newStaffName, setNewStaffName] = useState("");
   const [newStaffRole, setNewStaffRole] = useState("Check-in Staff");
 
-  const handleSaveGeneral = (e: React.FormEvent) => {
+  // Title, category, description and date are real columns on the event. The
+  // slug and organizer inputs beside them are not persisted anywhere.
+  const handleSaveGeneral = async (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdateEventName(name);
+    setSaving(true);
+    await onSaveGeneral({ name, category, description, startDate: eventDate });
+    setSaving(false);
+  };
+
+  const handleDelete = async () => {
+    if (!confirm(`Permanently delete "${name}"? This cannot be undone.`)) return;
+    setDeleting(true);
+    await onDeleteEvent();
+    setDeleting(false);
   };
 
   const handleAddStaff = (e: React.FormEvent) => {
@@ -137,12 +164,14 @@ export default function WorkspaceSettings({
                 <option value="Asia/Jakarta">Jakarta (WIB)</option>
               </select>
             </div>
-            <div className="space-y-1">
-              <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Location</label>
-              <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
-            </div>
           </div>
-          <button type="submit" className="bg-primary hover:bg-primary/90 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors cursor-pointer">Save Changes</button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors cursor-pointer"
+          >
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
         </form>
 
         {/* Event Visibility */}
@@ -374,13 +403,18 @@ export default function WorkspaceSettings({
           <div className="flex items-center justify-between gap-3 pt-3 border-t border-danger/20">
             <div>
               <p className="text-xs font-semibold text-danger">Delete Event</p>
-              <p className="text-[10px] text-text-secondary">Permanently remove this event and all associated data.</p>
+              <p className="text-[10px] text-text-secondary">
+                {canDelete
+                  ? 'Permanently remove this event and all associated data.'
+                  : 'Only a draft can be deleted. This event has already been submitted.'}
+              </p>
             </div>
             <button
-              onClick={() => { if (confirm(`Permanently delete "${name}"? This cannot be undone.`)) alert('Event deleted.'); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-danger hover:bg-danger/90 rounded-lg text-xs font-semibold text-white transition-colors cursor-pointer shrink-0"
+              onClick={handleDelete}
+              disabled={!canDelete || deleting}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-danger hover:bg-danger/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-semibold text-white transition-colors cursor-pointer shrink-0"
             >
-              <Trash2 className="w-3.5 h-3.5" /> Delete
+              <Trash2 className="w-3.5 h-3.5" /> {deleting ? 'Deleting…' : 'Delete'}
             </button>
           </div>
         </div>

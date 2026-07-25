@@ -45,6 +45,7 @@ type VenueResponse struct {
 	Address       string `json:"address"`
 	City          string `json:"city"`
 	Province      string `json:"province"`
+	PostalCode    string `json:"postal_code"`
 	TotalCapacity int    `json:"total_capacity"`
 }
 
@@ -106,6 +107,7 @@ func MapVenue(v *Venue) *VenueResponse {
 		Address:       v.Address,
 		City:          v.City,
 		Province:      v.Province,
+		PostalCode:    v.PostalCode,
 		TotalCapacity: v.TotalCapacity,
 	}
 }

@@ -1,6 +1,24 @@
 import React, { useEffect, useState } from "react";
 import { Globe, Mail, Share2, Tv2, ChevronRight, Download, DollarSign, Ticket, UserCheck, Timer, ArrowUpRight, ArrowDownRight, PieChart } from "lucide-react";
-import { getEventAnalytics, OrganizerAnalytics } from "@/lib/api/eorganizer";
+import {
+  getEventAnalytics,
+  getEventCheckInStats,
+  listTicketTiers,
+  OrganizerAnalytics,
+  type EventCheckInStats,
+  type OrganizerTicketTier,
+} from "@/lib/api/eorganizer";
+
+// The backend has no tier colour; assign a stable one per position, matching the
+// Tickets tab so a tier keeps the same colour across the workspace.
+const TIER_COLORS = [
+  'var(--color-primary)',
+  'var(--color-secondary)',
+  'var(--color-tertiary)',
+  'var(--color-success)',
+  '#EC4899',
+  '#F59E0B',
+];
 
 const DATE_RANGES = [
   { label: 'Last 7 Days', value: '7d' },
@@ -11,16 +29,23 @@ const DATE_RANGES = [
 export default function WorkspaceAnalytics({ eventId }: { eventId?: string }) {
   const [dateRange, setDateRange] = useState('30d');
   const [analytics, setAnalytics] = useState<OrganizerAnalytics | null>(null);
+  const [checkIns, setCheckIns] = useState<EventCheckInStats | null>(null);
+  const [tiers, setTiers] = useState<OrganizerTicketTier[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchAnalytics = async () => {
       if (!eventId) return;
       setIsLoading(true);
-      const res = await getEventAnalytics(Number(eventId), dateRange);
-      if (res.success && res.data) {
-        setAnalytics(res.data);
-      }
+      const id = Number(eventId);
+      const [analyticsRes, checkInRes, tiersRes] = await Promise.all([
+        getEventAnalytics(id, dateRange),
+        getEventCheckInStats(id),
+        listTicketTiers(id),
+      ]);
+      setAnalytics(analyticsRes.success && analyticsRes.data ? analyticsRes.data : null);
+      setCheckIns(checkInRes.success && checkInRes.data ? checkInRes.data : null);
+      setTiers(tiersRes.success && tiersRes.data ? tiersRes.data : []);
       setIsLoading(false);
     };
     fetchAnalytics();
@@ -33,21 +58,21 @@ export default function WorkspaceAnalytics({ eventId }: { eventId?: string }) {
     { name: "Social Ad Retargeting", icon: Tv2, visitors: 1220, conversion: "18%", revenue: "$29,800" }
   ];
 
-  const peakData = [
-    { hour: "08:00", attendees: 120 },
-    { hour: "09:00", attendees: 450 },
-    { hour: "10:00", attendees: 320 },
-    { hour: "11:00", attendees: 190 },
-    { hour: "12:00", attendees: 240 },
-    { hour: "13:00", attendees: 110 }
-  ];
+  // Check-ins bucketed by the hour they happened, from ticket_checkins.
+  const peakData = (checkIns?.hourly ?? []).map((h) => ({ hour: h.hour, attendees: h.scans }));
+  const peakMax = Math.max(...peakData.map((p) => p.attendees), 1);
 
-  const tierBreakdown = [
-    { label: 'VIP All-Access', value: 18, color: 'var(--color-primary)' },
-    { label: 'General Admission', value: 52, color: 'var(--color-secondary)' },
-    { label: 'Early Bird', value: 21, color: 'var(--color-tertiary)' },
-    { label: 'Group Bundle', value: 9, color: 'var(--color-success)' },
-  ];
+  // Share of tickets sold per tier, straight off ticket_tiers.tickets_sold.
+  const soldPerTier = tiers.map((t) => ({ label: t.name, sold: t.sold }));
+  const soldTotal = soldPerTier.reduce((acc, t) => acc + t.sold, 0);
+  const tierBreakdown = soldPerTier
+    .filter((t) => t.sold > 0)
+    .map((t, i) => ({
+      label: t.label,
+      value: Math.round((t.sold / soldTotal) * 100),
+      sold: t.sold,
+      color: TIER_COLORS[i % TIER_COLORS.length],
+    }));
 
   const trendData = (analytics?.points || []).map((p) => ({
     label: p.date.slice(5),
@@ -58,19 +83,33 @@ export default function WorkspaceAnalytics({ eventId }: { eventId?: string }) {
   const totalSales = trendData.reduce((acc, curr) => acc + curr.sales, 0);
   const totalTickets = trendData.reduce((acc, curr) => acc + curr.attendance, 0);
 
+  // Scanned tickets over issued tickets. With nothing issued there is no rate to
+  // show, so the tile reads "—" rather than an invented 100%.
+  const attendanceRate =
+    checkIns && checkIns.totalTickets > 0
+      ? `${((checkIns.totalCheckedIn / checkIns.totalTickets) * 100).toFixed(1)}%`
+      : '—';
+  const avgScan = checkIns && checkIns.avgScanMs > 0 ? `${(checkIns.avgScanMs / 1000).toFixed(2)}s` : '—';
+
   const performanceMetrics = [
     { label: 'Total Revenue', value: `$${totalSales.toLocaleString()}`, delta: 'Cumulative earnings', up: true, icon: DollarSign },
     { label: 'Tickets Sold', value: totalTickets.toLocaleString(), delta: 'Issued credentials', up: true, icon: Ticket },
-    { label: 'Attendance Rate', value: '100.0%', delta: 'Check-in ratio', up: true, icon: UserCheck },
-    { label: 'Avg. Scan Time', value: '1.2s', delta: 'NFC/QR scanner avg', up: false, icon: Timer },
+    {
+      label: 'Attendance Rate',
+      value: attendanceRate,
+      delta: checkIns ? `${checkIns.totalCheckedIn} of ${checkIns.totalTickets} scanned` : 'No check-ins yet',
+      up: true,
+      icon: UserCheck,
+    },
+    { label: 'Avg. Scan Time', value: avgScan, delta: 'Scanner response avg', up: false, icon: Timer },
   ];
 
   const svgWidth = 560;
   const svgHeight = 200;
   const padding = 30;
 
-  const getX = (index: number) => padding + (index * (svgWidth - 2 * padding)) / peakData.length;
-  const getY = (val: number) => svgHeight - padding - (val * (svgHeight - 2 * padding)) / 500;
+  const getX = (index: number) => padding + (index * (svgWidth - 2 * padding)) / Math.max(peakData.length, 1);
+  const getY = (val: number) => svgHeight - padding - (val * (svgHeight - 2 * padding)) / peakMax;
 
   const trendWidth = 480;
   const trendHeight = 180;
@@ -110,7 +149,10 @@ export default function WorkspaceAnalytics({ eventId }: { eventId?: string }) {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {performanceMetrics.map((m) => {
+        {isLoading && [...Array(4)].map((_, i) => (
+          <div key={i} className="h-[92px] animate-pulse rounded-xl border border-border-subtle bg-surface-container-low" />
+        ))}
+        {!isLoading && performanceMetrics.map((m) => {
           const Icon = m.icon;
           return (
             <div key={m.label} className="p-4 bg-white border border-border-subtle rounded-xl shadow-sm">
@@ -158,6 +200,14 @@ export default function WorkspaceAnalytics({ eventId }: { eventId?: string }) {
             <h4 className="text-sm font-bold text-text-primary mb-1 flex items-center gap-1.5"><PieChart className="w-4 h-4 text-secondary" /> Ticket Tier Breakdown</h4>
             <p className="text-xs text-text-secondary mb-4">Share of tickets sold per tier</p>
           </div>
+          {tierBreakdown.length === 0 ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-1 py-10 text-center">
+              <p className="text-xs font-bold text-text-primary">No tickets sold yet</p>
+              <p className="text-[10px] text-text-secondary max-w-[240px]">
+                The breakdown appears once a tier has its first sale.
+              </p>
+            </div>
+          ) : (
           <div className="flex items-center gap-6">
             <svg viewBox="0 0 160 160" className="w-36 h-36 shrink-0 -rotate-90">
               {tierBreakdown.map((seg, i) => {
@@ -186,11 +236,14 @@ export default function WorkspaceAnalytics({ eventId }: { eventId?: string }) {
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: seg.color }}></span>
                     {seg.label}
                   </span>
-                  <span className="text-text-secondary font-mono text-[10px]">{seg.value}%</span>
+                  <span className="text-text-secondary font-mono text-[10px]">
+                    {seg.value}% · {seg.sold.toLocaleString()}
+                  </span>
                 </div>
               ))}
             </div>
           </div>
+          )}
         </div>
       </div>
 
@@ -201,13 +254,21 @@ export default function WorkspaceAnalytics({ eventId }: { eventId?: string }) {
             <p className="text-xs text-text-secondary mb-6">Traffic velocity breakdown measured in check-ins/hour</p>
 
             <div className="relative w-full h-[200px]">
+              {peakData.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center gap-1 text-center">
+                  <p className="text-xs font-bold text-text-primary">No check-ins recorded</p>
+                  <p className="text-[10px] text-text-secondary max-w-[260px]">
+                    Gate traffic appears here once scanners start checking attendees in.
+                  </p>
+                </div>
+              ) : (
               <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-full overflow-visible">
                 {[0, 0.25, 0.5, 0.75, 1].map((r, i) => {
                   const y = padding + r * (svgHeight - 2 * padding);
                   return (
                     <g key={i}>
                       <line x1={padding} y1={y} x2={svgWidth - padding} y2={y} stroke="#F1F5F9" strokeWidth="1" strokeDasharray="3 3" />
-                      <text x={padding - 10} y={y + 3} fill="#94A3B8" fontSize="8" fontFamily="monospace" textAnchor="end">{Math.round(500 - r * 500)}</text>
+                      <text x={padding - 10} y={y + 3} fill="#94A3B8" fontSize="8" fontFamily="monospace" textAnchor="end">{Math.round(peakMax - r * peakMax)}</text>
                     </g>
                   );
                 })}
@@ -254,6 +315,7 @@ export default function WorkspaceAnalytics({ eventId }: { eventId?: string }) {
                   </linearGradient>
                 </defs>
               </svg>
+              )}
             </div>
           </div>
         </div>

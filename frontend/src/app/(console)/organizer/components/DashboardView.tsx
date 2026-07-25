@@ -229,7 +229,8 @@ export default function DashboardView({ onCreateEvent, onNavigateToView }: Dashb
                 <h4 className="font-bold text-text-primary group-hover:text-secondary transition-colors text-sm">{event.name}</h4>
                 <p className="text-xs text-text-secondary flex items-center gap-1.5">
                   <MapPin className="w-3.5 h-3.5 text-secondary" />
-                  {event.venueName}, {event.location}
+                  {/* Both are empty on a draft whose venue hasn't been set yet. */}
+                  {[event.venueName, event.location].filter(Boolean).join(', ') || 'No venue set'}
                 </p>
               </div>
             </div>

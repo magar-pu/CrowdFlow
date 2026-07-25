@@ -17,6 +17,11 @@ var (
 	ErrSeatNotInLayout   = errors.New("seat does not belong to the event's layout")
 	ErrTierNotInEvent    = errors.New("ticket tier does not belong to this event")
 	ErrSeatingIncomplete = errors.New("event seating is incomplete")
+
+	// ErrVenueRequired guards the publish step. Drafts may carry no venue at all
+	// (it is picked in the workspace, not the creation wizard), but an event
+	// cannot be submitted for review without one.
+	ErrVenueRequired = errors.New("event has no venue")
 )
 
 type OrganizerApplication struct {
@@ -137,26 +142,62 @@ type DashboardResponse struct {
 	RecentEvents []RecentEvent  `json:"recentEvents"`
 }
 
+// NewVenueInput carries a venue the organizer is creating inline from the event
+// wizard, when the one they want isn't in the catalogue yet. Nil on the common
+// path, where VenueID already points at an existing row.
+//
+// Plain text throughout: the address is typed, not geocoded, so there are no
+// coordinates and no external place id here.
+type NewVenueInput struct {
+	Name          string `json:"name"`
+	Address       string `json:"address"`
+	City          string `json:"city"`
+	Province      string `json:"province"`
+	PostalCode    string `json:"postalCode"`
+	TotalCapacity int    `json:"totalCapacity"`
+}
+
 // eorganizer Event models
+//
+// This struct is both the request and the response shape for the organizer
+// event endpoints. On the way IN, the venue is identified by VenueID (picked
+// from the catalogue) or NewVenue (created inline). On the way OUT, the Venue*
+// and Location* fields are read back off the joined venues row.
+//
+// Events are physical-venue-only. The old "virtual" locationType was an
+// application fiction built on an auto-created 'Virtual Venue' row, and the
+// read paths hardcoded every event back to "physical" anyway.
+//
+// The venue is OPTIONAL on a draft (migration 0015 made events.venue_id
+// nullable): it is chosen in the event workspace, not the creation wizard. On a
+// venue-less event VenueID is 0 and the Venue*/Location* fields are empty.
+// Publishing is gated on a venue being set.
 type OrganizerEvent struct {
-	ID              string  `json:"id"`
-	Name            string  `json:"name"`
-	Category        string  `json:"category"`
-	Description     string  `json:"description"`
-	Date            string  `json:"date"`
-	StartDate       string  `json:"startDate"`
-	StartTime       string  `json:"startTime"`
-	EndDate         string  `json:"endDate"`
-	EndTime         string  `json:"endTime"`
-	LocationType    string  `json:"locationType"`
-	Location        string  `json:"location"`
-	LocationAddress string  `json:"locationAddress"`
-	VenueName       string  `json:"venueName"`
-	Capacity        int     `json:"capacity"`
-	Sold            int     `json:"sold"`
-	Revenue         float64 `json:"revenue"`
-	Status          string  `json:"status"`
-	Image           string  `json:"image"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Category    string `json:"category"`
+	Description string `json:"description"`
+	Date        string `json:"date"`
+	StartDate   string `json:"startDate"`
+	StartTime   string `json:"startTime"`
+	EndDate     string `json:"endDate"`
+	EndTime     string `json:"endTime"`
+
+	VenueID  int            `json:"venueId"`
+	NewVenue *NewVenueInput `json:"newVenue,omitempty"`
+
+	VenueName string `json:"venueName"` // venues.name
+	VenueCity string `json:"venueCity"` // venues.city
+	// LocationAddress is the real venues.address street line. Location is the
+	// composed "Name, City" display string the console renders.
+	LocationAddress string `json:"locationAddress"`
+	Location        string `json:"location"`
+
+	Capacity int     `json:"capacity"`
+	Sold     int     `json:"sold"`
+	Revenue  float64 `json:"revenue"`
+	Status   string  `json:"status"`
+	Image    string  `json:"image"`
 }
 
 // Ticket Tier model
@@ -323,6 +364,38 @@ type OrganizerAnalytics struct {
 	Points []AnalyticsPoint `json:"points"`
 }
 
+// Live gate/check-in figures for one event, read from ticket_checkins and
+// scanner_logs. The scanner package exposes similar numbers but its routes carry
+// no auth middleware, so the organizer console reads them through here instead.
+type EventCheckInStats struct {
+	TotalCheckedIn int                `json:"totalCheckedIn"`
+	TotalTickets   int                `json:"totalTickets"`
+	// Mean scanner round-trip in milliseconds; 0 when nothing has been scanned.
+	AvgScanMs int                  `json:"avgScanMs"`
+	Gates     []GateCheckInStat    `json:"gates"`
+	Devices   []DeviceCheckInStat  `json:"devices"`
+	Hourly    []HourlyCheckInPoint `json:"hourly"`
+}
+
+type DeviceCheckInStat struct {
+	DeviceID int `json:"deviceId"`
+	Scans    int `json:"scans"`
+}
+
+type GateCheckInStat struct {
+	GateID      int    `json:"gateId"`
+	GateName    string `json:"gateName"`
+	Status      string `json:"status"`
+	Scans       int    `json:"scans"`
+	DeviceCount int    `json:"deviceCount"`
+}
+
+type HourlyCheckInPoint struct {
+	// Local hour bucket, "08:00".
+	Hour  string `json:"hour"`
+	Scans int    `json:"scans"`
+}
+
 type Repository interface {
 	Create(ctx context.Context, app *OrganizerApplication, docs []*OrganizerDocument) error
 	GetByUserID(ctx context.Context, userID int) (*OrganizerApplication, error)
@@ -336,6 +409,7 @@ type Repository interface {
 	GetOrganizerEvent(ctx context.Context, eventID int, organizerID int) (*OrganizerEvent, error)
 	CreateOrganizerEvent(ctx context.Context, organizerID int, event *OrganizerEvent) error
 	UpdateOrganizerEvent(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
+	SetEventVenue(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
 	PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	ListTicketTiers(ctx context.Context, eventID int, organizerID int) ([]*OrganizerTicketTier, error)
@@ -343,6 +417,7 @@ type Repository interface {
 	UpdateTicketTier(ctx context.Context, eventID int, organizerID int, tierID int, tier *OrganizerTicketTier) error
 	DeleteTicketTier(ctx context.Context, eventID int, organizerID int, tierID int) error
 	ListOrders(ctx context.Context, organizerID int) ([]*OrganizerOrder, error)
+	ListEventOrders(ctx context.Context, eventID int, organizerID int) ([]*OrganizerOrder, error)
 	GetOrderDetails(ctx context.Context, orderID string, organizerID int) (*OrganizerOrder, error)
 	ListRefunds(ctx context.Context, organizerID int) ([]*OrganizerRefund, error)
 	ListAttendees(ctx context.Context, organizerID int) ([]*OrganizerAttendee, error)
@@ -352,6 +427,7 @@ type Repository interface {
 	CreatePayoutRequest(ctx context.Context, eventID int, organizerID int, amount float64) error
 	GetAnalytics(ctx context.Context, organizerID int, dateRange string) (*OrganizerAnalytics, error)
 	GetEventAnalytics(ctx context.Context, eventID int, organizerID int, dateRange string) (*OrganizerAnalytics, error)
+	GetEventCheckInStats(ctx context.Context, eventID int, organizerID int) (*EventCheckInStats, error)
 	GetEventSeating(ctx context.Context, eventID int, organizerID int) (*EventSeatingResponse, error)
 	SeedEventSeating(ctx context.Context, eventID int, organizerID int, assignments []SeatingAssignment) error
 	CheckInAttendee(ctx context.Context, eventID int, organizerID int, qrToken string) (*CheckInResponse, error)
@@ -373,6 +449,7 @@ type Service interface {
 	GetOrganizerEvent(ctx context.Context, eventID int, organizerID int) (*OrganizerEvent, error)
 	CreateOrganizerEvent(ctx context.Context, organizerID int, event *OrganizerEvent) error
 	UpdateOrganizerEvent(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
+	SetEventVenue(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
 	PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	GetEventSeating(ctx context.Context, eventID int, organizerID int) (*EventSeatingResponse, error)
@@ -383,6 +460,7 @@ type Service interface {
 	UpdateTicketTier(ctx context.Context, eventID int, organizerID int, tierID int, tier *OrganizerTicketTier) error
 	DeleteTicketTier(ctx context.Context, eventID int, organizerID int, tierID int) error
 	ListOrders(ctx context.Context, organizerID int) ([]*OrganizerOrder, error)
+	ListEventOrders(ctx context.Context, eventID int, organizerID int) ([]*OrganizerOrder, error)
 	GetOrderDetails(ctx context.Context, orderID string, organizerID int) (*OrganizerOrder, error)
 	ListRefunds(ctx context.Context, organizerID int) ([]*OrganizerRefund, error)
 	ListAttendees(ctx context.Context, organizerID int) ([]*OrganizerAttendee, error)
@@ -392,6 +470,7 @@ type Service interface {
 	CreatePayoutRequest(ctx context.Context, eventID int, organizerID int, amount float64) error
 	GetAnalytics(ctx context.Context, organizerID int, dateRange string) (*OrganizerAnalytics, error)
 	GetEventAnalytics(ctx context.Context, eventID int, organizerID int, dateRange string) (*OrganizerAnalytics, error)
+	GetEventCheckInStats(ctx context.Context, eventID int, organizerID int) (*EventCheckInStats, error)
 	GetEventRevisions(ctx context.Context, eventID int, organizerID int) (*EventRevisionFeedback, error)
 	RespondToEventRevision(ctx context.Context, eventID, revID, organizerID int, req RespondRevisionRequest) error
 	ListNotifications(ctx context.Context, userID int) ([]*Notification, error)

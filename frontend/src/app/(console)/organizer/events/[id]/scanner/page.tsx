@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import EventWorkspaceShell from "../../../components/EventWorkspaceShell";
 import WorkspaceScanner from "../../../components/Workspace/WorkspaceScanner";
 import { useOrganizerData } from "../../../OrganizerDataContext";
-import { checkInAttendee } from "@/lib/api/eorganizer";
+import { checkInAttendee, getEventCheckInStats, type GateCheckInStat } from "@/lib/api/eorganizer";
 import {
   listEventGates,
   createEventGate,
@@ -30,10 +30,19 @@ export default function OrganizerEventScannerPage() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [gatesRes, devicesRes] = await Promise.all([
+      const [gatesRes, devicesRes, statsRes] = await Promise.all([
         listEventGates(eventIdNum),
         listScannerDevices(eventIdNum),
+        getEventCheckInStats(eventIdNum),
       ]);
+
+      // Real per-gate check-in counts and device counts, keyed by gate id.
+      const statsByGate = new Map<number, GateCheckInStat>();
+      const scansByDevice = new Map<number, number>();
+      if (statsRes.success && statsRes.data) {
+        for (const g of statsRes.data.gates) statsByGate.set(g.gateId, g);
+        for (const d of statsRes.data.devices) scansByDevice.set(d.deviceId, d.scans);
+      }
 
       let currentGates: Gate[] = [];
       if (gatesRes.success && gatesRes.data) {
@@ -41,9 +50,9 @@ export default function OrganizerEventScannerPage() {
         currentGates = gatesRes.data.map((g: any) => ({
           id: String(g.id),
           name: g.name,
-          scans: 0, // dynamic client counter
+          scans: statsByGate.get(g.id)?.scans ?? 0,
           status: (g.status === "active" ? "online" : "offline") as "online" | "offline",
-          staffCount: 0,
+          staffCount: statsByGate.get(g.id)?.deviceCount ?? 0,
         }));
       }
 
@@ -78,20 +87,12 @@ export default function OrganizerEventScannerPage() {
           status: d.status === "online" ? "online" : "offline",
           battery: 100,
           lastSync: "Just now",
-          scans: 0,
+          scans: scansByDevice.get(d.id) ?? 0,
           role: d.role as any,
           permissions: ["Scan Tickets"],
           deviceToken: d.deviceToken,
         }));
         setDevices(mappedDevices);
-
-        // Update staff counts on gates
-        setGates(prev =>
-          prev.map(g => ({
-            ...g,
-            staffCount: mappedDevices.filter(d => d.gate === g.name).length,
-          }))
-        );
       }
     } catch (err) {
       console.error("Failed to load scanner data from DB:", err);

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
-import { MapPin, Globe2, Image as ImageIcon, X } from 'lucide-react';
+import { Image as ImageIcon, X } from 'lucide-react';
 import { listEventTypes, EventType } from '@/lib/api/eorganizer';
 
 interface StepBasicInfoProps {
@@ -18,12 +18,6 @@ interface StepBasicInfoProps {
   setEndDate: (v: string) => void;
   endTime: string;
   setEndTime: (v: string) => void;
-  locationType: 'physical' | 'virtual';
-  setLocationType: (v: 'physical' | 'virtual') => void;
-  address: string;
-  setAddress: (v: string) => void;
-  streamingLink: string;
-  setStreamingLink: (v: string) => void;
   coverImageName: string | null;
   setCoverImageName: (v: string | null) => void;
 }
@@ -36,9 +30,6 @@ export default function StepBasicInfo({
   startTime, setStartTime,
   endDate, setEndDate,
   endTime, setEndTime,
-  locationType, setLocationType,
-  address, setAddress,
-  streamingLink, setStreamingLink,
   coverImageName, setCoverImageName,
 }: StepBasicInfoProps) {
   const [isDraggingCover, setIsDraggingCover] = useState(false);
@@ -136,52 +127,6 @@ export default function StepBasicInfo({
           </div>
         </div>
 
-        {/* Location Management */}
-        <div className="bg-white border border-border-subtle rounded-xl p-5 soft-shadow space-y-4">
-          <h3 className="text-base font-bold text-text-primary border-b border-border-subtle pb-3">Location Management</h3>
-
-          <div className="inline-flex rounded-lg border border-border-subtle p-1 bg-surface-container-low">
-            <button
-              type="button"
-              onClick={() => setLocationType('physical')}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
-                locationType === 'physical' ? 'bg-primary text-on-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              <MapPin className="w-3.5 h-3.5" /> Physical Venue
-            </button>
-            <button
-              type="button"
-              onClick={() => setLocationType('virtual')}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
-                locationType === 'virtual' ? 'bg-primary text-on-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              <Globe2 className="w-3.5 h-3.5" /> Virtual / Online
-            </button>
-          </div>
-
-          {locationType === 'physical' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Physical Address</label>
-                <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" placeholder="Street, city, state" />
-                <p className="text-[10px] text-on-surface-variant">Pin will be geocoded automatically from the address above.</p>
-              </div>
-              <div className="relative h-32 rounded-lg border border-border-subtle overflow-hidden bg-[linear-gradient(0deg,transparent_24%,var(--color-border-subtle)_25%,var(--color-border-subtle)_26%,transparent_27%,transparent_74%,var(--color-border-subtle)_75%,var(--color-border-subtle)_76%,transparent_77%,transparent),linear-gradient(90deg,transparent_24%,var(--color-border-subtle)_25%,var(--color-border-subtle)_26%,transparent_27%,transparent_74%,var(--color-border-subtle)_75%,var(--color-border-subtle)_76%,transparent_77%,transparent)] bg-[length:20px_20px] bg-surface-container-low flex items-center justify-center">
-                <div className="flex flex-col items-center gap-1">
-                  <MapPin className="w-6 h-6 text-secondary" />
-                  <span className="text-[9px] font-mono font-bold text-text-secondary text-center px-2">{address || 'No address set'}</span>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Streaming Link</label>
-              <input type="text" value={streamingLink} onChange={(e) => setStreamingLink(e.target.value)} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" placeholder="https://stream.crowdflow.io/..." />
-            </div>
-          )}
-        </div>
       </div>
 
       <div className="space-y-6">

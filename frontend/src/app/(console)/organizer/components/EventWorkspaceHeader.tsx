@@ -1,6 +1,6 @@
 import React from 'react';
 import { EventItem } from '../types';
-import { ArrowLeft, CalendarDays, MapPin, Globe2, LayoutDashboard, Ticket, Map, Radio, TrendingUp, Settings2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, CalendarDays, MapPin, LayoutDashboard, Ticket, Map, Radio, TrendingUp, Settings2, AlertTriangle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 interface EventWorkspaceHeaderProps {
@@ -52,8 +52,9 @@ export default function EventWorkspaceHeader({ event, workspaceTab, setWorkspace
             <CalendarDays className="w-3.5 h-3.5 shrink-0" /> {event.date}
           </span>
           <span className="flex items-center gap-1.5">
-            {event.locationType === 'physical' ? <MapPin className="w-3.5 h-3.5 shrink-0" /> : <Globe2 className="w-3.5 h-3.5 shrink-0" />}
-            {event.venueName || event.location}
+            <MapPin className="w-3.5 h-3.5 shrink-0" />
+            {/* Drafts start with no venue — it's set in the Venue tab. */}
+            {event.location || <span className="italic text-on-surface-variant">No venue set</span>}
           </span>
         </div>
       </div>

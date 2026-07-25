@@ -404,7 +404,7 @@ func (r *PostgresRepository) ListVenues() ([]*Venue, error) {
 	defer cancel()
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, name, address, city, province, total_capacity
+		SELECT id, name, address, city, province, COALESCE(postal_code, ''), total_capacity
 		FROM venues
 		ORDER BY name
 	`)
@@ -416,7 +416,7 @@ func (r *PostgresRepository) ListVenues() ([]*Venue, error) {
 	var venues []*Venue
 	for rows.Next() {
 		var v Venue
-		if err := rows.Scan(&v.ID, &v.Name, &v.Address, &v.City, &v.Province, &v.TotalCapacity); err != nil {
+		if err := rows.Scan(&v.ID, &v.Name, &v.Address, &v.City, &v.Province, &v.PostalCode, &v.TotalCapacity); err != nil {
 			return nil, err
 		}
 		venues = append(venues, &v)

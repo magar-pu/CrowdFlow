@@ -307,6 +307,10 @@ func (s *OrganizerService) ListOrders(ctx context.Context, organizerID int) ([]*
 	return s.repo.ListOrders(ctx, organizerID)
 }
 
+func (s *OrganizerService) ListEventOrders(ctx context.Context, eventID int, organizerID int) ([]*OrganizerOrder, error) {
+	return s.repo.ListEventOrders(ctx, eventID, organizerID)
+}
+
 func (s *OrganizerService) GetOrderDetails(ctx context.Context, orderID string, organizerID int) (*OrganizerOrder, error) {
 	return s.repo.GetOrderDetails(ctx, orderID, organizerID)
 }
@@ -348,7 +352,58 @@ func (s *OrganizerService) CreateOrganizerEvent(ctx context.Context, organizerID
 	if event.Capacity < 0 {
 		return fmt.Errorf("%w: event capacity cannot be negative", ErrValidation)
 	}
+	if err := validateVenueSelection(event); err != nil {
+		return err
+	}
 	return s.repo.CreateOrganizerEvent(ctx, organizerID, event)
+}
+
+// validateVenueSelection checks the SHAPE of a venue selection when one is
+// present. It does not require one: the creation wizard no longer asks for a
+// venue, so a draft may carry none at all and the organizer picks it later in
+// the workspace (SetEventVenue, which does require one).
+//
+// What this still catches is a half-filled inline venue — an empty name used to
+// reach the repository and create a venue row literally named "", which then
+// polluted the catalogue and the venue-designer picker.
+func validateVenueSelection(event *OrganizerEvent) error {
+	if event.VenueID > 0 {
+		return nil
+	}
+	if nv := event.NewVenue; nv != nil {
+		if strings.TrimSpace(nv.Name) == "" {
+			return fmt.Errorf("%w: new venue requires a name", ErrValidation)
+		}
+		if strings.TrimSpace(nv.Address) == "" {
+			return fmt.Errorf("%w: new venue requires a street address", ErrValidation)
+		}
+		if strings.TrimSpace(nv.City) == "" {
+			return fmt.Errorf("%w: new venue requires a city", ErrValidation)
+		}
+		return nil
+	}
+	// Legacy clients that only ever sent a bare venue name.
+	if strings.TrimSpace(event.VenueName) != "" {
+		return nil
+	}
+	// No venue at all is fine on a draft.
+	return nil
+}
+
+// SetEventVenue binds the event to a venue from the workspace's Venue tab.
+// Unlike creation, a venue is mandatory here — this endpoint exists for no
+// other purpose.
+func (s *OrganizerService) SetEventVenue(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error {
+	if eventID <= 0 {
+		return fmt.Errorf("%w: invalid event ID", ErrValidation)
+	}
+	if event.VenueID <= 0 && event.NewVenue == nil {
+		return fmt.Errorf("%w: pick an existing venue or supply a new one", ErrValidation)
+	}
+	if err := validateVenueSelection(event); err != nil {
+		return err
+	}
+	return s.repo.SetEventVenue(ctx, eventID, organizerID, event)
 }
 
 func (s *OrganizerService) UpdateOrganizerEvent(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error {
@@ -383,6 +438,13 @@ func (s *OrganizerService) GetEventAnalytics(ctx context.Context, eventID int, o
 		return nil, fmt.Errorf("%w: invalid event ID", ErrValidation)
 	}
 	return s.repo.GetEventAnalytics(ctx, eventID, organizerID, dateRange)
+}
+
+func (s *OrganizerService) GetEventCheckInStats(ctx context.Context, eventID int, organizerID int) (*EventCheckInStats, error) {
+	if eventID <= 0 {
+		return nil, fmt.Errorf("%w: invalid event ID", ErrValidation)
+	}
+	return s.repo.GetEventCheckInStats(ctx, eventID, organizerID)
 }
 
 func (s *OrganizerService) CheckInAttendee(ctx context.Context, eventID int, organizerID int, qrToken string) (*CheckInResponse, error) {

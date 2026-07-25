@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
-  EventItem, TicketTier, Gate, ScannerDevice, Staff, VenueSection, Transaction, LogEntry,
+  EventItem, CreateEventDraft, TicketTier, Gate, ScannerDevice, Staff, VenueSection, Transaction, LogEntry,
 } from "./types";
 import {
   INITIAL_EVENTS, INITIAL_TICKET_TIERS, INITIAL_GATES, INITIAL_DEVICES,
@@ -34,7 +34,7 @@ interface OrganizerDataValue {
   toast: Toast | null;
   pushToast: (message: string, type?: Toast['type']) => void;
 
-  handleCreateEvent: (wizardEvent: Omit<EventItem, "id" | "sold" | "revenue">) => Promise<string | null>;
+  handleCreateEvent: (wizardEvent: CreateEventDraft) => Promise<string | null>;
   handleUpdateEventName: (eventId: string, newName: string) => void;
   handleResetData: () => void;
   handleTriggerLiveScan: () => void;
@@ -81,10 +81,11 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
         startTime: e.startTime,
         endDate: e.endDate,
         endTime: e.endTime,
-        locationType: e.locationType === "virtual" ? "virtual" : "physical",
+        venueId: e.venueId,
         location: e.location,
         locationAddress: e.locationAddress,
         venueName: e.venueName,
+        venueCity: e.venueCity,
         capacity: e.capacity,
         sold: e.sold,
         revenue: e.revenue,
@@ -163,7 +164,9 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
 
   const pushToast = (message: string, type: Toast['type'] = 'info') => setToast({ message, type });
 
-  const handleCreateEvent = async (wizardEvent: Omit<EventItem, "id" | "sold" | "revenue">): Promise<string | null> => {
+  // No venue here on purpose: a draft is created without one and the organizer
+  // picks it in the workspace's Venue tab. Publishing is gated on it being set.
+  const handleCreateEvent = async (wizardEvent: CreateEventDraft): Promise<string | null> => {
     const res = await createOrganizerEvent({
       name: wizardEvent.name,
       category: wizardEvent.category,
@@ -173,14 +176,10 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
       startTime: wizardEvent.startTime,
       endDate: wizardEvent.endDate,
       endTime: wizardEvent.endTime,
-      locationType: wizardEvent.locationType,
-      location: wizardEvent.location,
-      locationAddress: wizardEvent.locationAddress,
-      venueName: wizardEvent.venueName,
       capacity: wizardEvent.capacity,
       status: wizardEvent.status,
       image: wizardEvent.image,
-    } as any);
+    });
 
     if (res.success && res.data) {
       pushToast(`Successfully deployed event: ${wizardEvent.name}`, 'success');

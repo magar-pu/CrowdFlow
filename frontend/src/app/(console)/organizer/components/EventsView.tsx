@@ -78,7 +78,7 @@ export default function EventsView({ events, onCreateEvent, onOpenWorkspace }: E
                   </div>
                   <div className="flex items-center gap-1.5 text-text-secondary font-mono text-[10px] truncate max-w-[150px]">
                     <MapPin className="w-3.5 h-3.5 text-secondary" />
-                    {event.locationAddress || event.location}
+                    {event.location || event.locationAddress || 'No venue set'}
                   </div>
                 </div>
 

@@ -20,16 +20,39 @@ export interface EventItem {
   startTime: string;
   endDate: string;
   endTime: string;
-  locationType: 'physical' | 'virtual';
+  // The venue is set in the event workspace, not the creation wizard, so a
+  // draft can legitimately have none: venueId is 0 and the rest are empty.
+  venueId: number;
   location: string;
   locationAddress: string;
   venueName: string;
+  venueCity: string;
   capacity: number;
   sold: number;
   revenue: number;
   status: "Live" | "Scheduled" | "Draft" | "Rejected" | "Need Revision" | "In Review";
   image: string;
 }
+
+/**
+ * What the creation wizard produces: the event's identity and schedule, nothing
+ * else. The venue, ticket tiers, layout and seating are all configured in the
+ * event workspace afterwards.
+ */
+export type CreateEventDraft = Pick<
+  EventItem,
+  | 'name'
+  | 'category'
+  | 'description'
+  | 'date'
+  | 'startDate'
+  | 'startTime'
+  | 'endDate'
+  | 'endTime'
+  | 'capacity'
+  | 'status'
+  | 'image'
+>;
 
 export interface TicketTier {
   id: string;

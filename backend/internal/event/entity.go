@@ -8,6 +8,7 @@ type Venue struct {
 	Address       string    `json:"address"`
 	City          string    `json:"city"`
 	Province      string    `json:"province"`
+	PostalCode    string    `json:"postal_code"`
 	TotalCapacity int       `json:"total_capacity"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`

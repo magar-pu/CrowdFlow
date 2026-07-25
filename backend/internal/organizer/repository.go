@@ -426,12 +426,15 @@ func (r *PostgresRepository) GetDashboardData(ctx context.Context, organizerID i
 	// 9. Recent Events
 	recentEvents := []RecentEvent{}
 	rowsEvents, err := r.db.QueryContext(ctx, `
-		SELECT e.id, e.event_name, et.event_type, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''), v.name, v.city,
+		SELECT e.id, e.event_name, et.event_type, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''),
+		       COALESCE(v.name, ''), COALESCE(v.city, ''),
 		       COALESCE((SELECT SUM(allocation_limit) FROM ticket_tiers WHERE event_id = e.id), 0) as capacity,
 		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = e.id), 0) as sold,
 		       COALESCE((SELECT SUM(gross_amount) FROM orders WHERE event_id = e.id AND status = 'paid'), 0) as revenue
 		FROM events e
-		JOIN venues v ON e.venue_id = v.id
+		-- LEFT: a draft has no venue until the organizer picks one in the
+		-- workspace, and it must still show up in the organizer's own lists.
+		LEFT JOIN venues v ON e.venue_id = v.id
 		JOIN event_types et ON e.event_type_id = et.id
 		WHERE e.organizer_id = $1
 		ORDER BY e.created_at DESC
@@ -445,7 +448,9 @@ func (r *PostgresRepository) GetDashboardData(ctx context.Context, organizerID i
 			var statusVal string
 			err = rowsEvents.Scan(&e.ID, &e.Name, &e.Category, &start, &end, &statusVal, &e.Image, &e.VenueName, &e.Location, &e.Capacity, &e.Sold, &e.Revenue)
 			if err == nil {
-				e.Location = e.VenueName + ", " + e.Location
+				// Location stays the bare city: the dashboard card composes it
+				// as "{venueName}, {location}" itself, so prefixing the name
+				// here rendered it twice.
 				if statusVal == "approved" {
 					e.Status = "Live"
 				} else if statusVal == "draft" {
@@ -470,12 +475,14 @@ func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerI
 	defer cancel()
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT e.id, e.event_name, et.event_type, e.description, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''), v.name, v.city,
+		SELECT e.id, e.event_name, et.event_type, e.description, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''),
+		       COALESCE(v.id, 0), COALESCE(v.name, ''), COALESCE(v.address, ''), COALESCE(v.city, ''),
 		       COALESCE((SELECT SUM(allocation_limit) FROM ticket_tiers WHERE event_id = e.id), 0) as capacity,
 		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = e.id), 0) as sold,
 		       COALESCE((SELECT SUM(gross_amount) FROM orders WHERE event_id = e.id AND status = 'paid'), 0) as revenue
 		FROM events e
-		JOIN venues v ON e.venue_id = v.id
+		-- LEFT: venue-less drafts must still be listed. VenueID comes back 0.
+		LEFT JOIN venues v ON e.venue_id = v.id
 		JOIN event_types et ON e.event_type_id = et.id
 		WHERE e.organizer_id = $1
 		ORDER BY e.created_at DESC
@@ -490,16 +497,14 @@ func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerI
 		var e OrganizerEvent
 		var start, end time.Time
 		var statusVal string
-		err = rows.Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.VenueName, &e.Location, &e.Capacity, &e.Sold, &e.Revenue)
+		err = rows.Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue)
 		if err == nil {
 			e.StartDate = start.Format("2006-01-02")
 			e.StartTime = start.Format("15:04:05")
 			e.EndDate = end.Format("2006-01-02")
 			e.EndTime = end.Format("15:04:05")
 			e.Date = start.Format("Jan 02, 2006")
-			e.LocationType = "physical"
-			e.LocationAddress = e.VenueName + ", " + e.Location
-			e.Location = e.VenueName + ", " + e.Location
+			e.Location = composeLocation(e.VenueName, e.VenueCity)
 			if statusVal == "approved" {
 				e.Status = "Live"
 			} else if statusVal == "draft" {
@@ -527,15 +532,18 @@ func (r *PostgresRepository) GetOrganizerEvent(ctx context.Context, eventID int,
 	var start, end time.Time
 	var statusVal string
 	err := r.db.QueryRowContext(ctx, `
-		SELECT e.id, e.event_name, et.event_type, e.description, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''), v.name, v.city,
+		SELECT e.id, e.event_name, et.event_type, e.description, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''),
+		       COALESCE(v.id, 0), COALESCE(v.name, ''), COALESCE(v.address, ''), COALESCE(v.city, ''),
 		       COALESCE((SELECT SUM(allocation_limit) FROM ticket_tiers WHERE event_id = e.id), 0) as capacity,
 		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = e.id), 0) as sold,
 		       COALESCE((SELECT SUM(gross_amount) FROM orders WHERE event_id = e.id AND status = 'paid'), 0) as revenue
 		FROM events e
-		JOIN venues v ON e.venue_id = v.id
+		-- LEFT: the workspace opens on venue-less drafts; that is where the
+		-- organizer goes to set the venue in the first place.
+		LEFT JOIN venues v ON e.venue_id = v.id
 		JOIN event_types et ON e.event_type_id = et.id
 		WHERE e.id = $1 AND e.organizer_id = $2
-	`, eventID, organizerID).Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.VenueName, &e.Location, &e.Capacity, &e.Sold, &e.Revenue)
+	`, eventID, organizerID).Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, sql.ErrNoRows
@@ -548,9 +556,7 @@ func (r *PostgresRepository) GetOrganizerEvent(ctx context.Context, eventID int,
 	e.EndDate = end.Format("2006-01-02")
 	e.EndTime = end.Format("15:04:05")
 	e.Date = start.Format("Jan 02, 2006")
-	e.LocationType = "physical"
-	e.LocationAddress = e.VenueName + ", " + e.Location
-	e.Location = e.VenueName + ", " + e.Location
+	e.Location = composeLocation(e.VenueName, e.VenueCity)
 	if statusVal == "approved" {
 		e.Status = "Live"
 	} else if statusVal == "draft" {
@@ -695,16 +701,58 @@ func (r *PostgresRepository) DeleteTicketTier(ctx context.Context, eventID int, 
 	return err
 }
 
+// The ticket type shown against an order is the distinct tier name(s) actually
+// bought on it; an order spanning two tiers reads "VIP, General".
+const orderSelect = `
+	SELECT o.id, up.full_name, u.email, e.event_name, o.gross_amount, o.status, o.created_at, o.payment_type,
+	       COALESCE((
+	           SELECT string_agg(DISTINCT tt.name, ', ')
+	           FROM tickets t
+	           JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
+	           WHERE t.order_id = o.id
+	       ), '') AS ticket_type
+	FROM orders o
+	JOIN events e ON o.event_id = e.id
+	JOIN users u ON o.purchaser_id = u.id
+	JOIN user_profiles up ON u.id = up.user_id
+`
+
+func orderStatusLabel(statusVal string) string {
+	switch statusVal {
+	case "paid":
+		return "Paid"
+	case "pending":
+		return "Pending"
+	case "refunded":
+		return "Refunded"
+	default:
+		return "Failed"
+	}
+}
+
+func scanOrders(rows *sql.Rows) []*OrganizerOrder {
+	orders := []*OrganizerOrder{}
+	for rows.Next() {
+		var o OrganizerOrder
+		var createdAt time.Time
+		var statusVal string
+		var payType string
+		if err := rows.Scan(&o.ID, &o.CustomerName, &o.CustomerEmail, &o.EventName, &o.Amount, &statusVal, &createdAt, &payType, &o.TicketType); err != nil {
+			continue
+		}
+		o.Time = createdAt.Format("2006-01-02 15:04:05")
+		o.Status = orderStatusLabel(statusVal)
+		o.PaymentMethod = payType
+		orders = append(orders, &o)
+	}
+	return orders
+}
+
 func (r *PostgresRepository) ListOrders(ctx context.Context, organizerID int) ([]*OrganizerOrder, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT o.id, up.full_name, u.email, e.event_name, o.gross_amount, o.status, o.created_at, o.payment_type
-		FROM orders o
-		JOIN events e ON o.event_id = e.id
-		JOIN users u ON o.purchaser_id = u.id
-		JOIN user_profiles up ON u.id = up.user_id
+	rows, err := r.db.QueryContext(ctx, orderSelect+`
 		WHERE e.organizer_id = $1
 		ORDER BY o.created_at DESC
 	`, organizerID)
@@ -713,30 +761,26 @@ func (r *PostgresRepository) ListOrders(ctx context.Context, organizerID int) ([
 	}
 	defer rows.Close()
 
-	orders := []*OrganizerOrder{}
-	for rows.Next() {
-		var o OrganizerOrder
-		var createdAt time.Time
-		var statusVal string
-		var payType string
-		err = rows.Scan(&o.ID, &o.CustomerName, &o.CustomerEmail, &o.EventName, &o.Amount, &statusVal, &createdAt, &payType)
-		if err == nil {
-			o.Time = createdAt.Format("2006-01-02 15:04:05")
-			if statusVal == "paid" {
-				o.Status = "Paid"
-			} else if statusVal == "pending" {
-				o.Status = "Pending"
-			} else if statusVal == "refunded" {
-				o.Status = "Refunded"
-			} else {
-				o.Status = "Failed"
-			}
-			o.PaymentMethod = string(payType)
-			o.TicketType = "General Admission"
-			orders = append(orders, &o)
-		}
+	return scanOrders(rows), nil
+}
+
+// ListEventOrders is the workspace's Recent Transactions table: the same rows as
+// ListOrders, narrowed to one event the caller owns.
+func (r *PostgresRepository) ListEventOrders(ctx context.Context, eventID int, organizerID int) ([]*OrganizerOrder, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	rows, err := r.db.QueryContext(ctx, orderSelect+`
+		WHERE e.organizer_id = $1 AND o.event_id = $2
+		ORDER BY o.created_at DESC
+		LIMIT 100
+	`, organizerID, eventID)
+	if err != nil {
+		return nil, err
 	}
-	return orders, nil
+	defer rows.Close()
+
+	return scanOrders(rows), nil
 }
 
 func (r *PostgresRepository) GetOrderDetails(ctx context.Context, orderID string, organizerID int) (*OrganizerOrder, error) {
@@ -1134,6 +1178,114 @@ func parseTime(dateStr, timeStr string) (time.Time, error) {
 	return time.Now(), err
 }
 
+// nullableVenue turns the repository's "0 means no venue" convention into the
+// NULL that events.venue_id actually stores (migration 0015).
+func nullableVenue(venueID int) sql.NullInt64 {
+	if venueID <= 0 {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: int64(venueID), Valid: true}
+}
+
+// composeLocation builds the "Venue Name, City" display string the console
+// renders. A draft can have no venue yet, so both halves may be empty — return
+// an empty string rather than a bare ", ".
+func composeLocation(venueName, venueCity string) string {
+	switch {
+	case venueName == "" && venueCity == "":
+		return ""
+	case venueCity == "":
+		return venueName
+	case venueName == "":
+		return venueCity
+	default:
+		return venueName + ", " + venueCity
+	}
+}
+
+// resolveVenue maps the venue fields on an incoming OrganizerEvent to a venues
+// row id, inside the caller's transaction. Shared by create and update, which
+// previously carried character-for-character identical copies of this logic.
+//
+// Returns (0, nil) when the payload carries no venue information whatsoever —
+// that is not an error here, because a partial update legitimately omits it.
+// The caller decides what to do: create rejects it, update keeps the existing
+// binding.
+//
+// Resolution order:
+//  1. VenueID          — the picker's normal path; verified to exist.
+//  2. NewVenue         — inline creation, deduped on name+city.
+//  3. VenueName        — legacy fallback for older clients that only ever sent
+//     a name. Kept so the console keeps working until the
+//     frontend picker ships.
+func (r *PostgresRepository) resolveVenue(ctx context.Context, tx *sql.Tx, event *OrganizerEvent) (int, error) {
+	// 1. Explicit id from the venue picker.
+	if event.VenueID > 0 {
+		var id int
+		err := tx.QueryRowContext(ctx, "SELECT id FROM venues WHERE id = $1", event.VenueID).Scan(&id)
+		if err == sql.ErrNoRows {
+			return 0, fmt.Errorf("venue %d does not exist", event.VenueID)
+		} else if err != nil {
+			return 0, err
+		}
+		return id, nil
+	}
+
+	// 2. Inline creation from the wizard.
+	if nv := event.NewVenue; nv != nil && strings.TrimSpace(nv.Name) != "" {
+		name := strings.TrimSpace(nv.Name)
+		// Reuse a row the organizer already created rather than adding a near
+		// duplicate. Name plus city, not name alone: venues legitimately share
+		// a name across cities.
+		var id int
+		err := tx.QueryRowContext(ctx,
+			"SELECT id FROM venues WHERE lower(name) = lower($1) AND lower(city) = lower($2)",
+			name, nv.City).Scan(&id)
+		if err == nil {
+			return id, nil
+		} else if err != sql.ErrNoRows {
+			return 0, err
+		}
+
+		err = tx.QueryRowContext(ctx, `
+			INSERT INTO venues (name, address, city, province, postal_code, total_capacity)
+			VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6)
+			RETURNING id
+		`, name, nv.Address, nv.City, nv.Province, nv.PostalCode, nv.TotalCapacity).Scan(&id)
+		if err != nil {
+			return 0, err
+		}
+		return id, nil
+	}
+
+	// 3. Legacy name-only clients.
+	if name := strings.TrimSpace(event.VenueName); name != "" {
+		var id int
+		err := tx.QueryRowContext(ctx, "SELECT id FROM venues WHERE name = $1", name).Scan(&id)
+		if err == nil {
+			return id, nil
+		} else if err != sql.ErrNoRows {
+			return 0, err
+		}
+		// Older clients put the city in Location; newer ones use VenueCity.
+		city := strings.TrimSpace(event.VenueCity)
+		if city == "" {
+			city = event.Location
+		}
+		err = tx.QueryRowContext(ctx, `
+			INSERT INTO venues (name, address, city, province, total_capacity)
+			VALUES ($1, $2, $3, '', $4)
+			RETURNING id
+		`, name, event.LocationAddress, city, event.Capacity).Scan(&id)
+		if err != nil {
+			return 0, err
+		}
+		return id, nil
+	}
+
+	return 0, nil
+}
+
 func (r *PostgresRepository) CreateOrganizerEvent(ctx context.Context, organizerID int, event *OrganizerEvent) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -1144,38 +1296,14 @@ func (r *PostgresRepository) CreateOrganizerEvent(ctx context.Context, organizer
 	}
 	defer tx.Rollback()
 
-	// 1. Resolve or create venue
-	var venueID int
-	if event.LocationType == "virtual" {
-		// Assign to a dummy or default virtual venue, or query/create "Virtual Venue"
-		err = tx.QueryRowContext(ctx, "SELECT id FROM venues WHERE name = 'Virtual Venue'").Scan(&venueID)
-		if err == sql.ErrNoRows {
-			err = tx.QueryRowContext(ctx, `
-				INSERT INTO venues (name, address, city, province, total_capacity)
-				VALUES ('Virtual Venue', 'Online', 'Internet', 'Online', 1000000)
-				RETURNING id
-			`).Scan(&venueID)
-			if err != nil {
-				return err
-			}
-		} else if err != nil {
-			return err
-		}
-	} else {
-		err = tx.QueryRowContext(ctx, "SELECT id FROM venues WHERE name = $1", event.VenueName).Scan(&venueID)
-		if err == sql.ErrNoRows {
-			err = tx.QueryRowContext(ctx, `
-				INSERT INTO venues (name, address, city, province, total_capacity)
-				VALUES ($1, $2, $3, '', $4)
-				RETURNING id
-			`, event.VenueName, event.LocationAddress, event.Location, event.Capacity).Scan(&venueID)
-			if err != nil {
-				return err
-			}
-		} else if err != nil {
-			return err
-		}
+	// 1. Resolve or create venue. Optional at creation: the wizard only captures
+	// the event's identity and schedule, and the organizer picks the venue in
+	// the workspace afterwards. NULL venue_id until they do.
+	venueID, err := r.resolveVenue(ctx, tx, event)
+	if err != nil {
+		return err
 	}
+	venue := nullableVenue(venueID)
 
 	// 2. Resolve or create event category/type
 	var eventTypeID int
@@ -1223,7 +1351,7 @@ func (r *PostgresRepository) CreateOrganizerEvent(ctx context.Context, organizer
 
 	var lastInsertID int
 	err = tx.QueryRowContext(ctx, queryEvent,
-		venueID, organizerID, event.Name, event.Description, eventStart, eventEnd,
+		venue, organizerID, event.Name, event.Description, eventStart, eventEnd,
 		dbStatus, eventTypeID, event.Image,
 	).Scan(&lastInsertID)
 	if err != nil {
@@ -1276,34 +1404,17 @@ func (r *PostgresRepository) UpdateOrganizerEvent(ctx context.Context, eventID i
 		return fmt.Errorf("cannot edit event while it is locked in pending review status")
 	}
 
-	// 1. Resolve or create venue
-	var venueID int
-	if event.LocationType == "virtual" {
-		err = tx.QueryRowContext(ctx, "SELECT id FROM venues WHERE name = 'Virtual Venue'").Scan(&venueID)
-		if err == sql.ErrNoRows {
-			err = tx.QueryRowContext(ctx, `
-				INSERT INTO venues (name, address, city, province, total_capacity)
-				VALUES ('Virtual Venue', 'Online', 'Internet', 'Online', 1000000)
-				RETURNING id
-			`).Scan(&venueID)
-			if err != nil {
-				return err
-			}
-		} else if err != nil {
-			return err
-		}
-	} else {
-		err = tx.QueryRowContext(ctx, "SELECT id FROM venues WHERE name = $1", event.VenueName).Scan(&venueID)
-		if err == sql.ErrNoRows {
-			err = tx.QueryRowContext(ctx, `
-				INSERT INTO venues (name, address, city, province, total_capacity)
-				VALUES ($1, $2, $3, '', $4)
-				RETURNING id
-			`, event.VenueName, event.LocationAddress, event.Location, event.Capacity).Scan(&venueID)
-			if err != nil {
-				return err
-			}
-		} else if err != nil {
+	// 1. Resolve venue. A partial update (e.g. rename-only) carries no venue
+	// fields at all; keep whatever the event is already bound to rather than
+	// repointing it at a freshly minted blank venue. That existing binding may
+	// itself be NULL on a draft whose venue hasn't been picked yet.
+	venueID, err := r.resolveVenue(ctx, tx, event)
+	if err != nil {
+		return err
+	}
+	venue := nullableVenue(venueID)
+	if venueID == 0 {
+		if err = tx.QueryRowContext(ctx, "SELECT venue_id FROM events WHERE id = $1", eventID).Scan(&venue); err != nil {
 			return err
 		}
 	}
@@ -1346,9 +1457,84 @@ func (r *PostgresRepository) UpdateOrganizerEvent(ctx context.Context, eventID i
 		WHERE id = $8 AND organizer_id = $9`
 	_, err = tx.ExecContext(ctx, updateQuery,
 		event.Name, event.Description, eventStart, eventEnd,
-		venueID, eventTypeID, event.Image, eventID, organizerID,
+		venue, eventTypeID, event.Image, eventID, organizerID,
 	)
 	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// SetEventVenue binds an event to a venue from the workspace's Venue tab. This
+// is the counterpart to dropping the venue out of the creation wizard: the
+// event exists first, the venue is chosen here.
+//
+// Changing an already-set venue invalidates anything keyed off the old one. A
+// bound layout belongs to the old venue's geometry, and the seat overlay
+// (event_seats_matrix) points at that layout's seats, so both are cleared —
+// unless seats have already been sold or held, in which case the change is
+// refused rather than silently orphaning a buyer's seat.
+func (r *PostgresRepository) SetEventVenue(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var currentStatus string
+	var currentVenue sql.NullInt64
+	var currentLayout sql.NullInt64
+	err = tx.QueryRowContext(ctx,
+		"SELECT status, venue_id, layout_id FROM events WHERE id = $1 AND organizer_id = $2",
+		eventID, organizerID).Scan(&currentStatus, &currentVenue, &currentLayout)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("event not found or unauthorized")
+	} else if err != nil {
+		return err
+	}
+
+	if currentStatus == "pending_review" {
+		return fmt.Errorf("%w: cannot change the venue while the event is under review", ErrValidation)
+	}
+
+	venueID, err := r.resolveVenue(ctx, tx, event)
+	if err != nil {
+		return err
+	}
+	if venueID == 0 {
+		return fmt.Errorf("%w: a venue is required", ErrValidation)
+	}
+
+	// Same venue: nothing to invalidate, and re-running the clears below would
+	// throw away a perfectly good layout binding.
+	if currentVenue.Valid && int(currentVenue.Int64) == venueID {
+		return tx.Commit()
+	}
+
+	if currentLayout.Valid {
+		var committed int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM event_seats_matrix
+			WHERE event_id = $1 AND current_state <> 'available'
+		`, eventID).Scan(&committed); err != nil {
+			return err
+		}
+		if committed > 0 {
+			return fmt.Errorf("%w: %d seat(s) are already sold or blocked on the current layout", ErrValidation, committed)
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM event_seats_matrix WHERE event_id = $1", eventID); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE events SET venue_id = $1, layout_id = NULL, updated_at = now()
+		WHERE id = $2 AND organizer_id = $3
+	`, venueID, eventID, organizerID); err != nil {
 		return err
 	}
 
@@ -1376,6 +1562,19 @@ func (r *PostgresRepository) PublishOrganizerEvent(ctx context.Context, eventID 
 	if currentStatus == "pending_review" || currentStatus == "approved" {
 		// Already review pending or approved, do nothing
 		return nil
+	}
+
+	// Venue gate: drafts are created without a venue (it is picked in the
+	// workspace), but an event cannot go to an auditor — let alone to the public
+	// catalogue — without one. Every read path outside the organizer console
+	// still inner-joins venues, so this is what keeps a NULL venue_id contained
+	// to drafts.
+	var venueID sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT venue_id FROM events WHERE id = $1`, eventID).Scan(&venueID); err != nil {
+		return err
+	}
+	if !venueID.Valid {
+		return fmt.Errorf("%w: set the venue in the Venue tab before submitting", ErrVenueRequired)
 	}
 
 	// Seating gate: a seated event (one with a bound layout) can only be
@@ -1459,20 +1658,138 @@ func (r *PostgresRepository) GetEventAnalytics(ctx context.Context, eventID int,
 		}
 	}
 
-	// Fallback mock trend points
-	if len(points) == 0 {
-		now := time.Now()
-		for i := days; i >= 0; i-- {
-			d := now.AddDate(0, 0, -i)
-			points = append(points, AnalyticsPoint{
-				Date:    d.Format("2006-01-02"),
-				Sales:   float64(50 + (i*12)%40),
-				Tickets: i % 3,
+	// An event with no paid orders returns no points on purpose: the console
+	// renders an empty state for that. This used to synthesise a plausible sales
+	// curve, which was indistinguishable from real data.
+	return &OrganizerAnalytics{Points: points}, nil
+}
+
+// GetEventCheckInStats reads the live gate figures for one event: how many
+// tickets have been scanned, per gate and per hour, plus the mean scanner
+// response time. Every number comes from ticket_checkins / scanner_logs.
+func (r *PostgresRepository) GetEventCheckInStats(ctx context.Context, eventID int, organizerID int) (*EventCheckInStats, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	// Ownership is enforced by middleware, but scope the aggregates to the
+	// organizer's own event anyway so a mismatch returns zeroes, not someone
+	// else's gate traffic.
+	var owned bool
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM events WHERE id = $1 AND organizer_id = $2)`,
+		eventID, organizerID).Scan(&owned); err != nil {
+		return nil, err
+	}
+	if !owned {
+		return nil, sql.ErrNoRows
+	}
+
+	stats := &EventCheckInStats{
+		Gates:   []GateCheckInStat{},
+		Devices: []DeviceCheckInStat{},
+		Hourly:  []HourlyCheckInPoint{},
+	}
+
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM ticket_checkins WHERE event_id = $1 AND status = 'VALID'`,
+		eventID).Scan(&stats.TotalCheckedIn); err != nil {
+		return nil, err
+	}
+
+	// Issued tickets, i.e. the denominator of the attendance rate. Cancelled
+	// tickets can never be scanned, so they are not part of it.
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM tickets t
+		JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
+		WHERE tt.event_id = $1 AND t.ticket_status <> 'cancelled'
+	`, eventID).Scan(&stats.TotalTickets); err != nil {
+		return nil, err
+	}
+
+	var avgMs sql.NullFloat64
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT AVG(response_time_ms)
+		FROM scanner_logs
+		WHERE event_id = $1 AND response_time_ms IS NOT NULL
+	`, eventID).Scan(&avgMs); err != nil {
+		return nil, err
+	}
+	if avgMs.Valid {
+		stats.AvgScanMs = int(avgMs.Float64)
+	}
+
+	gateRows, err := r.db.QueryContext(ctx, `
+		SELECT eg.id, eg.name, eg.status,
+		       COALESCE(c.scans, 0) AS scans,
+		       COALESCE(d.devices, 0) AS devices
+		FROM event_gates eg
+		LEFT JOIN (
+			SELECT gate_id, COUNT(*) AS scans
+			FROM ticket_checkins
+			WHERE event_id = $1 AND status = 'VALID'
+			GROUP BY gate_id
+		) c ON c.gate_id = eg.id
+		LEFT JOIN (
+			SELECT gate_id, COUNT(*) AS devices
+			FROM scanner_devices
+			WHERE event_id = $1
+			GROUP BY gate_id
+		) d ON d.gate_id = eg.id
+		WHERE eg.event_id = $1
+		ORDER BY eg.id
+	`, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer gateRows.Close()
+	for gateRows.Next() {
+		var g GateCheckInStat
+		if err := gateRows.Scan(&g.GateID, &g.GateName, &g.Status, &g.Scans, &g.DeviceCount); err == nil {
+			stats.Gates = append(stats.Gates, g)
+		}
+	}
+
+	deviceRows, err := r.db.QueryContext(ctx, `
+		SELECT scanner_device_id, COUNT(*)
+		FROM ticket_checkins
+		WHERE event_id = $1 AND status = 'VALID' AND scanner_device_id IS NOT NULL
+		GROUP BY scanner_device_id
+	`, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer deviceRows.Close()
+	for deviceRows.Next() {
+		var d DeviceCheckInStat
+		if err := deviceRows.Scan(&d.DeviceID, &d.Scans); err == nil {
+			stats.Devices = append(stats.Devices, d)
+		}
+	}
+
+	hourRows, err := r.db.QueryContext(ctx, `
+		SELECT date_trunc('hour', checked_in_at) AS bucket, COUNT(*)
+		FROM ticket_checkins
+		WHERE event_id = $1 AND status = 'VALID'
+		GROUP BY bucket
+		ORDER BY bucket ASC
+	`, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer hourRows.Close()
+	for hourRows.Next() {
+		var bucket time.Time
+		var count int
+		if err := hourRows.Scan(&bucket, &count); err == nil {
+			stats.Hourly = append(stats.Hourly, HourlyCheckInPoint{
+				Hour:  bucket.Format("15:04"),
+				Scans: count,
 			})
 		}
 	}
 
-	return &OrganizerAnalytics{Points: points}, nil
+	return stats, nil
 }
 
 func (r *PostgresRepository) CheckInAttendee(ctx context.Context, eventID int, organizerID int, qrToken string) (*CheckInResponse, error) {
@@ -1514,6 +1831,17 @@ func (r *PostgresRepository) CheckInAttendee(ctx context.Context, eventID int, o
 	_, err = tx.ExecContext(ctx, "UPDATE tickets SET ticket_status = 'used', updated_at = NOW() WHERE id = $1", tID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process check-in: %w", err)
+	}
+
+	// Record it in the same log the scanner app writes to, so the workspace's
+	// attendance figures count a console check-in too. No gate or device here —
+	// this path is the organizer admitting someone by hand.
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO ticket_checkins (ticket_id, event_id, status)
+		VALUES ($1, $2, 'VALID')
+	`, tID, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to record check-in: %w", err)
 	}
 
 	// Resolve seat label if applicable

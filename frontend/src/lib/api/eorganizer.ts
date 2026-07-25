@@ -42,6 +42,17 @@ export interface DashboardResponse {
   recentEvents: RecentEvent[];
 }
 
+/** A venue created inline from the workspace, when the one the organizer wants
+ *  isn't in the catalogue yet. Mirrors the backend NewVenueInput. */
+export interface NewVenueInput {
+  name: string;
+  address: string;
+  city: string;
+  province?: string;
+  postalCode?: string;
+  totalCapacity?: number;
+}
+
 export interface OrganizerEvent {
   id: string;
   name: string;
@@ -52,15 +63,40 @@ export interface OrganizerEvent {
   startTime: string;
   endDate: string;
   endTime: string;
-  locationType: string;
+  // 0 when no venue has been picked yet — the creation wizard doesn't ask for
+  // one, it's set later in the workspace's Venue tab.
+  venueId: number;
   location: string;
   locationAddress: string;
   venueName: string;
+  venueCity: string;
   capacity: number;
   sold: number;
   revenue: number;
   status: string;
   image: string;
+}
+
+/** The payload the creation wizard sends: identity + schedule only. */
+export type CreateOrganizerEventInput = Pick<
+  OrganizerEvent,
+  | "name"
+  | "category"
+  | "description"
+  | "date"
+  | "startDate"
+  | "startTime"
+  | "endDate"
+  | "endTime"
+  | "capacity"
+  | "status"
+  | "image"
+>;
+
+/** The body of PUT /api/organizer/events/{id}/venue — one of the two. */
+export interface SetEventVenueInput {
+  venueId?: number;
+  newVenue?: NewVenueInput;
 }
 
 export interface OrganizerTicketTier {
@@ -194,7 +230,7 @@ export async function listEventTypes(): Promise<ApiResponse<EventType[]>> {
   });
 }
 
-export async function createOrganizerEvent(event: Omit<OrganizerEvent, "id" | "sold" | "revenue">): Promise<ApiResponse<OrganizerEvent>> {
+export async function createOrganizerEvent(event: CreateOrganizerEventInput): Promise<ApiResponse<OrganizerEvent>> {
   return apiRequest<OrganizerEvent>("/api/organizer/events", {
     method: "POST",
     body: JSON.stringify(event),
@@ -214,9 +250,21 @@ export async function publishOrganizerEvent(eventId: number): Promise<ApiRespons
   });
 }
 
-export async function getVenueLayout(eventId: number): Promise<ApiResponse<VenueSection[]>> {
-  return apiRequest<VenueSection[]>(`/api/organizer/events/${eventId}/venue`, {
-    method: "GET",
+/**
+ * PUT /api/organizer/events/{id}/venue — bind the event to a venue.
+ *
+ * This is where an event first gets a venue: the creation wizard captures only
+ * identity and schedule. Pass venueId to pick from the catalogue, or newVenue to
+ * create one inline.
+ *
+ * Changing an already-set venue clears the bound layout and its seat overlay
+ * (they belong to the old venue's geometry); the backend refuses outright if any
+ * seat is already sold or blocked.
+ */
+export async function setEventVenue(eventId: number, input: SetEventVenueInput): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/venue`, {
+    method: "PUT",
+    body: JSON.stringify(input),
   });
 }
 
@@ -295,6 +343,13 @@ export async function listOrders(): Promise<ApiResponse<OrganizerOrder[]>> {
   });
 }
 
+/** The workspace's Recent Transactions table: real orders for one event. */
+export async function listEventOrders(eventId: number): Promise<ApiResponse<OrganizerOrder[]>> {
+  return apiRequest<OrganizerOrder[]>(`/api/organizer/events/${eventId}/orders`, {
+    method: "GET",
+  });
+}
+
 export async function getOrderDetails(orderId: string): Promise<ApiResponse<OrganizerOrder>> {
   return apiRequest<OrganizerOrder>(`/api/organizer/orders/${orderId}`, {
     method: "GET",
@@ -348,6 +403,41 @@ export async function getAnalytics(range: string = "30d"): Promise<ApiResponse<O
 
 export async function getEventAnalytics(eventId: number, range: string = "30d"): Promise<ApiResponse<OrganizerAnalytics>> {
   return apiRequest<OrganizerAnalytics>(`/api/organizer/events/${eventId}/analytics?range=${range}`, {
+    method: "GET",
+  });
+}
+
+/** Live gate figures for one event, straight from ticket_checkins/scanner_logs. */
+export interface EventCheckInStats {
+  totalCheckedIn: number;
+  totalTickets: number;
+  /** Mean scanner round-trip in ms; 0 when nothing has been scanned yet. */
+  avgScanMs: number;
+  gates: GateCheckInStat[];
+  devices: DeviceCheckInStat[];
+  hourly: HourlyCheckInPoint[];
+}
+
+export interface DeviceCheckInStat {
+  deviceId: number;
+  scans: number;
+}
+
+export interface GateCheckInStat {
+  gateId: number;
+  gateName: string;
+  status: string;
+  scans: number;
+  deviceCount: number;
+}
+
+export interface HourlyCheckInPoint {
+  hour: string;
+  scans: number;
+}
+
+export async function getEventCheckInStats(eventId: number): Promise<ApiResponse<EventCheckInStats>> {
+  return apiRequest<EventCheckInStats>(`/api/organizer/events/${eventId}/checkin-stats`, {
     method: "GET",
   });
 }

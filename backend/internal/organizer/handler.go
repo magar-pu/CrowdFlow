@@ -1,6 +1,7 @@
 package organizer
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -46,10 +47,13 @@ func (h *Handler) RegisterRoutes(
 	// Event specific endpoints with ownership check
 	mux.Handle("GET /api/organizer/events/{id}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetEvent)))))
 	mux.Handle("PUT /api/organizer/events/{id}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUpdateEvent)))))
+	mux.Handle("PUT /api/organizer/events/{id}/venue", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleSetEventVenue)))))
 	mux.Handle("PATCH /api/organizer/events/{id}/publish", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handlePublishEvent)))))
 	mux.Handle("DELETE /api/organizer/events/{id}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleDeleteEvent)))))
 	mux.Handle("POST /api/organizer/events/{id}/checkin", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleCheckInAttendee)))))
 	mux.Handle("GET /api/organizer/events/{id}/analytics", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetEventAnalytics)))))
+	mux.Handle("GET /api/organizer/events/{id}/checkin-stats", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetEventCheckInStats)))))
+	mux.Handle("GET /api/organizer/events/{id}/orders", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleListEventOrders)))))
 	mux.Handle("GET /api/organizer/events/{id}/revisions", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetEventRevisions)))))
 	mux.Handle("POST /api/organizer/events/{id}/revisions/{revId}/respond", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleRespondEventRevision)))))
 
@@ -431,6 +435,47 @@ func (h *Handler) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Event updated successfully"})
 }
 
+// handleSetEventVenue is the workspace's Venue tab. The creation wizard captures
+// only the event's identity and schedule, so this is where an event first gets a
+// venue — either an existing one (venueId) or one created inline (newVenue).
+func (h *Handler) handleSetEventVenue(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
+		return
+	}
+
+	eventID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+
+	var event OrganizerEvent
+	if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request payload")
+		return
+	}
+
+	err = h.service.SetEventVenue(r.Context(), eventID, userID, &event)
+	if err != nil {
+		if errors.Is(err, ErrValidation) {
+			response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+			return
+		}
+		log.Printf("SetEventVenue error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to set event venue: "+err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Event venue updated successfully"})
+}
+
 func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -451,6 +496,10 @@ func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {
 
 	err = h.service.PublishOrganizerEvent(r.Context(), eventID, userID)
 	if err != nil {
+		if errors.Is(err, ErrVenueRequired) {
+			response.Error(w, http.StatusUnprocessableEntity, "VENUE_REQUIRED", err.Error())
+			return
+		}
 		if errors.Is(err, ErrSeatingIncomplete) {
 			response.Error(w, http.StatusUnprocessableEntity, "SEATING_INCOMPLETE", err.Error())
 			return
@@ -631,6 +680,64 @@ func (h *Handler) handleDeleteTicketTier(w http.ResponseWriter, r *http.Request)
 	}
 
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Ticket tier deleted successfully"})
+}
+
+func (h *Handler) handleListEventOrders(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
+		return
+	}
+
+	eventID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+
+	orders, err := h.service.ListEventOrders(r.Context(), eventID, userID)
+	if err != nil {
+		log.Printf("ListEventOrders error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load orders for event")
+		return
+	}
+	response.JSON(w, http.StatusOK, orders)
+}
+
+func (h *Handler) handleGetEventCheckInStats(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
+		return
+	}
+
+	eventID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+
+	stats, err := h.service.GetEventCheckInStats(r.Context(), eventID, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			response.Error(w, http.StatusNotFound, "EVENT_NOT_FOUND", "Event not found")
+			return
+		}
+		log.Printf("GetEventCheckInStats error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load check-in statistics")
+		return
+	}
+	response.JSON(w, http.StatusOK, stats)
 }
 
 func (h *Handler) handleListOrders(w http.ResponseWriter, r *http.Request) {
