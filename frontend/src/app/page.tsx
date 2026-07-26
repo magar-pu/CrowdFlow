@@ -56,8 +56,8 @@ export default function HomePage() {
                 FlashSaleEvents stays static — the backend has no flash-sale
                 concept to drive it from. */}
             <UpcomingConcerts events={trendingEvents.slice(0, 4)} />
-            <TrendingEvents events={trendingEvents.slice(4, 8)} />
-            <FlashSaleEvents />
+            <TrendingEvents events={trendingEvents.length > 4 ? trendingEvents.slice(4, 8) : trendingEvents.slice(0, 4)} />
+            <FlashSaleEvents events={trendingEvents.length > 8 ? trendingEvents.slice(8, 12) : trendingEvents.slice(0, 4)} />
             <StatsBanner />
             <BentoCollections />
           </div>
