@@ -9,7 +9,6 @@ function ReviewDocumentsTab() {
     submission,
     handleVerifySubmissionDocAction,
     handleRejectSubmissionDocAction,
-    setViewingDoc,
     handleOpenDocumentFile,
     handleAddRevisionAction,
   } = useAuditorReview();
@@ -19,7 +18,6 @@ function ReviewDocumentsTab() {
       sub={submission}
       onVerify={(name) => handleVerifySubmissionDocAction(submission.id, name)}
       onReject={(name) => handleRejectSubmissionDocAction(submission.id, name)}
-      onView={setViewingDoc}
       onOpenFile={handleOpenDocumentFile}
       onAddRevision={handleAddRevisionAction}
     />

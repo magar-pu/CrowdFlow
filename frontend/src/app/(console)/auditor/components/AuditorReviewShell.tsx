@@ -1,10 +1,9 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, AlertTriangle, X, Info, FileText, MapPin, ShieldAlert, DollarSign, Clock } from "lucide-react";
+import { ArrowLeft, CheckCircle2, AlertTriangle, X, Info, FileText, MapPin, DollarSign, Clock } from "lucide-react";
 import { useAuditorData } from "../AuditorDataContext";
-import DocumentDetailView from "./DocumentDetailView";
 import {
   getEventReview,
   approveEventReview,
@@ -19,13 +18,12 @@ import {
 } from "@/lib/api/auditor";
 import { EventSubmission, ReviewDocument, docKey } from "../types";
 
-export type ReviewTab = 'overview' | 'documents' | 'venue' | 'logistics' | 'finance' | 'history' | 'revision';
+export type ReviewTab = 'overview' | 'documents' | 'venue' | 'finance' | 'history' | 'revision';
 
 export const REVIEW_TABS: { key: ReviewTab; label: string; icon: React.ReactNode }[] = [
   { key: 'overview', label: 'Overview', icon: <Info className="w-3.5 h-3.5" /> },
   { key: 'documents', label: 'Documents', icon: <FileText className="w-3.5 h-3.5" /> },
   { key: 'venue', label: 'Venue & Layout', icon: <MapPin className="w-3.5 h-3.5" /> },
-  { key: 'logistics', label: 'Logistics & Safety', icon: <ShieldAlert className="w-3.5 h-3.5" /> },
   { key: 'finance', label: 'Financial Audit', icon: <DollarSign className="w-3.5 h-3.5" /> },
   { key: 'history', label: 'Audit History', icon: <Clock className="w-3.5 h-3.5" /> },
   { key: 'revision', label: 'Revision Control', icon: <AlertTriangle className="w-3.5 h-3.5" /> },
@@ -64,7 +62,6 @@ interface AuditorReviewContextType {
   handleRejectSubmissionDocAction: (submissionId: string, docKeyOrName: string, reason?: string) => Promise<void>;
   handleOpenDocumentFile: (doc: ReviewDocument) => Promise<void>;
   handleAddRevisionAction: (submissionId: string, revision: any) => Promise<void>;
-  setViewingDoc: (doc: ReviewDocument | null) => void;
   setToast: (toast: { message: string; type: "success" | "error" } | null) => void;
 }
 
@@ -89,7 +86,6 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
   const [submission, setSubmission] = useState<EventSubmission | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [viewingDoc, setViewingDoc] = useState<ReviewDocument | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   const [mode, setMode] = useState<'view' | 'reject' | 'changes'>('view');
@@ -162,19 +158,6 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
             { label: "Maximum Capacity Verified", done: true },
             { label: "Seating Configuration Valid", done: true },
             { label: "Emergency Exit Verified", done: true },
-          ],
-        },
-        logistics: raw.logistics || {
-          vendorCount: 0,
-          securityCount: 10,
-          medicalTeam: 2,
-          emergencyTeam: 2,
-          vendors: [],
-          emergencyPlan: [
-            { label: "Ambulance", done: true },
-            { label: "Fire Truck", done: false },
-            { label: "Emergency Exit", done: true },
-            { label: "Evacuation Route", done: true },
           ],
         },
         finance: raw.finance ? {
@@ -360,23 +343,6 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
     }
   };
 
-  /**
-   * Mints a fresh signed URL for a document. Returns null rather than throwing
-   * so the preview can render its own error state. Nothing is cached — the
-   * signature is short-lived by design.
-   */
-  const requestDocumentUrl = useCallback(async (doc: ReviewDocument): Promise<string | null> => {
-    if (!doc.id) return null;
-    try {
-      const res = await getReviewDocumentUrl(reviewId, doc.id, doc.source ?? "organizer");
-      if (!res.success || !res.data) return null;
-      return res.data.url;
-    } catch (err) {
-      console.error("Failed to mint document URL:", err);
-      return null;
-    }
-  }, [reviewId]);
-
   const handleOpenDocumentFile = async (doc: ReviewDocument) => {
     if (!doc.id) return;
     const tab = window.open("", "_blank", "noopener,noreferrer");
@@ -500,29 +466,6 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
     );
   }
 
-  if (viewingDoc) {
-    // Re-read from the freshly loaded submission so the status shown here
-    // follows a verify/reject, but fall back to the captured row.
-    const doc = submission.documents.find((d) => docKey(d) === docKey(viewingDoc)) ?? viewingDoc;
-    return (
-      <DocumentDetailView
-        document={doc}
-        eventName={submission.eventName}
-        organizerName={submission.organizerName}
-        onRequestUrl={requestDocumentUrl}
-        onBack={() => setViewingDoc(null)}
-        onVerify={() => {
-          handleVerifySubmissionDocAction(submission.id, docKey(doc));
-          setViewingDoc(null);
-        }}
-        onReject={() => {
-          handleRejectSubmissionDocAction(submission.id, docKey(doc));
-          setViewingDoc(null);
-        }}
-      />
-    );
-  }
-
   const handleTabChange = (t: ReviewTab) => {
     const path = t === 'overview' ? `/auditor/reviews/${reviewId}` : `/auditor/reviews/${reviewId}/${t}`;
     router.push(path);
@@ -540,7 +483,6 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
         handleRejectSubmissionDocAction,
         handleOpenDocumentFile,
         handleAddRevisionAction,
-        setViewingDoc,
         setToast,
       }}
     >

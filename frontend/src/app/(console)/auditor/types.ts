@@ -284,22 +284,6 @@ export interface VenueDetail {
   checklist: ChecklistItem[];
 }
 
-export interface Vendor {
-  name: string;
-  category: 'Stage' | 'Lighting' | 'Sound' | 'Food' | 'Merchandise' | 'Cleaning' | 'Security';
-  status: 'Verified' | 'Pending' | 'Rejected';
-  contact: string;
-}
-
-export interface LogisticsDetail {
-  vendorCount: number;
-  securityCount: number;
-  medicalTeam: number;
-  emergencyTeam: number;
-  vendors: Vendor[];
-  emergencyPlan: ChecklistItem[];
-}
-
 export interface TicketTier {
   category: 'VVIP' | 'VIP' | 'Festival' | 'Regular';
   price: number;
@@ -486,7 +470,6 @@ export interface EventSubmission {
   notes?: string;
   organizerDetail: OrganizerDetail;
   venueDetail: VenueDetail;
-  logistics: LogisticsDetail;
   finance: FinanceDetail;
   history: HistoryDetail;
   revisions: RevisionEntry[];

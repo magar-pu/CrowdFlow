@@ -7,9 +7,9 @@ import { EventSubmission, ReviewStage, RiskLevel, RevisionEntry, ReviewDocument,
 import {
   CheckCircle2, FileText, MapPin, CalendarDays, Users2,
   Send, AlertTriangle, Ban, Clock,
-  RefreshCw, Shield, ExternalLink, Download, Eye, ChevronRight,
+  RefreshCw, Shield, ExternalLink, ChevronRight,
   Activity, GitBranch, MessageSquare, TrendingUp, TrendingDown,
-  Phone, Mail, Globe, Package, Zap, Archive, Save
+  Phone, Mail, Globe, Archive, Save
 } from 'lucide-react';
 
 const TIMELINE_STAGES: ReviewStage[] = ['Submitted', 'Document Verification', 'Event Validation', 'Final Approval'];
@@ -190,11 +190,11 @@ export function TabOverview({ sub }: { sub: EventSubmission }) {
 }
 
 // ─── TAB: DOCUMENTS ───────────────────────────────────────────────────────────
-export function TabDocuments({ sub, onVerify, onReject, onView, onOpenFile, onAddRevision }: {
+export function TabDocuments({ sub, onVerify, onReject, onOpenFile, onAddRevision }: {
   sub: EventSubmission;
   onVerify: (docKey: string) => void;
   onReject: (docKey: string) => void;
-  onView: (doc: ReviewDocument) => void;
+  /** Mints a signed URL and opens the document in a new tab. */
   onOpenFile: (doc: ReviewDocument) => void;
   onAddRevision: (submissionId: string, revision: RevisionEntry) => void;
 }) {
@@ -333,8 +333,10 @@ export function TabDocuments({ sub, onVerify, onReject, onView, onOpenFile, onAd
                   <div className="flex items-center gap-2 shrink-0">
                     {doc.status !== 'MISSING' && (
                       <>
-                        <button onClick={() => onView(doc)} className="p-1.5 text-text-secondary hover:text-primary hover:bg-surface-container-low rounded transition-colors cursor-pointer" title="Preview"><Eye className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => onOpenFile(doc)} className="p-1.5 text-text-secondary hover:text-primary hover:bg-surface-container-low rounded transition-colors cursor-pointer" title="Open file"><Download className="w-3.5 h-3.5" /></button>
+                        {/* One action: mint a signed URL and hand the file to
+                            the browser, which previews PDFs and images far
+                            better than an embedded frame can. */}
+                        <button onClick={() => onOpenFile(doc)} className="p-1.5 text-text-secondary hover:text-primary hover:bg-surface-container-low rounded transition-colors cursor-pointer" title="Open document in a new tab"><ExternalLink className="w-3.5 h-3.5" /></button>
                         <button onClick={() => setRevisingDocName(isRevising ? null : doc.name)} className={`p-1.5 rounded transition-colors cursor-pointer ${isRevising ? 'bg-warning text-white' : 'text-text-secondary hover:text-warning hover:bg-surface-container-low'}`} title="Request Revision"><RefreshCw className="w-3.5 h-3.5" /></button>
                       </>
                     )}
@@ -509,65 +511,6 @@ export function TabVenue({ sub }: { sub: EventSubmission }) {
           </div>
         </SectionCard>
       </div>
-    </div>
-  );
-}
-
-// ─── TAB: LOGISTICS ───────────────────────────────────────────────────────────
-export function TabLogistics({ sub }: { sub: EventSubmission }) {
-  const lg = sub.logistics;
-  const vendorStatusColor = (s: string) => s === 'Verified' ? 'bg-success/10 text-success border-success/20' : s === 'Rejected' ? 'bg-danger/10 text-danger border-danger/20' : 'bg-warning/10 text-warning border-warning/20';
-  return (
-    <div className="space-y-6">
-      {/* Overview */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: 'Vendors', value: lg.vendorCount, icon: <Package className="w-4 h-4" /> },
-          { label: 'Security', value: lg.securityCount, icon: <Shield className="w-4 h-4" /> },
-          { label: 'Medical', value: lg.medicalTeam, icon: <Activity className="w-4 h-4" /> },
-          { label: 'Emergency', value: lg.emergencyTeam, icon: <Zap className="w-4 h-4" /> },
-        ].map(s => (
-          <div key={s.label} className="bg-white border border-border-subtle rounded-xl p-4 soft-shadow text-center">
-            <div className="flex justify-center mb-1 text-text-secondary">{s.icon}</div>
-            <div className="text-xl font-bold text-text-primary">{s.value}</div>
-            <div className="text-[10px] text-text-secondary font-mono uppercase">{s.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Vendor Table */}
-      <SectionCard title="Vendor Verification">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-border-subtle">
-                {['Vendor Name', 'Category', 'Contact', 'Status'].map(h => (
-                  <th key={h} className="text-left py-2 px-3 font-mono text-[10px] text-text-secondary uppercase">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-subtle">
-              {lg.vendors.map((v, i) => (
-                <tr key={i} className="hover:bg-surface-container-low transition-colors">
-                  <td className="py-2.5 px-3 font-medium text-text-primary">{v.name}</td>
-                  <td className="py-2.5 px-3 text-text-secondary">{v.category}</td>
-                  <td className="py-2.5 px-3 text-text-secondary font-mono">{v.contact}</td>
-                  <td className="py-2.5 px-3">
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${vendorStatusColor(v.status)}`}>{v.status}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </SectionCard>
-
-      {/* Emergency Plan */}
-      <SectionCard title="Emergency Plan Checklist">
-        <div className="space-y-2">
-          {lg.emergencyPlan.map(c => <ChecklistRow key={c.label} label={c.label} done={c.done} />)}
-        </div>
-      </SectionCard>
     </div>
   );
 }
