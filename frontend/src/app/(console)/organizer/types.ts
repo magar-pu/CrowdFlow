@@ -30,7 +30,9 @@ export interface EventItem {
   capacity: number;
   sold: number;
   revenue: number;
-  status: "Live" | "Scheduled" | "Draft" | "Rejected" | "Need Revision" | "In Review";
+  // "Approved" means an auditor cleared the event but the organizer has not put
+  // it on the public listing yet. "Live" means approved AND published.
+  status: "Live" | "Approved" | "Scheduled" | "Draft" | "Rejected" | "Need Revision" | "In Review";
   image: string;
 }
 

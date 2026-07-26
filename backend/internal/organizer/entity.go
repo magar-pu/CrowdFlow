@@ -30,6 +30,35 @@ var (
 	ErrDocumentsIncomplete = errors.New("required event documents are missing")
 
 	ErrDocumentNotFound = errors.New("event document not found")
+
+	// ErrNotDraft is returned when an operation restricted to drafts is
+	// attempted on an event that has already been submitted. Distinct from
+	// "not found" so the organizer is told WHY rather than that their event
+	// vanished — the usual cause is a status change in another tab.
+	ErrNotDraft = errors.New("only a draft event can be deleted")
+
+	// ErrNotUnderReview guards withdrawal: only an event actually sitting in
+	// pending_review can be pulled back.
+	ErrNotUnderReview = errors.New("event is not awaiting review")
+
+	// ErrReviewInProgress blocks withdrawal once an auditor has picked the
+	// event up. Yanking it mid-review would discard their work and leave the
+	// auditor console pointing at an event that silently became a draft.
+	ErrReviewInProgress = errors.New("an auditor has already started reviewing this event")
+
+	// ErrCannotArchive blocks archiving an event that is still live or in the
+	// middle of review — archiving is for terminal events.
+	ErrCannotArchive = errors.New("this event cannot be archived in its current status")
+
+	// ErrNotApproved guards the public listing: only an event an auditor has
+	// approved may be put on sale.
+	ErrNotApproved = errors.New("event has not been approved yet")
+
+	// ErrEventArchived blocks publishing an archived event — it would be live
+	// publicly while hidden from the organizer's own list.
+	ErrEventArchived = errors.New("event is archived")
+
+	ErrEventNotFound = errors.New("event not found")
 )
 
 // Per-event document types. These are distinct from the ACCOUNT-level documents
@@ -245,6 +274,9 @@ type RecentEvent struct {
 	Revenue   float64 `json:"revenue"`
 	Status    string  `json:"status"`
 	Image     string  `json:"image"`
+	// Published distinguishes an approved event that is on sale from one the
+	// organizer has not listed yet.
+	Published bool `json:"published"`
 }
 
 type DashboardResponse struct {
@@ -309,6 +341,10 @@ type OrganizerEvent struct {
 	Revenue  float64 `json:"revenue"`
 	Status   string  `json:"status"`
 	Image    string  `json:"image"`
+
+	// Published reports whether the organizer has put the approved event on the
+	// public listing. Approval alone no longer implies it.
+	Published bool `json:"published"`
 }
 
 // Ticket Tier model
@@ -516,12 +552,15 @@ type Repository interface {
 
 	// eorganizer methods
 	GetDashboardData(ctx context.Context, organizerID int) (*DashboardResponse, error)
-	ListOrganizerEvents(ctx context.Context, organizerID int) ([]*OrganizerEvent, error)
+	ListOrganizerEvents(ctx context.Context, organizerID int, archived bool) ([]*OrganizerEvent, error)
 	GetOrganizerEvent(ctx context.Context, eventID int, organizerID int) (*OrganizerEvent, error)
 	CreateOrganizerEvent(ctx context.Context, organizerID int, event *OrganizerEvent) error
 	UpdateOrganizerEvent(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
 	SetEventVenue(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
 	SetEventCoverImage(ctx context.Context, eventID int, organizerID int, url string) error
+	WithdrawEventFromReview(ctx context.Context, eventID int, organizerID int) error
+	SetEventArchived(ctx context.Context, eventID int, organizerID int, archived bool) error
+	SetEventListed(ctx context.Context, eventID int, organizerID int, listed bool) error
 	PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	ListTicketTiers(ctx context.Context, eventID int, organizerID int) ([]*OrganizerTicketTier, error)
@@ -563,12 +602,15 @@ type Service interface {
 
 	// eorganizer methods
 	GetDashboardData(ctx context.Context, organizerID int) (*DashboardResponse, error)
-	ListOrganizerEvents(ctx context.Context, organizerID int) ([]*OrganizerEvent, error)
+	ListOrganizerEvents(ctx context.Context, organizerID int, archived bool) ([]*OrganizerEvent, error)
 	GetOrganizerEvent(ctx context.Context, eventID int, organizerID int) (*OrganizerEvent, error)
 	CreateOrganizerEvent(ctx context.Context, organizerID int, event *OrganizerEvent) error
 	UpdateOrganizerEvent(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
 	SetEventVenue(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
 	UploadEventCover(ctx context.Context, eventID int, organizerID int, upload *CoverImageUpload) (string, error)
+	WithdrawEventFromReview(ctx context.Context, eventID int, organizerID int) error
+	SetEventArchived(ctx context.Context, eventID int, organizerID int, archived bool) error
+	SetEventListed(ctx context.Context, eventID int, organizerID int, listed bool) error
 	PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	GetEventSeating(ctx context.Context, eventID int, organizerID int) (*EventSeatingResponse, error)

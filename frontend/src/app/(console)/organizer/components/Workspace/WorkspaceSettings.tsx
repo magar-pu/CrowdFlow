@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Settings, Trash2, Ticket, AlertTriangle, Archive } from "lucide-react";
+import { Settings, Trash2, Ticket, AlertTriangle, Archive, Undo2 } from "lucide-react";
 import WorkspaceCoverImage from "./WorkspaceCoverImage";
 
 interface WorkspaceSettingsProps {
@@ -22,6 +22,12 @@ interface WorkspaceSettingsProps {
   /** Deletes the event for real. Only drafts can be deleted. */
   onDeleteEvent: () => Promise<boolean>;
   canDelete: boolean;
+  /** Returns a pending_review event to draft. */
+  onWithdrawEvent: () => Promise<boolean>;
+  canWithdraw: boolean;
+  /** Hides a terminal event without deleting it. */
+  onArchiveEvent: () => Promise<boolean>;
+  canArchive: boolean;
 }
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -43,6 +49,10 @@ export default function WorkspaceSettings({
   onSaveGeneral,
   onDeleteEvent,
   canDelete,
+  onWithdrawEvent,
+  canWithdraw,
+  onArchiveEvent,
+  canArchive,
   coverReadOnly = false,
   onCoverUploaded
 }: WorkspaceSettingsProps) {
@@ -52,6 +62,8 @@ export default function WorkspaceSettings({
   const [eventDate, setEventDate] = useState(initial.startDate);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   // No Location field here: the venue is set in the Venue tab, which persists it.
   // This one was hardcoded and never read or saved.
 
@@ -71,6 +83,21 @@ export default function WorkspaceSettings({
     setDeleting(true);
     await onDeleteEvent();
     setDeleting(false);
+  };
+
+  const handleWithdraw = async () => {
+    if (!confirm(`Withdraw "${name}" from review? It goes back to draft and you will need to submit it again.`)) return;
+    setWithdrawing(true);
+    await onWithdrawEvent();
+    setWithdrawing(false);
+  };
+
+  // No confirm(): archiving is reversible and non-destructive, unlike the two
+  // above. The Events list has an Archived view to restore from.
+  const handleArchive = async () => {
+    setArchiving(true);
+    await onArchiveEvent();
+    setArchiving(false);
   };
 
   return (
@@ -155,16 +182,39 @@ export default function WorkspaceSettings({
           <h4 className="text-sm font-bold text-danger flex items-center gap-2">
             <AlertTriangle className="w-4 h-4" /> Danger Zone
           </h4>
-          <div className="flex items-center justify-between gap-3">
+          {canWithdraw && (
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold text-text-primary">Withdraw from Review</p>
+                <p className="text-[10px] text-text-secondary">
+                  Return this event to draft so you can edit it. Only possible until an auditor picks it up.
+                </p>
+              </div>
+              <button
+                onClick={handleWithdraw}
+                disabled={withdrawing}
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-border-subtle hover:bg-surface-container-low disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-semibold text-text-primary transition-colors cursor-pointer shrink-0"
+              >
+                <Undo2 className="w-3.5 h-3.5" /> {withdrawing ? 'Withdrawing…' : 'Withdraw'}
+              </button>
+            </div>
+          )}
+
+          <div className={`flex items-center justify-between gap-3 ${canWithdraw ? 'pt-3 border-t border-danger/20' : ''}`}>
             <div>
               <p className="text-xs font-semibold text-text-primary">Archive Event</p>
-              <p className="text-[10px] text-text-secondary">Hide this event from all dashboards without deleting data.</p>
+              <p className="text-[10px] text-text-secondary">
+                {canArchive
+                  ? 'Hide this event from your active list. Nothing is deleted and the review history is kept — you can restore it later.'
+                  : 'Only a draft or rejected event can be archived. Withdraw it from review first.'}
+              </p>
             </div>
             <button
-              onClick={() => alert(`"${name}" has been archived.`)}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-border-subtle hover:bg-surface-container-low rounded-lg text-xs font-semibold text-text-primary transition-colors cursor-pointer shrink-0"
+              onClick={handleArchive}
+              disabled={!canArchive || archiving}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-border-subtle hover:bg-surface-container-low disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-semibold text-text-primary transition-colors cursor-pointer shrink-0"
             >
-              <Archive className="w-3.5 h-3.5" /> Archive
+              <Archive className="w-3.5 h-3.5" /> {archiving ? 'Archiving…' : 'Archive'}
             </button>
           </div>
           <div className="flex items-center justify-between gap-3 pt-3 border-t border-danger/20">
@@ -173,7 +223,9 @@ export default function WorkspaceSettings({
               <p className="text-[10px] text-text-secondary">
                 {canDelete
                   ? 'Permanently remove this event and all associated data.'
-                  : 'Only a draft can be deleted. This event has already been submitted.'}
+                  : canWithdraw
+                    ? 'Only a draft can be deleted. Withdraw this event from review first.'
+                    : 'Only a draft can be deleted. This event has been reviewed, so its history is kept — archive it instead.'}
               </p>
             </div>
             <button

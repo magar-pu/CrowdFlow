@@ -49,6 +49,13 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("PUT /api/organizer/events/{id}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUpdateEvent)))))
 	mux.Handle("PUT /api/organizer/events/{id}/venue", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleSetEventVenue)))))
 	mux.Handle("POST /api/organizer/events/{id}/cover", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUploadEventCover)))))
+	mux.Handle("POST /api/organizer/events/{id}/withdraw", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleWithdrawEvent)))))
+	// "listing" rather than "publish": PATCH .../publish above already means
+	// "submit to the auditor". These two control the PUBLIC listing.
+	mux.Handle("POST /api/organizer/events/{id}/listing", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleListEventPublicly)))))
+	mux.Handle("DELETE /api/organizer/events/{id}/listing", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUnlistEvent)))))
+	mux.Handle("POST /api/organizer/events/{id}/archive", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleArchiveEvent)))))
+	mux.Handle("DELETE /api/organizer/events/{id}/archive", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUnarchiveEvent)))))
 	mux.Handle("PATCH /api/organizer/events/{id}/publish", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handlePublishEvent)))))
 	mux.Handle("DELETE /api/organizer/events/{id}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleDeleteEvent)))))
 	mux.Handle("POST /api/organizer/events/{id}/checkin", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleCheckInAttendee)))))
@@ -337,7 +344,11 @@ func (h *Handler) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	events, err := h.service.ListOrganizerEvents(r.Context(), userID)
+	// ?archived=true switches the list to the archive view. Anything else,
+	// including a malformed value, means the active list.
+	archived := r.URL.Query().Get("archived") == "true"
+
+	events, err := h.service.ListOrganizerEvents(r.Context(), userID, archived)
 	if err != nil {
 		log.Printf("ListOrganizerEvents error: %v", err)
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list events")
@@ -601,11 +612,140 @@ func (h *Handler) handleDeleteEvent(w http.ResponseWriter, r *http.Request) {
 
 	err = h.service.DeleteOrganizerEvent(r.Context(), eventID, userID)
 	if err != nil {
+		// Not an internal error: the event exists and is owned by the caller
+		// (requireEventOwnership passed), it simply is not a draft any more.
+		if errors.Is(err, ErrNotDraft) {
+			response.Error(w, http.StatusUnprocessableEntity, "NOT_DRAFT",
+				"Only a draft event can be deleted. Withdraw it from review first, or archive it.")
+			return
+		}
 		log.Printf("DeleteOrganizerEvent error: %v", err)
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete event")
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Event deleted successfully"})
+}
+
+// handleWithdrawEvent pulls an event back out of the auditor queue to draft.
+func (h *Handler) handleWithdrawEvent(w http.ResponseWriter, r *http.Request) {
+	userID, eventID, ok := h.eventActor(w, r)
+	if !ok {
+		return
+	}
+
+	if err := h.service.WithdrawEventFromReview(r.Context(), eventID, userID); err != nil {
+		switch {
+		case errors.Is(err, ErrEventNotFound):
+			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Event not found")
+		case errors.Is(err, ErrNotUnderReview):
+			response.Error(w, http.StatusUnprocessableEntity, "NOT_UNDER_REVIEW",
+				"Only an event awaiting review can be withdrawn.")
+		case errors.Is(err, ErrReviewInProgress):
+			response.Error(w, http.StatusConflict, "REVIEW_IN_PROGRESS",
+				"An auditor has already started reviewing this event, so it can no longer be withdrawn.")
+		default:
+			log.Printf("WithdrawEventFromReview error: %v", err)
+			response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to withdraw event")
+		}
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Event withdrawn from review and returned to draft"})
+}
+
+func (h *Handler) handleListEventPublicly(w http.ResponseWriter, r *http.Request) {
+	h.setEventListed(w, r, true)
+}
+
+func (h *Handler) handleUnlistEvent(w http.ResponseWriter, r *http.Request) {
+	h.setEventListed(w, r, false)
+}
+
+// setEventListed is the organizer's go-live switch for an approved event.
+func (h *Handler) setEventListed(w http.ResponseWriter, r *http.Request, listed bool) {
+	userID, eventID, ok := h.eventActor(w, r)
+	if !ok {
+		return
+	}
+
+	if err := h.service.SetEventListed(r.Context(), eventID, userID, listed); err != nil {
+		switch {
+		case errors.Is(err, ErrEventNotFound):
+			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Event not found")
+		case errors.Is(err, ErrNotApproved):
+			response.Error(w, http.StatusUnprocessableEntity, "NOT_APPROVED",
+				"This event has not been approved by an auditor yet, so it cannot be published.")
+		case errors.Is(err, ErrEventArchived):
+			response.Error(w, http.StatusUnprocessableEntity, "EVENT_ARCHIVED",
+				"Restore this event from the archive before publishing it.")
+		default:
+			log.Printf("SetEventListed error: %v", err)
+			response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update event listing")
+		}
+		return
+	}
+
+	msg := "Event is now live for ticket buyers"
+	if !listed {
+		msg = "Event withdrawn from public listing. New ticket sales are stopped; tickets already sold remain valid."
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": msg})
+}
+
+func (h *Handler) handleArchiveEvent(w http.ResponseWriter, r *http.Request) {
+	h.setEventArchived(w, r, true)
+}
+
+func (h *Handler) handleUnarchiveEvent(w http.ResponseWriter, r *http.Request) {
+	h.setEventArchived(w, r, false)
+}
+
+func (h *Handler) setEventArchived(w http.ResponseWriter, r *http.Request, archived bool) {
+	userID, eventID, ok := h.eventActor(w, r)
+	if !ok {
+		return
+	}
+
+	if err := h.service.SetEventArchived(r.Context(), eventID, userID, archived); err != nil {
+		switch {
+		case errors.Is(err, ErrEventNotFound):
+			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Event not found")
+		case errors.Is(err, ErrCannotArchive):
+			response.Error(w, http.StatusUnprocessableEntity, "CANNOT_ARCHIVE",
+				"Only a draft or rejected event can be archived. Withdraw it from review first.")
+		default:
+			log.Printf("SetEventArchived error: %v", err)
+			response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update event archive state")
+		}
+		return
+	}
+
+	msg := "Event archived"
+	if !archived {
+		msg = "Event restored"
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": msg})
+}
+
+// eventActor pulls the caller's user id and the {id} path value, writing the
+// error response itself when either is unusable. Every per-event handler
+// repeated these twenty lines.
+func (h *Handler) eventActor(w http.ResponseWriter, r *http.Request) (userID int, eventID int, ok bool) {
+	claims, found := middleware.GetClaims(r.Context())
+	if !found {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return 0, 0, false
+	}
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
+		return 0, 0, false
+	}
+	eventID, err = strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return 0, 0, false
+	}
+	return userID, eventID, true
 }
 
 func (h *Handler) handleListTicketTiers(w http.ResponseWriter, r *http.Request) {

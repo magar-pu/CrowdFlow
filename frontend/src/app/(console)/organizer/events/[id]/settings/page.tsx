@@ -4,7 +4,12 @@ import { useParams, useRouter } from "next/navigation";
 import EventWorkspaceShell from "../../../components/EventWorkspaceShell";
 import WorkspaceSettings from "../../../components/Workspace/WorkspaceSettings";
 import { useOrganizerData } from "../../../OrganizerDataContext";
-import { deleteOrganizerEvent, updateOrganizerEvent } from "@/lib/api/eorganizer";
+import {
+  deleteOrganizerEvent,
+  updateOrganizerEvent,
+  withdrawOrganizerEvent,
+  archiveOrganizerEvent,
+} from "@/lib/api/eorganizer";
 
 // Cover art is locked only while an auditor holds the event: swapping the image
 // mid-review changes what they are reviewing. A live event stays editable —
@@ -49,6 +54,12 @@ export default function OrganizerEventSettingsPage() {
 
   // The backend only deletes drafts; anything submitted has an audit trail.
   const canDelete = event?.status === "Draft";
+  // "In Review" is how the console renders pending_review. Withdrawal is also
+  // refused server-side once an auditor claims the event, which this cannot
+  // know — the 409 is surfaced as a toast.
+  const canWithdraw = event?.status === "In Review";
+  // Mirrors the server rule: terminal events only.
+  const canArchive = event?.status === "Draft" || event?.status === "Rejected";
   const coverReadOnly = COVER_LOCKED_STATUSES.has((event?.status ?? "").toLowerCase());
 
   const handleDeleteEvent = async () => {
@@ -60,6 +71,32 @@ export default function OrganizerEventSettingsPage() {
       return true;
     }
     pushToast(`Failed to delete: ${res.error?.message ?? "Unknown error"}`, "warning");
+    return false;
+  };
+
+  const handleWithdrawEvent = async () => {
+    const res = await withdrawOrganizerEvent(eventId);
+    if (res.success) {
+      pushToast("Event withdrawn from review and returned to draft", "success");
+      // Stay in the workspace: the point of withdrawing is to keep editing.
+      await fetchData();
+      return true;
+    }
+    pushToast(res.error?.message ?? "Failed to withdraw event", "warning");
+    return false;
+  };
+
+  const handleArchiveEvent = async () => {
+    const res = await archiveOrganizerEvent(eventId);
+    if (res.success) {
+      pushToast("Event archived. Find it under Archived on the Events page.", "success");
+      // The event has just left the active list this page reads from, so
+      // staying here would render an empty workspace.
+      await fetchData();
+      router.push("/organizer/events");
+      return true;
+    }
+    pushToast(res.error?.message ?? "Failed to archive event", "warning");
     return false;
   };
 
@@ -78,6 +115,10 @@ export default function OrganizerEventSettingsPage() {
           onSaveGeneral={handleSaveGeneral}
           onDeleteEvent={handleDeleteEvent}
           canDelete={canDelete}
+          onWithdrawEvent={handleWithdrawEvent}
+          canWithdraw={canWithdraw}
+          onArchiveEvent={handleArchiveEvent}
+          canArchive={canArchive}
           coverReadOnly={coverReadOnly}
           onCoverUploaded={fetchData}
         />

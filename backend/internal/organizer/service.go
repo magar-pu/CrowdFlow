@@ -3,6 +3,8 @@ package organizer
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -400,8 +402,8 @@ func (s *OrganizerService) GetDashboardData(ctx context.Context, organizerID int
 	return s.repo.GetDashboardData(ctx, organizerID)
 }
 
-func (s *OrganizerService) ListOrganizerEvents(ctx context.Context, organizerID int) ([]*OrganizerEvent, error) {
-	return s.repo.ListOrganizerEvents(ctx, organizerID)
+func (s *OrganizerService) ListOrganizerEvents(ctx context.Context, organizerID int, archived bool) ([]*OrganizerEvent, error) {
+	return s.repo.ListOrganizerEvents(ctx, organizerID, archived)
 }
 
 func (s *OrganizerService) GetOrganizerEvent(ctx context.Context, eventID int, organizerID int) (*OrganizerEvent, error) {
@@ -409,7 +411,35 @@ func (s *OrganizerService) GetOrganizerEvent(ctx context.Context, eventID int, o
 }
 
 func (s *OrganizerService) DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error {
-	return s.repo.DeleteOrganizerEvent(ctx, eventID, organizerID)
+	err := s.repo.DeleteOrganizerEvent(ctx, eventID, organizerID)
+	// The repo's WHERE clause folds "not yours", "doesn't exist" and "not a
+	// draft" into one empty result. Ownership is already enforced by
+	// requireEventOwnership upstream, so by the time we get here the realistic
+	// cause is that the event is no longer a draft.
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotDraft
+	}
+	return err
+}
+
+// WithdrawEventFromReview pulls an event back out of the auditor queue and
+// returns it to draft, so a mis-submission can be corrected (and then deleted,
+// since deletion is draft-only). Refused once an auditor has claimed the event.
+func (s *OrganizerService) WithdrawEventFromReview(ctx context.Context, eventID int, organizerID int) error {
+	return s.repo.WithdrawEventFromReview(ctx, eventID, organizerID)
+}
+
+// SetEventArchived hides or restores an event without touching its status, so a
+// rejected event stays rejected and its review trail survives.
+func (s *OrganizerService) SetEventArchived(ctx context.Context, eventID int, organizerID int, archived bool) error {
+	return s.repo.SetEventArchived(ctx, eventID, organizerID, archived)
+}
+
+// SetEventListed puts an approved event on sale, or withdraws it. The organizer
+// has the final call: an auditor's approval makes an event eligible to be
+// listed, it does not list it.
+func (s *OrganizerService) SetEventListed(ctx context.Context, eventID int, organizerID int, listed bool) error {
+	return s.repo.SetEventListed(ctx, eventID, organizerID, listed)
 }
 
 // defaultMaxPerOrder mirrors the ticket_tiers.max_ticket_per_user column default.

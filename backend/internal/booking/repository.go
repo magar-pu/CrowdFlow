@@ -258,6 +258,32 @@ func (r *PostgresRedisRepository) GetMaxPerOrder(ticketTierID int) (int, error) 
 	return max, err
 }
 
+// IsTierBookable resolves the event from the ticket tier rather than trusting
+// req.EventID, which is client-supplied and never cross-checked against the
+// tier anywhere else in the hold path.
+//
+// A withdrawn (unpublished) event still serves its detail page so existing
+// ticket holders keep working links — this is what stops it from taking new
+// orders while it is off the public listing.
+func (r *PostgresRedisRepository) IsTierBookable(ticketTierID int) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var bookable bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT e.status = 'approved'
+		   AND e.published_at IS NOT NULL
+		   AND e.archived_at IS NULL
+		FROM ticket_tiers tt
+		JOIN events e ON tt.event_id = e.id
+		WHERE tt.id = $1
+	`, ticketTierID).Scan(&bookable)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	return bookable, err
+}
+
 func seatLockKey(eventID, seatID int) string {
 	return fmt.Sprintf("lock:event:%d:seat:%d", eventID, seatID)
 }

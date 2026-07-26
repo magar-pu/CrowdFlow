@@ -75,6 +75,8 @@ export interface OrganizerEvent {
   revenue: number;
   status: string;
   image: string;
+  /** Whether the organizer has put this approved event on the public listing. */
+  published?: boolean;
 }
 
 /** The payload the creation wizard sends: identity + schedule only. */
@@ -198,8 +200,13 @@ export async function getDashboardData(): Promise<ApiResponse<DashboardResponse>
   });
 }
 
-export async function listOrganizerEvents(): Promise<ApiResponse<OrganizerEvent[]>> {
-  return apiRequest<OrganizerEvent[]>("/api/organizer/events", {
+/**
+ * Lists the organizer's events. `archived: true` returns the archive instead of
+ * the active list — the two views are mutually exclusive, since an archived
+ * event appearing next to live ones defeats the point of archiving.
+ */
+export async function listOrganizerEvents(archived = false): Promise<ApiResponse<OrganizerEvent[]>> {
+  return apiRequest<OrganizerEvent[]>(`/api/organizer/events${archived ? "?archived=true" : ""}`, {
     method: "GET",
   });
 }
@@ -212,6 +219,55 @@ export async function getOrganizerEvent(eventId: number): Promise<ApiResponse<Or
 
 export async function deleteOrganizerEvent(eventId: number): Promise<ApiResponse<void>> {
   return apiRequest<void>(`/api/organizer/events/${eventId}`, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * Pulls an event back out of the auditor queue and returns it to draft.
+ * Refused with 409 REVIEW_IN_PROGRESS once an auditor has claimed it.
+ */
+export async function withdrawOrganizerEvent(eventId: number): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/withdraw`, {
+    method: "POST",
+  });
+}
+
+/**
+ * Hides a terminal (draft or rejected) event from the active list without
+ * touching its status, so the review trail survives. Reversible.
+ */
+export async function archiveOrganizerEvent(eventId: number): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/archive`, {
+    method: "POST",
+  });
+}
+
+export async function unarchiveOrganizerEvent(eventId: number): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/archive`, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * Puts an auditor-approved event on the public listing. The organizer has the
+ * final call — approval makes an event eligible, it does not publish it.
+ *
+ * Note the path: PATCH .../publish already means "submit to the auditor".
+ */
+export async function listEventPublicly(eventId: number): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/listing`, {
+    method: "POST",
+  });
+}
+
+/**
+ * Withdraws the event from the public listing. It leaves browse/search and new
+ * bookings are rejected; tickets already sold stay valid and direct links keep
+ * working for the people holding them. Reversible without re-approval.
+ */
+export async function unlistEvent(eventId: number): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/listing`, {
     method: "DELETE",
   });
 }

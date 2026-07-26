@@ -31,6 +31,17 @@ func (s *BookingService) CreateHold(req HoldRequest) (*Hold, error) {
 		return nil, errors.New("ticket_tier_id is required")
 	}
 
+	// Checked before anything else: an event the organizer has withdrawn from
+	// public listing must not take new orders, even via a direct link or a
+	// hand-rolled API call.
+	bookable, err := s.repo.IsTierBookable(req.TicketTierID)
+	if err != nil {
+		return nil, err
+	}
+	if !bookable {
+		return nil, errors.New("this event is not currently on sale")
+	}
+
 	assigned, err := s.repo.IsAssignedSeating(req.TicketTierID)
 	if err != nil {
 		return nil, err

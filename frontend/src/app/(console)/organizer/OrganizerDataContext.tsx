@@ -89,7 +89,7 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
         capacity: e.capacity,
         sold: e.sold,
         revenue: e.revenue,
-        status: e.status as "Live" | "Scheduled" | "Draft",
+        status: e.status as EventItem["status"],
         image: e.image,
       }));
       setEvents(mappedEvents);

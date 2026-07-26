@@ -428,6 +428,7 @@ func (r *PostgresRepository) GetDashboardData(ctx context.Context, organizerID i
 	recentEvents := []RecentEvent{}
 	rowsEvents, err := r.db.QueryContext(ctx, `
 		SELECT e.id, e.event_name, et.event_type, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''),
+		       (e.published_at IS NOT NULL),
 		       COALESCE(v.name, ''), COALESCE(v.city, ''),
 		       COALESCE((SELECT SUM(allocation_limit) FROM ticket_tiers WHERE event_id = e.id), 0) as capacity,
 		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = e.id), 0) as sold,
@@ -437,7 +438,7 @@ func (r *PostgresRepository) GetDashboardData(ctx context.Context, organizerID i
 		-- workspace, and it must still show up in the organizer's own lists.
 		LEFT JOIN venues v ON e.venue_id = v.id
 		JOIN event_types et ON e.event_type_id = et.id
-		WHERE e.organizer_id = $1
+		WHERE e.organizer_id = $1 AND e.archived_at IS NULL
 		ORDER BY e.created_at DESC
 		LIMIT 5
 	`, organizerID)
@@ -447,13 +448,19 @@ func (r *PostgresRepository) GetDashboardData(ctx context.Context, organizerID i
 			var e RecentEvent
 			var start, end time.Time
 			var statusVal string
-			err = rowsEvents.Scan(&e.ID, &e.Name, &e.Category, &start, &end, &statusVal, &e.Image, &e.VenueName, &e.Location, &e.Capacity, &e.Sold, &e.Revenue)
+			err = rowsEvents.Scan(&e.ID, &e.Name, &e.Category, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueName, &e.Location, &e.Capacity, &e.Sold, &e.Revenue)
 			if err == nil {
 				// Location stays the bare city: the dashboard card composes it
 				// as "{venueName}, {location}" itself, so prefixing the name
 				// here rendered it twice.
 				if statusVal == "approved" {
-					e.Status = "Live"
+					// Same distinction the events list makes: approved is the
+					// auditor's verdict, Live means actually on sale.
+					if e.Published {
+						e.Status = "Live"
+					} else {
+						e.Status = "Approved"
+					}
 				} else if statusVal == "draft" {
 					e.Status = "Draft"
 				} else {
@@ -471,12 +478,12 @@ func (r *PostgresRepository) GetDashboardData(ctx context.Context, organizerID i
 	}, nil
 }
 
-func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerID int) ([]*OrganizerEvent, error) {
+func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerID int, archived bool) ([]*OrganizerEvent, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT e.id, e.event_name, et.event_type, e.description, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''),
+		SELECT e.id, e.event_name, et.event_type, e.description, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''), (e.published_at IS NOT NULL),
 		       COALESCE(v.id, 0), COALESCE(v.name, ''), COALESCE(v.address, ''), COALESCE(v.city, ''),
 		       COALESCE((SELECT SUM(allocation_limit) FROM ticket_tiers WHERE event_id = e.id), 0) as capacity,
 		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = e.id), 0) as sold,
@@ -485,9 +492,15 @@ func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerI
 		-- LEFT: venue-less drafts must still be listed. VenueID comes back 0.
 		LEFT JOIN venues v ON e.venue_id = v.id
 		JOIN event_types et ON e.event_type_id = et.id
+		-- One list, two views: active by default, archived on request. There is
+		-- no "everything" mode on purpose — an archived event showing up beside
+		-- live ones is exactly what archiving exists to prevent.
+		-- GetOrganizerEvent deliberately does NOT filter, so a direct link to an
+		-- archived event's workspace still opens and can un-archive it.
 		WHERE e.organizer_id = $1
+		  AND ($2::boolean = (e.archived_at IS NOT NULL))
 		ORDER BY e.created_at DESC
-	`, organizerID)
+	`, organizerID, archived)
 	if err != nil {
 		return nil, err
 	}
@@ -498,7 +511,7 @@ func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerI
 		var e OrganizerEvent
 		var start, end time.Time
 		var statusVal string
-		err = rows.Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue)
+		err = rows.Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue)
 		if err == nil {
 			e.StartDate = start.Format("2006-01-02")
 			e.StartTime = start.Format("15:04:05")
@@ -507,7 +520,13 @@ func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerI
 			e.Date = start.Format("Jan 02, 2006")
 			e.Location = composeLocation(e.VenueName, e.VenueCity)
 			if statusVal == "approved" {
-				e.Status = "Live"
+				// Approved is the auditor's verdict; only a published event is
+				// actually visible to buyers.
+				if e.Published {
+					e.Status = "Live"
+				} else {
+					e.Status = "Approved"
+				}
 			} else if statusVal == "draft" {
 				e.Status = "Draft"
 			} else if statusVal == "rejected" {
@@ -533,7 +552,7 @@ func (r *PostgresRepository) GetOrganizerEvent(ctx context.Context, eventID int,
 	var start, end time.Time
 	var statusVal string
 	err := r.db.QueryRowContext(ctx, `
-		SELECT e.id, e.event_name, et.event_type, e.description, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''),
+		SELECT e.id, e.event_name, et.event_type, e.description, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''), (e.published_at IS NOT NULL),
 		       COALESCE(v.id, 0), COALESCE(v.name, ''), COALESCE(v.address, ''), COALESCE(v.city, ''),
 		       COALESCE((SELECT SUM(allocation_limit) FROM ticket_tiers WHERE event_id = e.id), 0) as capacity,
 		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = e.id), 0) as sold,
@@ -544,7 +563,7 @@ func (r *PostgresRepository) GetOrganizerEvent(ctx context.Context, eventID int,
 		LEFT JOIN venues v ON e.venue_id = v.id
 		JOIN event_types et ON e.event_type_id = et.id
 		WHERE e.id = $1 AND e.organizer_id = $2
-	`, eventID, organizerID).Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue)
+	`, eventID, organizerID).Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, sql.ErrNoRows
@@ -559,7 +578,11 @@ func (r *PostgresRepository) GetOrganizerEvent(ctx context.Context, eventID int,
 	e.Date = start.Format("Jan 02, 2006")
 	e.Location = composeLocation(e.VenueName, e.VenueCity)
 	if statusVal == "approved" {
-		e.Status = "Live"
+		if e.Published {
+			e.Status = "Live"
+		} else {
+			e.Status = "Approved"
+		}
 	} else if statusVal == "draft" {
 		e.Status = "Draft"
 	} else if statusVal == "rejected" {
@@ -575,14 +598,197 @@ func (r *PostgresRepository) GetOrganizerEvent(ctx context.Context, eventID int,
 	return &e, nil
 }
 
+// DeleteOrganizerEvent removes a draft outright. Deliberately restricted to
+// drafts: auditor_event_reviews, event_approval_log and event_status_log all
+// cascade from events, so deleting a reviewed event would erase the audit trail
+// of that review. Terminal events are archived instead (see ArchiveEvent).
+//
+// Returns sql.ErrNoRows when nothing matched. Without that check the guard is
+// invisible to the caller — a non-draft event yields 0 affected rows and a nil
+// error, which the handler used to report as a successful deletion.
 func (r *PostgresRepository) DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	_, err := r.db.ExecContext(ctx, `
+	res, err := r.db.ExecContext(ctx, `
 		DELETE FROM events WHERE id = $1 AND organizer_id = $2 AND status = 'draft'
 	`, eventID, organizerID)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// WithdrawEventFromReview returns a pending_review event to draft. Runs in a
+// transaction with SELECT ... FOR UPDATE so an auditor claiming the event
+// concurrently either loses the race or blocks it — without the lock, a
+// withdrawal and a claim can interleave and leave a draft that the auditor
+// console still shows as assigned to them.
+func (r *PostgresRepository) WithdrawEventFromReview(ctx context.Context, eventID int, organizerID int) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var status string
+	err = tx.QueryRowContext(ctx, `
+		SELECT status FROM events WHERE id = $1 AND organizer_id = $2 FOR UPDATE
+	`, eventID, organizerID).Scan(&status)
+	if err == sql.ErrNoRows {
+		return ErrEventNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if status != "pending_review" {
+		return ErrNotUnderReview
+	}
+
+	// "Claimed" means an auditor has taken ownership (reviewer_id) or moved the
+	// review past its initial stage. A bare 'Submitted' row with no reviewer is
+	// just the queue entry created on submission, so it does not block.
+	var claimed bool
+	err = tx.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM auditor_event_reviews
+			WHERE event_id = $1 AND (reviewer_id IS NOT NULL OR stage <> 'Submitted')
+		)
+	`, eventID).Scan(&claimed)
+	if err != nil {
+		return err
+	}
+	if claimed {
+		return ErrReviewInProgress
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE events SET status = 'draft', updated_at = now()
+		WHERE id = $1 AND organizer_id = $2
+	`, eventID, organizerID); err != nil {
+		return err
+	}
+
+	// Drop the queue entry too, or the event reappears in the auditor's list
+	// while sitting in the organizer's drafts.
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM auditor_event_reviews WHERE event_id = $1
+	`, eventID); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO event_status_log (event_id, actor_id, from_status, to_status, notes)
+		VALUES ($1, $2, 'pending_review', 'draft', 'Withdrawn from review by organizer')
+	`, eventID, organizerID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// SetEventListed is the organizer's final call on going public. The auditor's
+// approval is a precondition, not the trigger: an approved event stays invisible
+// until published_at is set here, and withdrawing clears it without disturbing
+// the status, so re-publishing needs no second approval.
+func (r *PostgresRepository) SetEventListed(ctx context.Context, eventID int, organizerID int, listed bool) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var status string
+	var archived bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT status, archived_at IS NOT NULL FROM events
+		WHERE id = $1 AND organizer_id = $2
+	`, eventID, organizerID).Scan(&status, &archived)
+	if err == sql.ErrNoRows {
+		return ErrEventNotFound
+	}
+	if err != nil {
+		return err
+	}
+
+	if status != "approved" {
+		return ErrNotApproved
+	}
+	// Publishing an archived event would put it on the public site while the
+	// organizer's own list still hides it. Withdrawing stays allowed either way.
+	if listed && archived {
+		return ErrEventArchived
+	}
+
+	if listed {
+		_, err = r.db.ExecContext(ctx, `
+			UPDATE events SET published_at = now(), updated_at = now()
+			WHERE id = $1 AND organizer_id = $2 AND published_at IS NULL
+		`, eventID, organizerID)
+	} else {
+		_, err = r.db.ExecContext(ctx, `
+			UPDATE events SET published_at = NULL, updated_at = now()
+			WHERE id = $1 AND organizer_id = $2 AND published_at IS NOT NULL
+		`, eventID, organizerID)
+	}
 	return err
+}
+
+// SetEventArchived flips archived_at. Status is untouched on purpose: a
+// rejected event stays rejected, so the auditor's verdict and the review trail
+// survive archiving and un-archiving.
+func (r *PostgresRepository) SetEventArchived(ctx context.Context, eventID int, organizerID int, archived bool) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var status string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT status FROM events WHERE id = $1 AND organizer_id = $2
+	`, eventID, organizerID).Scan(&status)
+	if err == sql.ErrNoRows {
+		return ErrEventNotFound
+	}
+	if err != nil {
+		return err
+	}
+
+	// Only terminal events may be archived. An approved event may still be
+	// selling or yet to happen, and one in review is the auditor's to finish —
+	// archiving either would hide something that still needs attention.
+	// Un-archiving is always allowed, so nothing can get permanently stuck.
+	if archived && status != "rejected" && status != "draft" {
+		return ErrCannotArchive
+	}
+
+	var res sql.Result
+	if archived {
+		res, err = r.db.ExecContext(ctx, `
+			UPDATE events SET archived_at = now(), updated_at = now()
+			WHERE id = $1 AND organizer_id = $2 AND archived_at IS NULL
+		`, eventID, organizerID)
+	} else {
+		res, err = r.db.ExecContext(ctx, `
+			UPDATE events SET archived_at = NULL, updated_at = now()
+			WHERE id = $1 AND organizer_id = $2 AND archived_at IS NOT NULL
+		`, eventID, organizerID)
+	}
+	if err != nil {
+		return err
+	}
+
+	// 0 rows means it was already in the requested state. Treat that as success
+	// rather than an error: the caller's intent is satisfied either way.
+	if _, err := res.RowsAffected(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *PostgresRepository) ListTicketTiers(ctx context.Context, eventID int, organizerID int) ([]*OrganizerTicketTier, error) {

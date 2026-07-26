@@ -24,6 +24,8 @@ const TABS: { id: string; label: string; icon: LucideIcon }[] = [
 export default function EventWorkspaceHeader({ event, workspaceTab, setWorkspaceTab, onBack }: EventWorkspaceHeaderProps) {
   const statusStyle =
     event.status === 'Live' ? 'bg-success/10 text-success border-success/20' :
+    // Approved but not published: cleared by the auditor, not yet on sale.
+    event.status === 'Approved' ? 'bg-success/5 text-success border-success/20' :
     event.status === 'Need Revision' ? 'bg-amber-500/10 text-amber-700 border-amber-500/30' :
     event.status === 'Rejected' ? 'bg-rose-500/10 text-rose-700 border-rose-500/30' :
     event.status === 'In Review' ? 'bg-blue-500/10 text-blue-700 border-blue-500/30' :
