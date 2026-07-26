@@ -12,7 +12,7 @@
 
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Plus, Trash2, Copy, Square, Circle, Triangle, Scan, Coffee, Info, LogOut, PlusSquare, Tent, Utensils } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { VenueSection, VenueSeat, VenueShape, VenueFacility, FacilityIconType, SeatArrangeForm } from "@/types/ticket";
@@ -92,6 +92,84 @@ export function SeatMapperCanvas({
     }, 150);
     return () => clearTimeout(timer);
   }, [scale]); // depend on scale, but has_centered ensures it only applies once
+
+  // ── Keep the selection clear of the chrome ───────────────────────────
+  //
+  // Two things can hide a seat you just clicked:
+  //
+  //  1. The right-hand panels (SeatPropertiesPanel / SeatArrangePanel) are
+  //     `w-80 shrink-0` FLEX SIBLINGS, not overlays — selecting a seat mounts
+  //     one and the canvas instantly loses 320px of width. A seat near the old
+  //     right edge ends up outside the new box and is clipped by overflow-hidden.
+  //  2. The FloatingToolbar is a genuine overlay pinned to the top of the
+  //     canvas, so seats behind it are covered without any resize at all.
+  //
+  // Rather than reserve dead space permanently, pan the camera by the minimum
+  // amount needed to bring the anchor point back into the usable area.
+  const TOOLBAR_INSET = 76; // toolbar sits at top-4 and is ~60px tall
+  const EDGE_PAD = 56; // keeps a seat off the very edge, and clear of the panel seam
+
+  const ensure_point_visible = useCallback(
+    (world_x: number, world_y: number) => {
+      const el = container_ref.current;
+      if (!el) return;
+      const cw = el.clientWidth;
+      const ch = el.clientHeight;
+      if (!cw || !ch) return;
+
+      set_pan((p) => {
+        const sx = p.x + world_x * scale;
+        const sy = p.y + world_y * scale;
+        let dx = 0;
+        let dy = 0;
+
+        if (sx < EDGE_PAD) dx = EDGE_PAD - sx;
+        else if (sx > cw - EDGE_PAD) dx = cw - EDGE_PAD - sx;
+
+        if (sy < TOOLBAR_INSET) dy = TOOLBAR_INSET - sy;
+        else if (sy > ch - EDGE_PAD) dy = ch - EDGE_PAD - sy;
+
+        // Same object when nothing moved, so React bails out of the re-render.
+        return dx === 0 && dy === 0 ? p : { x: p.x + dx, y: p.y + dy };
+      });
+    },
+    [scale]
+  );
+
+  // The point to keep visible: the single selected seat, or the centroid of a
+  // multi-selection. Read from the store at call time rather than closed over,
+  // so the observer below can never act on a stale selection.
+  const current_anchor = useCallback((): { x: number; y: number } | null => {
+    const st = useVenueEditorStore.getState();
+    if (st.multi_selected_seat_ids.length >= 2) {
+      const picked = st.seats.filter((s) => st.multi_selected_seat_ids.includes(s.seat_id));
+      if (picked.length === 0) return null;
+      return {
+        x: picked.reduce((a, s) => a + s.x, 0) / picked.length,
+        y: picked.reduce((a, s) => a + s.y, 0) / picked.length,
+      };
+    }
+    return st.selected_seat ? { x: st.selected_seat.x, y: st.selected_seat.y } : null;
+  }, []);
+
+  // A panel mounting/unmounting resizes this container. Reacting to the resize
+  // (rather than to the click) means the correction runs AFTER layout, using
+  // the width the canvas actually ended up with.
+  useEffect(() => {
+    const el = container_ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+
+    let last_w = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth;
+      if (w === last_w) return; // height-only changes can't hide a seat sideways
+      last_w = w;
+      const anchor = current_anchor();
+      if (anchor) ensure_point_visible(anchor.x, anchor.y);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ensure_point_visible, current_anchor]);
 
   // Marquee Selection
   const [selection_box, set_selection_box] = useState<{ startX: number, startY: number, endX: number, endY: number } | null>(null);
@@ -488,6 +566,10 @@ export function SeatMapperCanvas({
                 // still collapses the selection to that seat, below.
               } else {
                 useVenueEditorStore.getState().select_seat(seat);
+                // Covers the case the ResizeObserver can't see: moving between
+                // two seats keeps the panel open, so the canvas never resizes,
+                // but the new seat may still be sitting under the toolbar.
+                ensure_point_visible(seat.x, seat.y);
               }
             }}
             on_drag_end={(x, y) => { if (!is_locked_mode) update_seat(seat.seat_id, { x, y }); }}
