@@ -2188,8 +2188,8 @@ func formatBannerURL(rawURL string) string {
 		return ""
 	}
 	if strings.Contains(rawURL, "localhost:9000") || strings.Contains(rawURL, "minio:9000") {
-		rawURL = strings.ReplaceAll(rawURL, "localhost:9000", "localhost:9001")
-		rawURL = strings.ReplaceAll(rawURL, "minio:9000", "localhost:9001")
+		rawURL = strings.ReplaceAll(rawURL, "localhost:9000", "localhost:9000")
+		rawURL = strings.ReplaceAll(rawURL, "minio:9000", "localhost:9000")
 		rawURL = strings.ReplaceAll(rawURL, "crowdflow-uploads", "crowdflow-public")
 		return rawURL
 	}
@@ -2198,7 +2198,7 @@ func formatBannerURL(rawURL string) string {
 	}
 	base := os.Getenv("S3_PUBLIC_BASE_URL")
 	if base == "" {
-		base = "http://localhost:9001/crowdflow-public"
+		base = "http://localhost:9000/crowdflow-public"
 	}
 	base = strings.TrimSuffix(base, "/")
 	cleaned := strings.TrimPrefix(rawURL, "/")
