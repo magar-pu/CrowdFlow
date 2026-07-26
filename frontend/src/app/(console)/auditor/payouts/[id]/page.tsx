@@ -35,8 +35,6 @@ export default function AuditorPayoutDetailPage() {
           requestedAmount: raw.requestedAmount || 0,
           requestDate: raw.requestDate || "Just now",
           status: (raw.status === "processed" || raw.status === "Processed" ? "Paid" : raw.status === "failed" || raw.status === "Failed" ? "Rejected" : raw.status === "on_hold" || raw.status === "On Hold" ? "On Hold" : "Pending") as any,
-          riskLevel: (raw.riskLevel || "Low") as any,
-          riskScore: raw.riskScore || 20,
           currentAuditor: "Priya Nair",
           organizerCompany: raw.organizerName || "Organizer Company",
           organizerPhone: (raw as any).organizerPhone || "+62 812-3456-7890",

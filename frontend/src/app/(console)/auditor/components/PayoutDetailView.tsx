@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
+import { formatIDR } from '@/lib/pricing';
 import { PayoutRequest, PayoutStatus, PAYOUT_REJECTION_REASONS } from '../types';
 import {
   AlertTriangle, CheckCircle2,
@@ -31,13 +32,6 @@ const statusColors: Record<PayoutStatus, string> = {
   Paid: 'bg-emerald-100 text-emerald-700 border-emerald-200',
   Rejected: 'bg-danger/10 text-danger border-danger/20',
   'On Hold': 'bg-amber-100 text-amber-700 border-amber-200',
-};
-
-const riskColors = {
-  Low: 'bg-success/10 text-success border-success/20',
-  Medium: 'bg-warning/10 text-warning border-warning/20',
-  High: 'bg-orange-100 text-orange-600 border-orange-200',
-  Critical: 'bg-danger/10 text-danger border-danger/20',
 };
 
 function stageIndexFor(status: PayoutStatus) {
@@ -142,7 +136,7 @@ export default function PayoutDetailView({
     { label: 'Suspicious Organizer', flagged: payout.organizerStatus !== 'Verified' || payout.organizerPreviousViolations > 0 },
   ];
   const flaggedCount = riskIndicators.filter(r => r.flagged).length;
-  const recommendation = payout.riskLevel === 'Critical' || flaggedCount >= 3
+  const recommendation = flaggedCount >= 3
     ? 'High Risk'
     : flaggedCount >= 1
     ? 'Needs Manual Review'
@@ -179,7 +173,6 @@ export default function PayoutDetailView({
         </div>
         <div className="flex items-center gap-2 flex-wrap shrink-0">
           <span className={`px-2.5 py-0.5 rounded-full font-mono text-[10px] font-bold border ${statusColors[payout.status]}`}>{payout.status}</span>
-          <span className={`px-2.5 py-0.5 rounded-full font-mono text-[10px] font-bold border ${riskColors[payout.riskLevel]}`}>{payout.riskLevel} Risk</span>
           <span className="font-mono text-[10px] font-bold text-text-secondary bg-surface border border-border-subtle px-2.5 py-1 rounded-lg">Created: {payout.requestDate}</span>
           <span className="font-mono text-[10px] font-bold text-text-secondary bg-surface border border-border-subtle px-2.5 py-1 rounded-lg">Auditor: {payout.currentAuditor}</span>
         </div>
@@ -302,15 +295,15 @@ export default function PayoutDetailView({
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {[
-                { label: 'Gross Revenue', value: `$${s.grossRevenue.toLocaleString()}`, sub: 'Standard Fees' },
-                { label: 'Platform Fee', value: `-$${s.platformFee.toLocaleString()}`, sub: 'CrowdFlow Cut', isNeg: true },
-                { label: 'Gateway Fee', value: `-$${s.paymentGatewayFee.toLocaleString()}`, sub: 'Stripe/Midtrans', isNeg: true },
-                { label: 'Entertainment Tax', value: `-$${s.entertainmentTax.toLocaleString()}`, sub: 'Region Tax Deduct', isNeg: true },
-                { label: 'VAT / PPN', value: `-$${s.vat.toLocaleString()}`, sub: '11% National Tax', isNeg: true },
-                { label: 'Refund Amount', value: `-$${s.refundAmount.toLocaleString()}`, sub: 'Approved Returns', isNeg: true },
-                { label: 'Chargeback Deduct', value: `-$${s.chargebackAmount.toLocaleString()}`, sub: 'Disputes Deducted', isNeg: true, isDis: s.chargebackAmount > 0 },
-                { label: 'Other Adjustments', value: `-$${s.otherAdjustments.toLocaleString()}`, sub: 'Manual Corrections', isNeg: true },
-                { label: 'Net Organizer Payout', value: `$${s.netRevenue.toLocaleString()}`, sub: 'Transfer Amount', highlight: true },
+                { label: 'Gross Revenue', value: formatIDR(s.grossRevenue), sub: 'Standard Fees' },
+                { label: 'Platform Fee', value: `-${formatIDR(s.platformFee)}`, sub: 'CrowdFlow Cut', isNeg: true },
+                { label: 'Gateway Fee', value: `-${formatIDR(s.paymentGatewayFee)}`, sub: 'Stripe/Midtrans', isNeg: true },
+                { label: 'Entertainment Tax', value: `-${formatIDR(s.entertainmentTax)}`, sub: 'Region Tax Deduct', isNeg: true },
+                { label: 'VAT / PPN', value: `-${formatIDR(s.vat)}`, sub: '11% National Tax', isNeg: true },
+                { label: 'Refund Amount', value: `-${formatIDR(s.refundAmount)}`, sub: 'Approved Returns', isNeg: true },
+                { label: 'Chargeback Deduct', value: `-${formatIDR(s.chargebackAmount)}`, sub: 'Disputes Deducted', isNeg: true, isDis: s.chargebackAmount > 0 },
+                { label: 'Other Adjustments', value: `-${formatIDR(s.otherAdjustments)}`, sub: 'Manual Corrections', isNeg: true },
+                { label: 'Net Organizer Payout', value: formatIDR(s.netRevenue), sub: 'Transfer Amount', highlight: true },
               ].map((item, idx) => (
                 <div key={idx} className={`bg-white border border-border-subtle rounded-xl p-3.5 soft-shadow ${item.highlight ? 'ring-2 ring-success/20 bg-success/5 border-success/30' : item.isDis ? 'ring-2 ring-danger/20 bg-danger/5 border-danger/30' : ''}`}>
                   <p className="text-[8px] font-mono text-text-secondary uppercase tracking-wider">{item.label}</p>
@@ -326,10 +319,10 @@ export default function PayoutDetailView({
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {[
                 { label: 'Tickets Sold', value: s.ticketsSold.toLocaleString() },
-                { label: 'Gross Revenue', value: `$${s.grossRevenue.toLocaleString()}` },
+                { label: 'Gross Revenue', value: formatIDR(s.grossRevenue) },
                 { label: 'Refund %', value: `${refundPct.toFixed(1)}%` },
                 { label: 'Chargeback %', value: `${chargebackPct.toFixed(1)}%` },
-                { label: 'Avg. Ticket Price', value: `$${avgTicketPrice.toFixed(0)}` },
+                { label: 'Avg. Ticket Price', value: formatIDR(avgTicketPrice) },
                 { label: 'Attendance Rate', value: `${attendanceRate.toFixed(0)}%` },
               ].map((item, idx) => (
                 <div key={idx} className="bg-surface-container-low border border-border-subtle rounded-xl p-3 text-center">
@@ -462,12 +455,8 @@ export default function PayoutDetailView({
             </div>
           </SectionCard>
 
-          {/* Section 7: Risk Analysis */}
-          <SectionCard title="Risk Analysis">
-            <div className="flex items-center justify-between">
-              <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${riskColors[payout.riskLevel]}`}>{payout.riskLevel} Risk</span>
-              <span className="text-xs font-bold text-text-primary">{payout.riskScore}%</span>
-            </div>
+          {/* Section 7: Fraud indicators */}
+          <SectionCard title="Fraud Indicators">
             <div className="space-y-2 text-xs">
               {riskIndicators.map((item, idx) => (
                 <div key={idx} className="flex justify-between border-b border-border-subtle pb-1.5">
@@ -655,8 +644,8 @@ export default function PayoutDetailView({
               {[
                 { label: 'Organizer', value: payout.organizerName },
                 { label: 'Event', value: payout.eventName },
-                { label: 'Requested Amount', value: `$${payout.requestedAmount.toLocaleString()}` },
-                { label: 'Net Revenue', value: `$${payout.netRevenue.toLocaleString()}` },
+                { label: 'Requested Amount', value: formatIDR(payout.requestedAmount) },
+                { label: 'Net Revenue', value: formatIDR(payout.netRevenue) },
               ].map(r => (
                 <div key={r.label} className="flex justify-between border-b border-border-subtle pb-1.5">
                   <span className="text-text-secondary">{r.label}</span>

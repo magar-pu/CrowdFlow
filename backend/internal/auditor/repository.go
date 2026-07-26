@@ -226,16 +226,6 @@ func (r *PostgresAuditorRepository) ListReviewQueue(ctx context.Context, limit i
 		rev.Status = mapEventReviewStatus(dbStatus)
 		rev.BannerURL = formatBannerURL(rev.BannerURL)
 
-		// Calculate Risk Level based on compliance score and missing docs
-		score := rev.ComplianceScore
-		if rev.MissingDocs > 0 {
-			score -= rev.MissingDocs * 10
-		}
-		if score < 0 {
-			score = 0
-		}
-		rev.RiskLevel = computeRiskLevel(score)
-
 		reviews = append(reviews, &rev)
 	}
 
@@ -361,21 +351,6 @@ func (r *PostgresAuditorRepository) ListEventReviews(ctx context.Context, filter
 		rev.Stage = ReviewStage(stageStr)
 		rev.Status = mapEventReviewStatus(dbStatus)
 		rev.BannerURL = formatBannerURL(rev.BannerURL)
-
-		// Calculate Risk Level based on compliance score and missing docs
-		score := rev.ComplianceScore
-		if rev.MissingDocs > 0 {
-			score -= rev.MissingDocs * 10
-		}
-		if score < 0 {
-			score = 0
-		}
-		rev.RiskLevel = computeRiskLevel(score)
-
-		// Filter riskLevel client-side if risk level filter is specified
-		if filters.RiskLevel != "" && string(rev.RiskLevel) != filters.RiskLevel {
-			continue
-		}
 
 		reviews = append(reviews, &rev)
 	}
@@ -618,18 +593,31 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 	} else {
 		rev.ComplianceScore = (verifiedCount * 100) / totalDocs
 	}
-	rev.RiskLevel = computeRiskLevel(rev.ComplianceScore - rev.MissingDocs*10)
 
 	if licenseStatus == "" {
 		licenseStatus = "No NIB/SIUP on file"
 	}
 	rev.OrganizerDetail.BusinessLicense = licenseStatus
 
-	// 3. Fetch Ticket Tiers & Financial metrics
+	// 3. Fetch Ticket Tiers & Financial metrics.
+	//
+	// A tier's real capacity depends on how it sells. Once seats are painted
+	// with a tier, stock comes from event_seats_matrix and allocation_limit is
+	// never consulted again — so pricing a seated event off allocation_limit
+	// produced a projected revenue derived from a number the booking system
+	// ignores (and 0 whenever the organizer left the field alone).
 	queryTiers := `
-		SELECT name, price, allocation_limit, tickets_sold
-		FROM ticket_tiers
-		WHERE event_id = $1
+		SELECT
+			t.name,
+			t.price,
+			t.allocation_limit,
+			t.tickets_sold,
+			COALESCE((
+				SELECT COUNT(*) FROM event_seats_matrix m
+				WHERE m.event_id = $1 AND m.ticket_tier_id = t.id
+			), 0) AS seat_count
+		FROM ticket_tiers t
+		WHERE t.event_id = $1
 	`
 	rowsTiers, err := r.db.QueryContext(ctx, queryTiers, eventID)
 	if err != nil {
@@ -646,21 +634,31 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 		var price float64
 		var capLimit int
 		var sold int
+		var seatCount int
 
-		err = rowsTiers.Scan(&name, &price, &capLimit, &sold)
+		err = rowsTiers.Scan(&name, &price, &capLimit, &sold, &seatCount)
 		if err != nil {
 			return nil, err
 		}
 
+		// Seats painted with this tier win over allocation_limit; that is the
+		// rule booking/service.go applies via IsAssignedSeating.
+		capacity := capLimit
+		tier.AssignedSeating = seatCount > 0
+		if tier.AssignedSeating {
+			capacity = seatCount
+		}
+
 		tier.Category = name
 		tier.Price = price
-		tier.Seats = capLimit
-		if sold >= capLimit {
+		tier.Seats = capacity
+		tier.Sold = sold
+		if capacity > 0 && sold >= capacity {
 			tier.Status = "Sold Out"
 		} else {
 			tier.Status = "Available"
 		}
-		projectedRev += price * float64(capLimit)
+		projectedRev += price * float64(capacity)
 		totalSold += sold
 		tiers = append(tiers, tier)
 	}
@@ -671,29 +669,52 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 	taxAmount := projectedRev * (taxRate / 100)
 	netPayout := projectedRev - platformFee - gatewayFee - taxAmount
 
+	// The organizer's real payout destination. user_bank_accounts is preferred
+	// because it is the only source carrying a verification flag; the bank
+	// columns on organizer_applications (migration 0006) are the fallback for
+	// organizers who only ever filled in their application.
+	payout := ReviewPayout{EstimatedPayout: netPayout}
+	var bankName, bankNumber, bankHolder sql.NullString
+	var bankVerified sql.NullBool
+	err = r.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(uba.bank_name, oa.bank_name),
+			COALESCE(uba.account_number, oa.bank_account_number),
+			COALESCE(uba.account_holder_name, oa.bank_account_holder),
+			uba.is_verified
+		FROM events e
+		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
+		LEFT JOIN LATERAL (
+			SELECT bank_name, account_number, account_holder_name, is_verified
+			FROM user_bank_accounts
+			WHERE user_id = e.organizer_id
+			ORDER BY is_verified DESC, created_at DESC
+			LIMIT 1
+		) uba ON TRUE
+		WHERE e.id = $1
+	`, eventID).Scan(&bankName, &bankNumber, &bankHolder, &bankVerified)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+	if bankName.Valid || bankNumber.Valid {
+		payout.HasAccount = true
+		payout.Bank = bankName.String
+		payout.AccountNumber = bankNumber.String
+		payout.AccountName = bankHolder.String
+		// Only user_bank_accounts can attest verification. An account known
+		// solely from the application row is unverified by definition.
+		payout.Verified = bankVerified.Valid && bankVerified.Bool
+	}
+
 	rev.Finance = ReviewFinance{
 		ProjectedRevenue: projectedRev,
 		PlatformFee:      platformFee,
 		GatewayFee:       gatewayFee,
 		TaxAmount:        taxAmount,
 		NetPayout:        netPayout,
+		TaxRate:          taxRate,
 		TicketTiers:      tiers,
-		TaxConfig: ReviewTaxConfig{
-			EntertainmentTax: taxRate,
-			Ppn:              11.0,
-			Region:           "DKI Jakarta",
-			TaxPercentage:    taxRate + 11.0,
-			RegionMatch:      true,
-			TaxApplied:       true,
-			PpnApplied:       true,
-		},
-		Payout: ReviewPayout{
-			Bank:            "Bank Central Asia (BCA)",
-			AccountName:     rev.OrganizerName,
-			AccountNumber:   "8024927501",
-			EstimatedPayout: netPayout,
-			Verified:        true,
-		},
+		Payout:           payout,
 	}
 
 	// 4. Fetch status history
@@ -1942,13 +1963,6 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 		p.RequestDate = formatTime(reqTime)
 		p.EventDate = eventTime.Format("2006-01-02 15:04")
 
-		riskScore := 20
-		if p.RequestedAmount > 1000000.0 {
-			riskScore = 40
-		}
-		p.RiskScore = riskScore
-		p.RiskLevel = computeRiskLevel(100 - riskScore)
-
 		list = append(list, &p)
 	}
 
@@ -2051,24 +2065,18 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		NetRevenue:       netRevenue,
 	}
 
-	// Calculate Risk Score & Level
-	riskScore := 20
+	// A duplicate approved payout is a real, checkable condition — unlike the
+	// old risk score, which was a hardcoded 20/40 that mapped to "High" for
+	// every payout that ever existed.
 	hasAlert := false
 	alertMsg := ""
 
-	if netRevenue > 100000.0 {
-		riskScore = 45
-	}
 	var dupCount int
 	_ = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM payouts WHERE event_id = $1 AND status = 'approved'`, eventID).Scan(&dupCount)
 	if dupCount > 0 {
-		riskScore += 40
 		hasAlert = true
 		alertMsg = "Warning: Approved payout request already exists for this event!"
 	}
-
-	p.RiskScore = riskScore
-	p.RiskLevel = computeRiskLevel(100 - riskScore)
 
 	p.FraudDetection = FraudSignals{
 		DuplicatePayout:   dupCount > 0,

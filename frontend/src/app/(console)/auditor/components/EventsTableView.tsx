@@ -38,21 +38,30 @@ export default function EventsTableView() {
     (e?.category || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // Matches the status pills used by the Reviews, Organizers and Payouts lists:
+  // 9px bold in a bordered rounded-full capsule.
+  const STATUS_PILL =
+    'inline-block px-2.5 py-0.5 rounded-full border font-bold text-[9px] uppercase tracking-wider whitespace-nowrap';
+
   const getStatusBadge = (status: string) => {
-    switch(status?.toLowerCase()) {
-      case 'approved':
-        return <span className="px-2 py-1 bg-success/10 text-success rounded-md text-xs font-medium uppercase tracking-wider">Approved</span>;
-      case 'pending':
-      case 'in review':
-        return <span className="px-2 py-1 bg-secondary/10 text-secondary rounded-md text-xs font-medium uppercase tracking-wider">Pending Review</span>;
-      case 'changes requested':
-      case 'need revision':
-        return <span className="px-2 py-1 bg-warning/10 text-warning rounded-md text-xs font-medium uppercase tracking-wider">Changes Requested</span>;
-      case 'rejected':
-        return <span className="px-2 py-1 bg-danger/10 text-danger rounded-md text-xs font-medium uppercase tracking-wider">Rejected</span>;
-      default:
-        return <span className="px-2 py-1 bg-surface-hover text-text-secondary rounded-md text-xs font-medium uppercase tracking-wider">{status || 'Draft'}</span>;
-    }
+    const [label, tone] = ((): [string, string] => {
+      switch (status?.toLowerCase()) {
+        case 'approved':
+          return ['Approved', 'bg-success/10 text-success border-success/20'];
+        case 'pending':
+        case 'in review':
+          return ['Pending Review', 'bg-secondary/10 text-secondary border-secondary/20'];
+        case 'changes requested':
+        case 'need revision':
+          return ['Changes Requested', 'bg-warning/10 text-warning border-warning/20'];
+        case 'rejected':
+          return ['Rejected', 'bg-danger/10 text-danger border-danger/20'];
+        default:
+          return [status || 'Draft', 'bg-surface-container text-text-secondary border-border-subtle'];
+      }
+    })();
+
+    return <span className={`${STATUS_PILL} ${tone}`}>{label}</span>;
   };
 
   return (

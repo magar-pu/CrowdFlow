@@ -33,18 +33,6 @@ interface WorkspaceSettingsProps {
   onUnarchiveEvent?: () => Promise<boolean>;
 }
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer shrink-0 ${checked ? 'bg-primary' : 'bg-surface-container'}`}
-    >
-      <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : ''}`}></span>
-    </button>
-  );
-}
-
 export default function WorkspaceSettings({
   eventId,
   eventName,
@@ -74,8 +62,6 @@ export default function WorkspaceSettings({
   // No Location field here: the venue is set in the Venue tab, which persists it.
   // This one was hardcoded and never read or saved.
 
-  const [refundPolicy, setRefundPolicy] = useState('Full refund up to 7 days before');
-  const [resaleEnabled, setResaleEnabled] = useState(false);
 
   // Title, category, description and date are real columns on the event.
   const handleSaveGeneral = async (e: React.FormEvent) => {
@@ -164,28 +150,13 @@ export default function WorkspaceSettings({
           />
 
         {/* Ticket Rules */}
-        <div className="bg-white border border-border-subtle rounded-xl p-5 shadow-sm space-y-4">
+        <div className="bg-white border border-border-subtle rounded-xl p-5 shadow-sm space-y-2">
           <h4 className="text-sm font-bold text-text-primary flex items-center gap-2">
             <Ticket className="w-4 h-4 text-secondary" /> Ticket Rules
           </h4>
           <p className="text-[10px] text-text-secondary">
-            Max purchase per order is set per ticket type, in the Tickets tab.
+            Price, allocation and max purchase per order are set per ticket type, in the Tickets tab.
           </p>
-          <div className="space-y-1">
-            <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Refund Policy</label>
-            <select value={refundPolicy} onChange={(e) => setRefundPolicy(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none cursor-pointer">
-              <option>Full refund up to 7 days before</option>
-              <option>Full refund up to 24 hours before</option>
-              <option>No refunds</option>
-            </select>
-          </div>
-          <div className="flex items-center justify-between pt-2 border-t border-border-subtle">
-            <div>
-              <p className="text-xs font-semibold text-text-primary">Official Resale</p>
-              <p className="text-[10px] text-text-secondary">Enable a price-capped resale marketplace.</p>
-            </div>
-            <Toggle checked={resaleEnabled} onChange={setResaleEnabled} />
-          </div>
         </div>
         </div>
       </div>

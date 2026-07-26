@@ -26,8 +26,6 @@ export interface OrganizerVerification {
   lastActivity: string;
   province: string;
   businessType: string;
-  riskScore: number; // 0-100
-  riskCategory: 'Low' | 'Medium' | 'High' | 'Critical';
   
   // Company details
   companyType: string;
@@ -66,15 +64,6 @@ export interface OrganizerVerification {
     addressVerified: boolean;
     emailVerified: boolean;
     phoneVerified: boolean;
-  };
-  
-  // Risk assessment parameters
-  riskAssessment: {
-    identityMatch: boolean;
-    companyValidation: boolean;
-    fraudHistory: boolean;
-    duplicateAccount: boolean;
-    suspiciousActivity: boolean;
   };
   
   // Notes
@@ -117,8 +106,6 @@ export interface PayoutRequest {
   requestedAmount: number;
   requestDate: string;
   status: PayoutStatus;
-  riskLevel: RiskLevel;
-  riskScore: number; // 0-100
   currentAuditor: string;
 
   // Organizer profile (denormalized from Organizer Verification module)
@@ -219,8 +206,6 @@ export const PAYOUT_REJECTION_REASONS = [
 
 export type ReviewStage = 'Submitted' | 'Document Verification' | 'Event Validation' | 'Final Approval';
 
-export type RiskLevel = 'Low' | 'Medium' | 'High' | 'Critical';
-
 export interface ChecklistItem {
   label: string;
   done: boolean;
@@ -285,10 +270,15 @@ export interface VenueDetail {
 }
 
 export interface TicketTier {
-  category: 'VVIP' | 'VIP' | 'Festival' | 'Regular';
+  /** Free-text tier name from ticket_tiers, not a fixed vocabulary. */
+  category: string;
   price: number;
+  /** Real sellable capacity: painted seats for a seated tier, else allocation_limit. */
   seats: number;
-  status: 'Active' | 'Sold Out' | 'Pending';
+  sold: number;
+  /** True when stock comes from event_seats_matrix rather than allocation_limit. */
+  assignedSeating: boolean;
+  status: 'Active' | 'Sold Out' | 'Pending' | 'Available';
 }
 
 export interface FinanceDetail {
@@ -297,24 +287,18 @@ export interface FinanceDetail {
   gatewayFee: number;
   taxAmount: number;
   netPayout: number;
+  /** events.entertainment_tax_rate — the only per-event tax figure stored. */
+  taxRate: number;
   ticketTiers: TicketTier[];
-  taxConfig: {
-    entertainmentTax: number;
-    ppn: number;
-    region: string;
-    taxPercentage: number;
-    regionMatch: boolean;
-    taxApplied: boolean;
-    ppnApplied: boolean;
-  };
   payout: {
     bank: string;
     accountName: string;
     accountNumber: string;
     verified: boolean;
     estimatedPayout: number;
+    /** False when the organizer has provided no bank details at all. */
+    hasAccount: boolean;
   };
-  complianceChecklist: ChecklistItem[];
 }
 
 export interface ActivityEntry {
@@ -455,7 +439,6 @@ export interface EventSubmission {
   lastUpdated: string;
   stage: ReviewStage;
   status: 'Pending' | 'Approved' | 'Rejected' | 'Changes Requested';
-  riskLevel: RiskLevel;
   complianceScore: number;
   missingDocs: number;
   assignedAuditor: string;

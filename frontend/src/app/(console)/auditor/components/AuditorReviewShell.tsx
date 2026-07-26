@@ -29,13 +29,6 @@ export const REVIEW_TABS: { key: ReviewTab; label: string; icon: React.ReactNode
   { key: 'revision', label: 'Revision Control', icon: <AlertTriangle className="w-3.5 h-3.5" /> },
 ];
 
-const riskColors: Record<string, string> = {
-  Low: 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20',
-  Medium: 'bg-amber-500/10 text-amber-700 border-amber-500/20',
-  High: 'bg-rose-500/10 text-rose-700 border-rose-500/20',
-  Critical: 'bg-rose-600 text-white border-rose-700',
-};
-
 function mapDocStatus(backendStatus: string): "VERIFIED" | "WAITING REVIEW" | "READY" | "REJECTED" | "MISSING" {
   switch (backendStatus?.toLowerCase()) {
     case 'verified': return 'VERIFIED';
@@ -112,7 +105,6 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
         lastUpdated: raw.lastUpdated || "—",
         stage: raw.stage || "Submitted",
         status: raw.status || "Pending",
-        riskLevel: raw.riskLevel || "Low",
         complianceScore: raw.complianceScore ?? 100,
         missingDocs: raw.missingDocs ?? 0,
         // No assignment flow exists yet, so this column is empty for every
@@ -160,78 +152,32 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
             { label: "Emergency Exit Verified", done: true },
           ],
         },
-        finance: raw.finance ? {
-          projectedRevenue: raw.finance.projectedRevenue || 0,
-          platformFee: raw.finance.platformFee || 0,
-          gatewayFee: raw.finance.gatewayFee || 0,
-          taxAmount: raw.finance.taxAmount || 0,
-          netPayout: raw.finance.netPayout || 0,
-          ticketTiers: (raw.finance.ticketTiers || []).map((t: any) => ({
-            category: t.category || "General",
-            price: t.price || 0,
-            seats: t.seats || 0,
+        // Finance comes wholly from GetEventReview now: tier capacity resolves
+        // seated vs GA, the tax rate is the real per-event column, and the
+        // payout is the organizer's actual bank account (or none).
+        finance: {
+          projectedRevenue: raw.finance?.projectedRevenue ?? 0,
+          platformFee: raw.finance?.platformFee ?? 0,
+          gatewayFee: raw.finance?.gatewayFee ?? 0,
+          taxAmount: raw.finance?.taxAmount ?? 0,
+          netPayout: raw.finance?.netPayout ?? 0,
+          taxRate: raw.finance?.taxRate ?? 0,
+          ticketTiers: (raw.finance?.ticketTiers ?? []).map((t: any) => ({
+            category: t.category || "Untitled tier",
+            price: t.price ?? 0,
+            seats: t.seats ?? 0,
+            sold: t.sold ?? 0,
+            assignedSeating: !!t.assignedSeating,
             status: t.status || "Available",
           })),
-          taxConfig: raw.finance.taxConfig ? {
-            entertainmentTax: raw.finance.taxConfig.entertainmentTax || 0,
-            ppn: raw.finance.taxConfig.ppn || 11,
-            region: raw.finance.taxConfig.region || "Indonesia",
-            taxPercentage: raw.finance.taxConfig.taxPercentage || 11,
-            regionMatch: raw.finance.taxConfig.regionMatch || true,
-            taxApplied: raw.finance.taxConfig.taxApplied || true,
-            ppnApplied: raw.finance.taxConfig.ppnApplied || true,
-          } : {
-            entertainmentTax: 10,
-            ppn: 11,
-            region: "Indonesia",
-            taxPercentage: 21,
-            regionMatch: true,
-            taxApplied: true,
-            ppnApplied: true,
-          },
-          payout: raw.finance.payout ? {
-            bank: raw.finance.payout.bank || "Bank Central Asia (BCA)",
-            accountName: raw.finance.payout.accountName || raw.organizerName || "",
-            accountNumber: raw.finance.payout.accountNumber || "8024927501",
-            verified: raw.finance.payout.verified || true,
-            estimatedPayout: raw.finance.payout.estimatedPayout || 0,
-          } : {
-            bank: "Bank Central Asia (BCA)",
-            accountName: raw.organizerName || "Organizer Company",
-            accountNumber: "8024927501",
-            verified: true,
-            estimatedPayout: 0,
-          },
-          complianceChecklist: [
-            { label: "Ticket Price Verified", done: true },
-            { label: "Revenue Calculation", done: true },
-            { label: "Platform Fee Applied", done: true },
-            { label: "Tax Calculation", done: true },
-          ],
-        } : {
-          projectedRevenue: 0,
-          platformFee: 0,
-          gatewayFee: 0,
-          taxAmount: 0,
-          netPayout: 0,
-          ticketTiers: [],
-          taxConfig: {
-            entertainmentTax: 10,
-            ppn: 11,
-            region: "Indonesia",
-            taxPercentage: 21,
-            regionMatch: true,
-            taxApplied: true,
-            ppnApplied: true,
-          },
           payout: {
-            bank: "Bank Central Asia (BCA)",
-            accountName: raw.organizerName || "Organizer Company",
-            accountNumber: "8024927501",
-            verified: true,
-            estimatedPayout: 0,
+            bank: raw.finance?.payout?.bank ?? "",
+            accountName: raw.finance?.payout?.accountName ?? "",
+            accountNumber: raw.finance?.payout?.accountNumber ?? "",
+            verified: !!raw.finance?.payout?.verified,
+            estimatedPayout: raw.finance?.payout?.estimatedPayout ?? 0,
+            hasAccount: !!raw.finance?.payout?.hasAccount,
           },
-          complianceChecklist: [],
         },
         history: raw.history && (raw.history as any).activityTimeline ? {
           activityTimeline: ((raw.history as any).activityTimeline || []).map((h: any, idx: number) => ({
@@ -520,7 +466,6 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${riskColors[submission.riskLevel]}`}>{submission.riskLevel} Risk</span>
             <span className="font-mono text-[10px] font-bold text-text-secondary bg-surface border border-border-subtle px-2.5 py-1 rounded-lg">{submission.id}</span>
           </div>
         </div>

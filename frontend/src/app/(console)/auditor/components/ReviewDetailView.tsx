@@ -3,7 +3,8 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { updateRevisionStatus } from '@/lib/api/auditor';
-import { EventSubmission, ReviewStage, RiskLevel, RevisionEntry, ReviewDocument, docKey } from '../types';
+import { formatIDR } from '@/lib/pricing';
+import { EventSubmission, ReviewStage, RevisionEntry, ReviewDocument, docKey } from '../types';
 import {
   CheckCircle2, FileText, MapPin, CalendarDays, Users2,
   Send, AlertTriangle, Ban, Clock,
@@ -13,13 +14,6 @@ import {
 } from 'lucide-react';
 
 const TIMELINE_STAGES: ReviewStage[] = ['Submitted', 'Document Verification', 'Event Validation', 'Final Approval'];
-
-const riskColors: Record<RiskLevel, string> = {
-  Low: 'bg-success/10 text-success border-success/20',
-  Medium: 'bg-warning/10 text-warning border-warning/20',
-  High: 'bg-orange-100 text-orange-600 border-orange-200',
-  Critical: 'bg-danger/10 text-danger border-danger/20',
-};
 
 const statusColor = (s: string) => {
   if (s === 'VERIFIED') return 'bg-success/10 text-success border-success/20';
@@ -79,9 +73,6 @@ export function TabOverview({ sub }: { sub: EventSubmission }) {
               <p className="text-xs font-mono opacity-70">{sub.category}</p>
               <h3 className="text-xl font-bold">{sub.eventName}</h3>
             </div>
-          </div>
-          <div className="absolute top-3 right-3 flex gap-2">
-            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${riskColors[sub.riskLevel]}`}>{sub.riskLevel} Risk</span>
           </div>
         </div>
       )}
@@ -515,21 +506,26 @@ export function TabVenue({ sub }: { sub: EventSubmission }) {
   );
 }
 
-// ─── TAB: FINANCE ─────────────────────────────────────────────────────────────
+// --- TAB: FINANCE -----------------------------------------------------------
 export function TabFinance({ sub }: { sub: EventSubmission }) {
   const f = sub.finance;
-  const fmt = (n: number) => `$${n.toLocaleString()}`;
+  const gross = f.projectedRevenue;
+
+  // A share of zero is not 0% of something, it is undefined. Guard rather than
+  // rendering NaN% widths on an event with no priced tiers.
+  const share = (value: number) => (gross > 0 ? Math.max(2, (value / gross) * 100) : 0);
+
   return (
     <div className="space-y-6">
       {/* Financial Summary */}
       <SectionCard title="Financial Summary">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {[
-            { label: 'Projected Revenue', value: fmt(f.projectedRevenue), up: true },
-            { label: 'Platform Fee (5%)', value: fmt(f.platformFee), up: false },
-            { label: 'Gateway Fee (2%)', value: fmt(f.gatewayFee), up: false },
-            { label: 'Tax Amount', value: fmt(f.taxAmount), up: false },
-            { label: 'Net Organizer Payout', value: fmt(f.netPayout), up: true },
+            { label: 'Projected Revenue', value: formatIDR(f.projectedRevenue), up: true },
+            { label: 'Platform Fee (5%)', value: formatIDR(f.platformFee), up: false },
+            { label: 'Gateway Fee (2%)', value: formatIDR(f.gatewayFee), up: false },
+            { label: `Entertainment Tax (${f.taxRate}%)`, value: formatIDR(f.taxAmount), up: false },
+            { label: 'Net Organizer Payout', value: formatIDR(f.netPayout), up: true },
           ].map(s => (
             <div key={s.label} className="bg-white border border-border-subtle rounded-xl p-4 soft-shadow">
               <div className={`flex items-center gap-1 text-xs mb-1 ${s.up ? 'text-success' : 'text-danger'}`}>
@@ -540,107 +536,111 @@ export function TabFinance({ sub }: { sub: EventSubmission }) {
             </div>
           ))}
         </div>
+        <p className="mt-3 text-[10px] text-text-secondary">
+          Projected from each tier&apos;s full capacity at list price. Not actual sales.
+        </p>
       </SectionCard>
 
-      {/* Revenue bar chart (visual) */}
+      {/* Revenue distribution */}
       <SectionCard title="Revenue Distribution">
-        <div className="space-y-2.5">
-          {[
-            { label: 'Gross Revenue', value: f.projectedRevenue, color: 'bg-primary' },
-            { label: 'Platform Fee', value: f.platformFee, color: 'bg-secondary' },
-            { label: 'Gateway Fee', value: f.gatewayFee, color: 'bg-warning' },
-            { label: 'Tax', value: f.taxAmount, color: 'bg-danger' },
-            { label: 'Net Payout', value: f.netPayout, color: 'bg-success' },
-          ].map(b => (
-            <div key={b.label} className="flex items-center gap-3">
-              <span className="text-[10px] font-mono text-text-secondary w-28 shrink-0">{b.label}</span>
-              <div className="flex-1 bg-surface-container rounded-full h-2.5">
-                <div className={`${b.color} h-2.5 rounded-full transition-all`} style={{ width: `${Math.max(2, (b.value / f.projectedRevenue) * 100)}%` }} />
+        {gross <= 0 ? (
+          <p className="text-xs text-text-secondary">
+            No priced ticket tiers yet, so there is nothing to distribute.
+          </p>
+        ) : (
+          <div className="space-y-2.5">
+            {[
+              { label: 'Gross Revenue', value: f.projectedRevenue, color: 'bg-primary' },
+              { label: 'Platform Fee', value: f.platformFee, color: 'bg-secondary' },
+              { label: 'Gateway Fee', value: f.gatewayFee, color: 'bg-warning' },
+              { label: 'Tax', value: f.taxAmount, color: 'bg-danger' },
+              { label: 'Net Payout', value: f.netPayout, color: 'bg-success' },
+            ].map(b => (
+              <div key={b.label} className="flex items-center gap-3">
+                <span className="text-[10px] font-mono text-text-secondary w-28 shrink-0">{b.label}</span>
+                <div className="flex-1 bg-surface-container rounded-full h-2.5">
+                  <div className={`${b.color} h-2.5 rounded-full transition-all`} style={{ width: `${share(b.value)}%` }} />
+                </div>
+                <span className="text-xs font-bold text-text-primary w-32 text-right">{formatIDR(b.value)}</span>
               </div>
-              <span className="text-xs font-bold text-text-primary w-24 text-right">${b.value.toLocaleString()}</span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </SectionCard>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Ticket Pricing */}
         <SectionCard title="Ticket Pricing">
-          <table className="w-full text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-border-subtle">
-                {['Category', 'Price', 'Seats', 'Status'].map(h => (
-                  <th key={h} className="text-left py-2 font-mono text-[10px] text-text-secondary uppercase">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-subtle">
-              {f.ticketTiers.map((t, i) => (
-                <tr key={i}>
-                  <td className="py-2.5 font-bold text-text-primary">{t.category}</td>
-                  <td className="py-2.5 text-text-primary">${t.price.toLocaleString()}</td>
-                  <td className="py-2.5 text-text-secondary">{t.seats.toLocaleString()}</td>
-                  <td className="py-2.5">
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${t.status === 'Sold Out' ? 'bg-success/10 text-success border-success/20' : t.status === 'Pending' ? 'bg-warning/10 text-warning border-warning/20' : 'bg-secondary/10 text-secondary border-secondary/20'}`}>{t.status}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {f.ticketTiers.length === 0 ? (
+            <p className="text-xs text-text-secondary">No ticket tiers have been configured.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-border-subtle">
+                    {['Tier', 'Price', 'Capacity', 'Sold', 'Status'].map(h => (
+                      <th key={h} className="text-left py-2 font-mono text-[10px] text-text-secondary uppercase">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border-subtle">
+                  {f.ticketTiers.map((t, i) => (
+                    <tr key={i}>
+                      <td className="py-2.5">
+                        <span className="font-bold text-text-primary">{t.category}</span>
+                        <span className="block text-[9px] font-mono text-text-secondary uppercase mt-0.5">
+                          {t.assignedSeating ? 'Assigned seating' : 'General admission'}
+                        </span>
+                      </td>
+                      <td className="py-2.5 text-text-primary">{formatIDR(t.price)}</td>
+                      <td className="py-2.5 text-text-secondary">{t.seats.toLocaleString()}</td>
+                      <td className="py-2.5 text-text-secondary">{t.sold.toLocaleString()}</td>
+                      <td className="py-2.5">
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${t.status === 'Sold Out' ? 'bg-success/10 text-success border-success/20' : 'bg-secondary/10 text-secondary border-secondary/20'}`}>{t.status}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="mt-2 text-[10px] text-text-secondary">
+                Capacity is painted seats for assigned-seating tiers, otherwise the tier&apos;s allocation limit.
+              </p>
+            </div>
+          )}
         </SectionCard>
 
-        {/* Tax Configuration */}
-        <SectionCard title="Tax Configuration">
-          <div className="space-y-2 text-xs mb-4">
-            {[
-              { label: 'Entertainment Tax', value: `${f.taxConfig.entertainmentTax}%` },
-              { label: 'PPN', value: `${f.taxConfig.ppn}%` },
-              { label: 'Region', value: f.taxConfig.region },
-              { label: 'Total Tax %', value: `${f.taxConfig.taxPercentage}%` },
-            ].map(r => (
-              <div key={r.label} className="flex justify-between border-b border-border-subtle pb-1.5">
-                <span className="text-text-secondary">{r.label}</span>
-                <span className="font-bold text-text-primary">{r.value}</span>
-              </div>
-            ))}
-          </div>
-          <div className="space-y-2">
-            {[
-              { label: 'Region Match', done: f.taxConfig.regionMatch },
-              { label: 'Tax Applied', done: f.taxConfig.taxApplied },
-              { label: 'PPN Applied', done: f.taxConfig.ppnApplied },
-            ].map(c => <ChecklistRow key={c.label} label={c.label} done={c.done} />)}
-          </div>
-        </SectionCard>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Organizer Payout */}
         <SectionCard title="Organizer Payout">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs text-text-secondary">Account Verification</span>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${f.payout.verified ? 'bg-success/10 text-success border-success/20' : 'bg-danger/10 text-danger border-danger/20'}`}>{f.payout.verified ? 'VERIFIED' : 'UNVERIFIED'}</span>
-          </div>
-          <div className="space-y-2 text-xs">
-            {[
-              { label: 'Bank', value: f.payout.bank },
-              { label: 'Account Name', value: f.payout.accountName },
-              { label: 'Account Number', value: f.payout.accountNumber },
-              { label: 'Estimated Payout', value: fmt(f.payout.estimatedPayout) },
-            ].map(r => (
-              <div key={r.label} className="flex justify-between border-b border-border-subtle pb-1.5">
-                <span className="text-text-secondary">{r.label}</span>
-                <span className="font-bold text-text-primary">{r.value}</span>
+          {!f.payout.hasAccount ? (
+            <div className="flex items-start gap-2 text-xs text-text-secondary">
+              <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+              <span>
+                This organizer has no bank account on file. A payout cannot be made until they add one.
+              </span>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs text-text-secondary">Account Verification</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${f.payout.verified ? 'bg-success/10 text-success border-success/20' : 'bg-warning/10 text-warning border-warning/20'}`}>
+                  {f.payout.verified ? 'VERIFIED' : 'UNVERIFIED'}
+                </span>
               </div>
-            ))}
-          </div>
-        </SectionCard>
-
-        {/* Compliance Score */}
-        <SectionCard title="Finance Compliance">
-          <div className="space-y-2">
-            {f.complianceChecklist.map(c => <ChecklistRow key={c.label} label={c.label} done={c.done} />)}
-          </div>
+              <div className="space-y-2 text-xs">
+                {[
+                  { label: 'Bank', value: f.payout.bank || '—' },
+                  { label: 'Account Name', value: f.payout.accountName || '—' },
+                  { label: 'Account Number', value: f.payout.accountNumber || '—' },
+                  { label: 'Estimated Payout', value: formatIDR(f.payout.estimatedPayout) },
+                ].map(r => (
+                  <div key={r.label} className="flex justify-between border-b border-border-subtle pb-1.5">
+                    <span className="text-text-secondary">{r.label}</span>
+                    <span className="font-bold text-text-primary">{r.value}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </SectionCard>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Shield, Info, Landmark, HelpCircle } from 'lucide-react';
+import { User, Landmark } from 'lucide-react';
 import { getMe, updateProfile } from '@/lib/api/auth';
 import { useAuthStore } from '@/lib/store/authStore';
 
@@ -158,17 +158,6 @@ export default function SettingsView() {
         </div>
 
         <div className="lg:col-span-5 space-y-6">
-          <div className="bg-white border border-border-subtle rounded-xl p-6 soft-shadow space-y-4">
-            <h3 className="text-sm font-bold text-text-primary border-b border-border-subtle pb-3 flex items-center gap-2">
-              <Shield className="w-4 h-4 text-secondary" />
-              Security Credentials
-            </h3>
-            <p className="text-xs text-text-secondary leading-relaxed flex items-start gap-2.5">
-              <Info className="w-4 h-4 text-secondary shrink-0 mt-0.5" />
-              This portal uses OAuth 2.0 and Turnstile captcha validation parameters on the live backend endpoint to safeguard organizer transactions and data.
-            </p>
-          </div>
-
           <div className="bg-white border border-border-subtle rounded-xl p-6 soft-shadow space-y-4">
             <h3 className="text-sm font-bold text-text-primary border-b border-border-subtle pb-3 flex items-center gap-2">
               <Landmark className="w-4 h-4 text-secondary" />

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { OrganizerVerification, OrganizerStatus, ReviewDocument } from '../types';
 import {
-  Shield, CheckCircle2,
+  CheckCircle2,
   ArrowLeft, Ban, Send, Save, X, Activity, RefreshCw, FileText, ExternalLink
 } from 'lucide-react';
 
@@ -22,13 +22,6 @@ const statusColors: Record<OrganizerStatus, string> = {
   'Need Revision': 'bg-warning/10 text-warning border-warning/20',
   Rejected: 'bg-danger/10 text-danger border-danger/20',
   Suspended: 'bg-slate-200 text-slate-700 border-slate-300',
-};
-
-const riskColors = {
-  Low: 'bg-success/10 text-success border-success/20',
-  Medium: 'bg-warning/10 text-warning border-warning/20',
-  High: 'bg-orange-100 text-orange-600 border-orange-200',
-  Critical: 'bg-danger/10 text-danger border-danger/20',
 };
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -328,35 +321,6 @@ export default function OrganizerDetailView({
                   </button>
                 );
               })}
-            </div>
-          </SectionCard>
-
-          {/* Risk Assessment */}
-          <SectionCard title="Risk Assessment">
-            <div className="flex justify-between items-center">
-              <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${riskColors[organizer.riskCategory]}`}>{organizer.riskCategory} Risk</span>
-            </div>
-            <div className="flex items-center gap-4 bg-surface-container-low border border-border-subtle rounded-xl p-3.5">
-              <Shield className="w-7 h-7 text-secondary shrink-0" />
-              <div>
-                <p className="text-xs text-text-secondary">System Risk Score</p>
-                <p className="text-xl font-bold text-text-primary mt-0.5">{organizer.riskScore}%</p>
-              </div>
-            </div>
-            <div className="space-y-2 text-xs">
-              <p className="text-[9px] font-mono font-bold text-text-secondary uppercase">Risk Check Results</p>
-              {[
-                { label: 'Identity Match', status: organizer.riskAssessment.identityMatch },
-                { label: 'Company Validation', status: organizer.riskAssessment.companyValidation },
-                { label: 'Fraud History', status: !organizer.riskAssessment.fraudHistory },
-                { label: 'Duplicate Account', status: !organizer.riskAssessment.duplicateAccount },
-                { label: 'Suspicious Activity', status: !organizer.riskAssessment.suspiciousActivity },
-              ].map((item, idx) => (
-                <div key={idx} className="flex justify-between border-b border-border-subtle pb-1.5">
-                  <span className="text-text-secondary">{item.label}</span>
-                  <span className={`font-bold ${item.status ? 'text-success' : 'text-danger'}`}>{item.status ? 'CLEAR' : 'FLAGGED'}</span>
-                </div>
-              ))}
             </div>
           </SectionCard>
 
