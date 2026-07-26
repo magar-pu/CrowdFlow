@@ -28,6 +28,9 @@ interface WorkspaceSettingsProps {
   /** Hides a terminal event without deleting it. */
   onArchiveEvent: () => Promise<boolean>;
   canArchive: boolean;
+  /** Restores an archived event back to active status. */
+  isArchived?: boolean;
+  onUnarchiveEvent?: () => Promise<boolean>;
 }
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -53,6 +56,8 @@ export default function WorkspaceSettings({
   canWithdraw,
   onArchiveEvent,
   canArchive,
+  isArchived = false,
+  onUnarchiveEvent,
   coverReadOnly = false,
   onCoverUploaded
 }: WorkspaceSettingsProps) {
@@ -64,6 +69,8 @@ export default function WorkspaceSettings({
   const [deleting, setDeleting] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [unarchiving, setUnarchiving] = useState(false);
+
   // No Location field here: the venue is set in the Venue tab, which persists it.
   // This one was hardcoded and never read or saved.
 
@@ -98,6 +105,13 @@ export default function WorkspaceSettings({
     setArchiving(true);
     await onArchiveEvent();
     setArchiving(false);
+  };
+
+  const handleUnarchive = async () => {
+    if (!onUnarchiveEvent) return;
+    setUnarchiving(true);
+    await onUnarchiveEvent();
+    setUnarchiving(false);
   };
 
   return (
@@ -202,20 +216,36 @@ export default function WorkspaceSettings({
 
           <div className={`flex items-center justify-between gap-3 ${canWithdraw ? 'pt-3 border-t border-danger/20' : ''}`}>
             <div>
-              <p className="text-xs font-semibold text-text-primary">Archive Event</p>
+              <p className="text-xs font-semibold text-text-primary">
+                {isArchived ? "Unarchive Event" : "Archive Event"}
+              </p>
               <p className="text-[10px] text-text-secondary">
-                {canArchive
-                  ? 'Hide this event from your active list. Nothing is deleted and the review history is kept — you can restore it later.'
-                  : 'Only a draft or rejected event can be archived. Withdraw it from review first.'}
+                {isArchived
+                  ? "Restore this event back to your active events list."
+                  : canArchive
+                    ? "Hide this event from your active list. Nothing is deleted and the review history is kept — you can restore it later."
+                    : "Only a draft or rejected event can be archived. Withdraw it from review first."}
               </p>
             </div>
-            <button
-              onClick={handleArchive}
-              disabled={!canArchive || archiving}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-border-subtle hover:bg-surface-container-low disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-semibold text-text-primary transition-colors cursor-pointer shrink-0"
-            >
-              <Archive className="w-3.5 h-3.5" /> {archiving ? 'Archiving…' : 'Archive'}
-            </button>
+            {isArchived ? (
+              <button
+                type="button"
+                onClick={handleUnarchive}
+                disabled={unarchiving}
+                className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer shrink-0"
+              >
+                <Undo2 className="w-4 h-4 text-white" /> {unarchiving ? 'Unarchiving…' : 'Unarchive Event'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleArchive}
+                disabled={!canArchive || archiving}
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-border-subtle hover:bg-surface-container-low disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-semibold text-text-primary transition-colors cursor-pointer shrink-0"
+              >
+                <Archive className="w-3.5 h-3.5" /> {archiving ? 'Archiving…' : 'Archive'}
+              </button>
+            )}
           </div>
           <div className="flex items-center justify-between gap-3 pt-3 border-t border-danger/20">
             <div>

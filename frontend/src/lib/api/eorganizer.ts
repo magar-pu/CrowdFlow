@@ -32,6 +32,7 @@ export interface RecentEvent {
   capacity: number;
   sold: number;
   revenue: number;
+  date?: string;
   status: string;
   image: string;
 }

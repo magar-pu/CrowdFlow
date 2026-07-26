@@ -487,7 +487,8 @@ func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerI
 		       COALESCE(v.id, 0), COALESCE(v.name, ''), COALESCE(v.address, ''), COALESCE(v.city, ''),
 		       COALESCE((SELECT SUM(allocation_limit) FROM ticket_tiers WHERE event_id = e.id), 0) as capacity,
 		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = e.id), 0) as sold,
-		       COALESCE((SELECT SUM(gross_amount) FROM orders WHERE event_id = e.id AND status = 'paid'), 0) as revenue
+		       COALESCE((SELECT SUM(gross_amount) FROM orders WHERE event_id = e.id AND status = 'paid'), 0) as revenue,
+		       (e.archived_at IS NOT NULL) as is_archived
 		FROM events e
 		-- LEFT: venue-less drafts must still be listed. VenueID comes back 0.
 		LEFT JOIN venues v ON e.venue_id = v.id
@@ -511,7 +512,8 @@ func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerI
 		var e OrganizerEvent
 		var start, end time.Time
 		var statusVal string
-		err = rows.Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue)
+		var isArchived bool
+		err = rows.Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue, &isArchived)
 		if err == nil {
 			e.StartDate = start.Format("2006-01-02")
 			e.StartTime = start.Format("15:04:05")
@@ -519,7 +521,12 @@ func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerI
 			e.EndTime = end.Format("15:04:05")
 			e.Date = start.Format("Jan 02, 2006")
 			e.Location = composeLocation(e.VenueName, e.VenueCity)
-			if statusVal == "approved" {
+			// Archived events keep their underlying DB status but surface as
+			// "Archived" so the organizer sees what they filed away, not a
+			// misleading "Draft" or "Approved" label.
+			if isArchived {
+				e.Status = "Archived"
+			} else if statusVal == "approved" {
 				// Approved is the auditor's verdict; only a published event is
 				// actually visible to buyers.
 				if e.Published {
@@ -551,19 +558,21 @@ func (r *PostgresRepository) GetOrganizerEvent(ctx context.Context, eventID int,
 	var e OrganizerEvent
 	var start, end time.Time
 	var statusVal string
+	var isArchived bool
 	err := r.db.QueryRowContext(ctx, `
 		SELECT e.id, e.event_name, et.event_type, e.description, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''), (e.published_at IS NOT NULL),
 		       COALESCE(v.id, 0), COALESCE(v.name, ''), COALESCE(v.address, ''), COALESCE(v.city, ''),
 		       COALESCE((SELECT SUM(allocation_limit) FROM ticket_tiers WHERE event_id = e.id), 0) as capacity,
 		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = e.id), 0) as sold,
-		       COALESCE((SELECT SUM(gross_amount) FROM orders WHERE event_id = e.id AND status = 'paid'), 0) as revenue
+		       COALESCE((SELECT SUM(gross_amount) FROM orders WHERE event_id = e.id AND status = 'paid'), 0) as revenue,
+		       (e.archived_at IS NOT NULL) as is_archived
 		FROM events e
 		-- LEFT: the workspace opens on venue-less drafts; that is where the
 		-- organizer goes to set the venue in the first place.
 		LEFT JOIN venues v ON e.venue_id = v.id
 		JOIN event_types et ON e.event_type_id = et.id
 		WHERE e.id = $1 AND e.organizer_id = $2
-	`, eventID, organizerID).Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue)
+	`, eventID, organizerID).Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue, &isArchived)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, sql.ErrNoRows
@@ -577,7 +586,9 @@ func (r *PostgresRepository) GetOrganizerEvent(ctx context.Context, eventID int,
 	e.EndTime = end.Format("15:04:05")
 	e.Date = start.Format("Jan 02, 2006")
 	e.Location = composeLocation(e.VenueName, e.VenueCity)
-	if statusVal == "approved" {
+	if isArchived {
+		e.Status = "Archived"
+	} else if statusVal == "approved" {
 		if e.Published {
 			e.Status = "Live"
 		} else {

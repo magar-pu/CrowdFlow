@@ -1,5 +1,7 @@
 import React from 'react';
-import { DollarSign, Ticket, CalendarDays, Users, ClipboardCheck, Repeat, TrendingUp, Minus, MapPin, Plus, RefreshCw } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { DollarSign, Ticket, CalendarDays, ClipboardCheck, Repeat, TrendingUp, Minus, MapPin, Plus, RefreshCw, ArrowRight } from 'lucide-react';
+import { RecentOrder, RecentEvent } from '@/lib/api/eorganizer';
 import { useOrganizerData } from '../OrganizerDataContext';
 import { formatIDR } from "@/lib/pricing";
 
@@ -11,6 +13,7 @@ interface DashboardViewProps {
 const LAST_UPDATED = new Date().toISOString().slice(0, 10);
 
 export default function DashboardView({ onCreateEvent, onNavigateToView }: DashboardViewProps) {
+  const router = useRouter();
   const { dashboardData, isLoading, fetchData } = useOrganizerData();
 
   const kpis = [
@@ -121,41 +124,7 @@ export default function DashboardView({ onCreateEvent, onNavigateToView }: Dashb
         </section>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <section className="lg:col-span-2 bg-white rounded-xl border border-border-subtle soft-shadow flex flex-col">
-          <div className="p-5 border-b border-border-subtle flex justify-between items-center">
-            <h3 className="font-sans text-base font-bold text-text-primary">Revenue Analytics</h3>
-            <div className="flex gap-2">
-              <span className="px-2.5 py-1 text-[10px] font-mono font-bold rounded bg-surface-container text-text-primary">30D</span>
-            </div>
-          </div>
-          <div className="p-5 flex-1 min-h-[220px] relative flex flex-col justify-between">
-            <div className="relative w-full h-44 mt-2">
-              <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 100">
-                <line x1="0" y1="25" x2="100" y2="25" stroke="#F1F5F9" strokeWidth="0.5" strokeDasharray="2,2" />
-                <line x1="0" y1="50" x2="100" y2="50" stroke="#F1F5F9" strokeWidth="0.5" strokeDasharray="2,2" />
-                <line x1="0" y1="75" x2="100" y2="75" stroke="#F1F5F9" strokeWidth="0.5" strokeDasharray="2,2" />
-                <line x1="0" y1="100" x2="100" y2="100" stroke="var(--color-border-subtle)" strokeWidth="0.75" />
-                <path d="M0,80 Q20,72 40,65 T80,48 T100,45 L100,100 L0,100 Z" fill="url(#revGrad)" opacity="0.15" />
-                <defs>
-                  <linearGradient id="revGrad" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stopColor="var(--color-secondary)" />
-                    <stop offset="100%" stopColor="transparent" />
-                  </linearGradient>
-                </defs>
-                <path d="M0,80 Q20,72 40,65 T80,48 T100,45" fill="none" stroke="var(--color-secondary)" strokeWidth="2.5" strokeLinecap="round" />
-              </svg>
-              <div className="absolute left-0 top-0 bottom-0 flex flex-col justify-between text-[8px] text-on-surface-variant font-mono leading-none">
-                <span>Rp 1,5M</span><span>Rp 1M</span><span>Rp 500rb</span><span>Rp 0</span>
-              </div>
-              <div className="absolute -bottom-6 left-0 right-0 flex justify-between text-[9px] text-on-surface-variant font-mono">
-                <span>Oct 1</span><span>Oct 10</span><span>Oct 20</span><span>Oct 30</span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="bg-white rounded-xl border border-border-subtle soft-shadow flex flex-col overflow-hidden">
+      <section className="bg-white rounded-xl border border-border-subtle soft-shadow flex flex-col overflow-hidden">
           <div className="p-5 border-b border-border-subtle flex justify-between items-center">
             <h3 className="font-sans text-base font-bold text-text-primary">Recent Orders</h3>
             <button onClick={() => onNavigateToView('orders')} className="text-secondary font-sans text-xs font-semibold hover:underline cursor-pointer">
@@ -172,7 +141,7 @@ export default function DashboardView({ onCreateEvent, onNavigateToView }: Dashb
                 </tr>
               </thead>
               <tbody className="font-sans text-xs text-text-primary">
-                {recentOrders.map((order: any, idx: number) => {
+                {recentOrders.map((order: RecentOrder, idx: number) => {
                   const isPaid = order.status.toLowerCase() === "paid";
                   return (
                     <tr key={idx} className="border-b border-border-subtle hover:bg-surface-container-low transition-colors">
@@ -202,42 +171,98 @@ export default function DashboardView({ onCreateEvent, onNavigateToView }: Dashb
             </table>
           </div>
         </section>
-      </div>
 
       <section className="flex flex-col gap-4 animate-fade-in">
         <div className="flex justify-between items-center">
           <h3 className="font-sans text-base font-bold text-text-primary">Active Deployments</h3>
           <button
             onClick={onCreateEvent}
-            className="px-4 py-2 bg-secondary text-white hover:bg-secondary/90 rounded-lg font-sans text-xs font-semibold shadow-sm flex items-center gap-2 cursor-pointer transition-colors"
+            className="px-4 py-2 bg-primary text-white hover:bg-primary/90 rounded-lg font-sans text-xs font-semibold shadow-sm flex items-center gap-2 cursor-pointer transition-colors"
           >
             <Plus className="w-4 h-4 text-white" />
             Create Event
           </button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {(dashboardData?.recentEvents || []).slice(0, 2).map((event: any) => (
-            <div
-              key={event.id}
-              onClick={() => onNavigateToView("events")}
-              className="bg-white rounded-xl border border-border-subtle soft-shadow overflow-hidden flex flex-col group cursor-pointer hover:border-outline transition-all duration-300"
-            >
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          {(dashboardData?.recentEvents || []).map((event: RecentEvent) => {
+            const capPercent = event.capacity > 0 ? Math.round((event.sold / event.capacity) * 100) : 0;
+            return (
               <div
-                className="h-28 bg-cover bg-center"
-                style={{ backgroundImage: `url('${event.image || "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=600&auto=format"}')` }}
-              ></div>
-              <div className="p-4 flex flex-col gap-1.5 text-left">
-                <h4 className="font-bold text-text-primary group-hover:text-secondary transition-colors text-sm">{event.name}</h4>
-                <p className="text-xs text-text-secondary flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-secondary" />
-                  {/* Both are empty on a draft whose venue hasn't been set yet. */}
-                  {[event.venueName, event.location].filter(Boolean).join(', ') || 'No venue set'}
-                </p>
+                key={event.id}
+                onClick={() => router.push(`/organizer/events/${event.id}`)}
+                className="bg-white border border-border-subtle rounded-xl flex flex-col overflow-hidden soft-shadow group transition-all duration-300 hover:shadow-lg hover:border-outline cursor-pointer"
+              >
+                <div
+                  className="h-44 w-full bg-cover bg-center relative bg-surface-container-low"
+                  style={event.image ? { backgroundImage: `url('${event.image}')` } : undefined}
+                >
+                  <div className="absolute top-4 right-4">
+                    <span className={`backdrop-blur-sm border px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-sm font-mono text-[9px] font-bold ${
+                      event.status === 'Live' ? 'bg-success/90 text-white border-success' :
+                      event.status === 'Approved' ? 'bg-white/90 text-success border-success' :
+                      event.status === 'Need Revision' ? 'bg-amber-500 text-white border-amber-600' :
+                      event.status === 'Rejected' ? 'bg-rose-600 text-white border-rose-700' :
+                      event.status === 'In Review' ? 'bg-blue-600 text-white border-blue-700' :
+                      event.status === 'Archived' ? 'bg-slate-500/90 text-white border-slate-600' :
+                      'bg-white/90 text-text-primary border-border-subtle'
+                    }`}>
+                      {event.status === 'Live' && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                      )}
+                      {event.status}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-5 flex-1 flex flex-col">
+                  <h3 className="font-sans text-base font-bold text-text-primary mb-1 truncate group-hover:text-secondary transition-colors">
+                    {event.name}
+                  </h3>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4 mt-1">
+                    <div className="flex items-center gap-1.5 text-text-secondary font-mono text-[10px]">
+                      <CalendarDays className="w-3.5 h-3.5 text-secondary" />
+                      {event.date || '—'}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-text-secondary font-mono text-[10px] truncate max-w-[150px]">
+                      <MapPin className="w-3.5 h-3.5 text-secondary" />
+                      {[event.venueName, event.location].filter(Boolean).join(', ') || 'No venue set'}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 mb-4 bg-surface-container-low p-3 rounded-lg border border-border-subtle">
+                    <div>
+                      <div className="font-mono text-[9px] text-on-surface-variant mb-0.5">Revenue</div>
+                      <div className="font-sans text-xs font-bold text-text-primary">
+                        {typeof event.revenue === 'number' ? formatIDR(event.revenue) : event.revenue}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="font-mono text-[9px] text-on-surface-variant mb-0.5">Sold</div>
+                      <div className="font-sans text-xs font-bold text-text-primary">
+                        {(event.sold ?? 0).toLocaleString()}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="font-mono text-[9px] text-on-surface-variant mb-0.5">Ratio</div>
+                      <div className="font-sans text-xs font-bold text-secondary">
+                        {event.status === 'Draft' ? '0%' : `${capPercent}%`}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-auto pt-4 border-t border-border-subtle flex justify-end">
+                    <span className="text-secondary font-sans text-xs font-semibold flex items-center gap-1 group-hover:gap-2 transition-all">
+                      Open Workspace
+                      <ArrowRight className="w-4 h-4" />
+                    </span>
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {(dashboardData?.recentEvents || []).length === 0 && !isLoading && (
-            <div className="md:col-span-2 py-10 text-center text-xs text-text-secondary border border-dashed border-border-subtle rounded-xl bg-white">
+            <div className="col-span-full py-10 text-center text-xs text-text-secondary border border-dashed border-border-subtle rounded-xl bg-white">
               No active deployments found. Click &quot;Create Event&quot; to begin.
             </div>
           )}
