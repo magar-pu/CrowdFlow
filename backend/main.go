@@ -237,7 +237,7 @@ func main() {
 
 	// Initialize Auditor portal dependencies
 	auditorRepo := auditor.NewPostgresRepository(db)
-	auditorService := auditor.NewAuditorService(auditorRepo)
+	auditorService := auditor.NewAuditorService(auditorRepo, s3Storage)
 	auditorHandler := auditor.NewHandler(auditorService)
 
 	// Register Auditor routes (Auditor + Super Admin roles)

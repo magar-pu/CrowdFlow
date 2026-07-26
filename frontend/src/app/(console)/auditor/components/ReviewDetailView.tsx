@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import { updateRevisionStatus } from '@/lib/api/auditor';
-import { EventSubmission, ReviewStage, RiskLevel, RevisionEntry } from '../types';
+import { EventSubmission, ReviewStage, RiskLevel, RevisionEntry, ReviewDocument, docKey } from '../types';
 import {
   ArrowLeft, CheckCircle2, FileText, MapPin, CalendarDays, Users2,
   Send, AlertTriangle, Ban, Building2, Truck, DollarSign, Clock,
@@ -49,6 +49,8 @@ interface Props {
   onVerifyDocument: (submissionId: string, docName: string) => void;
   onRejectDocument: (submissionId: string, docName: string) => void;
   onViewDocument: (doc: { name: string; category: string; status: string }) => void;
+  /** Mints a signed link and opens the real file. */
+  onOpenDocumentFile: (doc: ReviewDocument) => void;
   onChangeStage: (submissionId: string, stage: ReviewStage) => void;
   onAddRevision: (submissionId: string, revision: RevisionEntry) => void;
   onRefresh?: () => void;
@@ -226,11 +228,12 @@ function TabOverview({ sub, onChangeStage }: { sub: EventSubmission; onChangeSta
 }
 
 // ─── TAB: DOCUMENTS ───────────────────────────────────────────────────────────
-function TabDocuments({ sub, onVerify, onReject, onView, onAddRevision }: {
+function TabDocuments({ sub, onVerify, onReject, onView, onOpenFile, onAddRevision }: {
   sub: EventSubmission;
-  onVerify: (idOrName: string) => void;
-  onReject: (idOrName: string) => void;
+  onVerify: (docKey: string) => void;
+  onReject: (docKey: string) => void;
   onView: (doc: { name: string; category: string; status: string }) => void;
+  onOpenFile: (doc: ReviewDocument) => void;
   onAddRevision: (submissionId: string, revision: RevisionEntry) => void;
 }) {
   const [notes, setNotes] = useState('');
@@ -334,29 +337,49 @@ function TabDocuments({ sub, onVerify, onReject, onView, onAddRevision }: {
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-text-primary truncate">{doc.name}</p>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        {/* Which paperwork this is: submitted for THIS event, or
+                            account-level and reused across all of them. An auditor
+                            judging an event needs to tell those apart. */}
+                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border ${
+                          doc.source === 'event'
+                            ? 'bg-secondary/10 text-secondary border-secondary/20'
+                            : 'bg-surface-container text-text-secondary border-border-subtle'
+                        }`}>
+                          {doc.source === 'event' ? 'This event' : 'Organizer account'}
+                        </span>
                         <span className="text-[9px] font-mono text-text-secondary">{doc.category}</span>
-                        {doc.uploadDate && <span className="text-[9px] text-text-secondary">· Uploaded {doc.uploadDate}</span>}
+                        {doc.uploadDate && doc.status !== 'MISSING' && <span className="text-[9px] text-text-secondary">· Uploaded {doc.uploadDate}</span>}
                         {doc.expiredDate && <span className="text-[9px] text-orange-500 font-medium">· Exp. {doc.expiredDate}</span>}
+                        {doc.status === 'MISSING' && (
+                          <span className="text-[9px] text-danger font-bold">· Never uploaded</span>
+                        )}
                         {hasActiveRevision && (
                           <span className="bg-warning/10 text-warning border border-warning/20 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider">
                             Revision Requested
                           </span>
                         )}
                       </div>
+                      {/* The reason travels back to the organizer's Documents tab,
+                          so it is worth showing what was already said. */}
+                      {doc.status === 'REJECTED' && doc.reviewNotes && (
+                        <p className="mt-1 text-[10px] font-semibold text-danger">
+                          Rejected: {doc.reviewNotes}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {doc.status !== 'MISSING' && (
                       <>
                         <button onClick={() => onView({ name: doc.name, category: doc.category, status: doc.status })} className="p-1.5 text-text-secondary hover:text-primary hover:bg-surface-container-low rounded transition-colors cursor-pointer" title="Preview"><Eye className="w-3.5 h-3.5" /></button>
-                        <button className="p-1.5 text-text-secondary hover:text-primary hover:bg-surface-container-low rounded transition-colors cursor-pointer" title="Download"><Download className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => onOpenFile(doc)} className="p-1.5 text-text-secondary hover:text-primary hover:bg-surface-container-low rounded transition-colors cursor-pointer" title="Open file"><Download className="w-3.5 h-3.5" /></button>
                         <button onClick={() => setRevisingDocName(isRevising ? null : doc.name)} className={`p-1.5 rounded transition-colors cursor-pointer ${isRevising ? 'bg-warning text-white' : 'text-text-secondary hover:text-warning hover:bg-surface-container-low'}`} title="Request Revision"><RefreshCw className="w-3.5 h-3.5" /></button>
                       </>
                     )}
                     {doc.status !== 'VERIFIED' && doc.status !== 'REJECTED' && doc.status !== 'MISSING' ? (
                       <div className="flex gap-1.5">
-                        <button onClick={() => onVerify(String(doc.id || doc.name))} className="bg-success/10 hover:bg-success hover:text-white border border-success/20 text-success text-[10px] font-bold px-2.5 py-1 rounded transition-all cursor-pointer">Verify</button>
-                        <button onClick={() => onReject(String(doc.id || doc.name))} className="bg-danger/10 hover:bg-danger hover:text-white border border-danger/20 text-danger text-[10px] font-bold px-2.5 py-1 rounded transition-all cursor-pointer">Reject</button>
+                        <button onClick={() => onVerify(docKey(doc))} className="bg-success/10 hover:bg-success hover:text-white border border-success/20 text-success text-[10px] font-bold px-2.5 py-1 rounded transition-all cursor-pointer">Verify</button>
+                        <button onClick={() => onReject(docKey(doc))} className="bg-danger/10 hover:bg-danger hover:text-white border border-danger/20 text-danger text-[10px] font-bold px-2.5 py-1 rounded transition-all cursor-pointer">Reject</button>
                       </div>
                     ) : (
                       <span className={`px-2.5 py-0.5 rounded-full font-mono text-[9px] font-bold border ${statusColor(doc.status)}`}>{doc.status}</span>
@@ -1349,6 +1372,7 @@ export default function ReviewDetailView({
   onVerifyDocument,
   onRejectDocument,
   onViewDocument,
+  onOpenDocumentFile,
   onChangeStage,
   onAddRevision,
   onRefresh,
@@ -1406,6 +1430,7 @@ export default function ReviewDetailView({
             onVerify={(name) => onVerifyDocument(submission.id, name)}
             onReject={(name) => onRejectDocument(submission.id, name)}
             onView={onViewDocument}
+            onOpenFile={onOpenDocumentFile}
             onAddRevision={onAddRevision}
           />
         )}

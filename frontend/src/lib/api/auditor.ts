@@ -149,6 +149,51 @@ export async function rejectReviewDocument(eventId: number | string, docId: numb
   });
 }
 
+/**
+ * Verify a PER-EVENT document (event_documents).
+ *
+ * Deliberately a different path from verifyReviewDocument: that one writes to
+ * organizer_documents, and the two tables have overlapping SERIAL ids. Sending an
+ * event document's id to the organizer route would flip the status of an
+ * unrelated account document.
+ */
+export async function verifyEventReviewDocument(eventId: number | string, docId: number | string): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/v1/auditor/reviews/${eventId}/event-documents/${docId}/verify`, {
+    method: "PATCH",
+  });
+}
+
+/** Reject a PER-EVENT document. The reason is required — the organizer sees it. */
+export async function rejectEventReviewDocument(eventId: number | string, docId: number | string, reason: string): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/v1/auditor/reviews/${eventId}/event-documents/${docId}/reject`, {
+    method: "PATCH",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export interface ReviewDocumentURL {
+  url: string;
+  expires_in: number;
+}
+
+/**
+ * Mints a short-lived signed link for one document.
+ *
+ * The `fileUrl` on a review payload is a private-bucket OBJECT KEY, not a
+ * fetchable URL — opening it directly has never worked. Call this instead, on an
+ * explicit view action.
+ */
+export async function getReviewDocumentUrl(
+  eventId: number | string,
+  docId: number | string,
+  source: "organizer" | "event" = "organizer"
+): Promise<ApiResponse<ReviewDocumentURL>> {
+  return apiRequest<ReviewDocumentURL>(
+    `/api/v1/auditor/reviews/${eventId}/documents/${docId}/url?source=${source}`,
+    { method: "GET" }
+  );
+}
+
 export interface ListDocumentsFilters {
   status?: string;
   category?: string;

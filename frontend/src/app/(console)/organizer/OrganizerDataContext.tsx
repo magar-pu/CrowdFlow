@@ -2,13 +2,13 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
-  EventItem, TicketTier, Gate, ScannerDevice, Staff, VenueSection, Transaction, LogEntry,
+  EventItem, CreateEventDraft, TicketTier, Gate, ScannerDevice, Staff, VenueSection, Transaction, LogEntry,
 } from "./types";
 import {
   INITIAL_EVENTS, INITIAL_TICKET_TIERS, INITIAL_GATES, INITIAL_DEVICES,
   STAFF_MEMBERS, INITIAL_VENUE_SECTIONS, RECENT_TRANSACTIONS, ACTIVITY_LOGS,
 } from "./data";
-import { listOrganizerEvents, getDashboardData, DashboardResponse, createOrganizerEvent, publishOrganizerEvent, updateOrganizerEvent } from "@/lib/api/eorganizer";
+import { listOrganizerEvents, getDashboardData, DashboardResponse, createOrganizerEvent, publishOrganizerEvent, updateOrganizerEvent, uploadEventCover } from "@/lib/api/eorganizer";
 
 interface Toast {
   message: string;
@@ -34,7 +34,7 @@ interface OrganizerDataValue {
   toast: Toast | null;
   pushToast: (message: string, type?: Toast['type']) => void;
 
-  handleCreateEvent: (wizardEvent: Omit<EventItem, "id" | "sold" | "revenue">) => void;
+  handleCreateEvent: (wizardEvent: CreateEventDraft, coverFile?: File | null) => Promise<string | null>;
   handleUpdateEventName: (eventId: string, newName: string) => void;
   handleResetData: () => void;
   handleTriggerLiveScan: () => void;
@@ -81,14 +81,15 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
         startTime: e.startTime,
         endDate: e.endDate,
         endTime: e.endTime,
-        locationType: e.locationType === "virtual" ? "virtual" : "physical",
+        venueId: e.venueId,
         location: e.location,
         locationAddress: e.locationAddress,
         venueName: e.venueName,
+        venueCity: e.venueCity,
         capacity: e.capacity,
         sold: e.sold,
         revenue: e.revenue,
-        status: e.status as "Live" | "Scheduled" | "Draft",
+        status: e.status as EventItem["status"],
         image: e.image,
       }));
       setEvents(mappedEvents);
@@ -163,7 +164,17 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
 
   const pushToast = (message: string, type: Toast['type'] = 'info') => setToast({ message, type });
 
-  const handleCreateEvent = async (wizardEvent: Omit<EventItem, "id" | "sold" | "revenue">) => {
+  // No venue here on purpose: a draft is created without one and the organizer
+  // picks it in the workspace's Venue tab. Publishing is gated on it being set.
+  // coverFile is uploaded AFTER the event row exists, because the upload
+  // endpoint is scoped to an event id. A failed upload does not fail the
+  // creation: the draft is already saved, so stranding the organizer on the
+  // wizard would be worse than landing them in the workspace where the Settings
+  // tab can set the cover.
+  const handleCreateEvent = async (
+    wizardEvent: CreateEventDraft,
+    coverFile?: File | null
+  ): Promise<string | null> => {
     const res = await createOrganizerEvent({
       name: wizardEvent.name,
       category: wizardEvent.category,
@@ -173,23 +184,34 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
       startTime: wizardEvent.startTime,
       endDate: wizardEvent.endDate,
       endTime: wizardEvent.endTime,
-      locationType: wizardEvent.locationType,
-      location: wizardEvent.location,
-      locationAddress: wizardEvent.locationAddress,
-      venueName: wizardEvent.venueName,
       capacity: wizardEvent.capacity,
       status: wizardEvent.status,
       image: wizardEvent.image,
-    } as any);
+    });
 
     if (res.success && res.data) {
       pushToast(`Successfully deployed event: ${wizardEvent.name}`, 'success');
+
+      // Before any publish: an event submitted for review should carry the
+      // cover the organizer picked, not go up without one.
+      if (coverFile) {
+        const cover = await uploadEventCover(Number(res.data.id), coverFile);
+        if (!cover.success) {
+          pushToast(
+            `Event saved, but the cover image failed to upload: ${cover.error?.message ?? "Unknown error"}. You can add it from the Settings tab.`,
+            'warning'
+          );
+        }
+      }
+
       if (wizardEvent.status === "Scheduled") {
         await publishOrganizerEvent(Number(res.data.id));
       }
       await fetchData();
+      return String(res.data.id);
     } else {
       pushToast(`Failed to deploy event: ${res.error?.message || "Unknown error"}`, 'warning');
+      return null;
     }
   };
 

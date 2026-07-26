@@ -48,6 +48,15 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("PATCH /api/v1/auditor/reviews/{id}/documents/{docId}/verify", auditor(http.HandlerFunc(h.handleVerifyReviewDocument)))
 	mux.Handle("PATCH /api/v1/auditor/reviews/{id}/documents/{docId}/reject", auditor(http.HandlerFunc(h.handleRejectReviewDocument)))
 
+	// Per-event documents. Separate paths rather than a param on the routes above:
+	// event_documents and organizer_documents have overlapping SERIAL ids, so
+	// reusing those routes would make {docId} ambiguous and could flip the status
+	// of an unrelated document.
+	mux.Handle("PATCH /api/v1/auditor/reviews/{id}/event-documents/{docId}/verify", auditor(http.HandlerFunc(h.handleVerifyEventDocument)))
+	mux.Handle("PATCH /api/v1/auditor/reviews/{id}/event-documents/{docId}/reject", auditor(http.HandlerFunc(h.handleRejectEventDocument)))
+	// ?source=event|organizer — mints a short-lived link for a specific document.
+	mux.Handle("GET /api/v1/auditor/reviews/{id}/documents/{docId}/url", auditor(http.HandlerFunc(h.handleGetDocumentViewURL)))
+
 	// Document Queue
 	mux.Handle("GET /api/v1/auditor/documents", auditor(http.HandlerFunc(h.handleListDocuments)))
 	mux.Handle("GET /api/v1/auditor/documents/{id}", auditor(http.HandlerFunc(h.handleGetDocument)))
@@ -694,3 +703,70 @@ func (h *Handler) handleMarkNotificationsRead(w http.ResponseWriter, r *http.Req
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Notifications updated successfully"})
 }
 
+
+// ---- Per-event documents ----
+
+func (h *Handler) handleVerifyEventDocument(w http.ResponseWriter, r *http.Request) {
+	docID, ok := pathIntParam(r, "docId")
+	if !ok {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Document ID must be a positive integer")
+		return
+	}
+	actorID, ok := h.actorID(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	if err := h.service.VerifyEventDocument(r.Context(), docID, actorID); err != nil {
+		handleServiceError(w, "handleVerifyEventDocument", err)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Document verified"})
+}
+
+func (h *Handler) handleRejectEventDocument(w http.ResponseWriter, r *http.Request) {
+	docID, ok := pathIntParam(r, "docId")
+	if !ok {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Document ID must be a positive integer")
+		return
+	}
+	actorID, ok := h.actorID(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	var req RejectDocumentRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := h.service.RejectEventDocument(r.Context(), docID, actorID, req.Reason); err != nil {
+		handleServiceError(w, "handleRejectEventDocument", err)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Document rejected"})
+}
+
+// handleGetDocumentViewURL mints a short-lived signed link for one document.
+// `source` disambiguates which table the id belongs to.
+func (h *Handler) handleGetDocumentViewURL(w http.ResponseWriter, r *http.Request) {
+	docID, ok := pathIntParam(r, "docId")
+	if !ok {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Document ID must be a positive integer")
+		return
+	}
+
+	source := r.URL.Query().Get("source")
+	if source == "" {
+		source = DocSourceOrganizer // pre-existing callers only ever meant account docs
+	}
+
+	link, err := h.service.GetDocumentViewURL(r.Context(), source, docID)
+	if err != nil {
+		handleServiceError(w, "handleGetDocumentViewURL", err)
+		return
+	}
+
+	// A live credential must never be cached by a proxy or the browser.
+	w.Header().Set("Cache-Control", "no-store")
+	response.JSON(w, http.StatusOK, link)
+}

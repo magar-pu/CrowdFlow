@@ -1,5 +1,9 @@
+"use client";
+
 import React from 'react';
 import { AppView } from '../types';
+import { useRouter } from 'next/navigation';
+import { useAuthStore } from '@/lib/store/authStore';
 import {
   LayoutDashboard,
   Calendar,
@@ -13,6 +17,7 @@ import {
   Workflow,
   ChevronLeft,
   ChevronRight,
+  LogOut,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -30,6 +35,14 @@ export default function Sidebar({
   setIsCollapsed,
   onCreateEventClick,
 }: SidebarProps) {
+  const router = useRouter();
+  const { logout } = useAuthStore();
+
+  const handleLogout = async () => {
+    await logout();
+    router.push('/login');
+  };
+
   const isWorkspace = currentView === 'workspace';
 
   const suiteItems = [
@@ -106,23 +119,37 @@ export default function Sidebar({
         })}
       </nav>
 
-      <div className={`border-t border-border-subtle p-4 ${isCollapsed ? 'flex justify-center' : ''}`}>
-        {isCollapsed ? (
+      <div className="border-t border-border-subtle p-4">
+        {/* Stacked vertically: primary action on top, sign-out beneath it. */}
+        <div className={`flex flex-col gap-2 ${isCollapsed ? 'items-center' : ''}`}>
+          {isCollapsed ? (
+            <button
+              onClick={() => setView('create-event')}
+              className="w-10 h-10 bg-primary hover:bg-primary-container text-on-primary rounded-lg flex items-center justify-center transition-all shadow-sm cursor-pointer"
+              title="Create Event"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+          ) : (
+            <button
+              onClick={onCreateEventClick || (() => setView('create-event'))}
+              className="w-full bg-primary hover:bg-primary-container text-on-primary py-2.5 px-4 rounded-lg font-sans text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Create Event
+            </button>
+          )}
           <button
-            onClick={() => setView('create-event')}
-            className="w-10 h-10 bg-primary hover:bg-primary-container text-on-primary rounded-lg flex items-center justify-center transition-all shadow-sm cursor-pointer"
+            onClick={handleLogout}
+            className={`flex min-h-11 items-center rounded-lg font-sans text-sm font-medium text-text-secondary transition-all duration-200 hover:bg-danger/5 hover:text-danger cursor-pointer ${
+              isCollapsed ? 'w-10 h-10 justify-center px-0' : 'w-full gap-3 px-4 py-2.5'
+            }`}
+            title={isCollapsed ? 'Log out' : undefined}
           >
-            <Plus className="w-5 h-5" />
+            <LogOut className="w-4 h-4 shrink-0" />
+            {!isCollapsed && <span>Log out</span>}
           </button>
-        ) : (
-          <button
-            onClick={onCreateEventClick || (() => setView('create-event'))}
-            className="w-full bg-primary hover:bg-primary-container text-on-primary py-2.5 px-4 rounded-lg font-sans text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Create Event
-          </button>
-        )}
+        </div>
       </div>
     </aside>
   );

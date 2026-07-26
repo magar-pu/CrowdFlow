@@ -100,13 +100,32 @@ type EventReview struct {
 	Revisions       []Revision     `json:"revisions"`
 }
 
+// Document sources feeding a review. IDs are only unique WITHIN a source —
+// organizer_documents and event_documents are separate SERIAL sequences, so an id
+// alone is ambiguous and every mutation must carry the source alongside it.
+const (
+	DocSourceOrganizer = "organizer" // organizer_documents: account-level, reused across events
+	DocSourceEvent     = "event"     // event_documents: submitted for this event specifically
+)
+
 type ReviewDoc struct {
 	ID           int    `json:"id"`
+	Source       string `json:"source"`
 	DocumentType string `json:"name"`
 	Category     string `json:"category"`
 	Status       string `json:"status"`
-	FileURL      string `json:"fileUrl"`
-	UploadedAt   string `json:"uploadDate"`
+	// FileURL is the private-bucket object key, NOT a fetchable link. Call the
+	// document url endpoint to mint a short-lived signed URL for it.
+	FileURL    string `json:"fileUrl"`
+	UploadedAt string `json:"uploadDate"`
+	// ReviewNotes carries the rejection reason for event documents.
+	ReviewNotes string `json:"reviewNotes,omitempty"`
+}
+
+// DocumentURL is a freshly minted, short-lived view link.
+type DocumentURL struct {
+	URL       string `json:"url"`
+	ExpiresIn int    `json:"expires_in"`
 }
 
 type ReviewFinance struct {
@@ -392,6 +411,11 @@ type Repository interface {
 	VerifyReviewDocument(ctx context.Context, docID, actorID int) error
 	RejectReviewDocument(ctx context.Context, docID, actorID int, reason string) error
 
+	// Per-event documents (event_documents; separate id space from organizer_documents)
+	VerifyEventDocument(ctx context.Context, docID, actorID int) error
+	RejectEventDocument(ctx context.Context, docID, actorID int, reason string) error
+	GetDocumentPath(ctx context.Context, source string, docID int) (string, error)
+
 	// Documents
 	ListDocuments(ctx context.Context, filters DocumentFilters) ([]*Document, error)
 	GetDocument(ctx context.Context, docID int) (*Document, error)
@@ -438,6 +462,11 @@ type Service interface {
 	ListEventRevisions(ctx context.Context, eventID int) ([]Revision, error)
 	VerifyReviewDocument(ctx context.Context, docID, actorID int) error
 	RejectReviewDocument(ctx context.Context, docID, actorID int, reason string) error
+
+	// Per-event documents (event_documents; separate id space from organizer_documents)
+	VerifyEventDocument(ctx context.Context, docID, actorID int) error
+	RejectEventDocument(ctx context.Context, docID, actorID int, reason string) error
+	GetDocumentViewURL(ctx context.Context, source string, docID int) (*DocumentURL, error)
 
 	// Documents
 	ListDocuments(ctx context.Context, filters DocumentFilters) ([]*Document, error)
@@ -497,6 +526,40 @@ func mapEventReviewStatus(dbStatus string) string {
 		return "Changes Requested"
 	default:
 		return "Pending"
+	}
+}
+
+// requiredEventDocTypes mirrors organizer.RequiredEventDocumentTypes. Duplicated
+// rather than imported to keep the auditor package free of a dependency on the
+// organizer package; if the organizer's required set changes, change this too.
+var requiredEventDocTypes = []string{"EVENT_PROPOSAL", "CROWD_PERMIT", "PIC_ID"}
+
+// eventDocLabel renders a per-event document type for the review UI.
+func eventDocLabel(t string) string {
+	switch t {
+	case "EVENT_PROPOSAL":
+		return "Event Proposal (Proposal Kegiatan)"
+	case "CROWD_PERMIT":
+		return "Crowd Permit (Izin Keramaian)"
+	case "PIC_ID":
+		return "PIC Identification (KTP Penanggung Jawab)"
+	case "VENUE_PERMIT":
+		return "Venue Usage Permit (Izin Penggunaan Tempat)"
+	default:
+		return t
+	}
+}
+
+// eventDocCategory buckets a per-event document into the console's existing
+// category vocabulary.
+func eventDocCategory(t string) string {
+	switch t {
+	case "CROWD_PERMIT", "VENUE_PERMIT":
+		return "Permits & Licenses"
+	case "PIC_ID":
+		return "Business License"
+	default:
+		return "Supporting Documents"
 	}
 }
 
