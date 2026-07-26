@@ -3,6 +3,7 @@ package organizer
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -2243,7 +2244,8 @@ func (r *PostgresRepository) GetEventRevisions(ctx context.Context, eventID int,
 	// Fetch auditor revision requests
 	revRows, err := r.db.QueryContext(ctx, `
 		SELECT id, category, title, description, required_action, priority, status, created_at,
-		       COALESCE(organizer_comment, ''), COALESCE(organizer_action_taken, ''), COALESCE(organizer_file, ''), COALESCE(responded_at::text, '')
+		       COALESCE(organizer_comment, ''), COALESCE(organizer_action_taken, ''), COALESCE(responded_at::text, ''),
+		       COALESCE(organizer_documents_changed, '[]'::jsonb)::text
 		FROM auditor_revisions
 		WHERE event_id = $1
 		ORDER BY created_at DESC
@@ -2253,11 +2255,26 @@ func (r *PostgresRepository) GetEventRevisions(ctx context.Context, eventID int,
 		feedback.Revisions = []*AuditorRevisionItem{}
 		for revRows.Next() {
 			var rev AuditorRevisionItem
+			var changedJSON string
 			if err := revRows.Scan(
 				&rev.ID, &rev.Category, &rev.Title, &rev.Description, &rev.RequiredAction, &rev.Priority, &rev.Status, &rev.CreatedAt,
-				&rev.OrganizerComment, &rev.OrganizerActionTaken, &rev.OrganizerFile, &rev.RespondedAt,
+				&rev.OrganizerComment, &rev.OrganizerActionTaken, &rev.RespondedAt, &changedJSON,
 			); err == nil {
+				rev.DocumentsChanged = []RevisionDocumentChange{}
+				_ = json.Unmarshal([]byte(changedJSON), &rev.DocumentsChanged)
 				feedback.Revisions = append(feedback.Revisions, &rev)
+			}
+		}
+
+		// For points the organizer hasn't answered yet, show which documents
+		// they have already replaced — so the form states what will be reported
+		// rather than asking them to describe it from memory.
+		for _, rev := range feedback.Revisions {
+			if rev.RespondedAt != "" {
+				continue
+			}
+			if pending, err := r.revisionDocumentChanges(ctx, eventID, rev.ID); err == nil {
+				rev.PendingDocumentChanges = pending
 			}
 		}
 	}
@@ -2283,6 +2300,40 @@ func (r *PostgresRepository) GetEventRevisions(ctx context.Context, eventID int,
 	return &feedback, nil
 }
 
+// revisionDocumentChanges lists the event documents re-uploaded after the given
+// revision was raised. Never returns nil, so the value marshals to [] and not
+// null (a JSON null here would read as "unknown" rather than "nothing changed").
+func (r *PostgresRepository) revisionDocumentChanges(ctx context.Context, eventID, revID int) ([]RevisionDocumentChange, error) {
+	changes := []RevisionDocumentChange{}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT ed.document_type, ed.uploaded_at
+		FROM event_documents ed
+		WHERE ed.event_id = $1
+		  AND ed.uploaded_at > (SELECT created_at FROM auditor_revisions WHERE id = $2)
+		ORDER BY ed.uploaded_at ASC
+	`, eventID, revID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var c RevisionDocumentChange
+		var uploadedAt time.Time
+		if err := rows.Scan(&c.DocumentType, &uploadedAt); err != nil {
+			return nil, err
+		}
+		c.Label = EventDocumentLabel(c.DocumentType)
+		c.UploadedAt = uploadedAt.Format("2006-01-02 15:04")
+		changes = append(changes, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return changes, nil
+}
+
 func (r *PostgresRepository) RespondToEventRevision(ctx context.Context, eventID, revID, organizerID int, req RespondRevisionRequest) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -2293,16 +2344,29 @@ func (r *PostgresRepository) RespondToEventRevision(ctx context.Context, eventID
 		return fmt.Errorf("event not found or unauthorized")
 	}
 
+	// Snapshot the documents re-uploaded since this revision was raised. Taken
+	// now rather than derived on read: event_documents is UNIQUE per type, so a
+	// later replacement would overwrite uploaded_at and silently rewrite the
+	// trail.
+	changed, err := r.revisionDocumentChanges(ctx, eventID, revID)
+	if err != nil {
+		return err
+	}
+	changedJSON, err := json.Marshal(changed)
+	if err != nil {
+		return err
+	}
+
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE auditor_revisions
 		SET status = 'Resubmitted',
 			organizer_comment = $1,
 			organizer_action_taken = $2,
-			organizer_file = $3,
+			organizer_documents_changed = $3::jsonb,
 			responded_at = now(),
 			updated_at = now()
 		WHERE id = $4 AND event_id = $5
-	`, req.Comment, req.ActionTaken, req.ProofFile, revID, eventID)
+	`, req.Comment, req.ActionTaken, string(changedJSON), revID, eventID)
 	if err != nil {
 		return err
 	}
@@ -2311,7 +2375,20 @@ func (r *PostgresRepository) RespondToEventRevision(ctx context.Context, eventID
 		return fmt.Errorf("revision item not found")
 	}
 
-	_, _ = r.db.ExecContext(ctx, `UPDATE events SET status = 'pending_review', updated_at = now() WHERE id = $1`, eventID)
+	// Only hand the event back to the auditor once every revision point has an
+	// answer. Re-queueing on the first response pulled the auditor into a
+	// half-finished submission and made the queue lie about what was ready.
+	var stillOpen int
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM auditor_revisions
+		WHERE event_id = $1
+		  AND status IN ('Draft', 'Sent', 'Viewed', 'In Progress')
+	`, eventID).Scan(&stillOpen); err != nil {
+		return err
+	}
+	if stillOpen == 0 {
+		_, _ = r.db.ExecContext(ctx, `UPDATE events SET status = 'pending_review', updated_at = now() WHERE id = $1`, eventID)
+	}
 
 	var eventName string
 	_ = r.db.QueryRowContext(ctx, `SELECT event_name FROM events WHERE id = $1`, eventID).Scan(&eventName)

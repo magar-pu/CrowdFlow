@@ -414,10 +414,22 @@ type EventRevisionFeedback struct {
 	StatusLogs          []*EventStatusLogItem  `json:"statusLogs"`
 }
 
+// RespondRevisionRequest carries the organizer's reply to one revision point.
+// There is deliberately no file field: the old `proofFile` only ever transmitted
+// a filename the browser never uploaded, so the auditor was shown an attachment
+// that did not exist. Evidence now comes from the documents the organizer
+// actually replaced, recorded automatically as RevisionDocumentChange.
 type RespondRevisionRequest struct {
 	Comment     string `json:"comment"`
 	ActionTaken string `json:"actionTaken"`
-	ProofFile   string `json:"proofFile"`
+}
+
+// RevisionDocumentChange is one event document that was re-uploaded after the
+// auditor raised the revision, captured at the moment the organizer responded.
+type RevisionDocumentChange struct {
+	DocumentType string `json:"documentType"`
+	Label        string `json:"label"`
+	UploadedAt   string `json:"uploadedAt"`
 }
 
 type AuditorRevisionItem struct {
@@ -431,8 +443,13 @@ type AuditorRevisionItem struct {
 	CreatedAt            time.Time `json:"createdAt"`
 	OrganizerComment     string    `json:"organizerComment,omitempty"`
 	OrganizerActionTaken string    `json:"organizerActionTaken,omitempty"`
-	OrganizerFile        string    `json:"organizerFile,omitempty"`
 	RespondedAt          string    `json:"respondedAt,omitempty"`
+	// DocumentsChanged is never nil — an empty list means the organizer
+	// answered without touching any paperwork, which is a meaningful answer.
+	DocumentsChanged []RevisionDocumentChange `json:"documentsChanged"`
+	// PendingDocumentChanges previews, for an unanswered revision, which
+	// documents have already been re-uploaded since it was raised.
+	PendingDocumentChanges []RevisionDocumentChange `json:"pendingDocumentChanges,omitempty"`
 }
 
 type EventStatusLogItem struct {

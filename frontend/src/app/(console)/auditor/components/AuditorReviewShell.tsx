@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, AlertTriangle, X, Info, FileText, MapPin, ShieldAlert, DollarSign, Clock } from "lucide-react";
 import { useAuditorData } from "../AuditorDataContext";
@@ -15,10 +15,9 @@ import {
   verifyEventReviewDocument,
   rejectEventReviewDocument,
   getReviewDocumentUrl,
-  updateEventReviewStage,
   addEventRevision
 } from "@/lib/api/auditor";
-import { EventSubmission, ReviewDocument, docKey, ReviewStage } from "../types";
+import { EventSubmission, ReviewDocument, docKey } from "../types";
 
 export type ReviewTab = 'overview' | 'documents' | 'venue' | 'logistics' | 'finance' | 'history' | 'revision';
 
@@ -64,9 +63,8 @@ interface AuditorReviewContextType {
   handleVerifySubmissionDocAction: (submissionId: string, docKeyOrName: string) => Promise<void>;
   handleRejectSubmissionDocAction: (submissionId: string, docKeyOrName: string, reason?: string) => Promise<void>;
   handleOpenDocumentFile: (doc: ReviewDocument) => Promise<void>;
-  handleChangeSubmissionStageAction: (submissionId: string, stage: ReviewStage) => Promise<void>;
   handleAddRevisionAction: (submissionId: string, revision: any) => Promise<void>;
-  setViewingDoc: (doc: { id?: number | string; name: string; category: string; status: string } | null) => void;
+  setViewingDoc: (doc: ReviewDocument | null) => void;
   setToast: (toast: { message: string; type: "success" | "error" } | null) => void;
 }
 
@@ -91,7 +89,7 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
   const [submission, setSubmission] = useState<EventSubmission | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [viewingDoc, setViewingDoc] = useState<{ id?: number | string; name: string; category: string; status: string } | null>(null);
+  const [viewingDoc, setViewingDoc] = useState<ReviewDocument | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   const [mode, setMode] = useState<'view' | 'reject' | 'changes'>('view');
@@ -113,21 +111,18 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
         organizerName: raw.organizerName || "Unknown Organizer",
         organizerAvatar: raw.organizerAvatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100",
         bannerUrl: raw.bannerUrl || "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800",
-        category: raw.category || "Festival",
-        submittedAt: raw.submittedAt || "2026-07-20 00:00",
-        lastUpdated: raw.lastUpdated || "2026-07-20 00:00",
+        category: raw.category || "—",
+        submittedAt: raw.submittedAt || "—",
+        lastUpdated: raw.lastUpdated || "—",
         stage: raw.stage || "Submitted",
         status: raw.status || "Pending",
         riskLevel: raw.riskLevel || "Low",
         complianceScore: raw.complianceScore ?? 100,
         missingDocs: raw.missingDocs ?? 0,
-        assignedAuditor: raw.assignedAuditor || "Priya Nair",
-        checklist: raw.checklist || [
-          { label: "Event Info", done: true },
-          { label: "Venue Layout", done: true },
-          { label: "Organizer Profile", done: true },
-          { label: "Ticket Configuration", done: true },
-        ],
+        // No assignment flow exists yet, so this column is empty for every
+        // review. Say so rather than naming an auditor who was never assigned.
+        assignedAuditor: raw.assignedAuditor || "Unassigned",
+        checklist: raw.checklist ?? [],
         documents: (raw.documents || []).map((doc: any) => ({
           id: String(doc.id),
           source: doc.source === "event" ? "event" : "organizer",
@@ -138,23 +133,25 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
           reviewNotes: doc.reviewNotes || "",
           fileUrl: doc.fileUrl || "",
         })),
-        venue: raw.venue || "Default Venue",
-        date: raw.date || "2026-10-10 18:00",
-        capacity: raw.capacity || 1000,
-        ticketSold: raw.ticketSold || 0,
+        venue: raw.venue || "No venue set",
+        date: raw.date || "—",
+        capacity: raw.capacity ?? 0,
+        ticketSold: raw.ticketSold ?? 0,
         notes: raw.notes || "",
-        organizerDetail: raw.organizerDetail || {
-          companyName: raw.organizerName || "Organizer Company",
-          businessLicense: "BL-2026-ID-00123",
-          pic: raw.organizerName || "Marcus Chen",
-          email: "organizer@crowdflow.my.id",
-          phone: "+62 812-3456-7890",
-          address: "Jakarta, Indonesia",
+        // Served in full by GetEventReview (organizer_applications + user_profiles).
+        organizerDetail: {
+          applicationId: raw.organizerDetail?.applicationId ?? 0,
+          companyName: raw.organizerDetail?.companyName || raw.organizerName || "—",
+          businessLicense: raw.organizerDetail?.businessLicense || "—",
+          pic: raw.organizerDetail?.pic || raw.organizerName || "—",
+          email: raw.organizerDetail?.email || "—",
+          phone: raw.organizerDetail?.phone || "—",
+          address: raw.organizerDetail?.address || "—",
         },
         venueDetail: raw.venueDetail || {
-          name: raw.venue || "Default Venue",
-          address: (raw as any).venueDetail?.address || raw.venue || "Jakarta, Indonesia",
-          capacity: raw.capacity || 1000,
+          name: raw.venue || "No venue set",
+          address: raw.venueAddress || "—",
+          capacity: raw.capacity ?? 0,
           manager: "Venue Manager",
           contact: "+62 812-9876-5432",
           website: "https://crowdflow.my.id",
@@ -293,18 +290,22 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
           requiredAction: r.requiredAction || "",
           severity: (r.priority || "Medium") as any,
           area: (r.category || "Document") as any,
-          organizerResponse: (r.organizerComment || r.organizerActionTaken || r.organizerFile) ? {
-            comment: [r.organizerComment, r.organizerActionTaken].filter(Boolean).join(" | ") || "Perbaikan telah diunggah oleh EO.",
-            uploadedFiles: r.organizerFile ? [r.organizerFile] : [],
-            respondedAt: r.respondedAt || "Baru saja"
+          organizerResponse: r.respondedAt ? {
+            comment: [r.organizerComment, r.organizerActionTaken].filter(Boolean).join(" | "),
+            // The documents the organizer actually replaced, recorded when they
+            // replied. Replaces the old organizer_file, which named a file that
+            // was never uploaded.
+            documentsChanged: r.documentsChanged ?? [],
+            respondedAt: r.respondedAt,
           } : undefined,
           revisionTimeline: [],
         })),
-        complianceHistory: raw.complianceHistory || {
-          previousAudits: 5,
+        // Aggregated by the backend across the organizer's OTHER events.
+        complianceHistory: raw.complianceHistory ?? {
+          previousAudits: 0,
           previousViolations: 0,
-          previousRevisions: 2,
-          previousApprovedEvents: 3,
+          previousRevisions: 0,
+          previousApprovedEvents: 0,
         },
       };
       setSubmission(mappedSubmission);
@@ -358,6 +359,23 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
       setTimeout(() => setToast(null), 4000);
     }
   };
+
+  /**
+   * Mints a fresh signed URL for a document. Returns null rather than throwing
+   * so the preview can render its own error state. Nothing is cached — the
+   * signature is short-lived by design.
+   */
+  const requestDocumentUrl = useCallback(async (doc: ReviewDocument): Promise<string | null> => {
+    if (!doc.id) return null;
+    try {
+      const res = await getReviewDocumentUrl(reviewId, doc.id, doc.source ?? "organizer");
+      if (!res.success || !res.data) return null;
+      return res.data.url;
+    } catch (err) {
+      console.error("Failed to mint document URL:", err);
+      return null;
+    }
+  }, [reviewId]);
 
   const handleOpenDocumentFile = async (doc: ReviewDocument) => {
     if (!doc.id) return;
@@ -425,18 +443,6 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
     }
   };
 
-  const handleChangeSubmissionStageAction = async (submissionId: string, stage: any) => {
-    const res = await updateEventReviewStage(submissionId, stage);
-    if (res.success) {
-      setToast({ message: `Stage updated to "${stage}"`, type: "success" });
-      setTimeout(() => setToast(null), 3000);
-      await loadDetail();
-    } else {
-      setToast({ message: "Failed to update stage: " + (res.error?.message || "unknown error"), type: "error" });
-      setTimeout(() => setToast(null), 4000);
-    }
-  };
-
   const handleAddRevisionAction = async (submissionId: string, revision: any) => {
     const res = await addEventRevision(submissionId, {
       category: revision.category,
@@ -495,24 +501,22 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
   }
 
   if (viewingDoc) {
-    const doc = submission.documents.find((d) => d.name === viewingDoc.name);
+    // Re-read from the freshly loaded submission so the status shown here
+    // follows a verify/reject, but fall back to the captured row.
+    const doc = submission.documents.find((d) => docKey(d) === docKey(viewingDoc)) ?? viewingDoc;
     return (
       <DocumentDetailView
-        document={{
-          id: String(doc?.id || viewingDoc.name),
-          fileName: viewingDoc.name,
-          category: viewingDoc.category,
-          status: doc?.status ?? viewingDoc.status,
-          eventName: submission.eventName,
-          organizerName: submission.organizerName,
-        }}
+        document={doc}
+        eventName={submission.eventName}
+        organizerName={submission.organizerName}
+        onRequestUrl={requestDocumentUrl}
         onBack={() => setViewingDoc(null)}
         onVerify={() => {
-          handleVerifySubmissionDocAction(submission.id, viewingDoc.name);
+          handleVerifySubmissionDocAction(submission.id, docKey(doc));
           setViewingDoc(null);
         }}
         onReject={() => {
-          handleRejectSubmissionDocAction(submission.id, viewingDoc.name);
+          handleRejectSubmissionDocAction(submission.id, docKey(doc));
           setViewingDoc(null);
         }}
       />
@@ -535,7 +539,6 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
         handleVerifySubmissionDocAction,
         handleRejectSubmissionDocAction,
         handleOpenDocumentFile,
-        handleChangeSubmissionStageAction,
         handleAddRevisionAction,
         setViewingDoc,
         setToast,

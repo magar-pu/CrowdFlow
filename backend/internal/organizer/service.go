@@ -741,5 +741,13 @@ func (s *OrganizerService) RespondToEventRevision(ctx context.Context, eventID, 
 	if eventID <= 0 || revID <= 0 || organizerID <= 0 {
 		return fmt.Errorf("%w: invalid parameters", ErrValidation)
 	}
+	// An auditor must never receive an explanation the organizer did not write.
+	// The client used to substitute canned text for a blank field, which
+	// asserted work that may never have happened.
+	req.Comment = strings.TrimSpace(req.Comment)
+	req.ActionTaken = strings.TrimSpace(req.ActionTaken)
+	if req.Comment == "" {
+		return fmt.Errorf("%w: an explanation is required", ErrValidation)
+	}
 	return s.repo.RespondToEventRevision(ctx, eventID, revID, organizerID, req)
 }

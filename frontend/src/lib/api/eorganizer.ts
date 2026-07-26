@@ -672,6 +672,12 @@ export async function markNotificationsRead(notificationIds?: number[]): Promise
   });
 }
 
+export interface RevisionDocumentChange {
+  documentType: string;
+  label: string;
+  uploadedAt: string;
+}
+
 export interface EventRevisionFeedback {
   eventId: number;
   eventStatus: string;
@@ -688,8 +694,11 @@ export interface EventRevisionFeedback {
     status: string;
     organizerComment?: string;
     organizerActionTaken?: string;
-    organizerFile?: string;
     respondedAt?: string;
+    /** Documents re-uploaded in response to this point, snapshotted on reply. */
+    documentsChanged?: RevisionDocumentChange[];
+    /** For an unanswered point: documents already replaced since it was raised. */
+    pendingDocumentChanges?: RevisionDocumentChange[];
   }>;
   statusLogs?: Array<{
     fromStatus: string;
@@ -705,15 +714,20 @@ export async function getEventRevisions(eventId: number): Promise<ApiResponse<Ev
   });
 }
 
+/**
+ * Sends the organizer's reply to one revision point. There is no file argument:
+ * evidence is the set of event documents they actually replaced, which the
+ * backend records automatically. The previous `proofFile` only ever sent a
+ * filename that was never uploaded anywhere.
+ */
 export async function respondToEventRevision(
   eventId: number,
   revId: number,
   comment: string,
-  actionTaken: string,
-  proofFile?: string
+  actionTaken: string
 ): Promise<ApiResponse<void>> {
   return apiRequest<void>(`/api/organizer/events/${eventId}/revisions/${revId}/respond`, {
     method: "POST",
-    body: JSON.stringify({ comment, actionTaken, proofFile }),
+    body: JSON.stringify({ comment, actionTaken }),
   });
 }

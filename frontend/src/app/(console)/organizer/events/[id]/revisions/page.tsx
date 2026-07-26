@@ -1,28 +1,21 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import EventWorkspaceShell from "../../../components/EventWorkspaceShell";
 import { useOrganizerData } from "../../../OrganizerDataContext";
-import { getEventRevisions, publishOrganizerEvent, respondToEventRevision, EventRevisionFeedback } from "@/lib/api/eorganizer";
+import { getEventRevisions, respondToEventRevision, EventRevisionFeedback } from "@/lib/api/eorganizer";
 import {
   AlertTriangle,
   CheckCircle2,
-  Clock,
-  FileText,
   Send,
-  Upload,
   UserCheck,
   X,
   ShieldAlert,
-  ChevronRight,
-  RefreshCw,
-  Save,
   MessageSquare,
   Sparkles,
   FileCheck,
   Edit3,
-  ArrowRight
 } from "lucide-react";
 
 export default function OrganizerEventRevisionsPage() {
@@ -54,9 +47,6 @@ export default function OrganizerEventRevisionsPage() {
   // Per-item Response State
   const [itemComments, setItemComments] = useState<Record<number, string>>({});
   const [itemActions, setItemActions] = useState<Record<number, string>>({});
-  const [itemFiles, setItemFiles] = useState<Record<number, File | null>>({});
-
-  const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   const loadData = async () => {
     setLoading(true);
@@ -76,18 +66,16 @@ export default function OrganizerEventRevisionsPage() {
     loadData();
   }, [eventIdNum]);
 
-  const handleFileSelect = (revId: number, file: File | null) => {
-    setItemFiles((prev) => ({ ...prev, [revId]: file }));
-  };
-
   const handleSendItemRevision = async (revId: number) => {
+    // No canned fallbacks: whatever reaches the auditor must be the organizer's
+    // own words. The Send button is disabled until the explanation is written.
+    const comment = (itemComments[revId] || "").trim();
+    if (!comment) return;
+    const actionTaken = (itemActions[revId] || "").trim();
+
     setIsSubmitting(true);
     try {
-      const comment = itemComments[revId] || "The requested fix has been applied as instructed by the auditor.";
-      const actionTaken = itemActions[revId] || "Uploaded the supporting file and updated the related information.";
-      const proofFile = itemFiles[revId] ? itemFiles[revId]?.name : undefined;
-
-      const res = await respondToEventRevision(eventIdNum, revId, comment, actionTaken, proofFile);
+      const res = await respondToEventRevision(eventIdNum, revId, comment, actionTaken);
       if (res.success) {
         setToast({
           message: "Your revision was sent back to the auditor.",
@@ -204,7 +192,9 @@ export default function OrganizerEventRevisionsPage() {
             <div className="space-y-4">
               {revisionsList.map((r) => {
                 const isSelected = selectedRevisionId === r.id;
-                const currentFile = itemFiles[r.id];
+                const pendingChanges = r.pendingDocumentChanges ?? [];
+                const reportedChanges = r.documentsChanged ?? [];
+                const canSend = !!(itemComments[r.id] || "").trim();
 
                 return (
                   <div
@@ -249,6 +239,34 @@ export default function OrganizerEventRevisionsPage() {
                           </p>
                         </div>
                       </div>
+
+                      {/* Already answered: show what was sent, including the
+                          documents recorded as changed at that moment. */}
+                      {r.respondedAt && (
+                        <div className="w-full sm:w-auto sm:max-w-sm bg-surface-container-low border border-border-subtle rounded-xl p-3 space-y-2">
+                          <div className="flex items-center gap-1.5 text-[9px] font-mono font-bold text-text-secondary uppercase">
+                            <MessageSquare className="w-3 h-3" /> Your response · {r.respondedAt}
+                          </div>
+                          <p className="text-xs text-text-primary leading-relaxed">{r.organizerComment}</p>
+                          {r.organizerActionTaken && (
+                            <p className="text-[11px] text-text-secondary leading-relaxed">{r.organizerActionTaken}</p>
+                          )}
+                          <div className="pt-1.5 border-t border-border-subtle space-y-1">
+                            <span className="text-[9px] font-mono font-bold text-text-secondary uppercase">Documents changed</span>
+                            {reportedChanges.length === 0 ? (
+                              <p className="text-[11px] text-text-secondary">No documents were changed.</p>
+                            ) : (
+                              reportedChanges.map((c) => (
+                                <div key={c.documentType} className="flex items-center gap-1.5 text-[11px]">
+                                  <FileCheck className="w-3 h-3 text-success shrink-0" />
+                                  <span className="font-bold text-text-primary">{c.label}</span>
+                                  <span className="ml-auto font-mono text-[9px] text-text-secondary">{c.uploadedAt}</span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Select Item to Revise Action Button */}
                       {r.status !== 'Resolved' && (
@@ -312,52 +330,45 @@ export default function OrganizerEventRevisionsPage() {
                           />
                         </div>
 
-                        {/* Supporting document upload */}
+                        {/* Document changelog — what will actually be reported */}
                         <div className="space-y-1.5">
                           <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">
-                            Attach Supporting Evidence (Optional)
+                            Document Changes Reported With This Response
                           </label>
-                          <input
-                            type="file"
-                            ref={(el) => { fileInputRefs.current[r.id] = el; }}
-                            onChange={(e) => handleFileSelect(r.id, e.target.files?.[0] || null)}
-                            accept="image/*,.pdf"
-                            className="hidden"
-                          />
-                          <div
-                            onClick={() => fileInputRefs.current[r.id]?.click()}
-                            className="border-2 border-dashed border-border-subtle rounded-xl p-4 text-center hover:border-secondary/50 transition-colors cursor-pointer bg-white"
-                          >
-                            {currentFile ? (
-                              <div className="flex items-center justify-between p-2 bg-surface-container rounded-lg border border-border-subtle text-xs">
-                                <div className="flex items-center gap-2 truncate">
-                                  <FileText className="w-4 h-4 text-secondary shrink-0" />
-                                  <span className="font-bold text-text-primary truncate">{currentFile.name}</span>
-                                  <span className="text-[10px] text-text-secondary font-mono">({Math.round(currentFile.size / 1024)} KB)</span>
+                          {pendingChanges.length > 0 ? (
+                            <div className="bg-white border border-border-subtle rounded-xl divide-y divide-border-subtle">
+                              {pendingChanges.map((c) => (
+                                <div key={c.documentType} className="flex items-center gap-2.5 p-3 text-xs">
+                                  <FileCheck className="w-4 h-4 text-success shrink-0" />
+                                  <span className="font-bold text-text-primary">{c.label}</span>
+                                  <span className="text-text-secondary">replaced</span>
+                                  <span className="ml-auto font-mono text-[10px] text-text-secondary">{c.uploadedAt}</span>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleFileSelect(r.id, null);
-                                  }}
-                                  className="p-1 hover:bg-surface-container-high rounded text-text-secondary hover:text-danger cursor-pointer"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            ) : (
-                              <>
-                                <Upload className="w-5 h-5 text-text-secondary mx-auto mb-1" />
-                                <p className="text-xs text-text-secondary">Click to upload a supporting file or screenshot</p>
-                                <p className="text-[9px] text-text-secondary font-mono mt-0.5">PNG, JPG, PDF up to 10MB</p>
-                              </>
-                            )}
-                          </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="bg-white border border-dashed border-border-subtle rounded-xl p-4 text-center space-y-1">
+                              <p className="text-xs text-text-secondary">
+                                No documents have been replaced since this point was raised.
+                              </p>
+                              <p className="text-[10px] text-text-secondary">
+                                If this revision needs a new file, upload it on the{" "}
+                                <a href={`/organizer/events/${params.id}/documents`} className="font-bold text-secondary hover:underline">
+                                  Documents tab
+                                </a>{" "}
+                                first — it will be listed here automatically.
+                              </p>
+                            </div>
+                          )}
                         </div>
 
                         {/* Submit Item Button */}
-                        <div className="flex justify-end gap-3 pt-2">
+                        <div className="flex justify-end items-center gap-3 pt-2">
+                          {!canSend && (
+                            <span className="text-[10px] text-text-secondary mr-auto">
+                              Write your explanation before sending.
+                            </span>
+                          )}
                           <button
                             type="button"
                             onClick={() => setSelectedRevisionId(null)}
@@ -368,8 +379,8 @@ export default function OrganizerEventRevisionsPage() {
                           <button
                             type="button"
                             onClick={() => handleSendItemRevision(r.id)}
-                            disabled={isSubmitting}
-                            className="flex items-center gap-2 px-6 py-2.5 bg-secondary hover:bg-secondary/90 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
+                            disabled={isSubmitting || !canSend}
+                            className="flex items-center gap-2 px-6 py-2.5 bg-secondary hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
                           >
                             <Send className="w-3.5 h-3.5" />
                             <span>{isSubmitting ? "Sending…" : "Send Revision to Auditor"}</span>

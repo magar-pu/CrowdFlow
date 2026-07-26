@@ -5,13 +5,8 @@ import AuditorReviewShell, { useAuditorReview } from "../../components/AuditorRe
 import { TabOverview } from "../../components/ReviewDetailView";
 
 function ReviewOverviewTab() {
-  const { submission, handleChangeSubmissionStageAction } = useAuditorReview();
-  return (
-    <TabOverview
-      sub={submission}
-      onChangeStage={(stage) => handleChangeSubmissionStageAction(submission.id, stage)}
-    />
-  );
+  const { submission } = useAuditorReview();
+  return <TabOverview sub={submission} />;
 }
 
 export default function AuditorReviewOverviewPage() {

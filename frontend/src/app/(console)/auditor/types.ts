@@ -258,7 +258,13 @@ export interface ReviewDocument {
 }
 
 export interface OrganizerDetail {
+  /** organizer_applications.id — 0 when the organizer has no application row. */
+  applicationId: number;
   companyName: string;
+  /**
+   * Not a licence number: no such column exists. The backend reports the
+   * verification state of the organizer's NIB/SIUP document here.
+   */
   businessLicense: string;
   pic: string;
   email: string;
@@ -409,9 +415,20 @@ export interface RevisionTimelineEntry {
   timestamp: string;
 }
 
+export interface RevisionDocumentChange {
+  documentType: string;
+  label: string;
+  uploadedAt: string;
+}
+
 export interface OrganizerRevisionResponse {
   comment: string;
-  uploadedFiles: string[];
+  /**
+   * Event documents the organizer re-uploaded in response to this point,
+   * snapshotted when they replied. Empty means they answered without changing
+   * any paperwork — a meaningful answer, not missing data.
+   */
+  documentsChanged: RevisionDocumentChange[];
   respondedAt: string;
 }
 
@@ -459,6 +476,8 @@ export interface EventSubmission {
   checklist: ChecklistItem[];
   documents: ReviewDocument[];
   venue: string;
+  /** Flat venue address from the review payload; mapped into venueDetail.address. */
+  venueAddress?: string;
   date: string;
   capacity: number;
   ticketSold: number;

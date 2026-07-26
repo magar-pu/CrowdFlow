@@ -91,13 +91,54 @@ type EventReview struct {
 	MissingDocs     int            `json:"missingDocs"`
 	AssignedAuditor string         `json:"assignedAuditor"`
 	Venue           string         `json:"venue"`
+	VenueAddress    string         `json:"venueAddress"`
 	Date            string         `json:"date"`
 	Capacity        int            `json:"capacity"`
+	TicketSold      int            `json:"ticketSold"`
 	Notes           string         `json:"notes"`
 	Documents       []ReviewDoc    `json:"documents"`
 	Finance         ReviewFinance  `json:"finance"`
 	History         []StatusEntry  `json:"history"`
 	Revisions       []Revision     `json:"revisions"`
+
+	OrganizerDetail   ReviewOrganizerDetail   `json:"organizerDetail"`
+	Checklist         []ChecklistItem         `json:"checklist"`
+	ComplianceHistory ReviewComplianceHistory `json:"complianceHistory"`
+}
+
+// ChecklistItem is a single derived pass/fail signal shown on the review
+// overview. Every item must be computed from real state — a checklist that is
+// always green tells the auditor nothing.
+type ChecklistItem struct {
+	Label string `json:"label"`
+	Done  bool   `json:"done"`
+}
+
+// ReviewOrganizerDetail is the organizer's account-level identity as attached to
+// the event under review. It comes from organizer_applications, which is
+// UNIQUE (user_id) — one business per organizer.
+type ReviewOrganizerDetail struct {
+	// ApplicationID lets the console deep-link into the organizer verification
+	// page. Zero when the organizer has no application row.
+	ApplicationID int `json:"applicationId"`
+	CompanyName   string `json:"companyName"`
+	// BusinessLicense is NOT a stored licence number — no such column exists.
+	// It reports the verification state of the organizer's NIB/SIUP document,
+	// which is the signal an auditor actually needs.
+	BusinessLicense string `json:"businessLicense"`
+	Pic             string `json:"pic"`
+	Email           string `json:"email"`
+	Phone           string `json:"phone"`
+	Address         string `json:"address"`
+}
+
+// ReviewComplianceHistory summarises the organizer's track record across their
+// OTHER events, so an auditor can weigh this submission against past behaviour.
+type ReviewComplianceHistory struct {
+	PreviousAudits         int `json:"previousAudits"`
+	PreviousViolations     int `json:"previousViolations"`
+	PreviousRevisions      int `json:"previousRevisions"`
+	PreviousApprovedEvents int `json:"previousApprovedEvents"`
 }
 
 // Document sources feeding a review. IDs are only unique WITHIN a source —
@@ -185,8 +226,18 @@ type Revision struct {
 	CreatedAt            string `json:"createdAt"`
 	OrganizerComment     string `json:"organizerComment,omitempty"`
 	OrganizerActionTaken string `json:"organizerActionTaken,omitempty"`
-	OrganizerFile        string `json:"organizerFile,omitempty"`
 	RespondedAt          string `json:"respondedAt,omitempty"`
+	// DocumentsChanged lists the event documents the organizer actually
+	// re-uploaded in response to this revision, snapshotted when they replied.
+	// It replaces the old organizer_file, which held a filename for a file that
+	// was never uploaded anywhere.
+	DocumentsChanged []RevisionDocumentChange `json:"documentsChanged"`
+}
+
+type RevisionDocumentChange struct {
+	DocumentType string `json:"documentType"`
+	Label        string `json:"label"`
+	UploadedAt   string `json:"uploadedAt"`
 }
 
 type EventReviewFilters struct {
