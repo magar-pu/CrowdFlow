@@ -11,11 +11,11 @@ export function formatEventDateLabel(starts_at: string): string {
   const date = new Date(starts_at);
   if (Number.isNaN(date.getTime())) return "";
 
-  const day = date.toLocaleDateString("id-ID", {
+  const day = date.toLocaleDateString("en-GB", {
     day: "numeric",
     month: "short",
   });
-  const time = date.toLocaleTimeString("id-ID", {
+  const time = date.toLocaleTimeString("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -27,12 +27,12 @@ export function formatEventDateLabelLong(starts_at: string): string {
   const date = new Date(starts_at);
   if (Number.isNaN(date.getTime())) return "";
 
-  const day = date.toLocaleDateString("id-ID", {
+  const day = date.toLocaleDateString("en-GB", {
     day: "numeric",
     month: "long",
     year: "numeric",
   });
-  const time = date.toLocaleTimeString("id-ID", {
+  const time = date.toLocaleTimeString("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
   });
