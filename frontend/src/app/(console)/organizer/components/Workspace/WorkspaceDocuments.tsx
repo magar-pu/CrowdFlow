@@ -98,6 +98,13 @@ const SLOTS: SlotSpec[] = [
 const ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp";
 const MAX_BYTES = 10 * 1024 * 1024;
 
+// Stated once at the top of the tab and reused in the per-slot hint and the
+// size error, so the three can't drift apart. Derived from MAX_BYTES for the
+// same reason. PDF leads the list because permits and proposals are usually
+// multi-page scans.
+const MAX_MB = MAX_BYTES / (1024 * 1024);
+const CRITERIA = `PDF, PNG, JPG/JPEG, or WebP · up to ${MAX_MB}MB per file`;
+
 function formatSize(bytes: number): string {
   if (bytes <= 0) return "—";
   if (bytes < 1024) return `${bytes} B`;
@@ -175,7 +182,7 @@ export default function WorkspaceDocuments({ eventId, readOnly = false }: Worksp
     // Checked here as well as server-side purely to save the user a 10MB round
     // trip; the backend rejects it either way.
     if (file.size > MAX_BYTES) {
-      setSlotError((prev) => ({ ...prev, [type]: "File exceeds the 10MB limit." }));
+      setSlotError((prev) => ({ ...prev, [type]: `File exceeds the ${MAX_MB}MB limit.` }));
       return;
     }
 
@@ -254,12 +261,15 @@ export default function WorkspaceDocuments({ eventId, readOnly = false }: Worksp
     <div className="space-y-4 text-left animate-fade-in">
       <div className="rounded-xl border border-border-subtle bg-white p-5 shadow-sm space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border-subtle pb-3">
-          <div>
+          <div className="space-y-1">
             <h3 className="text-base font-bold text-text-primary">Documents</h3>
             <p className="text-xs text-text-secondary">
               Paperwork an auditor needs before this event can be approved. Files are stored
               privately; View creates a link that expires within a couple of minutes.
             </p>
+            {/* Always on screen, including once every slot is filled — the
+                rules matter just as much when replacing a rejected file. */}
+            <p className="font-mono text-[10px] text-text-secondary">{CRITERIA}</p>
           </div>
           {!loading && data && (
             data.complete ? (
@@ -378,7 +388,7 @@ export default function WorkspaceDocuments({ eventId, readOnly = false }: Worksp
                           </p>
                         ) : (
                           <p className="text-[11px] text-text-secondary">
-                            No file yet — PDF, PNG or JPG up to 10MB. Drag one here or browse.
+                            No file yet — {CRITERIA}. Drag one here or browse.
                           </p>
                         )}
 

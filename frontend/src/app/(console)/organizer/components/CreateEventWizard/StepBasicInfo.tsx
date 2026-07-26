@@ -31,6 +31,11 @@ interface StepBasicInfoProps {
 const ACCEPTED_COVER_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const MAX_COVER_BYTES = 10 * 1024 * 1024;
 
+// Shown up front rather than only as an error after a rejected file. Derived
+// from MAX_COVER_BYTES so the copy can't drift from the check. Kept identical
+// to the workspace picker's wording so the rules read the same in both places.
+const COVER_CRITERIA = `PNG, JPG/JPEG, or WebP · up to ${MAX_COVER_BYTES / (1024 * 1024)}MB`;
+
 export default function StepBasicInfo({
   name, setName,
   category, setCategory,
@@ -68,7 +73,7 @@ export default function StepBasicInfo({
       return;
     }
     if (file.size > MAX_COVER_BYTES) {
-      setCoverError('Cover art must be 10MB or smaller.');
+      setCoverError(`Cover art must be ${MAX_COVER_BYTES / (1024 * 1024)}MB or smaller.`);
       return;
     }
     setCoverError(null);
@@ -152,7 +157,12 @@ export default function StepBasicInfo({
       <div className="space-y-6">
         {/* Cover Image */}
         <div className="bg-white border border-border-subtle rounded-xl p-5 soft-shadow space-y-4">
-          <h3 className="text-sm font-bold text-text-primary">Event Cover Image</h3>
+          <div className="space-y-0.5">
+            <h3 className="text-sm font-bold text-text-primary">Event Cover Image</h3>
+            {/* Stays visible after a file is picked, when the dropzone's own
+                hint is replaced by the preview. */}
+            <p className="text-[10px] text-text-secondary font-mono">{COVER_CRITERIA}</p>
+          </div>
 
           <input
             ref={coverInputRef}
@@ -200,7 +210,7 @@ export default function StepBasicInfo({
             >
               <ImageIcon className="w-6 h-6 text-on-surface-variant" />
               <p className="text-xs text-text-secondary font-medium text-center">Drag & drop cover art, or click to browse</p>
-              <p className="text-[10px] text-on-surface-variant font-mono">PNG, JPG, WEBP · max 10MB</p>
+              <p className="text-[10px] text-on-surface-variant font-mono">{COVER_CRITERIA}</p>
             </div>
           )}
 

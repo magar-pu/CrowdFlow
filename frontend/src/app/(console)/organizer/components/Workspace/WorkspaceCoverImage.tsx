@@ -19,6 +19,14 @@ interface WorkspaceCoverImageProps {
 const ACCEPTED = ["image/png", "image/jpeg", "image/webp"];
 const MAX_BYTES = 10 * 1024 * 1024;
 
+// Rendered wherever the picker is shown, so the rules are visible BEFORE a file
+// is chosen rather than only in an error after a rejected upload. Derived from
+// MAX_BYTES so the text can't drift from the check. Note .jpg and .jpeg are the
+// same image/jpeg type — both are listed because users think of them as
+// different formats.
+const MAX_MB = MAX_BYTES / (1024 * 1024);
+const CRITERIA = `PNG, JPG/JPEG, or WebP · up to ${MAX_MB}MB`;
+
 export default function WorkspaceCoverImage({
   eventId,
   currentUrl,
@@ -48,7 +56,7 @@ export default function WorkspaceCoverImage({
       return;
     }
     if (file.size > MAX_BYTES) {
-      setError("Cover art must be 10MB or smaller.");
+      setError(`Cover art must be ${MAX_MB}MB or smaller.`);
       return;
     }
 
@@ -97,12 +105,17 @@ export default function WorkspaceCoverImage({
 
   return (
     <div className="bg-white border border-border-subtle rounded-xl p-5 shadow-sm space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <h4 className="text-sm font-bold text-text-primary flex items-center gap-2">
-          <ImageIcon className="w-4 h-4 text-secondary" /> Event Cover Image
-        </h4>
+      <div className="flex items-start justify-between gap-2">
+        <div className="space-y-0.5">
+          <h4 className="text-sm font-bold text-text-primary flex items-center gap-2">
+            <ImageIcon className="w-4 h-4 text-secondary" /> Event Cover Image
+          </h4>
+          {/* Always visible, not just in the empty dropzone — the rules matter
+              most when replacing an existing image. */}
+          <p className="text-[10px] text-text-secondary font-mono">{CRITERIA}</p>
+        </div>
         {uploading && (
-          <span className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-text-secondary">
+          <span className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-text-secondary shrink-0">
             <Loader2 className="w-3 h-3 animate-spin" /> Uploading…
           </span>
         )}
@@ -154,7 +167,7 @@ export default function WorkspaceCoverImage({
         >
           <ImageIcon className="w-6 h-6 text-on-surface-variant" />
           <p className="text-xs text-text-secondary font-medium text-center">Drag &amp; drop cover art, or click to browse</p>
-          <p className="text-[10px] text-on-surface-variant font-mono">PNG, JPG, WEBP · max 10MB</p>
+          <p className="text-[10px] text-on-surface-variant font-mono">{CRITERIA}</p>
         </div>
       )}
 
