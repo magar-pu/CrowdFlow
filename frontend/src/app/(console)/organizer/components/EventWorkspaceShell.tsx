@@ -42,6 +42,16 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
     }
   }, [event?.id, event?.status]);
 
+  /**
+   * Revision points the organizer still has to act on. Excludes the states the
+   * auditor has closed out — a Resolved/Verified point is settled, and listing
+   * it under "Action Required" makes finished work look outstanding.
+   */
+  const CLOSED_REVISION_STATUSES = ["resolved", "verified"];
+  const openRevisions = (revisionFeedback?.revisions ?? []).filter(
+    (rev) => !CLOSED_REVISION_STATUSES.includes((rev.status ?? "").toLowerCase())
+  );
+
   const handleResubmit = async () => {
     setIsSubmitting(true);
     setSubmitError(null);
@@ -150,6 +160,13 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
               <p className="text-xs font-semibold text-danger">{submitError}</p>
             </div>
           )}
+
+          {resubmitSuccess && (
+            <div className="mt-3 flex items-center gap-2 rounded-lg border border-success/30 bg-success/20 px-3 py-2 text-xs font-bold text-success">
+              <CheckCircle2 className="h-4 w-4" />
+              <span>Submitted to the auditor. This event is now in review.</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -250,32 +267,20 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
               </p>
             </div>
 
+            {/* Resubmission happens per revision point on the Revisions page
+                ("Send Revision to Auditor"), which also records the document
+                changelog. A blanket resubmit here bypassed that and raced the
+                per-point flow. */}
             <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => router.push(`/organizer/events/${eventId}/revisions`)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-white border border-border-subtle hover:bg-surface-container text-text-primary text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
+                className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
               >
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                <AlertTriangle className="w-3.5 h-3.5" />
                 <span>View Revision Details</span>
-              </button>
-
-              <button
-                onClick={handleResubmit}
-                disabled={isSubmitting}
-                className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>{isSubmitting ? "Submitting..." : "Resubmit Event to Auditor"}</span>
               </button>
             </div>
           </div>
-
-          {submitError && (
-            <div className="mt-3 flex items-start gap-2 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
-              <p className="text-xs font-semibold text-danger">{submitError}</p>
-            </div>
-          )}
 
           {/* Detailed Auditor Feedback Notes */}
           {revisionFeedback?.auditorNotes && (
@@ -289,27 +294,30 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
             </div>
           )}
 
-          {/* List of Specific Required Actions */}
-          {revisionFeedback?.revisions && revisionFeedback.revisions.length > 0 && (
+          {/* List of Specific Required Actions.
+              Only points that still need the organizer's attention belong in an
+              "Action Required" banner — an item the auditor has already accepted
+              is history, and leaving it here reads as outstanding work. */}
+          {openRevisions.length > 0 && (
             <div className="mt-3 space-y-2">
               <span className="text-[10px] font-mono font-bold text-text-secondary uppercase block">
-                Required Revision Items (Klik item untuk merespons)
+                Required Revision Items (click an item to respond)
               </span>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {revisionFeedback.revisions.map((rev) => (
+                {openRevisions.map((rev) => (
                   <div
                     key={rev.id}
                     onClick={() => router.push(`/organizer/events/${eventId}/revisions?revId=${rev.id}`)}
-                    className="p-3 bg-white border border-border-subtle hover:border-secondary rounded-lg text-xs space-y-1 shadow-2xs cursor-pointer transition-all hover:shadow-xs"
+                    className="p-3 bg-white border border-amber-500/40 hover:border-amber-600 rounded-lg text-xs space-y-1 shadow-2xs cursor-pointer transition-all hover:shadow-xs"
                   >
                     <div className="flex justify-between items-center">
-                      <span className="font-bold text-text-primary">{rev.title}</span>
-                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-surface-container text-text-secondary">
+                      <span className="font-bold text-amber-900">{rev.title}</span>
+                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-800 border border-amber-500/25">
                         {rev.category}
                       </span>
                     </div>
                     <p className="text-[11px] text-text-secondary leading-snug">{rev.description}</p>
-                    <div className="pt-1 text-[10px] font-mono text-primary font-bold">
+                    <div className="pt-1 text-[10px] font-mono text-amber-700 font-bold">
                       Action: {rev.requiredAction}
                     </div>
                   </div>
@@ -318,12 +326,6 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
             </div>
           )}
 
-          {resubmitSuccess && (
-            <div className="mt-3 p-2 bg-success/20 border border-success/30 rounded-lg text-xs font-bold text-success flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Event successfully resubmitted to auditor portal! Status changed to In Review.</span>
-            </div>
-          )}
         </div>
       )}
 

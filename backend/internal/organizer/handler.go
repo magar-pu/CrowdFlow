@@ -1351,6 +1351,12 @@ func (h *Handler) handleRespondEventRevision(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.service.RespondToEventRevision(r.Context(), eventID, revID, userID, req); err != nil {
+		// A missing explanation, or a point already sent to the auditor, is the
+		// organizer's mistake to correct — not a server fault.
+		if errors.Is(err, ErrValidation) {
+			response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+			return
+		}
 		log.Printf("RespondToEventRevision error: %v", err)
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to submit revision response: "+err.Error())
 		return

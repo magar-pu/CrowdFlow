@@ -1,28 +1,16 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { updateRevisionStatus } from '@/lib/api/auditor';
 import { EventSubmission, ReviewStage, RiskLevel, RevisionEntry, ReviewDocument, docKey } from '../types';
 import {
-  ArrowLeft, CheckCircle2, FileText, MapPin, CalendarDays, Users2,
-  Send, AlertTriangle, Ban, Building2, Truck, DollarSign, Clock,
+  CheckCircle2, FileText, MapPin, CalendarDays, Users2,
+  Send, AlertTriangle, Ban, Clock,
   RefreshCw, Shield, ExternalLink, Download, Eye, ChevronRight,
-  Activity, GitBranch, MessageSquare, Star, TrendingUp, TrendingDown,
-  Phone, Mail, Globe, Package, Zap, Archive, Save, X
+  Activity, GitBranch, MessageSquare, TrendingUp, TrendingDown,
+  Phone, Mail, Globe, Package, Zap, Archive, Save
 } from 'lucide-react';
-
-type Tab = 'overview' | 'documents' | 'venue' | 'logistics' | 'finance' | 'history' | 'revision';
-
-const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
-  { key: 'overview', label: 'Overview', icon: <Star className="w-3.5 h-3.5" /> },
-  { key: 'documents', label: 'Documents', icon: <FileText className="w-3.5 h-3.5" /> },
-  { key: 'venue', label: 'Venue', icon: <Building2 className="w-3.5 h-3.5" /> },
-  { key: 'logistics', label: 'Logistics', icon: <Truck className="w-3.5 h-3.5" /> },
-  { key: 'finance', label: 'Finance', icon: <DollarSign className="w-3.5 h-3.5" /> },
-  { key: 'history', label: 'History', icon: <Clock className="w-3.5 h-3.5" /> },
-  { key: 'revision', label: 'Revision', icon: <RefreshCw className="w-3.5 h-3.5" /> },
-];
 
 const TIMELINE_STAGES: ReviewStage[] = ['Submitted', 'Document Verification', 'Event Validation', 'Final Approval'];
 
@@ -225,7 +213,7 @@ export function TabDocuments({ sub, onVerify, onReject, onView, onOpenFile, onAd
     if (selectedReasons.length === 0 && !customReason.trim()) return;
 
     const reasonsText = selectedReasons
-      .map(r => r === 'Lainnya' ? `Lainnya: ${customReason}` : r)
+      .map(r => r === 'Other' ? `Other: ${customReason}` : r)
       .join(', ');
 
     const newRevision: RevisionEntry = {
@@ -383,7 +371,7 @@ export function TabDocuments({ sub, onVerify, onReject, onView, onOpenFile, onAd
                           </button>
                         ))}
                       </div>
-                      {selectedReasons.includes('Lainnya') && (
+                      {selectedReasons.includes('Other') && (
                         <input
                           value={customReason}
                           onChange={e => setCustomReason(e.target.value)}
@@ -393,18 +381,17 @@ export function TabDocuments({ sub, onVerify, onReject, onView, onOpenFile, onAd
                       )}
                     </div>
 
-                    {/* Priority & SLA */}
+                    {/* Priority */}
                     <div className="space-y-2">
-                      <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Priority & SLA</label>
+                      <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Priority</label>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {(['Low', 'Medium', 'High', 'Critical'] as RevisionPriority[]).map(p => (
                           <button
                             key={p}
                             onClick={() => setPriority(p)}
-                            className={`flex flex-col items-center py-2 px-3 rounded-lg border text-xs font-bold transition-all cursor-pointer ${priority === p ? (p === 'Critical' ? 'bg-danger text-white border-danger' : p === 'High' ? 'bg-orange-500 text-white border-orange-500' : p === 'Medium' ? 'bg-warning text-white border-warning' : 'bg-success text-white border-success') : 'bg-white border-border-subtle text-text-secondary hover:border-slate-400'}`}
+                            className={`flex items-center justify-center py-2 px-3 rounded-lg border text-xs font-bold transition-all cursor-pointer ${priority === p ? (p === 'Critical' ? 'bg-danger text-white border-danger' : p === 'High' ? 'bg-orange-500 text-white border-orange-500' : p === 'Medium' ? 'bg-warning text-white border-warning' : 'bg-success text-white border-success') : 'bg-white border-border-subtle text-text-secondary hover:border-slate-400'}`}
                           >
                             <span>{p}</span>
-                            <span className={`text-[9px] mt-0.5 font-mono ${priority === p ? 'opacity-80' : 'text-text-secondary'}`}>{REVISION_SLA[p]}</span>
                           </button>
                         ))}
                       </div>
@@ -846,7 +833,6 @@ export function TabRevision({
   onRefresh?: () => void;
 }) {
   const revisions = sub.revisions;
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Dashboard stats
   const stats = {
@@ -868,7 +854,6 @@ export function TabRevision({
   const [deadline, setDeadline] = useState('');
   const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
   const [customReason, setCustomReason] = useState('');
-  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [expandedRevision, setExpandedRevision] = useState<string | null>(null);
 
   const [revToast, setRevToast] = useState<{ message: string; type: 'success' | 'warning' | 'error' } | null>(null);
@@ -880,17 +865,17 @@ export function TabRevision({
       if (res.success) {
         const msg =
           newStatus === 'Resolved'
-            ? '✅ Revisi berhasil disetujui (Accepted)!'
+            ? '✅ Revision accepted.'
             : newStatus === 'Sent'
-            ? '⚠️ Perubahan tambahan diminta! Poin revisi dikembalikan ke EO.'
-            : '❌ Revisi telah ditolak!';
+            ? '⚠️ Further changes requested. This point was sent back to the organizer.'
+            : '❌ Revision rejected.';
         setRevToast({ message: msg, type: newStatus === 'Resolved' ? 'success' : newStatus === 'Sent' ? 'warning' : 'error' });
         setTimeout(() => setRevToast(null), 4000);
         if (onRefresh) {
           await onRefresh();
         }
       } else {
-        setRevToast({ message: 'Gagal memperbarui status revisi: ' + (res.error?.message || 'Terjadi kesalahan'), type: 'error' });
+        setRevToast({ message: 'Failed to update revision status: ' + (res.error?.message || 'An error occurred'), type: 'error' });
         setTimeout(() => setRevToast(null), 4000);
       }
     } catch (err) {
@@ -907,17 +892,17 @@ export function TabRevision({
       const next = prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r];
       if (next.length > 0) {
         const text = next.join(", ");
-        if (!title || title.startsWith("Revisi Dokumen:")) {
-          setTitle(`Revisi Dokumen: ${text}`);
+        if (!title || title.startsWith("Document revision:")) {
+          setTitle(`Document revision: ${text}`);
         }
-        if (!description || description.startsWith("Alasan penolakan dokumen:")) {
-          setDescription(`Alasan penolakan dokumen: ${text}. ${customReason ? `Catatan: ${customReason}` : ''}`);
+        if (!description || description.startsWith("Document rejection reasons:")) {
+          setDescription(`Document rejection reasons: ${text}. ${customReason ? `Note: ${customReason}` : ''}`);
         }
-        if (!requiredAction || requiredAction.startsWith("Harap mengunggah kembali")) {
-          setRequiredAction("Harap mengunggah kembali dokumen pendukung yang valid dan sesuai dengan persyaratan audit.");
+        if (!requiredAction || requiredAction.startsWith("Please re-upload")) {
+          setRequiredAction("Please re-upload a valid supporting document that meets the audit requirements.");
         }
         if (!affectedSection) {
-          setAffectedSection(sectionOptions[0] || "Dokumen Legal");
+          setAffectedSection(sectionOptions[0] || "Legal Documents");
         }
         if (!deadline) {
           const defaultDeadline = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
@@ -928,17 +913,11 @@ export function TabRevision({
     });
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setAttachmentFile(e.target.files[0]);
-    }
-  };
-
   const handleSaveRevision = (status: 'Draft' | 'Sent') => {
-    const finalTitle = title.trim() || (selectedReasons.length > 0 ? `Revisi Dokumen: ${selectedReasons.join(', ')}` : 'Permintaan Revisi Auditor');
+    const finalTitle = title.trim() || (selectedReasons.length > 0 ? `Document revision: ${selectedReasons.join(', ')}` : 'Auditor revision request');
     const finalSection = affectedSection || sectionOptions[0] || 'General';
-    const finalDescription = description.trim() || (selectedReasons.length > 0 ? `Dokumen bermasalah: ${selectedReasons.join(', ')}` : 'Perlu penyesuaian data event');
-    const finalAction = requiredAction.trim() || 'Silakan unggah ulang atau perbaiki dokumen/data yang diperlukan.';
+    const finalDescription = description.trim() || (selectedReasons.length > 0 ? `Issues found with document: ${selectedReasons.join(', ')}` : 'Event details need adjustment');
+    const finalAction = requiredAction.trim() || 'Please re-upload or correct the required document or data.';
     const finalDeadline = deadline || new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
 
     const newRevision: RevisionEntry = {
@@ -976,7 +955,6 @@ export function TabRevision({
     setRequiredAction('');
     setSelectedReasons([]);
     setCustomReason('');
-    setAttachmentFile(null);
   };
 
   return (
@@ -1182,17 +1160,16 @@ export function TabRevision({
 
           {/* Priority with SLA */}
           <div className="space-y-2">
-            <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Priority & SLA</label>
+            <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Priority</label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {(['Low', 'Medium', 'High', 'Critical'] as RevisionPriority[]).map(p => (
                 <button
                   key={p}
                   type="button"
                   onClick={() => setPriority(p)}
-                  className={`flex flex-col items-center py-2.5 px-3 rounded-lg border text-xs font-bold transition-all cursor-pointer ${priority === p ? (p === 'Critical' ? 'bg-danger text-white border-danger' : p === 'High' ? 'bg-orange-500 text-white border-orange-500' : p === 'Medium' ? 'bg-warning text-white border-warning' : 'bg-success text-white border-success') : 'bg-white border-border-subtle text-text-secondary hover:border-slate-400'}`}
+                  className={`flex items-center justify-center py-2.5 px-3 rounded-lg border text-xs font-bold transition-all cursor-pointer ${priority === p ? (p === 'Critical' ? 'bg-danger text-white border-danger' : p === 'High' ? 'bg-orange-500 text-white border-orange-500' : p === 'Medium' ? 'bg-warning text-white border-warning' : 'bg-success text-white border-success') : 'bg-white border-border-subtle text-text-secondary hover:border-slate-400'}`}
                 >
                   <span>{p}</span>
-                  <span className={`text-[9px] mt-0.5 font-mono ${priority === p ? 'opacity-80' : 'text-text-secondary'}`}>{REVISION_SLA[p]}</span>
                 </button>
               ))}
             </div>
@@ -1252,7 +1229,7 @@ export function TabRevision({
                   </button>
                 ))}
               </div>
-              {selectedReasons.includes('Lainnya') && (
+              {selectedReasons.includes('Other') && (
                 <input
                   value={customReason}
                   onChange={e => setCustomReason(e.target.value)}
@@ -1274,48 +1251,6 @@ export function TabRevision({
               onChange={e => setDeadline(e.target.value)}
               className="w-full px-3 py-2.5 border border-border-subtle rounded-lg text-xs bg-white outline-none focus:border-secondary focus:ring-1 focus:ring-secondary/20"
             />
-          </div>
-
-          {/* Attachment (Interactive Upload) */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Attachment (Optional)</label>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept="image/*,.pdf"
-              className="hidden"
-            />
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-border-subtle rounded-lg p-4 text-center hover:border-secondary/50 transition-colors cursor-pointer bg-white"
-            >
-              {attachmentFile ? (
-                <div className="flex items-center justify-between p-2 bg-surface-container rounded-lg border border-border-subtle text-xs">
-                  <div className="flex items-center gap-2 truncate">
-                    <FileText className="w-4 h-4 text-secondary shrink-0" />
-                    <span className="font-bold text-text-primary truncate">{attachmentFile.name}</span>
-                    <span className="text-[10px] text-text-secondary font-mono">({Math.round(attachmentFile.size / 1024)} KB)</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setAttachmentFile(null);
-                    }}
-                    className="p-1 hover:bg-surface-container-high rounded text-text-secondary hover:text-danger cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <FileText className="w-5 h-5 text-text-secondary mx-auto mb-1" />
-                  <p className="text-xs text-text-secondary">Click to upload screenshot or supporting evidence</p>
-                  <p className="text-[9px] text-text-secondary font-mono mt-0.5">PNG, JPG, PDF up to 10MB</p>
-                </>
-              )}
-            </div>
           </div>
 
           {/* Notification info */}

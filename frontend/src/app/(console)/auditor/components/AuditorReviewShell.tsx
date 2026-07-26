@@ -324,12 +324,12 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
   const handleApproveAction = async (id: string, notes: string = "") => {
     const res = await approveEventReview(id, notes);
     if (res.success) {
-      setToast({ message: "✅ Event berhasil disetujui (Approved)!", type: "success" });
+      setToast({ message: "✅ Event approved.", type: "success" });
       setTimeout(() => setToast(null), 4000);
       await loadDetail();
       if (fetchDashboard) fetchDashboard();
     } else {
-      setToast({ message: "Gagal menyetujui event: " + (res.error?.message || "unknown error"), type: "error" });
+      setToast({ message: "Failed to approve event: " + (res.error?.message || "unknown error"), type: "error" });
       setTimeout(() => setToast(null), 4000);
     }
   };
@@ -337,12 +337,12 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
   const handleRejectAction = async (id: string, reasonStr: string) => {
     const res = await rejectEventReview(id, reasonStr, "Rejected by Auditor");
     if (res.success) {
-      setToast({ message: "❌ Event telah ditolak (Rejected)!", type: "error" });
+      setToast({ message: "❌ Event rejected.", type: "error" });
       setTimeout(() => setToast(null), 4000);
       await loadDetail();
       if (fetchDashboard) fetchDashboard();
     } else {
-      setToast({ message: "Gagal menolak event: " + (res.error?.message || "unknown error"), type: "error" });
+      setToast({ message: "Failed to reject event: " + (res.error?.message || "unknown error"), type: "error" });
       setTimeout(() => setToast(null), 4000);
     }
   };
@@ -350,12 +350,12 @@ export default function AuditorReviewShell({ reviewId, activeTab, children }: Au
   const handleRequestChangesAction = async (id: string, notes: string) => {
     const res = await requestEventChanges(id, notes);
     if (res.success) {
-      setToast({ message: "⚠️ Permintaan revisi telah dikirim ke Organizer!", type: "success" });
+      setToast({ message: "⚠️ Revision request sent to the organizer.", type: "success" });
       setTimeout(() => setToast(null), 4000);
       await loadDetail();
       if (fetchDashboard) fetchDashboard();
     } else {
-      setToast({ message: "Gagal meminta revisi: " + (res.error?.message || "unknown error"), type: "error" });
+      setToast({ message: "Failed to request revision: " + (res.error?.message || "unknown error"), type: "error" });
       setTimeout(() => setToast(null), 4000);
     }
   };

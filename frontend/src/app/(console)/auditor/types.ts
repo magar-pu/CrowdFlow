@@ -393,18 +393,20 @@ export const LOGISTICS_SECTIONS = [
   'Vendor', 'Security', 'Medical Team', 'Emergency Plan', 'Equipment', 'Stage', 'Lighting', 'Sound',
 ] as const;
 
+// These strings are sent to the organizer verbatim as the rejection reason, so
+// they must match the language of the rest of the console.
 export const DOCUMENT_REJECTION_REASONS = [
-  'Dokumen buram',
-  'Dokumen kadaluarsa',
-  'Dokumen tidak lengkap',
-  'Informasi tidak sesuai',
-  'Nama perusahaan berbeda',
-  'Tanggal tidak valid',
-  'Tidak ada tanda tangan',
-  'Tidak ada stempel resmi',
-  'Format salah',
-  'Dokumen palsu / mencurigakan',
-  'Lainnya',
+  'Document is blurry',
+  'Document has expired',
+  'Document is incomplete',
+  'Information does not match',
+  'Company name differs',
+  'Invalid date',
+  'Missing signature',
+  'Missing official stamp',
+  'Wrong file format',
+  'Document appears forged or suspicious',
+  'Other',
 ] as const;
 
 export interface RevisionTimelineEntry {

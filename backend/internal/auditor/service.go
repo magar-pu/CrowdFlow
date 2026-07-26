@@ -137,8 +137,21 @@ func (s *AuditorService) AddEventRevision(ctx context.Context, eventID, actorID 
 	return s.repo.AddEventRevision(ctx, eventID, actorID, req)
 }
 
+// validRevisionStatuses mirrors the auditor_revisions_status_check constraint
+// (migration 0020). Without this an unknown status reaches Postgres and comes
+// back as an opaque 500 constraint violation instead of a 422.
+var validRevisionStatuses = map[string]bool{
+	"Draft": true, "Sent": true, "Viewed": true, "In Progress": true,
+	"Resubmitted": true, "Verified": true, "Resolved": true,
+	"Rejected": true, "Expired": true,
+}
+
 func (s *AuditorService) UpdateRevisionStatus(ctx context.Context, revID, actorID int, status string) error {
-	if revID <= 0 || actorID <= 0 || strings.TrimSpace(status) == "" {
+	status = strings.TrimSpace(status)
+	if revID <= 0 || actorID <= 0 || status == "" {
+		return ErrValidation
+	}
+	if !validRevisionStatuses[status] {
 		return ErrValidation
 	}
 	return s.repo.UpdateRevisionStatus(ctx, revID, actorID, status)

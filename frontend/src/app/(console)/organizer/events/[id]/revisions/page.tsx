@@ -8,6 +8,7 @@ import { getEventRevisions, respondToEventRevision, EventRevisionFeedback } from
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   Send,
   UserCheck,
   X,
@@ -48,6 +49,10 @@ export default function OrganizerEventRevisionsPage() {
   const [itemComments, setItemComments] = useState<Record<number, string>>({});
   const [itemActions, setItemActions] = useState<Record<number, string>>({});
 
+  // Which answered point has its recorded response expanded. One at a time —
+  // these are read-back detail, not something to compare side by side.
+  const [expandedResponseId, setExpandedResponseId] = useState<number | null>(null);
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -82,6 +87,9 @@ export default function OrganizerEventRevisionsPage() {
           type: "success"
         });
         setSelectedRevisionId(null);
+        // Swap the form for the recorded response, so the organizer can see
+        // exactly what was filed — including which documents were reported.
+        setExpandedResponseId(revId);
         await fetchData();
         await loadData();
       } else {
@@ -195,14 +203,27 @@ export default function OrganizerEventRevisionsPage() {
                 const pendingChanges = r.pendingDocumentChanges ?? [];
                 const reportedChanges = r.documentsChanged ?? [];
                 const canSend = !!(itemComments[r.id] || "").trim();
+                // Open points carry the amber "needs your attention" treatment
+                // used by the workspace banner; settled ones fade back to
+                // neutral so the page reads as a to-do list, not a wall of alerts.
+                const isClosed = r.status === 'Resolved' || r.status === 'Verified';
+                // A response is final once sent — it is now the auditor's turn.
+                // Reopening the form would let the organizer overwrite the
+                // answer (and its document changelog) after the auditor may
+                // already have read it.
+                const isAwaitingAuditor = r.status === 'Resubmitted' || r.status === 'In Review';
+                const canRespond = !isClosed && !isAwaitingAuditor;
+                const isResponseOpen = expandedResponseId === r.id;
 
                 return (
                   <div
                     key={r.id}
                     className={`bg-white border rounded-2xl transition-all overflow-hidden ${
                       isSelected
-                        ? "border-secondary ring-2 ring-secondary/20 shadow-md"
-                        : "border-border-subtle hover:border-border-strong shadow-xs"
+                        ? "border-amber-600 ring-2 ring-amber-500/25 shadow-md"
+                        : isClosed
+                        ? "border-border-subtle hover:border-border-strong shadow-xs"
+                        : "border-amber-500/40 hover:border-amber-600 shadow-xs"
                     }`}
                   >
                     {/* Item Header Banner */}
@@ -229,66 +250,110 @@ export default function OrganizerEventRevisionsPage() {
 
                         <div className="min-w-0 space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="text-sm font-bold text-text-primary">{r.title}</h4>
-                            <span className="text-[9px] font-mono text-text-secondary px-2 py-0.5 bg-surface-container rounded border border-border-subtle">
+                            <h4 className={`text-sm font-bold ${isClosed ? 'text-text-primary' : 'text-amber-900'}`}>{r.title}</h4>
+                            <span className={`text-[9px] font-mono px-2 py-0.5 rounded border ${
+                              isClosed
+                                ? 'text-text-secondary bg-surface-container border-border-subtle'
+                                : 'text-amber-800 bg-amber-500/15 border-amber-500/25'
+                            }`}>
                               {r.category}
                             </span>
                           </div>
                           <p className="text-xs text-text-secondary leading-relaxed">
-                            <strong className="text-text-primary">Auditor instruction:</strong> {r.requiredAction}
+                            <strong className={isClosed ? 'text-text-primary' : 'text-amber-800'}>Auditor instruction:</strong> {r.requiredAction}
                           </p>
                         </div>
                       </div>
 
-                      {/* Already answered: show what was sent, including the
-                          documents recorded as changed at that moment. */}
-                      {r.respondedAt && (
-                        <div className="w-full sm:w-auto sm:max-w-sm bg-surface-container-low border border-border-subtle rounded-xl p-3 space-y-2">
-                          <div className="flex items-center gap-1.5 text-[9px] font-mono font-bold text-text-secondary uppercase">
-                            <MessageSquare className="w-3 h-3" /> Your response · {r.respondedAt}
-                          </div>
-                          <p className="text-xs text-text-primary leading-relaxed">{r.organizerComment}</p>
-                          {r.organizerActionTaken && (
-                            <p className="text-[11px] text-text-secondary leading-relaxed">{r.organizerActionTaken}</p>
-                          )}
-                          <div className="pt-1.5 border-t border-border-subtle space-y-1">
-                            <span className="text-[9px] font-mono font-bold text-text-secondary uppercase">Documents changed</span>
-                            {reportedChanges.length === 0 ? (
-                              <p className="text-[11px] text-text-secondary">No documents were changed.</p>
-                            ) : (
-                              reportedChanges.map((c) => (
-                                <div key={c.documentType} className="flex items-center gap-1.5 text-[11px]">
-                                  <FileCheck className="w-3 h-3 text-success shrink-0" />
-                                  <span className="font-bold text-text-primary">{c.label}</span>
-                                  <span className="ml-auto font-mono text-[9px] text-text-secondary">{c.uploadedAt}</span>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      )}
+                      {/* Status + the toggle for the recorded response. Keeping
+                          the response itself out of the header stops a long
+                          explanation from stretching the card. */}
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                        {canRespond ? (
+                          <button
+                            onClick={() => setSelectedRevisionId(isSelected ? null : r.id)}
+                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                              isSelected
+                                ? "bg-surface-container text-text-primary border border-border-subtle"
+                                : "bg-amber-600 text-white hover:bg-amber-700 shadow-sm"
+                            }`}
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>{isSelected ? "Close Revision Form" : "Select & Fix This Point"}</span>
+                          </button>
+                        ) : isAwaitingAuditor ? (
+                          <span className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold shrink-0 bg-secondary/10 text-secondary border border-secondary/20">
+                            <ShieldAlert className="w-3.5 h-3.5" />
+                            Sent — awaiting auditor review
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold shrink-0 bg-success/10 text-success border border-success/20">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Accepted by auditor
+                          </span>
+                        )}
 
-                      {/* Select Item to Revise Action Button */}
-                      {r.status !== 'Resolved' && (
-                        <button
-                          onClick={() => setSelectedRevisionId(isSelected ? null : r.id)}
-                          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
-                            isSelected
-                              ? "bg-surface-container text-text-primary border border-border-subtle"
-                              : "bg-secondary text-white hover:bg-secondary/90 shadow-sm"
-                          }`}
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>{isSelected ? "Close Revision Form" : "Select & Fix This Point"}</span>
-                        </button>
-                      )}
+                        {r.respondedAt && (
+                          <button
+                            onClick={() => setExpandedResponseId(isResponseOpen ? null : r.id)}
+                            aria-expanded={isResponseOpen}
+                            className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold shrink-0 border border-border-subtle bg-white text-text-secondary hover:text-text-primary hover:bg-surface-container-low transition-colors cursor-pointer"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>{isResponseOpen ? "Hide details" : "See details"}</span>
+                            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isResponseOpen ? "rotate-180" : ""}`} />
+                          </button>
+                        )}
+                      </div>
                     </div>
 
+                    {/* ── RECORDED RESPONSE (expanded on demand) ── */}
+                    {r.respondedAt && isResponseOpen && (
+                      <div className="border-t border-border-subtle bg-surface-container-low/50 p-5 space-y-4 animate-fade-in">
+                        <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-text-secondary uppercase">
+                          <MessageSquare className="w-3.5 h-3.5" /> Your response · sent {r.respondedAt}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="bg-white p-3.5 rounded-xl border border-border-subtle space-y-1">
+                            <span className="text-[9px] font-mono font-bold text-text-secondary uppercase">Your Explanation</span>
+                            <p className="text-xs text-text-primary leading-relaxed">{r.organizerComment}</p>
+                          </div>
+                          <div className="bg-white p-3.5 rounded-xl border border-border-subtle space-y-1">
+                            <span className="text-[9px] font-mono font-bold text-text-secondary uppercase">Corrective Action Taken</span>
+                            <p className="text-xs text-text-primary leading-relaxed">
+                              {r.organizerActionTaken || <span className="text-text-secondary">Not specified.</span>}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <span className="text-[9px] font-mono font-bold text-text-secondary uppercase">Documents Changed</span>
+                          {reportedChanges.length === 0 ? (
+                            <p className="text-xs text-text-secondary bg-white border border-dashed border-border-subtle rounded-xl p-3">
+                              No documents were changed for this point.
+                            </p>
+                          ) : (
+                            <div className="bg-white border border-border-subtle rounded-xl divide-y divide-border-subtle">
+                              {reportedChanges.map((c) => (
+                                <div key={c.documentType} className="flex items-center gap-2.5 p-3 text-xs">
+                                  <FileCheck className="w-4 h-4 text-success shrink-0" />
+                                  <span className="font-bold text-text-primary">{c.label}</span>
+                                  <span className="text-text-secondary">replaced</span>
+                                  <span className="ml-auto font-mono text-[10px] text-text-secondary">{c.uploadedAt}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {/* ── EXPANDED REVISION RESPONSE FORM (only after the organizer selects a point) ── */}
-                    {isSelected && (
+                    {isSelected && canRespond && (
                       <div className="border-t border-border-subtle bg-surface-container-low/50 p-6 space-y-5 animate-fade-in">
-                        <div className="flex items-center gap-2 text-xs font-bold text-secondary border-b border-border-subtle pb-3">
-                          <Sparkles className="w-4 h-4 text-secondary" />
+                        <div className="flex items-center gap-2 text-xs font-bold text-amber-800 border-b border-amber-500/25 pb-3">
+                          <Sparkles className="w-4 h-4 text-amber-600" />
                           <span>Revision Response Form (Point #{r.id}: {r.title})</span>
                         </div>
 
@@ -297,9 +362,9 @@ export default function OrganizerEventRevisionsPage() {
                             <span className="text-[9px] font-mono font-bold text-text-secondary uppercase">Auditor&apos;s Findings</span>
                             <p className="text-text-primary leading-relaxed">{r.description}</p>
                           </div>
-                          <div className="bg-primary/5 p-3.5 rounded-xl border border-primary/10 space-y-1">
-                            <span className="text-[9px] font-mono font-bold text-primary uppercase">Requirement You Must Meet</span>
-                            <p className="text-primary font-bold leading-relaxed">{r.requiredAction}</p>
+                          <div className="bg-amber-500/10 p-3.5 rounded-xl border border-amber-500/20 space-y-1">
+                            <span className="text-[9px] font-mono font-bold text-amber-800 uppercase">Requirement You Must Meet</span>
+                            <p className="text-amber-900 font-bold leading-relaxed">{r.requiredAction}</p>
                           </div>
                         </div>
 

@@ -2344,6 +2344,28 @@ func (r *PostgresRepository) RespondToEventRevision(ctx context.Context, eventID
 		return fmt.Errorf("event not found or unauthorized")
 	}
 
+	// A response is final. Once the point is Resubmitted the ball is with the
+	// auditor, and once it is Resolved/Verified it is settled — allowing another
+	// write would let the organizer overwrite an answer (and its document
+	// changelog) the auditor may already have read. The UI hides the form for
+	// these states; this is the rule that actually holds.
+	var currentStatus string
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT status FROM auditor_revisions WHERE id = $1 AND event_id = $2`,
+		revID, eventID,
+	).Scan(&currentStatus); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("revision item not found")
+		}
+		return err
+	}
+	switch currentStatus {
+	case "Resubmitted", "In Review":
+		return fmt.Errorf("%w: this revision has already been sent to the auditor", ErrValidation)
+	case "Resolved", "Verified":
+		return fmt.Errorf("%w: this revision has already been accepted", ErrValidation)
+	}
+
 	// Snapshot the documents re-uploaded since this revision was raised. Taken
 	// now rather than derived on read: event_documents is UNIQUE per type, so a
 	// later replacement would overwrite uploaded_at and silently rewrite the
@@ -2378,11 +2400,15 @@ func (r *PostgresRepository) RespondToEventRevision(ctx context.Context, eventID
 	// Only hand the event back to the auditor once every revision point has an
 	// answer. Re-queueing on the first response pulled the auditor into a
 	// half-finished submission and made the queue lie about what was ready.
+	//
+	// 'Rejected' counts as open: the auditor turned down the organizer's fix, so
+	// that point needs another answer. This must stay in step with the set the
+	// UI lets the organizer respond to.
 	var stillOpen int
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM auditor_revisions
 		WHERE event_id = $1
-		  AND status IN ('Draft', 'Sent', 'Viewed', 'In Progress')
+		  AND status IN ('Draft', 'Sent', 'Viewed', 'In Progress', 'Rejected', 'Expired')
 	`, eventID).Scan(&stillOpen); err != nil {
 		return err
 	}
