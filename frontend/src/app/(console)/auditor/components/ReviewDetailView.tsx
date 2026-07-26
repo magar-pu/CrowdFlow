@@ -91,7 +91,7 @@ function ChecklistRow({ label, done }: { label: string; done: boolean }) {
 }
 
 // ─── TAB: OVERVIEW ────────────────────────────────────────────────────────────
-function TabOverview({ sub, onChangeStage }: { sub: EventSubmission; onChangeStage?: (stage: ReviewStage) => void }) {
+export function TabOverview({ sub, onChangeStage }: { sub: EventSubmission; onChangeStage?: (stage: ReviewStage) => void }) {
   const stageIndex = TIMELINE_STAGES.indexOf(sub.stage);
   const isResolved = sub.status !== 'Pending';
 
@@ -228,7 +228,7 @@ function TabOverview({ sub, onChangeStage }: { sub: EventSubmission; onChangeSta
 }
 
 // ─── TAB: DOCUMENTS ───────────────────────────────────────────────────────────
-function TabDocuments({ sub, onVerify, onReject, onView, onOpenFile, onAddRevision }: {
+export function TabDocuments({ sub, onVerify, onReject, onView, onOpenFile, onAddRevision }: {
   sub: EventSubmission;
   onVerify: (docKey: string) => void;
   onReject: (docKey: string) => void;
@@ -498,7 +498,7 @@ function TabDocuments({ sub, onVerify, onReject, onView, onOpenFile, onAddRevisi
 }
 
 // ─── TAB: VENUE ───────────────────────────────────────────────────────────────
-function TabVenue({ sub }: { sub: EventSubmission }) {
+export function TabVenue({ sub }: { sub: EventSubmission }) {
   const v = sub.venueDetail;
   const done = v.checklist.filter(c => c.done).length;
   return (
@@ -512,7 +512,7 @@ function TabVenue({ sub }: { sub: EventSubmission }) {
           </div>
           <ScoreBadge score={v.complianceScore} />
         </div>
-        <div className="text-xs text-text-secondary bg-surface-container-low rounded-lg p-3 border border-border-subtle">
+        <div className="text-xs text-text-secondary bg-surface-container-low rounded-lg p-3 border border-border-subtle mt-4">
           Validation Progress: <strong className="text-text-primary">{done}/{v.checklist.length}</strong> items passed
         </div>
       </SectionCard>
@@ -553,7 +553,7 @@ function TabVenue({ sub }: { sub: EventSubmission }) {
 }
 
 // ─── TAB: LOGISTICS ───────────────────────────────────────────────────────────
-function TabLogistics({ sub }: { sub: EventSubmission }) {
+export function TabLogistics({ sub }: { sub: EventSubmission }) {
   const lg = sub.logistics;
   const vendorStatusColor = (s: string) => s === 'Verified' ? 'bg-success/10 text-success border-success/20' : s === 'Rejected' ? 'bg-danger/10 text-danger border-danger/20' : 'bg-warning/10 text-warning border-warning/20';
   return (
@@ -612,7 +612,7 @@ function TabLogistics({ sub }: { sub: EventSubmission }) {
 }
 
 // ─── TAB: FINANCE ─────────────────────────────────────────────────────────────
-function TabFinance({ sub }: { sub: EventSubmission }) {
+export function TabFinance({ sub }: { sub: EventSubmission }) {
   const f = sub.finance;
   const fmt = (n: number) => `$${n.toLocaleString()}`;
   return (
@@ -744,7 +744,7 @@ function TabFinance({ sub }: { sub: EventSubmission }) {
 }
 
 // ─── TAB: HISTORY ─────────────────────────────────────────────────────────────
-function TabHistory({ sub }: { sub: EventSubmission }) {
+export function TabHistory({ sub }: { sub: EventSubmission }) {
   const h = sub.history;
   const [showVersions, setShowVersions] = useState(false);
   const approvalStages = ['Draft', 'Submitted', 'Verified', 'Final Approval'];
@@ -862,7 +862,7 @@ const STATUS_COLORS: Record<RevisionStatus, string> = {
   Expired: 'bg-slate-200 text-slate-500 border-slate-300',
 };
 
-function TabRevision({
+export function TabRevision({
   sub,
   onAddRevision,
   onRefresh,
