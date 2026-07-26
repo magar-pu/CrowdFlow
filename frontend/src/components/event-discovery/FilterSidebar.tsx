@@ -9,7 +9,7 @@
 
 import { Filter } from "lucide-react";
 
-const CITIES = ["Jakarta", "Bandung", "Surabaya"];
+const CITIES = ["Jakarta", "Bandung", "Surabaya", "Tangerang", "Sleman", "Badung"];
 
 interface FilterSidebarProps {
   selected_cities: string[];
