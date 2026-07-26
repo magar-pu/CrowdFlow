@@ -81,7 +81,7 @@ export default function DashboardView({ onCreateEvent, onNavigateToView }: Dashb
       </section>
 
       {isLoading && !dashboardData ? (
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(6)].map((_, i) => (
             <div key={i} className="bg-white rounded-xl p-5 border border-border-subtle soft-shadow flex flex-col gap-3 animate-pulse">
               <div className="flex justify-between items-center">
@@ -94,7 +94,7 @@ export default function DashboardView({ onCreateEvent, onNavigateToView }: Dashb
           ))}
         </section>
       ) : (
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {kpis.map((kpi, idx) => {
             const Icon = kpi.icon;
             return (
