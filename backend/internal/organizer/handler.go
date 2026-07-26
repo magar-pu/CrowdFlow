@@ -100,10 +100,14 @@ func (h *Handler) RegisterRoutes(
 }
 
 func (h *Handler) handleApply(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 15<<20)
-	err := r.ParseMultipartForm(15 << 20)
+	// 12MB for the whole request, matching the event-document and cover paths
+	// (and nginx's client_max_body_size). Note this is the COMBINED size of
+	// every document in the request; each individual file is capped at 10MB by
+	// the service, which reports which document was too big.
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadRequestBytes)
+	err := r.ParseMultipartForm(maxUploadRequestBytes)
 	if err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse multipart form: Payload too large or malformed")
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse upload: the documents are too large (12MB total) or the form is malformed")
 		return
 	}
 
@@ -199,10 +203,14 @@ func (h *Handler) handleGetApplication(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleUpdateApplication(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 15<<20)
-	err := r.ParseMultipartForm(15 << 20)
+	// 12MB for the whole request, matching the event-document and cover paths
+	// (and nginx's client_max_body_size). Note this is the COMBINED size of
+	// every document in the request; each individual file is capped at 10MB by
+	// the service, which reports which document was too big.
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadRequestBytes)
+	err := r.ParseMultipartForm(maxUploadRequestBytes)
 	if err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse multipart form: Payload too large or malformed")
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse upload: the documents are too large (12MB total) or the form is malformed")
 		return
 	}
 
@@ -516,8 +524,8 @@ func (h *Handler) handleUploadEventCover(w http.ResponseWriter, r *http.Request)
 
 	// 12MB reader leaves headroom over the service's 10MB file cap for
 	// multipart framing.
-	r.Body = http.MaxBytesReader(w, r.Body, 12<<20)
-	if err := r.ParseMultipartForm(12 << 20); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadRequestBytes)
+	if err := r.ParseMultipartForm(maxUploadRequestBytes); err != nil {
 		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse upload: file too large or malformed")
 		return
 	}
@@ -1392,8 +1400,8 @@ func (h *Handler) handleUploadEventDocument(w http.ResponseWriter, r *http.Reque
 
 	// One document per request, keyed by its type. The 12MB reader leaves headroom
 	// over the service's 10MB file cap for multipart framing.
-	r.Body = http.MaxBytesReader(w, r.Body, 12<<20)
-	if err := r.ParseMultipartForm(12 << 20); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadRequestBytes)
+	if err := r.ParseMultipartForm(maxUploadRequestBytes); err != nil {
 		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse upload: file too large or malformed")
 		return
 	}

@@ -77,6 +77,9 @@ func (s *OrganizerService) Apply(ctx context.Context, userID int, req ApplyReque
 
 	var docModels []*OrganizerDocument
 	for _, doc := range docs {
+		if err := validateDocumentUpload(doc); err != nil {
+			return nil, err
+		}
 		contentType := http.DetectContentType(doc.Content)
 		if !s.isValidDocumentType(contentType) {
 			return nil, fmt.Errorf("%w: invalid format for %s (must be PDF, PNG, or JPG)", ErrValidation, doc.Type)
@@ -180,6 +183,9 @@ func (s *OrganizerService) UpdateApplication(ctx context.Context, userID int, re
 
 	var docModels []*OrganizerDocument
 	for _, doc := range newDocs {
+		if err := validateDocumentUpload(doc); err != nil {
+			return nil, err
+		}
 		contentType := http.DetectContentType(doc.Content)
 		if !s.isValidDocumentType(contentType) {
 			return nil, fmt.Errorf("%w: invalid format for %s (must be PDF, PNG, or JPG)", ErrValidation, doc.Type)
@@ -235,6 +241,20 @@ func (s *OrganizerService) DeleteApplication(ctx context.Context, userID int) er
 	return s.repo.Delete(ctx, app.ID)
 }
 
+// validateDocumentUpload enforces the per-file rules on an account-level
+// application document. The event-document path had these checks from the
+// start; this path only ever sniffed the content type, so a single file was
+// bounded by nothing but the whole-request cap.
+func validateDocumentUpload(doc *DocumentUpload) error {
+	if len(doc.Content) == 0 {
+		return fmt.Errorf("%w: %s file is empty", ErrValidation, doc.Type)
+	}
+	if len(doc.Content) > maxDocumentBytes {
+		return fmt.Errorf("%w: %s exceeds the 10MB limit", ErrValidation, doc.Type)
+	}
+	return nil
+}
+
 func (s *OrganizerService) isValidDocumentType(contentType string) bool {
 	return contentType == "application/pdf" ||
 		contentType == "image/jpeg" ||
@@ -246,9 +266,16 @@ func (s *OrganizerService) isValidDocumentType(contentType string) bool {
 // Per-event documents
 // ============================================================================
 
-// maxEventDocumentBytes caps a single upload. Documents are scans of paperwork,
-// not media; 10MB is generous for a multi-page PDF.
-const maxEventDocumentBytes = 10 << 20
+// maxDocumentBytes caps a SINGLE uploaded file. Documents are scans of
+// paperwork, not media; 10MB is generous for a multi-page PDF. Applies to both
+// account-level application documents (KTP/NPWP/NIB) and per-event documents.
+const maxDocumentBytes = 10 << 20
+
+// maxUploadRequestBytes caps a whole multipart request. Deliberately only 2MB
+// above the per-file cap: it is headroom for multipart framing, not room for
+// several 10MB files. It must stay <= nginx's client_max_body_size, or oversized
+// uploads die at the proxy with an HTML 413 instead of a readable 422.
+const maxUploadRequestBytes = 12 << 20
 
 // eventDocumentURLTTL is how long a minted view link stays valid.
 //
@@ -305,7 +332,7 @@ func (s *OrganizerService) UploadEventDocument(ctx context.Context, eventID int,
 	if len(upload.Content) == 0 {
 		return nil, fmt.Errorf("%w: %s file is empty", ErrValidation, EventDocumentLabel(docType))
 	}
-	if len(upload.Content) > maxEventDocumentBytes {
+	if len(upload.Content) > maxDocumentBytes {
 		return nil, fmt.Errorf("%w: %s exceeds the 10MB limit", ErrValidation, EventDocumentLabel(docType))
 	}
 
