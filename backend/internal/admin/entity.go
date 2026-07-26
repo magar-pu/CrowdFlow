@@ -1,5 +1,7 @@
 package admin
 
+import "time"
+
 // NOTE: JSON field names in this package intentionally use camelCase (not the
 // snake_case convention used by the public event/auth APIs) because they mirror
 // frontend/src/types/admin.ts exactly - that admin frontend was already built
@@ -145,6 +147,26 @@ type EventStatusLogEntry struct {
 	CreatedAt  string `json:"createdAt"`
 }
 
+// Notification mirrors auditor.AuditorNotification field-for-field so the two
+// consoles' header bells can share one frontend shape. Both read the same
+// `notifications` table; Super Admins already receive rows from
+// auditor.CreateNotificationForAuditors, which targets role_name IN
+// ('Auditor', 'Super Admin').
+type Notification struct {
+	ID           int       `json:"id"`
+	UserID       int       `json:"userId"`
+	Title        string    `json:"title"`
+	Detail       string    `json:"detail"`
+	ResourceType string    `json:"resourceType"`
+	ResourceID   string    `json:"resourceId"`
+	IsRead       bool      `json:"isRead"`
+	CreatedAt    time.Time `json:"createdAt"`
+}
+
+type MarkNotificationsReadRequest struct {
+	NotificationIDs []int `json:"notificationIds"`
+}
+
 type Repository interface {
 	GetDashboardStats() (*DashboardStats, error)
 	ListEvents(limit, offset int) ([]*Event, error)
@@ -167,6 +189,8 @@ type Repository interface {
 	ProcessPayout(payoutID string, actorID int) error
 	RejectPayout(payoutID string, actorID int) error
 	ListActivities() ([]*Activity, error)
+	ListNotifications(userID int) ([]*Notification, error)
+	MarkNotificationsRead(userID int, notificationIDs []int) error
 }
 
 type Service interface {
@@ -191,6 +215,8 @@ type Service interface {
 	ProcessPayout(payoutID string, actorID int) error
 	RejectPayout(payoutID string, actorID int) error
 	ListActivities() ([]*Activity, error)
+	ListNotifications(userID int) ([]*Notification, error)
+	MarkNotificationsRead(userID int, notificationIDs []int) error
 
 	// Placeholder-backed - see service.go
 	ListScanners(eventID int) ([]*Scanner, error)

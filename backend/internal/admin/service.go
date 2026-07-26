@@ -139,6 +139,14 @@ func (s *AdminService) ListActivities() ([]*Activity, error) {
 	return s.repo.ListActivities()
 }
 
+func (s *AdminService) ListNotifications(userID int) ([]*Notification, error) {
+	return s.repo.ListNotifications(userID)
+}
+
+func (s *AdminService) MarkNotificationsRead(userID int, notificationIDs []int) error {
+	return s.repo.MarkNotificationsRead(userID, notificationIDs)
+}
+
 // ---------------------------------------------------------------------------
 // PLACEHOLDERS - no backing tables exist yet for the features below.
 //

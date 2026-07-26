@@ -916,6 +916,67 @@ func (r *PostgresRepository) ListActivities() ([]*Activity, error) {
 	return activities, nil
 }
 
+func (r *PostgresRepository) ListNotifications(userID int) ([]*Notification, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, user_id, title, detail, COALESCE(resource_type, ''), COALESCE(resource_id, ''), is_read, created_at
+		FROM notifications
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+		LIMIT 100
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	notifications := []*Notification{}
+	for rows.Next() {
+		var n Notification
+		if err := rows.Scan(&n.ID, &n.UserID, &n.Title, &n.Detail, &n.ResourceType, &n.ResourceID, &n.IsRead, &n.CreatedAt); err != nil {
+			return nil, err
+		}
+		notifications = append(notifications, &n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return notifications, nil
+}
+
+// MarkNotificationsRead marks the given ids read, or every unread row for the
+// user when the list is empty (the header's "opened the bell" case). user_id is
+// always in the WHERE clause, so an id belonging to someone else is a no-op
+// rather than a cross-user write.
+func (r *PostgresRepository) MarkNotificationsRead(userID int, notificationIDs []int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	if len(notificationIDs) == 0 {
+		_, err := r.db.ExecContext(ctx, `
+			UPDATE notifications SET is_read = TRUE
+			WHERE user_id = $1 AND is_read = FALSE
+		`, userID)
+		return err
+	}
+
+	query := `UPDATE notifications SET is_read = TRUE WHERE user_id = $1 AND id IN (`
+	args := []interface{}{userID}
+	for i, id := range notificationIDs {
+		if i > 0 {
+			query += ", "
+		}
+		query += fmt.Sprintf("$%d", i+2)
+		args = append(args, id)
+	}
+	query += ")"
+
+	_, err := r.db.ExecContext(ctx, query, args...)
+	return err
+}
+
 func (r *PostgresRepository) ListEventStatusLog(eventID int) ([]*EventStatusLogEntry, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

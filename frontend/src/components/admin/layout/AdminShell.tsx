@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { AdminDataProvider, useAdminData } from "@/app/(console)/admin/AdminDataContext";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
+import MobileNavDrawer from "./MobileNavDrawer";
 import MobileAdminBottomNav from "./MobileAdminBottomNav";
 
 type AdminView =
@@ -38,6 +39,20 @@ function viewFromSegments(segments: string[]): AdminView {
   return 'dashboard';
 }
 
+// Header titles, mirroring the auditor shell's SECTION_TITLES/DETAIL_TITLES
+// split: a detail route (e.g. /admin/events/12) names the record being worked
+// on rather than repeating the list's title.
+const SECTION_TITLES: Record<AdminView, string> = {
+  dashboard: 'Dashboard',
+  analytics: 'Platform Analytics',
+  events: 'Event Management',
+  users: 'User Management',
+  finance: 'Finance Center',
+  settings: 'Global Settings',
+  workspace: 'Event Workspace',
+  'create-event': 'Create Event',
+};
+
 const ROUTE_MAP: Record<AdminView, string> = {
   dashboard: '/admin',
   analytics: '/admin/analytics',
@@ -52,13 +67,16 @@ const ROUTE_MAP: Record<AdminView, string> = {
 function ShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { pendingVerificationsCount, securityAlerts, clearAlert } = useAdminData();
+  const { pendingVerificationsCount } = useAdminData();
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const currentView = viewFromSegments(parseSegments(pathname));
+  const title = SECTION_TITLES[currentView];
 
   const setView = (view: AdminView) => {
+    setIsMobileMenuOpen(false);
     router.push(ROUTE_MAP[view] ?? '/admin');
   };
 
@@ -72,6 +90,14 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         isCollapsed={isSidebarCollapsed}
         onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
       />
+      <MobileNavDrawer
+        isOpen={isMobileMenuOpen}
+        onClose={() => setIsMobileMenuOpen(false)}
+        currentView={currentView}
+        onViewChange={setView}
+        pendingVerificationsCount={pendingVerificationsCount}
+      />
+
       <MobileAdminBottomNav
         currentView={currentView}
         pendingVerificationsCount={pendingVerificationsCount}
@@ -81,11 +107,15 @@ function ShellInner({ children }: { children: React.ReactNode }) {
       {/* 2. Main Right Operations Container */}
       <div
         className={`flex min-h-screen w-full flex-1 flex-col bg-surface transition-[padding] duration-300 ${
-          isSidebarCollapsed ? "md:pl-[88px]" : "md:pl-[280px]"
+          isSidebarCollapsed ? "lg:pl-[88px]" : "lg:pl-[280px]"
         }`}
       >
-        {/* Global Header Search & Alerts popover */}
-        <Header alerts={securityAlerts} onClearAlert={clearAlert} />
+        {/* Global Header: section title, notifications, identity */}
+        <Header
+          title={title}
+          subtitle="CROWDFLOW ADMIN"
+          onOpenMenu={() => setIsMobileMenuOpen(true)}
+        />
 
         {/* Core dynamic content main frame */}
         <main className="mx-auto w-full max-w-[1440px] flex-1 overflow-y-auto px-4 pb-28 pt-5 sm:px-6 md:p-8">
