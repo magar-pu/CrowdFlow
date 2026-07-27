@@ -81,3 +81,5 @@ create_event.sh
 
 .claude.json
 *.png
+
+.obsidian/

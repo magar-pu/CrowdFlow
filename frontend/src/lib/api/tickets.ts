@@ -59,3 +59,45 @@ export async function completeOrderPayment(orderId: string): Promise<ApiResponse
     body: JSON.stringify({ orderId }),
   });
 }
+
+export interface TicketVaultDataResponse {
+  ticketId: string;
+  eventId: number;
+  eventName: string;
+  tierName: string;
+  attendeeFullName: string;
+  attendeeEmail: string;
+  seatLabel: string;
+  ticketStatus: string;
+  secretKey: string;
+  eventEndTime: string;
+}
+
+/**
+ * Request OTP via email for high-friction ticket vault access
+ */
+export async function requestTicketOTP(ticketId: string, email?: string): Promise<ApiResponse<{ message: string; debugOtp?: string }>> {
+  return apiRequest<{ message: string; debugOtp?: string }>(`/api/v1/tickets/${ticketId}/request-otp`, {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+/**
+ * Verify OTP code for ticket vault access
+ */
+export async function verifyTicketOTP(ticketId: string, otpCode: string, email?: string): Promise<ApiResponse<{ verified: boolean; vaultToken: string; message: string }>> {
+  return apiRequest<{ verified: boolean; vaultToken: string; message: string }>(`/api/v1/tickets/${ticketId}/verify-otp`, {
+    method: "POST",
+    body: JSON.stringify({ otpCode, email }),
+  });
+}
+
+/**
+ * Fetch secret key & metadata to vault ticket offline
+ */
+export async function getTicketVaultData(ticketId: string): Promise<ApiResponse<TicketVaultDataResponse>> {
+  return apiRequest<TicketVaultDataResponse>(`/api/v1/tickets/${ticketId}/vault`, {
+    method: "GET",
+  });
+}

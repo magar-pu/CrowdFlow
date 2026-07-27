@@ -7,10 +7,11 @@
  * and PDF export are backend/Go concerns, not implemented here yet.
  */
 
-import { Wallet, Download, Share2, Tag } from "lucide-react";
+import { Smartphone, Download, Share2, Tag } from "lucide-react";
 
 interface TicketActionsProps {
-  on_add_to_wallet: () => void;
+  on_add_to_wallet?: () => void;
+  on_add_shortcut?: () => void;
   on_download_pdf: () => void;
   on_share: () => void;
   on_resell_ticket?: () => void;
@@ -20,22 +21,27 @@ interface TicketActionsProps {
 
 export function TicketActions({
   on_add_to_wallet,
+  on_add_shortcut,
   on_download_pdf,
   on_share,
   on_resell_ticket,
   on_cancel_resale,
   is_listed = false,
 }: TicketActionsProps) {
+  const handleShortcutClick = on_add_shortcut || on_add_to_wallet || (() => {
+    alert("📱 Add Shortcut to Home Screen:\n\n1. Tap your browser menu (3 dots or Share icon).\n2. Tap 'Add to Home Screen'.\n3. Access your CrowdFlow ticket in 1 tap!");
+  });
+
   return (
     <>
       <div className="mt-8 flex w-full max-w-[420px] flex-col gap-3">
         <button
           type="button"
-          onClick={on_add_to_wallet}
+          onClick={handleShortcutClick}
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#000000] py-3.5 font-label-md text-label-md text-surface-white shadow-sm transition-colors hover:bg-[#111111]"
         >
-          <Wallet size={20} />
-          Add to Apple Wallet
+          <Smartphone size={20} />
+          Add Shortcut to Home Screen
         </button>
         <button
           type="button"
