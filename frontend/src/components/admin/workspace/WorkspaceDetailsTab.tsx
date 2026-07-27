@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { Lock, Sparkles, MapPin, Percent, Save, History } from 'lucide-react';
 import { Event, Venue, EventType, EventStatusLogEntry } from '@/types/admin';
 import { getEvent, updateEvent, listVenues, listEventTypes, listEventStatusLog } from '@/lib/api/admin/eventService';
+import Select from '@/components/ui/Select';
 
 const STATUS_LABEL: Record<EventStatusLogEntry['toStatus'], string> = {
   draft: 'Draft',
@@ -196,14 +197,14 @@ export default function WorkspaceDetailsTab({ event, onSaved }: WorkspaceDetails
 
               <div>
                 <label className={labelClass}>Category</label>
-                <select className={inputClass} {...register('event_type_id')}>
+                <Select selectSize="md" invalid={!!errors.event_type_id} {...register('event_type_id')}>
                   <option value="">Select a category</option>
                   {eventTypes.map((t) => (
                     <option key={t.event_type_id} value={t.event_type_id}>
                       {t.event_type}
                     </option>
                   ))}
-                </select>
+                </Select>
                 {errors.event_type_id && <p className={errorClass}>{errors.event_type_id.message}</p>}
               </div>
 
@@ -226,14 +227,14 @@ export default function WorkspaceDetailsTab({ event, onSaved }: WorkspaceDetails
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <label className={labelClass}>Venue</label>
-                <select className={inputClass} {...register('venue_id')}>
+                <Select selectSize="md" invalid={!!errors.venue_id} {...register('venue_id')}>
                   <option value="">Select a venue</option>
                   {venues.map((v) => (
                     <option key={v.venue_id} value={v.venue_id}>
                       {v.name} — {v.city}, {v.province}
                     </option>
                   ))}
-                </select>
+                </Select>
                 {errors.venue_id && <p className={errorClass}>{errors.venue_id.message}</p>}
               </div>
 

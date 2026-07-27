@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { ArrowLeft, Sparkles, MapPin, Percent, ImageIcon, FileText, CheckCircle } from 'lucide-react';
 import { Venue, EventType } from '@/types/admin';
 import { listVenues, listEventTypes, createEvent } from '@/lib/api/admin/eventService';
+import Select from '@/components/ui/Select';
 
 interface CreateEventViewProps {
   onBack: () => void;
@@ -186,14 +187,14 @@ export default function CreateEventView({ onBack, onCreated }: CreateEventViewPr
 
             <div>
               <label className={labelClass}>Category</label>
-              <select className={inputClass} disabled={pickersLoading} {...register('event_type_id')}>
+              <Select selectSize="md" invalid={!!errors.event_type_id} disabled={pickersLoading} {...register('event_type_id')}>
                 <option value="">{pickersLoading ? 'Loading categories...' : 'Select a category'}</option>
                 {eventTypes.map((t) => (
                   <option key={t.event_type_id} value={t.event_type_id}>
                     {t.event_type}
                   </option>
                 ))}
-              </select>
+              </Select>
               {errors.event_type_id && <p className={errorClass}>{errors.event_type_id.message}</p>}
             </div>
 
@@ -218,14 +219,14 @@ export default function CreateEventView({ onBack, onCreated }: CreateEventViewPr
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <label className={labelClass}>Venue</label>
-              <select className={inputClass} disabled={pickersLoading} {...register('venue_id')}>
+              <Select selectSize="md" invalid={!!errors.venue_id} disabled={pickersLoading} {...register('venue_id')}>
                 <option value="">{pickersLoading ? 'Loading venues...' : 'Select a venue'}</option>
                 {venues.map((v) => (
                   <option key={v.venue_id} value={v.venue_id}>
                     {v.name} — {v.city}, {v.province}
                   </option>
                 ))}
-              </select>
+              </Select>
               {errors.venue_id && <p className={errorClass}>{errors.venue_id.message}</p>}
             </div>
 

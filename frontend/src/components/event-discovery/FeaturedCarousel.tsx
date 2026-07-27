@@ -38,8 +38,8 @@ export function FeaturedCarousel({ events }: FeaturedCarouselProps) {
       <div className="mx-auto max-w-7xl w-full px-margin-mobile md:px-margin-desktop">
         <div className="mb-8 flex items-end justify-between">
           <div>
-            <span className="mb-2 block font-label-md text-label-md uppercase tracking-widest text-secondary">
-              Editor&apos;s Choice
+            <span className="mb-2 block font-label-md text-label-md uppercase tracking-widest text-secondary font-bold">
+              Featured Events
             </span>
             <h2 className="font-headline-lg text-headline-lg text-text-primary">
               Most Popular Events This Week
@@ -84,11 +84,6 @@ export function FeaturedCarousel({ events }: FeaturedCarouselProps) {
                 />
                 <div className="absolute inset-x-0 bottom-0 z-20 flex items-end justify-between p-6 md:p-10">
                   <div className="max-w-xl">
-                    <span
-                      className={`mb-4 inline-block rounded-full px-3 py-1 font-label-sm text-label-sm text-white ${TAG_COLOR_CLASS[event.tag_color]}`}
-                    >
-                      {event.tag_label}
-                    </span>
                     <h3 className="mb-2 font-headline-xl text-headline-xl text-white">
                       {event.title}
                     </h3>

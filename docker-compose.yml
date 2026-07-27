@@ -9,6 +9,8 @@ services:
     restart: always
     networks:
       - crowdflow-net
+    env_file:
+      - ./frontend/.env
     environment:
       - NODE_ENV=production
       - BACKEND_URL=http://backend:8080

@@ -18,6 +18,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Select from "@/components/ui/Select";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -34,7 +35,7 @@ import { listLayouts, createLayout, type LayoutSummary } from "@/lib/api/venueLa
 
 const labelClass = "text-[10px] font-mono font-bold text-text-secondary uppercase";
 const inputClass =
-  "w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none focus:border-outline disabled:opacity-50";
+  "w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none focus:border-outline disabled:opacity-50";
 
 export default function VenueDesignerSelectorPage() {
   const router = useRouter();
@@ -183,11 +184,10 @@ export default function VenueDesignerSelectorPage() {
                 <label className={labelClass} htmlFor="designer-venue-select">
                   Select venue
                 </label>
-                <select
+                <Select
                   id="designer-venue-select"
                   value={selectedVenueId ?? ""}
                   onChange={(e) => onSelectVenue(Number(e.target.value))}
-                  className={`${inputClass} cursor-pointer`}
                 >
                   {venues.map((v) => (
                     <option key={v.venue_id} value={v.venue_id}>
@@ -195,7 +195,7 @@ export default function VenueDesignerSelectorPage() {
                       {v.city ? ` — ${v.city}` : ""}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             )}
           </section>

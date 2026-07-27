@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Search } from 'lucide-react';
 import { listOrders, OrganizerOrder } from '@/lib/api/eorganizer';
+import Select from '@/components/ui/Select';
 
 export default function OrdersView() {
   const [orders, setOrders] = useState<OrganizerOrder[]>([]);
@@ -48,16 +49,12 @@ export default function OrdersView() {
         </div>
 
         <div className="flex gap-2">
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="border border-border-subtle rounded-lg px-3 py-2 text-xs font-semibold text-text-primary bg-white outline-none cursor-pointer"
-          >
+          <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
             <option value="ALL">Status: All</option>
             <option value="PAID">Paid</option>
             <option value="PENDING">Pending</option>
             <option value="FAILED">Failed</option>
-          </select>
+          </Select>
         </div>
       </div>
 

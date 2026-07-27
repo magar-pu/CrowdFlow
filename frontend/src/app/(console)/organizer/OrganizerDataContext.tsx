@@ -65,13 +65,74 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
 
   const fetchData = async () => {
     setIsLoading(true);
-    const [eventsRes, dashRes] = await Promise.all([
-      listOrganizerEvents(),
+    const [eventsRes, archivedRes, dashRes] = await Promise.all([
+      listOrganizerEvents(false),
+      listOrganizerEvents(true),
       getDashboardData(),
     ]);
 
-    if (eventsRes.success && eventsRes.data) {
-      const mappedEvents: EventItem[] = eventsRes.data.map(e => ({
+    const activeList = eventsRes.success && eventsRes.data ? eventsRes.data.map(e => ({
+      id: e.id,
+      name: e.name,
+      category: e.category,
+      description: e.description,
+      date: e.date,
+      startDate: e.startDate,
+      startTime: e.startTime,
+      endDate: e.endDate,
+      endTime: e.endTime,
+      venueId: e.venueId,
+      location: e.location,
+      locationAddress: e.locationAddress,
+      venueName: e.venueName,
+      venueCity: e.venueCity,
+      capacity: e.capacity,
+      sold: e.sold,
+      revenue: e.revenue,
+      status: e.status as EventItem["status"],
+      image: e.image,
+    })) : [];
+
+    const archivedList = archivedRes.success && archivedRes.data ? archivedRes.data.map(e => ({
+      id: e.id,
+      name: e.name,
+      category: e.category,
+      description: e.description,
+      date: e.date,
+      startDate: e.startDate,
+      startTime: e.startTime,
+      endDate: e.endDate,
+      endTime: e.endTime,
+      venueId: e.venueId,
+      location: e.location,
+      locationAddress: e.locationAddress,
+      venueName: e.venueName,
+      venueCity: e.venueCity,
+      capacity: e.capacity,
+      sold: e.sold,
+      revenue: e.revenue,
+      status: e.status as EventItem["status"],
+      image: e.image,
+    })) : [];
+
+    setEvents([...activeList, ...archivedList]);
+
+    if (dashRes.success && dashRes.data) {
+      setDashboardData(dashRes.data);
+    }
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    Promise.all([
+      listOrganizerEvents(false),
+      listOrganizerEvents(true),
+      getDashboardData(),
+    ]).then(([eventsRes, archivedRes, dashRes]) => {
+      if (!isMounted) return;
+
+      const activeList = eventsRes.success && eventsRes.data ? eventsRes.data.map(e => ({
         id: e.id,
         name: e.name,
         category: e.category,
@@ -91,18 +152,40 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
         revenue: e.revenue,
         status: e.status as EventItem["status"],
         image: e.image,
-      }));
-      setEvents(mappedEvents);
-    }
+      })) : [];
 
-    if (dashRes.success && dashRes.data) {
-      setDashboardData(dashRes.data);
-    }
-    setIsLoading(false);
-  };
+      const archivedList = archivedRes.success && archivedRes.data ? archivedRes.data.map(e => ({
+        id: e.id,
+        name: e.name,
+        category: e.category,
+        description: e.description,
+        date: e.date,
+        startDate: e.startDate,
+        startTime: e.startTime,
+        endDate: e.endDate,
+        endTime: e.endTime,
+        venueId: e.venueId,
+        location: e.location,
+        locationAddress: e.locationAddress,
+        venueName: e.venueName,
+        venueCity: e.venueCity,
+        capacity: e.capacity,
+        sold: e.sold,
+        revenue: e.revenue,
+        status: e.status as EventItem["status"],
+        image: e.image,
+      })) : [];
 
-  useEffect(() => {
-    fetchData();
+      setEvents([...activeList, ...archivedList]);
+      if (dashRes.success && dashRes.data) {
+        setDashboardData(dashRes.data);
+      }
+      setIsLoading(false);
+    });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const [ticketTiers, setTicketTiers] = useState<TicketTier[]>(() => {

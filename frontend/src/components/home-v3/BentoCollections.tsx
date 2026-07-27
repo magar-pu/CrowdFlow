@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
 export function BentoCollections() {
@@ -14,9 +15,12 @@ export function BentoCollections() {
           Whether you're a music fan, art enthusiast, theater lover, or sports supporter — we have the right event for you. Discover collections tailored to your interests.
         </p>
         <div>
-          <button className="bg-surface-container-low text-on-surface px-6 py-3 rounded-xl text-sm font-bold tracking-wide hover:bg-surface-container-high transition-colors flex items-center gap-2">
+          <Link
+            href="/events"
+            className="inline-flex bg-surface-container-low text-on-surface px-6 py-3 rounded-xl text-sm font-bold tracking-wide hover:bg-surface-container-high transition-colors items-center gap-2"
+          >
             Explore Collections <ArrowRight size={18} />
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -24,7 +28,10 @@ export function BentoCollections() {
       <div className="md:col-span-8 grid grid-cols-1 md:grid-cols-3 gap-4">
 
         {/* Tall Image */}
-        <div className="md:row-span-2 col-span-1 rounded-xl overflow-hidden relative group h-48 md:h-auto">
+        <Link
+          href="/events?q=Music"
+          className="md:row-span-2 col-span-1 rounded-xl overflow-hidden relative group h-48 md:h-auto block cursor-pointer"
+        >
           <img
             alt="Music Festivals"
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
@@ -33,12 +40,15 @@ export function BentoCollections() {
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
           <div className="absolute bottom-6 left-6">
             <h4 className="font-display text-white text-xl font-bold mb-1">Music Festivals</h4>
-            <p className="text-white/80 text-xs">Outdoor concerts & rave parties</p>
+            <p className="text-white/80 text-xs">Outdoor concerts & live performances</p>
           </div>
-        </div>
+        </Link>
 
         {/* Wide Image */}
-        <div className="col-span-1 md:col-span-2 rounded-xl overflow-hidden relative group h-48 md:h-60">
+        <Link
+          href="/events?q=Sports"
+          className="col-span-1 md:col-span-2 rounded-xl overflow-hidden relative group h-48 md:h-60 block cursor-pointer"
+        >
           <img
             alt="Sports Tournaments"
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
@@ -49,10 +59,13 @@ export function BentoCollections() {
             <h4 className="font-display text-white text-xl font-bold mb-1">Sports Tournaments</h4>
             <p className="text-white/80 text-xs">Support your favorite teams live</p>
           </div>
-        </div>
+        </Link>
 
         {/* Square Image 1 */}
-        <div className="rounded-xl overflow-hidden relative group h-48">
+        <Link
+          href="/events?q=Exhibition"
+          className="rounded-xl overflow-hidden relative group h-48 block cursor-pointer"
+        >
           <img
             alt="Art Exhibitions"
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
@@ -63,21 +76,24 @@ export function BentoCollections() {
             <h4 className="font-display text-white text-lg font-bold mb-1">Art Exhibitions</h4>
             <p className="text-white/80 text-xs">Local & world artist masterpieces</p>
           </div>
-        </div>
+        </Link>
 
         {/* Square Image 2 */}
-        <div className="rounded-xl overflow-hidden relative group h-48">
+        <Link
+          href="/events?q=Conference"
+          className="rounded-xl overflow-hidden relative group h-48 block cursor-pointer"
+        >
           <img
-            alt="Theater & Drama"
+            alt="Conferences & Tech"
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-            src="https://images.unsplash.com/photo-1503095396549-807759245b35?q=80&w=600&auto=format&fit=crop"
+            src="https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=600&auto=format&fit=crop"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"></div>
           <div className="absolute bottom-6 left-6">
-            <h4 className="font-display text-white text-lg font-bold mb-1">Theater & Drama</h4>
-            <p className="text-white/80 text-xs">Epic stage performances</p>
+            <h4 className="font-display text-white text-lg font-bold mb-1">Conferences & Tech</h4>
+            <p className="text-white/80 text-xs">Keynotes, summits & workshops</p>
           </div>
-        </div>
+        </Link>
 
       </div>
     </section>

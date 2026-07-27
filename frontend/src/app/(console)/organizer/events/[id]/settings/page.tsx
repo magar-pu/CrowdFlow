@@ -9,6 +9,7 @@ import {
   updateOrganizerEvent,
   withdrawOrganizerEvent,
   archiveOrganizerEvent,
+  unarchiveOrganizerEvent,
 } from "@/lib/api/eorganizer";
 
 // Cover art is locked only while an auditor holds the event: swapping the image
@@ -52,6 +53,7 @@ export default function OrganizerEventSettingsPage() {
     return false;
   };
 
+  const isArchived = event?.status === "Archived";
   // The backend only deletes drafts; anything submitted has an audit trail.
   const canDelete = event?.status === "Draft";
   // "In Review" is how the console renders pending_review. Withdrawal is also
@@ -59,7 +61,7 @@ export default function OrganizerEventSettingsPage() {
   // know — the 409 is surfaced as a toast.
   const canWithdraw = event?.status === "In Review";
   // Mirrors the server rule: terminal events only.
-  const canArchive = event?.status === "Draft" || event?.status === "Rejected";
+  const canArchive = !isArchived && (event?.status === "Draft" || event?.status === "Rejected");
   const coverReadOnly = COVER_LOCKED_STATUSES.has((event?.status ?? "").toLowerCase());
 
   const handleDeleteEvent = async () => {
@@ -90,13 +92,22 @@ export default function OrganizerEventSettingsPage() {
     const res = await archiveOrganizerEvent(eventId);
     if (res.success) {
       pushToast("Event archived. Find it under Archived on the Events page.", "success");
-      // The event has just left the active list this page reads from, so
-      // staying here would render an empty workspace.
       await fetchData();
       router.push("/organizer/events");
       return true;
     }
     pushToast(res.error?.message ?? "Failed to archive event", "warning");
+    return false;
+  };
+
+  const handleUnarchiveEvent = async () => {
+    const res = await unarchiveOrganizerEvent(eventId);
+    if (res.success) {
+      pushToast("Event restored to your active list", "success");
+      await fetchData();
+      return true;
+    }
+    pushToast(res.error?.message ?? "Failed to restore event", "warning");
     return false;
   };
 
@@ -117,7 +128,9 @@ export default function OrganizerEventSettingsPage() {
           canDelete={canDelete}
           onWithdrawEvent={handleWithdrawEvent}
           canWithdraw={canWithdraw}
+          isArchived={isArchived}
           onArchiveEvent={handleArchiveEvent}
+          onUnarchiveEvent={handleUnarchiveEvent}
           canArchive={canArchive}
           coverReadOnly={coverReadOnly}
           onCoverUploaded={fetchData}

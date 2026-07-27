@@ -26,8 +26,6 @@ export interface OrganizerVerification {
   lastActivity: string;
   province: string;
   businessType: string;
-  riskScore: number; // 0-100
-  riskCategory: 'Low' | 'Medium' | 'High' | 'Critical';
   
   // Company details
   companyType: string;
@@ -68,15 +66,6 @@ export interface OrganizerVerification {
     phoneVerified: boolean;
   };
   
-  // Risk assessment parameters
-  riskAssessment: {
-    identityMatch: boolean;
-    companyValidation: boolean;
-    fraudHistory: boolean;
-    duplicateAccount: boolean;
-    suspiciousActivity: boolean;
-  };
-  
   // Notes
   internalNotes: string;
   organizerFeedback: string;
@@ -111,14 +100,15 @@ export interface PayoutRequest {
   eventName: string;
   eventDate: string;
   venue: string;
-  completionStatus: 'Completed' | 'Ongoing' | 'Cancelled';
+  // Empty when the payout API does not report the event's completion state,
+  // which it currently never does. Rendered as "Not provided" rather than
+  // being defaulted to 'Completed'.
+  completionStatus: 'Completed' | 'Ongoing' | 'Cancelled' | '';
   revenue: number;
   netRevenue: number;
   requestedAmount: number;
   requestDate: string;
   status: PayoutStatus;
-  riskLevel: RiskLevel;
-  riskScore: number; // 0-100
   currentAuditor: string;
 
   // Organizer profile (denormalized from Organizer Verification module)
@@ -219,8 +209,6 @@ export const PAYOUT_REJECTION_REASONS = [
 
 export type ReviewStage = 'Submitted' | 'Document Verification' | 'Event Validation' | 'Final Approval';
 
-export type RiskLevel = 'Low' | 'Medium' | 'High' | 'Critical';
-
 export interface ChecklistItem {
   label: string;
   done: boolean;
@@ -258,7 +246,13 @@ export interface ReviewDocument {
 }
 
 export interface OrganizerDetail {
+  /** organizer_applications.id — 0 when the organizer has no application row. */
+  applicationId: number;
   companyName: string;
+  /**
+   * Not a licence number: no such column exists. The backend reports the
+   * verification state of the organizer's NIB/SIUP document here.
+   */
   businessLicense: string;
   pic: string;
   email: string;
@@ -278,27 +272,16 @@ export interface VenueDetail {
   checklist: ChecklistItem[];
 }
 
-export interface Vendor {
-  name: string;
-  category: 'Stage' | 'Lighting' | 'Sound' | 'Food' | 'Merchandise' | 'Cleaning' | 'Security';
-  status: 'Verified' | 'Pending' | 'Rejected';
-  contact: string;
-}
-
-export interface LogisticsDetail {
-  vendorCount: number;
-  securityCount: number;
-  medicalTeam: number;
-  emergencyTeam: number;
-  vendors: Vendor[];
-  emergencyPlan: ChecklistItem[];
-}
-
 export interface TicketTier {
-  category: 'VVIP' | 'VIP' | 'Festival' | 'Regular';
+  /** Free-text tier name from ticket_tiers, not a fixed vocabulary. */
+  category: string;
   price: number;
+  /** Real sellable capacity: painted seats for a seated tier, else allocation_limit. */
   seats: number;
-  status: 'Active' | 'Sold Out' | 'Pending';
+  sold: number;
+  /** True when stock comes from event_seats_matrix rather than allocation_limit. */
+  assignedSeating: boolean;
+  status: 'Active' | 'Sold Out' | 'Pending' | 'Available';
 }
 
 export interface FinanceDetail {
@@ -307,24 +290,18 @@ export interface FinanceDetail {
   gatewayFee: number;
   taxAmount: number;
   netPayout: number;
+  /** events.entertainment_tax_rate — the only per-event tax figure stored. */
+  taxRate: number;
   ticketTiers: TicketTier[];
-  taxConfig: {
-    entertainmentTax: number;
-    ppn: number;
-    region: string;
-    taxPercentage: number;
-    regionMatch: boolean;
-    taxApplied: boolean;
-    ppnApplied: boolean;
-  };
   payout: {
     bank: string;
     accountName: string;
     accountNumber: string;
     verified: boolean;
     estimatedPayout: number;
+    /** False when the organizer has provided no bank details at all. */
+    hasAccount: boolean;
   };
-  complianceChecklist: ChecklistItem[];
 }
 
 export interface ActivityEntry {
@@ -387,18 +364,20 @@ export const LOGISTICS_SECTIONS = [
   'Vendor', 'Security', 'Medical Team', 'Emergency Plan', 'Equipment', 'Stage', 'Lighting', 'Sound',
 ] as const;
 
+// These strings are sent to the organizer verbatim as the rejection reason, so
+// they must match the language of the rest of the console.
 export const DOCUMENT_REJECTION_REASONS = [
-  'Dokumen buram',
-  'Dokumen kadaluarsa',
-  'Dokumen tidak lengkap',
-  'Informasi tidak sesuai',
-  'Nama perusahaan berbeda',
-  'Tanggal tidak valid',
-  'Tidak ada tanda tangan',
-  'Tidak ada stempel resmi',
-  'Format salah',
-  'Dokumen palsu / mencurigakan',
-  'Lainnya',
+  'Document is blurry',
+  'Document has expired',
+  'Document is incomplete',
+  'Information does not match',
+  'Company name differs',
+  'Invalid date',
+  'Missing signature',
+  'Missing official stamp',
+  'Wrong file format',
+  'Document appears forged or suspicious',
+  'Other',
 ] as const;
 
 export interface RevisionTimelineEntry {
@@ -409,9 +388,20 @@ export interface RevisionTimelineEntry {
   timestamp: string;
 }
 
+export interface RevisionDocumentChange {
+  documentType: string;
+  label: string;
+  uploadedAt: string;
+}
+
 export interface OrganizerRevisionResponse {
   comment: string;
-  uploadedFiles: string[];
+  /**
+   * Event documents the organizer re-uploaded in response to this point,
+   * snapshotted when they replied. Empty means they answered without changing
+   * any paperwork — a meaningful answer, not missing data.
+   */
+  documentsChanged: RevisionDocumentChange[];
   respondedAt: string;
 }
 
@@ -452,20 +442,20 @@ export interface EventSubmission {
   lastUpdated: string;
   stage: ReviewStage;
   status: 'Pending' | 'Approved' | 'Rejected' | 'Changes Requested';
-  riskLevel: RiskLevel;
   complianceScore: number;
   missingDocs: number;
   assignedAuditor: string;
   checklist: ChecklistItem[];
   documents: ReviewDocument[];
   venue: string;
+  /** Flat venue address from the review payload; mapped into venueDetail.address. */
+  venueAddress?: string;
   date: string;
   capacity: number;
   ticketSold: number;
   notes?: string;
   organizerDetail: OrganizerDetail;
   venueDetail: VenueDetail;
-  logistics: LogisticsDetail;
   finance: FinanceDetail;
   history: HistoryDetail;
   revisions: RevisionEntry[];

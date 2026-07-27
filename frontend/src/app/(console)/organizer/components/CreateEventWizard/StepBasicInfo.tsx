@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { Image as ImageIcon, X } from 'lucide-react';
 import { listEventTypes, EventType } from '@/lib/api/eorganizer';
+import Select from '@/components/ui/Select';
 
 interface StepBasicInfoProps {
   name: string;
@@ -114,16 +115,16 @@ export default function StepBasicInfo({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Event Title</label>
-              <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" placeholder="e.g. Prambanan Rock Festival 2026" />
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" placeholder="e.g. Prambanan Rock Festival 2026" />
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Category</label>
-              <select value={category} onChange={(e) => setCategory(e.target.value)} disabled={typesLoading} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
+              <Select value={category} onChange={(e) => setCategory(e.target.value)} disabled={typesLoading}>
                 <option value="">{typesLoading ? 'Loading categories…' : '-- Select Category --'}</option>
                 {eventTypes.map((t) => (
                   <option key={t.event_type_id} value={t.event_type}>{t.event_type}</option>
                 ))}
-              </select>
+              </Select>
             </div>
           </div>
 
@@ -135,19 +136,19 @@ export default function StepBasicInfo({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Event Start Date</label>
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Event Start Time</label>
-              <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
+              <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Event End Date</label>
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">Event End Time</label>
-              <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
+              <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
             </div>
           </div>
         </div>

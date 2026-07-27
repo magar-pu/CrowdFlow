@@ -225,7 +225,11 @@ func (r *PostgresRepository) GetByID(id int) (*Event, error) {
 		LEFT JOIN venues v ON e.venue_id = v.id
 		LEFT JOIN users u ON e.organizer_id = u.id
 		LEFT JOIN user_profiles up ON u.id = up.user_id
-		WHERE e.id = $1
+		-- Archived events are invisible to the public endpoint. The organizer
+		-- console uses GetOrganizerEvent (authenticated, separate route) which
+		-- is intentionally not gated on archived_at so the workspace still
+		-- opens for event management after archiving.
+		WHERE e.id = $1 AND e.archived_at IS NULL
 	`, id).Scan(
 		&e.ID, &e.VenueID, &e.OrganizerID, &e.EventName, &e.Description, &e.EventStart, &e.EventEnd,
 		&e.EntertainmentTaxRate, &e.EntertainmentTaxPassedToBuyer, &e.Status, &e.CreatedAt, &e.UpdatedAt,

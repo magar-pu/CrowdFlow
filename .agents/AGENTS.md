@@ -7,4 +7,12 @@ Any agent executing tasks in this codebase must adhere to the rules defined in t
 - [04. Authentication and Redirection Patterns](file:///.agents/04_authentication_and_redirection_patterns.md) (Mandatory for any changes to user login, signup, redirects, or session flow)
 
 ## Docker Deployment Rule
-- **ALWAYS** run `docker compose up --build -d` after making any code changes to the frontend or backend so the user can immediately test the changes. Do not wait for the user to remind you.
+- **NEVER** run `docker compose up --build -d` or any other `docker` / `docker compose` command automatically.
+- After making code changes, provide the exact command for the user to run manually:
+  ```
+  docker compose up --build -d
+  ```
+
+## Commit Rule
+- **NEVER** run `git commit`, `git push`, or any commit/push command automatically.
+- All commits must be made **manually by the user**. Simply report what changed after completing a task.
