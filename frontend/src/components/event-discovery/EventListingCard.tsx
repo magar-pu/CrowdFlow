@@ -53,23 +53,23 @@ export function EventListingCard({ event }: EventListingCardProps) {
           alt={event.title}
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
-        <div className="absolute left-4 top-4 flex flex-col gap-2">
+        <div className="absolute left-3 top-3 z-10 flex flex-wrap items-center gap-1.5">
           <span
             className={cn(
-              "rounded-full px-3 py-1 font-label-sm text-label-sm shadow-lg",
+              "rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wider shadow-sm uppercase",
               badge.class_name
             )}
           >
             {badge.label}
           </span>
           {event.trust_signal === "verified" && (
-            <span className="flex items-center gap-1 rounded-full bg-white/90 px-3 py-1 font-label-sm text-label-sm text-primary backdrop-blur">
-              <BadgeCheck size={14} /> Verified
+            <span className="flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-0.5 text-[10px] font-bold tracking-wider text-primary shadow-sm backdrop-blur-md">
+              <BadgeCheck size={12} className="text-success shrink-0" /> Verified
             </span>
           )}
           {event.trust_signal === "identity_required" && (
-            <span className="flex items-center gap-1 rounded-full bg-white/90 px-3 py-1 font-label-sm text-label-sm text-primary backdrop-blur">
-              <ShieldCheck size={14} /> Identity Required
+            <span className="flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-0.5 text-[10px] font-bold tracking-wider text-primary shadow-sm backdrop-blur-md">
+              <ShieldCheck size={12} className="text-secondary shrink-0" /> Identity Required
             </span>
           )}
         </div>
