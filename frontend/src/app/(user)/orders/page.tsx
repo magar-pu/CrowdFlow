@@ -227,7 +227,7 @@ function TicketCardFull({
             className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-2.5 font-label-md text-label-md text-white transition-all hover:bg-primary/90"
           >
             <Eye size={16} />
-            View Dynamic 10-Min QR
+            View Dynamic Ticket (Offline Ready)
           </Link>
         </div>
       </div>
@@ -300,7 +300,7 @@ export default function MyTicketsPage() {
               My Tickets
             </h1>
             <p className="mt-1 font-body-md text-body-md text-text-secondary">
-              Manage your upcoming events, past purchases, and 10-minute dynamic digital passes.
+              Manage your upcoming events, past purchases, and offline PWA dynamic TOTP passes.
             </p>
           </div>
           {loading && (

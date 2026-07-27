@@ -379,7 +379,7 @@ export const mockOrder: Order = {
       row: "G",
       seat_number: "14",
       ticket_code: "CF-9824-XTQ",
-      qr_payload: "cf:order=ord_4821_xtq;ticket=123e4567-e89b-12d3-a456-426614174001;sig=mock",
+      qr_payload: "",
     },
   ],
 };

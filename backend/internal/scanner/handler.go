@@ -23,22 +23,40 @@ func NewHandler(db *sql.DB) *Handler {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Public scanner endpoints (no organizer auth required)
 	mux.Handle("POST /api/scanner/checkin/{eventId}", http.HandlerFunc(h.handleCheckIn))
+	mux.Handle("POST /api/v1/scanner/checkin/{eventId}", http.HandlerFunc(h.handleCheckIn))
+
 	mux.Handle("GET /api/scanner/status/{eventId}", http.HandlerFunc(h.handleGetStatus))
+	mux.Handle("GET /api/v1/scanner/status/{eventId}", http.HandlerFunc(h.handleGetStatus))
+
 	mux.Handle("GET /api/scanner/dashboard/{eventId}", http.HandlerFunc(h.handleGetDashboard))
+	mux.Handle("GET /api/v1/scanner/dashboard/{eventId}", http.HandlerFunc(h.handleGetDashboard))
 
 	// Scanner event info & verification (for standalone scanner page)
 	mux.Handle("GET /api/scanner/event/{eventId}", http.HandlerFunc(h.handleGetEventInfo))
+	mux.Handle("GET /api/v1/scanner/event/{eventId}", http.HandlerFunc(h.handleGetEventInfo))
+
 	mux.Handle("POST /api/scanner/verify-device", http.HandlerFunc(h.handleVerifyDevice))
+	mux.Handle("POST /api/v1/scanner/verify-device", http.HandlerFunc(h.handleVerifyDevice))
 
 	// Gate management (these will also be callable from organizer context)
 	mux.Handle("POST /api/scanner/events/{eventId}/gates", http.HandlerFunc(h.handleCreateGate))
+	mux.Handle("POST /api/v1/scanner/events/{eventId}/gates", http.HandlerFunc(h.handleCreateGate))
+
 	mux.Handle("GET /api/scanner/events/{eventId}/gates", http.HandlerFunc(h.handleListGates))
+	mux.Handle("GET /api/v1/scanner/events/{eventId}/gates", http.HandlerFunc(h.handleListGates))
+
 	mux.Handle("DELETE /api/scanner/events/{eventId}/gates/{gateId}", http.HandlerFunc(h.handleDeleteGate))
+	mux.Handle("DELETE /api/v1/scanner/events/{eventId}/gates/{gateId}", http.HandlerFunc(h.handleDeleteGate))
 
 	// Device management
 	mux.Handle("POST /api/scanner/events/{eventId}/devices", http.HandlerFunc(h.handleRegisterDevice))
+	mux.Handle("POST /api/v1/scanner/events/{eventId}/devices", http.HandlerFunc(h.handleRegisterDevice))
+
 	mux.Handle("GET /api/scanner/events/{eventId}/devices", http.HandlerFunc(h.handleListDevices))
+	mux.Handle("GET /api/v1/scanner/events/{eventId}/devices", http.HandlerFunc(h.handleListDevices))
+
 	mux.Handle("DELETE /api/scanner/events/{eventId}/devices/{deviceId}", http.HandlerFunc(h.handleDeleteDevice))
+	mux.Handle("DELETE /api/v1/scanner/events/{eventId}/devices/{deviceId}", http.HandlerFunc(h.handleDeleteDevice))
 }
 
 // ──────────── Check-In ────────────
