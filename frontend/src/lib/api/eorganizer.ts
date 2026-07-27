@@ -783,15 +783,18 @@ export interface OrganizerAccountDocument {
   is_current: boolean;
 }
 
-/** The document types the backend accepts, in the order the console shows them. */
+/** The document types the backend accepts, in the order the console shows them.
+ *
+ *  VENUE_AGREEMENT and EVENT_PROPOSAL were removed: both are per-EVENT
+ *  artifacts and belong in the event workspace's Documents tab, not on the
+ *  organizer account. EVENT_PROPOSAL is in fact already a required EVENT
+ *  document (see EventDocumentType), so it was being collected twice. */
 export const ACCOUNT_DOCUMENT_TYPES = [
   "KTP",
   "NPWP",
   "NIB",
   "SIUP",
   "BUSINESS_LICENSE",
-  "VENUE_AGREEMENT",
-  "EVENT_PROPOSAL",
 ] as const;
 
 export const ACCOUNT_DOCUMENT_LABELS: Record<string, string> = {
@@ -800,8 +803,6 @@ export const ACCOUNT_DOCUMENT_LABELS: Record<string, string> = {
   NIB: "NIB (Business Registration)",
   SIUP: "SIUP (Trading Licence)",
   BUSINESS_LICENSE: "Business Licence",
-  VENUE_AGREEMENT: "Venue Agreement",
-  EVENT_PROPOSAL: "Event Proposal",
 };
 
 export async function listAccountDocuments(): Promise<ApiResponse<OrganizerAccountDocument[]>> {

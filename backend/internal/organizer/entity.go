@@ -202,7 +202,14 @@ type OrganizerDocument struct {
 // AccountDocumentTypes are the account-level documents an organizer can file.
 // Mirrors the multipart field names accepted by POST /api/organizer/apply, so
 // the two paths cannot drift into accepting different sets.
-var AccountDocumentTypes = []string{"KTP", "NPWP", "NIB", "SIUP", "BUSINESS_LICENSE", "VENUE_AGREEMENT", "EVENT_PROPOSAL"}
+//
+// VENUE_AGREEMENT and EVENT_PROPOSAL used to sit here and were removed: both are
+// per-EVENT artifacts, signed and written once per event rather than once per
+// organizer. EVENT_PROPOSAL was worse than merely misplaced — it is also a
+// REQUIRED event document type (see DocTypeEventProposal above), so the same
+// document was being collected in two places and reviewed through two separate
+// flows. The event-side equivalent of VENUE_AGREEMENT is DocTypeVenuePermit.
+var AccountDocumentTypes = []string{"KTP", "NPWP", "NIB", "SIUP", "BUSINESS_LICENSE"}
 
 func IsValidAccountDocumentType(t string) bool {
 	for _, valid := range AccountDocumentTypes {

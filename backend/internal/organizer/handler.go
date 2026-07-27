@@ -252,7 +252,7 @@ func (h *Handler) handleApply(w http.ResponseWriter, r *http.Request) {
 		BusinessAddress:   r.FormValue("business_address"),
 	}
 
-	docTypes := []string{"ktp", "npwp", "nib", "siup", "business_license", "venue_agreement", "event_proposal"}
+	docTypes := []string{"ktp", "npwp", "nib", "siup", "business_license"}
 	var uploads []*DocumentUpload
 
 	for _, t := range docTypes {
@@ -355,7 +355,7 @@ func (h *Handler) handleUpdateApplication(w http.ResponseWriter, r *http.Request
 		BusinessAddress:   r.FormValue("business_address"),
 	}
 
-	docTypes := []string{"ktp", "npwp", "nib", "siup", "business_license", "venue_agreement", "event_proposal"}
+	docTypes := []string{"ktp", "npwp", "nib", "siup", "business_license"}
 	var uploads []*DocumentUpload
 
 	for _, t := range docTypes {
