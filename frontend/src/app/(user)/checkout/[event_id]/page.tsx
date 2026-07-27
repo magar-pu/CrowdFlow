@@ -14,8 +14,8 @@
  * and redirect using the real order_id from that response instead.
  */
 
-import { useState } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useState, useMemo, Suspense } from "react";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import Script from "next/script";
 import { Navbar } from "@/components/layout/Navbar";
 import { CheckoutSummary } from "@/components/checkout/CheckoutSummary";
@@ -29,8 +29,7 @@ declare global {
   }
 }
 
-// In the real app this comes from useCartStore() (Zustand). Hardcoded here
-// purely to demonstrate CheckoutSummary with realistic data shape.
+// Default fallback demo items when page is accessed directly without query params
 const demo_cart_items: CartItem[] = [
   {
     cart_item_id: "cart_item_001",
@@ -57,15 +56,40 @@ const demo_cart_items: CartItem[] = [
   },
 ];
 
-export default function CheckoutPage() {
+function CheckoutContent() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const [is_submitting, set_is_submitting] = useState(false);
 
   // Parse event_id from URL params or fallback to an existing DB event (id: 4)
   const paramEventId = Array.isArray(params?.event_id) ? params.event_id[0] : params?.event_id;
   const parsedId = parseInt(paramEventId as string, 10);
   const targetEventId = (!isNaN(parsedId) && parsedId > 1) ? parsedId : 4;
+
+  const queryTierId = searchParams.get("ticket_category_id") || searchParams.get("tier_id");
+  const queryQuantity = parseInt(searchParams.get("quantity") || "1", 10);
+  const queryPrice = parseFloat(searchParams.get("price") || "0");
+  const queryName = searchParams.get("name") || searchParams.get("tier_name");
+
+  // Dynamically compute active cart items from URL query params
+  const cart_items: CartItem[] = useMemo(() => {
+    if (queryTierId && queryPrice > 0) {
+      return [
+        {
+          cart_item_id: `cart_item_${queryTierId}`,
+          event_id: String(targetEventId),
+          ticket_category_id: queryTierId,
+          ticket_category_name: queryName || "Selected Ticket",
+          sale_channel: "primary",
+          unit_face_value: queryPrice,
+          quantity: queryQuantity > 0 ? queryQuantity : 1,
+          currency: "IDR",
+        },
+      ];
+    }
+    return demo_cart_items;
+  }, [queryTierId, queryPrice, queryName, queryQuantity, targetEventId]);
 
   async function handle_confirm(payment_method: string) {
     set_is_submitting(true);
@@ -76,7 +100,7 @@ export default function CheckoutPage() {
       const res = await createOrder({
         event_id: targetEventId,
         payment_method: payment_method,
-        cart_items: demo_cart_items,
+        cart_items: cart_items,
       });
 
       if (!res.success || !res.data?.snap_token) {
@@ -89,7 +113,18 @@ export default function CheckoutPage() {
       window.snap.pay(res.data.snap_token, {
         onSuccess: function (result: any) {
           console.log("Payment success:", result);
-          
+
+          // Notify backend webhook for localhost testing so E-Ticket email is dispatched immediately
+          fetch("/api/v1/payment/webhook", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              order_id: result?.order_id || res.data?.order_id,
+              transaction_status: result?.transaction_status || "settlement",
+              transaction_id: result?.transaction_id || "LOCAL_SETTLEMENT",
+            }),
+          }).catch((err) => console.error("Failed to notify backend webhook:", err));
+
           // Add the ticket to local storage to simulate buying
           const boughtTicket = {
             ticket_id: "123e4567-e89b-12d3-a456-426614174001",
@@ -99,12 +134,12 @@ export default function CheckoutPage() {
             date_label: "Sat, Sep 12 • 7:30 PM",
             venue_name: "Gelora Bung Karno Stadium",
             section_label: "102",
-            ticket_type: "VIP Experience",
-            quantity: 1,
+            ticket_type: cart_items[0]?.ticket_category_name || "VIP Experience",
+            quantity: cart_items[0]?.quantity || 1,
             status: "confirmed",
             tab: "upcoming",
           };
-          
+
           const existingStr = localStorage.getItem('demo_tickets');
           const existing = existingStr ? JSON.parse(existingStr) : [];
           if (!existing.find((t: any) => t.ticket_id === boughtTicket.ticket_id)) {
@@ -143,14 +178,21 @@ export default function CheckoutPage() {
       <Navbar is_authenticated active_href="" />
       <CheckoutSummary
         event={mockEvent}
-        cart_items={demo_cart_items}
+        cart_items={cart_items}
         is_submitting={is_submitting}
         on_apply_promo_code={(code) => {
-          // Next step: POST /api/v1/promo-codes/validate with { code, event_id }
           console.log("Applying promo code:", code);
         }}
         on_confirm={handle_confirm}
       />
     </div>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center">Loading checkout...</div>}>
+      <CheckoutContent />
+    </Suspense>
   );
 }

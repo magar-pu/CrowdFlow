@@ -9,6 +9,7 @@ import { TicketActions } from "@/components/your-ticket/TicketActions";
 import ResellTicketModal from "@/components/your-ticket/ResellTicketModal";
 import { getMyTickets, UserTicket } from "@/lib/api/tickets";
 import { cancelResaleListing } from "@/lib/api/resale";
+import { generateTicketPdf } from "@/utils/generateTicketPdf";
 import type { PurchasedTicket, Order } from "@/types/ticket";
 
 export default function YourTicketPage() {
@@ -90,7 +91,7 @@ export default function YourTicketPage() {
   }
 
   function handle_download_pdf() {
-    console.log("Download PDF ticket:", currentTicket.ticket_id);
+    generateTicketPdf(currentTicket, orderAmount, userEmail);
   }
 
   async function handle_share() {
@@ -109,22 +110,19 @@ export default function YourTicketPage() {
   }
 
   async function handle_cancel_listing() {
-    const listingId = localStorage.getItem("dummy_listing_id");
-    if (!listingId) {
-      alert("Error: Listing ID not found in local storage.");
-      return;
-    }
-
-    const res = await cancelResaleListing(listingId);
-    if (!res.success) {
-      alert(res.error?.message || "Failed to cancel listing.");
-      return;
+    const listingId = localStorage.getItem('dummy_listing_id');
+    if (listingId) {
+      const res = await cancelResaleListing(listingId);
+      if (!res.success) {
+        alert(res.error?.message || "Failed to cancel listing.");
+        return;
+      }
     }
 
     setIsListed(false);
-    localStorage.setItem("dummy_is_listed", "false");
-    localStorage.removeItem("dummy_listing_id");
-    alert("Resale listing cancelled successfully. The ticket is back in your possession.");
+    localStorage.removeItem('dummy_is_listed');
+    localStorage.removeItem('dummy_listing_id');
+    alert("Resale listing cancelled. The ticket is back in your possession.");
   }
 
   return (

@@ -53,3 +53,29 @@ func (r *PostgresRepository) GetOrderByID(ctx context.Context, orderID string) (
 	}
 	return order, nil
 }
+
+func (r *PostgresRepository) GetOrderDetailsForMail(ctx context.Context, orderID string) (*OrderMailDetails, error) {
+	details := &OrderMailDetails{TicketCode: orderID}
+	query := `
+		SELECT 
+			u.email,
+			e.event_name,
+			TO_CHAR(e.event_start, 'DD Month YYYY') || ' • ' || COALESCE(v.name, 'Gelora Bung Karno'),
+			COALESCE((SELECT tt.name FROM tickets t JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id WHERE t.order_id = $1 LIMIT 1), 'General Admission')
+		FROM orders o
+		JOIN users u ON o.purchaser_id = u.id
+		JOIN events e ON o.event_id = e.id
+		LEFT JOIN venues v ON e.venue_id = v.id
+		WHERE o.id = $1
+	`
+	err := r.db.QueryRowContext(ctx, query, orderID).Scan(
+		&details.PurchaserEmail,
+		&details.EventTitle,
+		&details.DateVenue,
+		&details.TicketTier,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return details, nil
+}

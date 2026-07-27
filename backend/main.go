@@ -192,7 +192,7 @@ func main() {
 
 	// Initialize Ticket dependencies (My Tickets + Dynamic 10-Min QR Tokens)
 	ticketRepo := ticket.NewPostgresRepository(db)
-	ticketService := ticket.NewService(ticketRepo)
+	ticketService := ticket.NewService(ticketRepo, mailService)
 	ticketHandler := ticket.NewHandler(ticketService)
 
 	// Register Ticket routes
@@ -208,7 +208,7 @@ func main() {
 
 	// Initialize Payment dependencies
 	paymentRepo := payment.NewPostgresRepository(db)
-	paymentService := payment.NewPaymentService(paymentRepo)
+	paymentService := payment.NewPaymentService(paymentRepo, mailService)
 	paymentHandler := payment.NewHandler(paymentService)
 
 	// Register Payment routes

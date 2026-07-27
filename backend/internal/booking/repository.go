@@ -140,7 +140,7 @@ func (r *PostgresRedisRepository) applySeatHolds(ctx context.Context, eventID in
 // per-seat via event_seats_matrix - the venue layout itself is untiered.
 func (r *PostgresRedisRepository) seatMapTiers(ctx context.Context, eventID int) ([]*SeatTier, map[int]bool, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT tt.id, tt.name, tt.price, tt.color,
+		SELECT tt.id, tt.name, tt.price, '' AS color,
 			s.id, s.row_number, s.seat_number, esm.current_state, s.pos_x, s.pos_y
 		FROM event_seats_matrix esm
 		JOIN ticket_tiers tt ON tt.id = esm.ticket_tier_id

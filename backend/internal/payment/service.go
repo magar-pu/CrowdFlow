@@ -4,26 +4,31 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"time"
+
+	"crowdflow-backend/internal/mail"
 
 	"github.com/midtrans/midtrans-go"
 	"github.com/midtrans/midtrans-go/snap"
 )
 
 type PaymentService struct {
-	repo       Repository
-	snapClient snap.Client
+	repo        Repository
+	snapClient  snap.Client
+	mailService mail.Service
 }
 
-func NewPaymentService(repo Repository) *PaymentService {
+func NewPaymentService(repo Repository, mailService mail.Service) *PaymentService {
 	serverKey := os.Getenv("MIDTRANS_SERVER_KEY")
 	var s snap.Client
 	s.New(serverKey, midtrans.Sandbox)
 
 	return &PaymentService{
-		repo:       repo,
-		snapClient: s,
+		repo:        repo,
+		snapClient:  s,
+		mailService: mailService,
 	}
 }
 
@@ -103,7 +108,7 @@ func (s *PaymentService) HandleMidtransWebhook(ctx context.Context, payload map[
 	if !ok {
 		return errors.New("missing order_id")
 	}
-	
+
 	transactionStatus, _ := payload["transaction_status"].(string)
 	transactionID, _ := payload["transaction_id"].(string)
 	fraudStatus, _ := payload["fraud_status"].(string)
@@ -121,7 +126,32 @@ func (s *PaymentService) HandleMidtransWebhook(ctx context.Context, payload map[
 		status = "failed"
 	}
 
-	// In production, we should also verify the signature key here using coreapi
+	if err := s.repo.UpdateOrderStatus(ctx, orderID, status, transactionID); err != nil {
+		return err
+	}
 
-	return s.repo.UpdateOrderStatus(ctx, orderID, status, transactionID)
+	// Dispatch E-Ticket email asynchronously when payment status is "paid"
+	if status == "paid" && s.mailService != nil {
+		go func() {
+			detailsCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			details, err := s.repo.GetOrderDetailsForMail(detailsCtx, orderID)
+			if err != nil {
+				log.Printf("[PAYMENT E-TICKET ERROR] Failed to fetch order details for %s: %v", orderID, err)
+				return
+			}
+
+			// Generate high-resolution QR code URL for gate scanner verification
+			qrCodeURL := fmt.Sprintf("https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=%s", orderID)
+
+			if err := s.mailService.SendETicket(details.PurchaserEmail, details.EventTitle, details.DateVenue, qrCodeURL, details.TicketTier); err != nil {
+				log.Printf("[PAYMENT E-TICKET ERROR] Failed to send E-Ticket for %s to %s: %v", orderID, details.PurchaserEmail, err)
+			} else {
+				log.Printf("[PAYMENT E-TICKET SUCCESS] E-Ticket dispatched for Order #%s to %s", orderID, details.PurchaserEmail)
+			}
+		}()
+	}
+
+	return nil
 }

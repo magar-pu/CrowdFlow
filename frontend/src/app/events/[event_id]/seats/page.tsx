@@ -230,8 +230,9 @@ export default function SeatSelectionPage() {
     set_is_submitting(false);
 
     if (res.success && res.data) {
+      const qty = active_tier.is_general_admission ? quantity : chosen_seats.length;
       router.push(
-        `/checkout/${event_id}?hold_token=${encodeURIComponent(res.data.hold_token)}`
+        `/checkout/${event_id}?hold_token=${encodeURIComponent(res.data.hold_token)}&ticket_category_id=${active_tier.ticket_tier_id}&quantity=${qty || 1}&price=${active_tier.price}&name=${encodeURIComponent(active_tier.name)}`
       );
       return;
     }
