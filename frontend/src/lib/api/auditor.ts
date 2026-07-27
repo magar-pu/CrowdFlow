@@ -101,16 +101,6 @@ export async function requestEventChanges(id: number | string, notes: string): P
   });
 }
 
-/**
- * Update event review stage.
- */
-export async function updateEventReviewStage(id: number | string, stage: string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/v1/auditor/reviews/${id}/stage`, {
-    method: "PATCH",
-    body: JSON.stringify({ stage }),
-  });
-}
-
 export interface AddRevisionPayload {
   category: string;
   title: string;

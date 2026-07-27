@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Building2, Check, MapPin, Plus, X } from "lucide-react";
 import { listVenues, type Venue } from "@/lib/api/venues";
 import { setEventVenue, type NewVenueInput } from "@/lib/api/eorganizer";
+import Select from "@/components/ui/Select";
 
 interface WorkspaceVenuePickerProps {
   eventId: number;
@@ -29,7 +30,7 @@ interface WorkspaceVenuePickerProps {
 
 const labelClass = "text-[10px] font-mono font-bold text-text-secondary uppercase";
 const inputClass =
-  "w-full h-10 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none focus:border-outline disabled:opacity-50";
+  "w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none focus:border-outline disabled:opacity-50";
 
 const EMPTY_NEW_VENUE: NewVenueInput = {
   name: "",
@@ -187,12 +188,11 @@ export default function WorkspaceVenuePicker({
                 <label className={labelClass} htmlFor="workspace-venue-select">
                   {venueId > 0 ? "Change venue" : "Select venue"}
                 </label>
-                <select
+                <Select
                   id="workspace-venue-select"
                   value={selectedId || ""}
                   disabled={saving}
                   onChange={(e) => setPickedId(Number(e.target.value))}
-                  className={`${inputClass} cursor-pointer`}
                 >
                   <option value="">
                     {venues.length === 0 ? "No venues in the catalogue yet" : "— Select a venue —"}
@@ -203,7 +203,7 @@ export default function WorkspaceVenuePicker({
                       {v.city ? ` — ${v.city}` : ""}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
               <button
                 type="button"

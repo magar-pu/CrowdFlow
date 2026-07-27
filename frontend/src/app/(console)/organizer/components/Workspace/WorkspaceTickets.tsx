@@ -26,23 +26,28 @@ export default function WorkspaceTickets({
   const [newTierPrice, setNewTierPrice] = useState(150000);
   const [newTierCapacity, setNewTierCapacity] = useState(500);
   const [newTierSalesEnd, setNewTierSalesEnd] = useState("");
+  const [newTierSalesStart, setNewTierSalesStart] = useState("");
   // Per-order cap (ticket_tiers.max_ticket_per_user). 4 is the column default.
   const [newTierMaxPerOrder, setNewTierMaxPerOrder] = useState(4);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTierName) return;
+    if (!newTierName || !newTierSalesStart || !newTierSalesEnd) return;
     onCreateTier({
       name: newTierName,
       price: newTierPrice,
       sold: 0,
       capacity: newTierCapacity,
+      // The real status is derived server-side from the sales window and stock;
+      // whatever is sent here is discarded.
       status: "On Sale",
       color: "#3B82F6",
       maxPerOrder: newTierMaxPerOrder,
-      salesEnd: newTierSalesEnd || undefined,
+      salesStart: newTierSalesStart,
+      salesEnd: newTierSalesEnd,
     });
     setNewTierName("");
+    setNewTierSalesStart("");
     setNewTierSalesEnd("");
     setNewTierMaxPerOrder(4);
     setShowAddForm(false);
@@ -154,11 +159,25 @@ export default function WorkspaceTickets({
                 <input type="number" value={newTierCapacity} onChange={(e) => setNewTierCapacity(Number(e.target.value))} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
               </div>
             </div>
+            {/* Both dates are required. The form used to omit sales start
+                entirely and treat the deadline as optional, and the backend
+                filled the gap with now() and now()+1 month — so a tier saved
+                without dates stopped selling a month later for no stated
+                reason. */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Sales Deadline</label>
-                <input type="date" value={newTierSalesEnd} onChange={(e) => setNewTierSalesEnd(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
+                <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Sales Open</label>
+                <input type="date" required value={newTierSalesStart} onChange={(e) => setNewTierSalesStart(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
               </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Sales Close</label>
+                <input type="date" required min={newTierSalesStart || undefined} value={newTierSalesEnd} onChange={(e) => setNewTierSalesEnd(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
+              </div>
+            </div>
+            <p className="text-[10px] text-text-secondary">
+              Sales run from the start of <strong>Sales Open</strong> through the end of <strong>Sales Close</strong>, Jakarta time. Buyers cannot see this tier outside that window.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Max Per Order</label>
                 <input
@@ -187,13 +206,23 @@ export default function WorkspaceTickets({
           const stockTotal = seats ? seats.seat_count : tier.capacity;
           const stockSold = seats ? seats.sold : tier.sold;
           const soldPct = stockTotal > 0 ? Math.min(100, (stockSold / stockTotal) * 100) : 0;
+          const notSelling = tier.status === "Expired" || tier.status === "Scheduled";
           return (
             <div key={tier.id} className="bg-white border border-border-subtle rounded-xl p-5 soft-shadow flex flex-col justify-between group">
               <div className="space-y-4">
                 <div className="flex justify-between items-start">
-                  <span className="px-2.5 py-0.5 rounded-full font-mono text-[9px] font-bold text-white" style={{ backgroundColor: tier.color || "#3B82F6" }}>
-                    {tier.status || "On Sale"}
-                  </span>
+                  {/* A tier outside its sales window is invisible to buyers, so
+                      it must not wear the tier's own colour like a healthy
+                      badge — it reads as a warning instead. */}
+                  {notSelling ? (
+                    <span className="px-2.5 py-0.5 rounded-full font-mono text-[9px] font-bold bg-warning/15 text-warning border border-warning/30">
+                      {tier.status}
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full font-mono text-[9px] font-bold text-white" style={{ backgroundColor: tier.color || "#3B82F6" }}>
+                      {tier.status || "On Sale"}
+                    </span>
+                  )}
                   <button onClick={() => onDeleteTier(tier.id)} className="text-on-surface-variant hover:text-danger p-1 rounded transition-colors cursor-pointer">
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -241,6 +270,16 @@ export default function WorkspaceTickets({
 
                 {tier.salesEnd && (
                   <p className="text-[10px] text-on-surface-variant font-mono">Sales close: {tier.salesEnd}</p>
+                )}
+
+                {/* Without this the organizer sees a tier the public listing has
+                    already dropped, with nothing to explain where it went. */}
+                {notSelling && (
+                  <p className="text-[10px] text-warning font-mono leading-relaxed">
+                    {tier.status === "Expired"
+                      ? "Outside its sales window — buyers cannot see or purchase this tier. Extend the sales close date to reopen it."
+                      : "Sales have not opened yet — buyers cannot see this tier until the sales start date."}
+                  </p>
                 )}
               </div>
 

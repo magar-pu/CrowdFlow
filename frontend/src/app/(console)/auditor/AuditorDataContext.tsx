@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import {
   EventSubmission, DocumentReview, RevisionEntry, OrganizerVerification,
-  PayoutRequest, OrganizerStatus, PayoutStatus, ReviewStage, AuditorActivity,
+  PayoutRequest, OrganizerStatus, PayoutStatus, AuditorActivity,
 } from "./types";
 import {
   getDashboardData,
@@ -23,6 +23,7 @@ import {
   AuditorNotification,
   DashboardStats
 } from "@/lib/api/auditor";
+import { mapPayoutListItem } from "./payoutMapping";
 
 interface AuditorDataValue {
   submissions: EventSubmission[];
@@ -46,7 +47,6 @@ interface AuditorDataValue {
   handleRejectDocument: (id: string) => void;
   handleVerifySubmissionDocument: (submissionId: string, docName: string) => void;
   handleRejectSubmissionDocument: (submissionId: string, docName: string) => void;
-  handleChangeSubmissionStage: (submissionId: string, stage: ReviewStage) => void;
   handleAddRevision: (submissionId: string, revision: RevisionEntry) => void;
   handleUpdateOrganizerStatus: (id: string, status: OrganizerStatus, notes: string, feedback: string) => void;
   handleUpdateOrganizerChecklist: (id: string, checklist: OrganizerVerification["checklist"]) => void;
@@ -118,11 +118,10 @@ export function AuditorDataProvider({ children }: { children: React.ReactNode })
       // Load payout requests
       const payoutsRes = await listPayouts({ limit: 100 });
       if (payoutsRes.success && payoutsRes.data) {
-        const payoutList = payoutsRes.data.map((pay: any) => ({
-          ...pay,
-          id: String(pay.id),
-        })) as any[];
-        setPayouts(payoutList);
+        // Mapped, not spread. A bare spread left the PayoutRequest fields the
+        // list endpoint does not return undefined, and the table crashed on the
+        // first row it rendered.
+        setPayouts(payoutsRes.data.map(mapPayoutListItem));
       }
 
       // Load notifications
@@ -213,10 +212,6 @@ export function AuditorDataProvider({ children }: { children: React.ReactNode })
     }));
   };
 
-  const handleChangeSubmissionStage = (submissionId: string, stage: ReviewStage) => {
-    setSubmissions(prev => prev.map(s => s.id === submissionId ? { ...s, stage } : s));
-  };
-
   const handleAddRevision = (submissionId: string, revision: RevisionEntry) => {
     setSubmissions(prev => prev.map(s => {
       if (s.id === submissionId) {
@@ -287,7 +282,7 @@ export function AuditorDataProvider({ children }: { children: React.ReactNode })
     handleApprove, handleReject, handleRequestChanges,
     handleVerifyDocument, handleRejectDocument,
     handleVerifySubmissionDocument, handleRejectSubmissionDocument,
-    handleChangeSubmissionStage, handleAddRevision,
+    handleAddRevision,
     handleUpdateOrganizerStatus, handleUpdateOrganizerChecklist,
     handleUpdatePayoutStatus, handleUpdatePayoutChecklists,
   };

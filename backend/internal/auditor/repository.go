@@ -3,6 +3,7 @@ package auditor
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -225,16 +226,6 @@ func (r *PostgresAuditorRepository) ListReviewQueue(ctx context.Context, limit i
 		rev.Status = mapEventReviewStatus(dbStatus)
 		rev.BannerURL = formatBannerURL(rev.BannerURL)
 
-		// Calculate Risk Level based on compliance score and missing docs
-		score := rev.ComplianceScore
-		if rev.MissingDocs > 0 {
-			score -= rev.MissingDocs * 10
-		}
-		if score < 0 {
-			score = 0
-		}
-		rev.RiskLevel = computeRiskLevel(score)
-
 		reviews = append(reviews, &rev)
 	}
 
@@ -361,21 +352,6 @@ func (r *PostgresAuditorRepository) ListEventReviews(ctx context.Context, filter
 		rev.Status = mapEventReviewStatus(dbStatus)
 		rev.BannerURL = formatBannerURL(rev.BannerURL)
 
-		// Calculate Risk Level based on compliance score and missing docs
-		score := rev.ComplianceScore
-		if rev.MissingDocs > 0 {
-			score -= rev.MissingDocs * 10
-		}
-		if score < 0 {
-			score = 0
-		}
-		rev.RiskLevel = computeRiskLevel(score)
-
-		// Filter riskLevel client-side if risk level filter is specified
-		if filters.RiskLevel != "" && string(rev.RiskLevel) != filters.RiskLevel {
-			continue
-		}
-
 		reviews = append(reviews, &rev)
 	}
 
@@ -412,19 +388,33 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 			COALESCE(ear.assigned_auditor_name, ''),
 			COALESCE(v.name, 'No Venue'),
 			e.event_start,
-			COALESCE(v.address || ', ' || v.city || ', ' || v.province, 'No Address'),
+			COALESCE(v.address || ', ' || v.city || ', ' || v.province, ''),
 			COALESCE(v.total_capacity, 0),
-			e.entertainment_tax_rate
+			e.entertainment_tax_rate,
+			e.organizer_id,
+			COALESCE(oa.id, 0),
+			COALESCE(oa.business_name, ''),
+			COALESCE(oa.business_email, ''),
+			COALESCE(oa.business_phone, ''),
+			COALESCE(oa.business_address, ''),
+			COALESCE(oa.status::text, ''),
+			COALESCE(e.description, ''),
+			e.layout_id,
+			e.venue_id
 		FROM events e
 		LEFT JOIN user_profiles up ON up.user_id = e.organizer_id
 		LEFT JOIN event_types et ON et.id = e.event_type_id
 		LEFT JOIN venues v ON v.id = e.venue_id
 		LEFT JOIN auditor_event_reviews ear ON ear.event_id = e.id
+		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
 		WHERE e.id = $1
 	`
 	var submittedAt, lastUpdated, eventStart time.Time
-	var dbStatus, stageStr, addressStr string
+	var dbStatus, stageStr string
 	var taxRate float64
+	var organizerID int
+	var applicationStatus, description string
+	var layoutID, venueID sql.NullInt64
 
 	err := r.db.QueryRowContext(ctx, queryEvent, eventID).Scan(
 		&rev.ID,
@@ -441,9 +431,19 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 		&rev.AssignedAuditor,
 		&rev.Venue,
 		&eventStart,
-		&addressStr,
+		&rev.VenueAddress,
 		&rev.Capacity,
 		&taxRate,
+		&organizerID,
+		&rev.OrganizerDetail.ApplicationID,
+		&rev.OrganizerDetail.CompanyName,
+		&rev.OrganizerDetail.Email,
+		&rev.OrganizerDetail.Phone,
+		&rev.OrganizerDetail.Address,
+		&applicationStatus,
+		&description,
+		&layoutID,
+		&venueID,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -458,6 +458,13 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 	rev.Stage = ReviewStage(stageStr)
 	rev.Status = mapEventReviewStatus(dbStatus)
 	rev.BannerURL = formatBannerURL(rev.BannerURL)
+	// The PIC is the person who owns the account; the company name comes from
+	// their application. Fall back to the account name when no application row
+	// exists so the card never renders blank.
+	rev.OrganizerDetail.Pic = rev.OrganizerName
+	if rev.OrganizerDetail.CompanyName == "" {
+		rev.OrganizerDetail.CompanyName = rev.OrganizerName
+	}
 
 	// 2. Fetch the documents backing this review, from BOTH sources:
 	//   - organizer_documents: the organizer's account-level paperwork (KTP, NPWP,
@@ -507,6 +514,7 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 	var missingCount int
 	var verifiedCount int
 	var totalDocs int
+	var licenseStatus string
 	// Which required per-event documents actually arrived, so a genuinely absent
 	// one can be reported rather than silently omitted.
 	presentEventDocs := map[string]bool{}
@@ -537,6 +545,16 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 				doc.Category = "Permits & Licenses"
 			default:
 				doc.Category = "Supporting Documents"
+			}
+			// There is no licence-number column anywhere in the schema. The
+			// closest real signal is whether the organizer's registration
+			// document has been verified, so report that instead of a number.
+			if t := strings.ToUpper(doc.DocumentType); t == "NIB" || t == "SIUP" {
+				// A verified licence wins over a pending one when the organizer
+				// uploaded both NIB and SIUP.
+				if licenseStatus == "" || doc.Status == "verified" {
+					licenseStatus = t + " — " + licenseStatusLabel(doc.Status)
+				}
 			}
 		}
 
@@ -575,13 +593,31 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 	} else {
 		rev.ComplianceScore = (verifiedCount * 100) / totalDocs
 	}
-	rev.RiskLevel = computeRiskLevel(rev.ComplianceScore - rev.MissingDocs*10)
 
-	// 3. Fetch Ticket Tiers & Financial metrics
+	if licenseStatus == "" {
+		licenseStatus = "No NIB/SIUP on file"
+	}
+	rev.OrganizerDetail.BusinessLicense = licenseStatus
+
+	// 3. Fetch Ticket Tiers & Financial metrics.
+	//
+	// A tier's real capacity depends on how it sells. Once seats are painted
+	// with a tier, stock comes from event_seats_matrix and allocation_limit is
+	// never consulted again — so pricing a seated event off allocation_limit
+	// produced a projected revenue derived from a number the booking system
+	// ignores (and 0 whenever the organizer left the field alone).
 	queryTiers := `
-		SELECT name, price, allocation_limit, tickets_sold
-		FROM ticket_tiers
-		WHERE event_id = $1
+		SELECT
+			t.name,
+			t.price,
+			t.allocation_limit,
+			t.tickets_sold,
+			COALESCE((
+				SELECT COUNT(*) FROM event_seats_matrix m
+				WHERE m.event_id = $1 AND m.ticket_tier_id = t.id
+			), 0) AS seat_count
+		FROM ticket_tiers t
+		WHERE t.event_id = $1
 	`
 	rowsTiers, err := r.db.QueryContext(ctx, queryTiers, eventID)
 	if err != nil {
@@ -591,34 +627,84 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 
 	tiers := []ReviewTicketTier{}
 	var projectedRev float64
+	var totalSold int
 	for rowsTiers.Next() {
 		var tier ReviewTicketTier
 		var name string
 		var price float64
 		var capLimit int
 		var sold int
+		var seatCount int
 
-		err = rowsTiers.Scan(&name, &price, &capLimit, &sold)
+		err = rowsTiers.Scan(&name, &price, &capLimit, &sold, &seatCount)
 		if err != nil {
 			return nil, err
 		}
 
+		// Seats painted with this tier win over allocation_limit; that is the
+		// rule booking/service.go applies via IsAssignedSeating.
+		capacity := capLimit
+		tier.AssignedSeating = seatCount > 0
+		if tier.AssignedSeating {
+			capacity = seatCount
+		}
+
 		tier.Category = name
 		tier.Price = price
-		tier.Seats = capLimit
-		if sold >= capLimit {
+		tier.Seats = capacity
+		tier.Sold = sold
+		if capacity > 0 && sold >= capacity {
 			tier.Status = "Sold Out"
 		} else {
 			tier.Status = "Available"
 		}
-		projectedRev += price * float64(capLimit)
+		projectedRev += price * float64(capacity)
+		totalSold += sold
 		tiers = append(tiers, tier)
 	}
+	rev.TicketSold = totalSold
 
 	platformFee := projectedRev * 0.05
 	gatewayFee := projectedRev * 0.02
 	taxAmount := projectedRev * (taxRate / 100)
 	netPayout := projectedRev - platformFee - gatewayFee - taxAmount
+
+	// The organizer's real payout destination. user_bank_accounts is preferred
+	// because it is the only source carrying a verification flag; the bank
+	// columns on organizer_applications (migration 0006) are the fallback for
+	// organizers who only ever filled in their application.
+	payout := ReviewPayout{EstimatedPayout: netPayout}
+	var bankName, bankNumber, bankHolder sql.NullString
+	var bankVerified sql.NullBool
+	err = r.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(uba.bank_name, oa.bank_name),
+			COALESCE(uba.account_number, oa.bank_account_number),
+			COALESCE(uba.account_holder_name, oa.bank_account_holder),
+			uba.is_verified
+		FROM events e
+		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
+		LEFT JOIN LATERAL (
+			SELECT bank_name, account_number, account_holder_name, is_verified
+			FROM user_bank_accounts
+			WHERE user_id = e.organizer_id
+			ORDER BY is_verified DESC, created_at DESC
+			LIMIT 1
+		) uba ON TRUE
+		WHERE e.id = $1
+	`, eventID).Scan(&bankName, &bankNumber, &bankHolder, &bankVerified)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+	if bankName.Valid || bankNumber.Valid {
+		payout.HasAccount = true
+		payout.Bank = bankName.String
+		payout.AccountNumber = bankNumber.String
+		payout.AccountName = bankHolder.String
+		// Only user_bank_accounts can attest verification. An account known
+		// solely from the application row is unverified by definition.
+		payout.Verified = bankVerified.Valid && bankVerified.Bool
+	}
 
 	rev.Finance = ReviewFinance{
 		ProjectedRevenue: projectedRev,
@@ -626,23 +712,9 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 		GatewayFee:       gatewayFee,
 		TaxAmount:        taxAmount,
 		NetPayout:        netPayout,
+		TaxRate:          taxRate,
 		TicketTiers:      tiers,
-		TaxConfig: ReviewTaxConfig{
-			EntertainmentTax: taxRate,
-			Ppn:              11.0,
-			Region:           "DKI Jakarta",
-			TaxPercentage:    taxRate + 11.0,
-			RegionMatch:      true,
-			TaxApplied:       true,
-			PpnApplied:       true,
-		},
-		Payout: ReviewPayout{
-			Bank:            "Bank Central Asia (BCA)",
-			AccountName:     rev.OrganizerName,
-			AccountNumber:   "8024927501",
-			EstimatedPayout: netPayout,
-			Verified:        true,
-		},
+		Payout:           payout,
 	}
 
 	// 4. Fetch status history
@@ -684,7 +756,7 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 		       COALESCE(priority, 'Medium'),
 		       COALESCE(organizer_comment, ''),
 		       COALESCE(organizer_action_taken, ''),
-		       COALESCE(organizer_file, ''),
+		       COALESCE(organizer_documents_changed, '[]'::jsonb)::text,
 		       COALESCE(responded_at::text, '')
 		FROM auditor_revisions
 		WHERE event_id = $1
@@ -701,6 +773,7 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 		var revItem Revision
 		var createdAt time.Time
 		var respondedAtStr string
+		var changedJSON string
 		err = rowsRevisions.Scan(
 			&revItem.ID,
 			&revItem.Category,
@@ -712,12 +785,14 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 			&revItem.Priority,
 			&revItem.OrganizerComment,
 			&revItem.OrganizerActionTaken,
-			&revItem.OrganizerFile,
+			&changedJSON,
 			&respondedAtStr,
 		)
 		if err != nil {
 			return nil, err
 		}
+		revItem.DocumentsChanged = []RevisionDocumentChange{}
+		_ = json.Unmarshal([]byte(changedJSON), &revItem.DocumentsChanged)
 		if respondedAtStr != "" {
 			if tResp, errParse := time.Parse(time.RFC3339, respondedAtStr); errParse == nil {
 				revItem.RespondedAt = formatTime(tResp)
@@ -730,7 +805,119 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 		rev.Revisions = append(rev.Revisions, revItem)
 	}
 
+	// 6. Verification checklist — every item is derived from real state. These
+	// mirror the organizer's own publish gates, so a green checklist means the
+	// submission genuinely cleared them rather than that nobody looked.
+	//
+	// Seating is only a gate for events with a bound layout: a general-admission
+	// event has no seats to price and must not be marked incomplete for it.
+	seatingComplete := true
+	if layoutID.Valid {
+		var untiered int
+		err = r.db.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM seats s
+			WHERE s.layout_id = $1
+			  AND NOT EXISTS (
+				SELECT 1 FROM event_seats_matrix m WHERE m.event_id = $2 AND m.seat_id = s.id
+			  )
+		`, layoutID.Int64, eventID).Scan(&untiered)
+		if err != nil {
+			return nil, err
+		}
+		seatingComplete = untiered == 0
+	}
+
+	rev.Checklist = []ChecklistItem{
+		{Label: "Event Info", Done: rev.EventName != "" && description != "" && !eventStart.IsZero()},
+		{Label: "Venue & Seating", Done: venueID.Valid && seatingComplete},
+		{Label: "Organizer Profile", Done: applicationStatus == "approved"},
+		{Label: "Ticket Configuration", Done: len(tiers) > 0},
+	}
+
+	// 7. Compliance history — the organizer's record across their OTHER events.
+	// The current event is excluded everywhere so an auditor is never shown this
+	// submission as evidence about itself.
+	err = r.db.QueryRowContext(ctx, `
+		SELECT
+			(SELECT COUNT(DISTINCT esl.event_id)
+			   FROM event_status_log esl
+			   JOIN events pe ON pe.id = esl.event_id
+			  WHERE pe.organizer_id = $1 AND pe.id <> $2
+			    AND esl.to_status = 'pending_review'),
+			(SELECT COUNT(*) FROM events
+			  WHERE organizer_id = $1 AND id <> $2 AND status = 'rejected'),
+			(SELECT COUNT(*)
+			   FROM auditor_revisions ar
+			   JOIN events pe ON pe.id = ar.event_id
+			  WHERE pe.organizer_id = $1 AND pe.id <> $2),
+			(SELECT COUNT(*) FROM events
+			  WHERE organizer_id = $1 AND id <> $2 AND status = 'approved')
+	`, organizerID, eventID).Scan(
+		&rev.ComplianceHistory.PreviousAudits,
+		&rev.ComplianceHistory.PreviousViolations,
+		&rev.ComplianceHistory.PreviousRevisions,
+		&rev.ComplianceHistory.PreviousApprovedEvents,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return &rev, nil
+}
+
+// licenseStatusLabel renders a document verification status for display next to
+// a licence type. Statuses arrive lowercase from mapVerificationStatus.
+func licenseStatusLabel(status string) string {
+	switch status {
+	case "verified":
+		return "Verified"
+	case "rejected":
+		return "Rejected"
+	case "missing":
+		return "Not uploaded"
+	default:
+		return "Pending review"
+	}
+}
+
+// organizerLicenceStatus reports the verification state of an organizer's
+// business-registration document (NIB or SIUP). The schema stores no licence
+// NUMBER, so the auditor-facing "Business License" field carries this status
+// string instead.
+//
+// A verified licence wins over a pending one when the organizer uploaded both.
+// Errors are folded into the "no licence" result on purpose: this is one
+// display field on a payout, and failing the whole payout load because a
+// secondary lookup broke would hide the payout entirely.
+func (r *PostgresAuditorRepository) organizerLicenceStatus(ctx context.Context, organizerID int) string {
+	const q = `
+		SELECT od.document_type, od.status::text
+		FROM organizer_documents od
+		JOIN organizer_applications oa ON oa.id = od.application_id
+		WHERE oa.user_id = $1
+		  AND UPPER(od.document_type) IN ('NIB', 'SIUP')
+	`
+	rows, err := r.db.QueryContext(ctx, q, organizerID)
+	if err != nil {
+		return "No NIB/SIUP on file"
+	}
+	defer rows.Close()
+
+	var status string
+	for rows.Next() {
+		var docType, dbStatus string
+		if err := rows.Scan(&docType, &dbStatus); err != nil {
+			return "No NIB/SIUP on file"
+		}
+		mapped := mapVerificationStatus(dbStatus)
+		if status == "" || mapped == "verified" {
+			status = strings.ToUpper(docType) + " — " + licenseStatusLabel(mapped)
+		}
+	}
+	if err := rows.Err(); err != nil || status == "" {
+		return "No NIB/SIUP on file"
+	}
+	return status
 }
 
 func (r *PostgresAuditorRepository) ApproveEventReview(ctx context.Context, eventID, actorID int, notes string) error {
@@ -1742,6 +1929,11 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 	}
 	offset := (filters.Page - 1) * filters.Limit
 
+	// Gross and net are selected here because the payouts TABLE shows both
+	// columns. They previously came from nowhere, so the console read an absent
+	// field and crashed on the first rendered row. The net formula matches
+	// GetPayout exactly (5% platform, 2% gateway, per-event entertainment tax) —
+	// the two must not disagree about the same payout.
 	query := `
 		SELECT
 			p.id,
@@ -1751,11 +1943,22 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 			e.event_name,
 			e.event_start,
 			COALESCE(up.full_name, 'Unknown Organizer'),
-			COALESCE(oa.business_email, 'org@crowdflow.com')
+			COALESCE(oa.business_email, ''),
+			COALESCE(sales.tickets_sold, 0) AS tickets_sold,
+			COALESCE(sales.gross, 0)::float8 AS gross_revenue,
+			(COALESCE(sales.gross, 0)
+				* (1 - 0.05 - 0.02 - (e.entertainment_tax_rate / 100.0)))::float8 AS net_revenue
 		FROM payouts p
 		JOIN events e ON e.id = p.event_id
 		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
 		LEFT JOIN user_profiles up ON up.user_id = e.organizer_id
+		LEFT JOIN (
+			SELECT event_id,
+			       SUM(tickets_sold) AS tickets_sold,
+			       SUM(tickets_sold * price) AS gross
+			FROM ticket_tiers
+			GROUP BY event_id
+		) sales ON sales.event_id = p.event_id
 		WHERE 1=1
 	`
 	args := []interface{}{}
@@ -1798,6 +2001,9 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 		var reqTime, eventTime time.Time
 		var dbStatus string
 
+		var ticketsSold int
+		var gross, net float64
+
 		err = rows.Scan(
 			&p.ID,
 			&p.RequestedAmount,
@@ -1807,6 +2013,9 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 			&eventTime,
 			&p.OrganizerName,
 			&p.OrganizerEmail,
+			&ticketsSold,
+			&gross,
+			&net,
 		)
 		if err != nil {
 			return nil, err
@@ -1815,13 +2024,13 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 		p.Status = string(dbStatus)
 		p.RequestDate = formatTime(reqTime)
 		p.EventDate = eventTime.Format("2006-01-02 15:04")
-
-		riskScore := 20
-		if p.RequestedAmount > 1000000.0 {
-			riskScore = 40
+		// Only the figures this query actually computes. The rest of
+		// PayoutSales is detail-only and stays zero rather than being guessed.
+		p.SalesSummary = PayoutSales{
+			TicketsSold:  ticketsSold,
+			GrossRevenue: gross,
+			NetRevenue:   net,
 		}
-		p.RiskScore = riskScore
-		p.RiskLevel = computeRiskLevel(100 - riskScore)
 
 		list = append(list, &p)
 	}
@@ -1837,6 +2046,12 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
+	// Every column here is read by an auditor deciding whether to release money.
+	// A COALESCE default would therefore be a fabricated bank account rendered as
+	// fact — this query returns empty strings for absent data instead, and the
+	// console shows "Not provided" so the auditor knows to withhold approval.
+	// oa.business_license is deliberately absent: no such column exists (see the
+	// licence-status query below).
 	query := `
 		SELECT
 			p.id,
@@ -1844,18 +2059,19 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 			p.status,
 			p.requested_at,
 			e.id AS event_id,
+			e.organizer_id,
 			e.event_name,
 			e.event_start,
-			COALESCE(up.full_name, 'Unknown Organizer'),
-			COALESCE(oa.business_email, 'org@crowdflow.com'),
+			COALESCE(up.full_name, ''),
+			COALESCE(oa.business_email, ''),
 			COALESCE(oa.notes, ''),
 			e.entertainment_tax_rate,
-			COALESCE(oa.bank_name, 'Bank Central Asia (BCA)'),
-			COALESCE(oa.bank_account_number, '8024927501'),
-			COALESCE(oa.bank_account_holder, up.full_name, 'Unknown Organizer'),
-			COALESCE(oa.business_phone, '+62 812-3456-7890'),
-			COALESCE(oa.business_license, 'BL-2026-ID-00123'),
-			COALESCE(oa.status::text, 'Verified')
+			COALESCE(oa.bank_name, ''),
+			COALESCE(oa.bank_account_number, ''),
+			COALESCE(oa.bank_account_holder, ''),
+			COALESCE(oa.business_phone, ''),
+			COALESCE(oa.status::text, ''),
+			COALESCE(oa.bank_verification_status, 'unverified')
 		FROM payouts p
 		JOIN events e ON e.id = p.event_id
 		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
@@ -1865,7 +2081,7 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 	var p AuditorPayout
 	var reqTime, eventTime time.Time
 	var dbStatus string
-	var eventID int
+	var eventID, organizerID int
 	var taxRate float64
 
 	err := r.db.QueryRowContext(ctx, query, payoutID).Scan(
@@ -1874,6 +2090,7 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		&dbStatus,
 		&reqTime,
 		&eventID,
+		&organizerID,
 		&p.EventName,
 		&eventTime,
 		&p.OrganizerName,
@@ -1884,8 +2101,8 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		&p.BankAccountNum,
 		&p.BankHolder,
 		&p.OrganizerPhone,
-		&p.OrganizerBusinessLicense,
 		&p.OrganizerStatus,
+		&p.BankVerificationStatus,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -1893,6 +2110,11 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		}
 		return nil, err
 	}
+
+	// There is no licence-number column anywhere in the schema. Report the
+	// verification state of the organizer's NIB/SIUP instead — the same signal
+	// GetEventReview surfaces, so the two consoles agree.
+	p.OrganizerBusinessLicense = r.organizerLicenceStatus(ctx, organizerID)
 
 	p.Status = string(dbStatus)
 	p.RequestDate = formatTime(reqTime)
@@ -1925,24 +2147,18 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		NetRevenue:       netRevenue,
 	}
 
-	// Calculate Risk Score & Level
-	riskScore := 20
+	// A duplicate approved payout is a real, checkable condition — unlike the
+	// old risk score, which was a hardcoded 20/40 that mapped to "High" for
+	// every payout that ever existed.
 	hasAlert := false
 	alertMsg := ""
 
-	if netRevenue > 100000.0 {
-		riskScore = 45
-	}
 	var dupCount int
 	_ = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM payouts WHERE event_id = $1 AND status = 'approved'`, eventID).Scan(&dupCount)
 	if dupCount > 0 {
-		riskScore += 40
 		hasAlert = true
 		alertMsg = "Warning: Approved payout request already exists for this event!"
 	}
-
-	p.RiskScore = riskScore
-	p.RiskLevel = computeRiskLevel(100 - riskScore)
 
 	p.FraudDetection = FraudSignals{
 		DuplicatePayout:   dupCount > 0,
@@ -2188,8 +2404,8 @@ func formatBannerURL(rawURL string) string {
 		return ""
 	}
 	if strings.Contains(rawURL, "localhost:9000") || strings.Contains(rawURL, "minio:9000") {
-		rawURL = strings.ReplaceAll(rawURL, "localhost:9000", "localhost:9001")
-		rawURL = strings.ReplaceAll(rawURL, "minio:9000", "localhost:9001")
+		rawURL = strings.ReplaceAll(rawURL, "localhost:9000", "localhost:9000")
+		rawURL = strings.ReplaceAll(rawURL, "minio:9000", "localhost:9000")
 		rawURL = strings.ReplaceAll(rawURL, "crowdflow-uploads", "crowdflow-public")
 		return rawURL
 	}
@@ -2198,7 +2414,7 @@ func formatBannerURL(rawURL string) string {
 	}
 	base := os.Getenv("S3_PUBLIC_BASE_URL")
 	if base == "" {
-		base = "http://localhost:9001/crowdflow-public"
+		base = "http://localhost:9000/crowdflow-public"
 	}
 	base = strings.TrimSuffix(base, "/")
 	cleaned := strings.TrimPrefix(rawURL, "/")

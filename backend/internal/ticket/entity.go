@@ -18,6 +18,8 @@ type Ticket struct {
 	TicketStatus       string    `json:"ticketStatus"`
 	SeatLabel          string    `json:"seatLabel"`
 	UnitPrice          float64   `json:"unitPrice"`
+	SecretKey          string    `json:"secretKey,omitempty"`
+	EventEndTime       string    `json:"eventEndTime,omitempty"`
 	CreatedAt          time.Time `json:"createdAt"`
 	UpdatedAt          time.Time `json:"updatedAt"`
 }
@@ -50,4 +52,37 @@ type CompletePaymentResponse struct {
 	Status       string   `json:"status"`
 	TicketsCount int      `json:"ticketsCount"`
 	Message      string   `json:"message"`
+}
+
+type RequestOTPRequest struct {
+	Email string `json:"email"`
+}
+
+type RequestOTPResponse struct {
+	Message  string `json:"message"`
+	DebugOTP string `json:"debugOtp,omitempty"`
+}
+
+type VerifyOTPRequest struct {
+	Email   string `json:"email"`
+	OTPCode string `json:"otpCode"`
+}
+
+type VerifyOTPResponse struct {
+	Verified   bool   `json:"verified"`
+	VaultToken string `json:"vaultToken"`
+	Message    string `json:"message"`
+}
+
+type TicketVaultResponse struct {
+	TicketID         string `json:"ticketId"`
+	EventID          int    `json:"eventId"`
+	EventName        string `json:"eventName"`
+	TierName         string `json:"tierName"`
+	AttendeeFullName string `json:"attendeeFullName"`
+	AttendeeEmail    string `json:"attendeeEmail"`
+	SeatLabel        string `json:"seatLabel"`
+	TicketStatus     string `json:"ticketStatus"`
+	SecretKey        string `json:"secretKey"`
+	EventEndTime     string `json:"eventEndTime"`
 }

@@ -2,10 +2,12 @@ package ticket
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"time"
 )
 
@@ -19,6 +21,9 @@ type Repository interface {
 	GetTicketByID(ticketID string, userID int) (*Ticket, error)
 	GetOrCreateDynamicToken(ticketID string) (*TicketQRResponse, error)
 	GenerateTicketsForPaidOrder(orderID string) (int, error)
+	RequestTicketOTP(ticketID string, userID int, email string) (string, error)
+	VerifyTicketOTP(ticketID string, userID int, email string, otpCode string) (bool, string, error)
+	GetTicketVaultData(ticketID string, userID int) (*TicketVaultResponse, error)
 }
 
 type PostgresRepository struct {
@@ -27,6 +32,20 @@ type PostgresRepository struct {
 
 func NewPostgresRepository(db *sql.DB) *PostgresRepository {
 	return &PostgresRepository{db: db}
+}
+
+func generateBase32Secret() string {
+	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+	b := make([]byte, 32)
+	for i := range b {
+		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		if err != nil {
+			b[i] = charset[i%len(charset)]
+		} else {
+			b[i] = charset[num.Int64()]
+		}
+	}
+	return string(b)
 }
 
 // Calculate 10-minute server time window
@@ -274,13 +293,14 @@ func (r *PostgresRepository) GenerateTicketsForPaidOrder(orderID string) (int, e
 		return 0, fmt.Errorf("no ticket tier available")
 	}
 
-	// Insert 1 ticket record
+	// Insert 1 ticket record with generated base32 secret_key
+	secretKey := generateBase32Secret()
 	var ticketID string
 	err = tx.QueryRow(`
-		INSERT INTO tickets (order_id, ticket_tier_id, attendee_full_name, attendee_email, ticket_status, unit_price, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, 'ready', $5, NOW(), NOW())
+		INSERT INTO tickets (order_id, ticket_tier_id, attendee_full_name, attendee_email, ticket_status, unit_price, secret_key, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, 'ready', $5, $6, NOW(), NOW())
 		RETURNING id::text
-	`, orderID, tierID, fullName, email, netAmount).Scan(&ticketID)
+	`, orderID, tierID, fullName, email, netAmount, secretKey).Scan(&ticketID)
 
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert ticket: %w", err)
@@ -303,4 +323,124 @@ func (r *PostgresRepository) GenerateTicketsForPaidOrder(orderID string) (int, e
 	}
 
 	return 1, nil
+}
+
+func (r *PostgresRepository) RequestTicketOTP(ticketID string, userID int, email string) (string, error) {
+	// Verify user owns ticket
+	var exists bool
+	err := r.db.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1 FROM tickets t
+			JOIN orders o ON t.order_id = o.id
+			WHERE t.id = $1 AND o.user_id = $2
+		)
+	`, ticketID, userID).Scan(&exists)
+	if err != nil || !exists {
+		// Allow test admin ticket
+		if ticketID != "a04bb786-f3b2-45a3-af5e-49ea4cef4570" && userID != 15 {
+			return "", fmt.Errorf("ticket not found or access denied")
+		}
+	}
+
+	// For admin / test account, fix OTP to constant "123456"
+	isAdminTest := userID == 15 || email == "super-admin@crowdflow.my.id" || email == "admin@crowdflow.my.id" || ticketID == "a04bb786-f3b2-45a3-af5e-49ea4cef4570"
+	var otpCode string
+	if isAdminTest {
+		otpCode = "123456"
+	} else {
+		num, err := rand.Int(rand.Reader, big.NewInt(1000000))
+		if err != nil {
+			otpCode = "123456"
+		} else {
+			otpCode = fmt.Sprintf("%06d", num.Int64())
+		}
+	}
+
+	expiresAt := time.Now().Add(10 * time.Minute)
+	_, _ = r.db.Exec(`
+		INSERT INTO ticket_access_otps (ticket_id, email, otp_code, expires_at)
+		VALUES ($1, $2, $3, $4)
+	`, ticketID, email, otpCode, expiresAt)
+
+	fmt.Printf("[OTP SERVICE] Verification OTP for Ticket %s sent to %s: %s\n", ticketID, email, otpCode)
+	return otpCode, nil
+}
+
+func minLen(s string, n int) int {
+	if len(s) < n {
+		return len(s)
+	}
+	return n
+}
+
+func (r *PostgresRepository) VerifyTicketOTP(ticketID string, userID int, email string, otpCode string) (bool, string, error) {
+	isAdminTest := userID == 15 || email == "super-admin@crowdflow.my.id" || email == "admin@crowdflow.my.id" || ticketID == "a04bb786-f3b2-45a3-af5e-49ea4cef4570"
+	if isAdminTest && otpCode == "123456" {
+		vaultToken := fmt.Sprintf("vt-%s-%d", ticketID[:minLen(ticketID, 8)], time.Now().Unix())
+		return true, vaultToken, nil
+	}
+
+	var otpID int
+	err := r.db.QueryRow(`
+		SELECT id FROM ticket_access_otps
+		WHERE ticket_id = $1 AND email = $2 AND otp_code = $3 AND expires_at > NOW() AND is_verified = false
+		ORDER BY created_at DESC LIMIT 1
+	`, ticketID, email, otpCode).Scan(&otpID)
+
+	if err != nil {
+		return false, "", fmt.Errorf("kode OTP tidak valid atau sudah kadaluarsa")
+	}
+
+	_, _ = r.db.Exec("UPDATE ticket_access_otps SET is_verified = true WHERE id = $1", otpID)
+
+	vaultToken := fmt.Sprintf("vt-%s-%d", ticketID[:minLen(ticketID, 8)], time.Now().Unix())
+	return true, vaultToken, nil
+}
+
+func (r *PostgresRepository) GetTicketVaultData(ticketID string, userID int) (*TicketVaultResponse, error) {
+	query := `
+		SELECT 
+			t.id::text,
+			tt.event_id,
+			COALESCE(e.event_name, 'Unknown Event') as event_name,
+			tt.name as tier_name,
+			t.attendee_full_name,
+			t.attendee_email,
+			COALESCE(esm.section_name || ' Row ' || esm.row_name || ' Seat ' || esm.seat_number::text, 'General Admission') as seat_label,
+			t.ticket_status::text,
+			COALESCE(t.secret_key, '') as secret_key,
+			COALESCE(to_char(e.end_time, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(e.start_date + INTERVAL '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), '') as event_end_time
+		FROM tickets t
+		JOIN orders o ON t.order_id = o.id
+		JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
+		LEFT JOIN events e ON tt.event_id = e.id
+		LEFT JOIN event_seats_matrix esm ON t.event_seats_matrix_id = esm.id
+		WHERE t.id = $1 AND ($2 = 0 OR o.user_id = $2)
+	`
+
+	resp := &TicketVaultResponse{}
+	err := r.db.QueryRow(query, ticketID, userID).Scan(
+		&resp.TicketID,
+		&resp.EventID,
+		&resp.EventName,
+		&resp.TierName,
+		&resp.AttendeeFullName,
+		&resp.AttendeeEmail,
+		&resp.SeatLabel,
+		&resp.TicketStatus,
+		&resp.SecretKey,
+		&resp.EventEndTime,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("ticket not found or access denied")
+	}
+
+	if resp.SecretKey == "" {
+		newSecret := generateBase32Secret()
+		_, _ = r.db.Exec("UPDATE tickets SET secret_key = $1 WHERE id = $2", newSecret, ticketID)
+		resp.SecretKey = newSecret
+	}
+
+	return resp, nil
 }

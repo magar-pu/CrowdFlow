@@ -208,6 +208,46 @@ type ApplyRequest struct {
 	BusinessAddress   string `json:"business_address"`
 }
 
+// PayoutDetails is the organizer's payout bank account plus everything the
+// console needs to decide whether the form is editable and what to warn about.
+//
+// The account is organizer-level, not per-event: organizer_applications is
+// UNIQUE (user_id) and the auditor payout screen joins to it via
+// events.organizer_id, so one account receives every payout.
+type PayoutDetails struct {
+	BankName          string `json:"bankName"`
+	BankAccountHolder string `json:"bankAccountHolder"`
+	BankAccountNumber string `json:"bankAccountNumber"`
+
+	// Complete reports whether all three fields are present. The publish gate
+	// uses the same condition, so the console can pre-empt it.
+	Complete           bool   `json:"complete"`
+	VerificationStatus string `json:"verificationStatus"` // "unverified" | "verified"
+	UpdatedAt          string `json:"updatedAt,omitempty"`
+
+	// Editable is false once the details are committed to something: an event
+	// awaiting an auditor, or a payout already in flight. LockReason says which,
+	// so the console explains the lock instead of just disabling the form.
+	Editable   bool   `json:"editable"`
+	LockReason string `json:"lockReason,omitempty"`
+}
+
+// UpdatePayoutDetailsRequest is the payload of PUT /api/organizer/payout-details.
+type UpdatePayoutDetailsRequest struct {
+	BankName          string `json:"bankName"`
+	BankAccountHolder string `json:"bankAccountHolder"`
+	BankAccountNumber string `json:"bankAccountNumber"`
+}
+
+// ErrPayoutDetailsLocked is returned when bank details are edited while an
+// event is under review or a payout is in flight. Distinct from
+// ErrApplicationLocked, which is about the application wizard.
+var ErrPayoutDetailsLocked = errors.New("payout details are locked")
+
+// ErrPayoutDetailsRequired gates event submission: an event cannot go to an
+// auditor until the organizer has an account for the money to land in.
+var ErrPayoutDetailsRequired = errors.New("payout bank details are required")
+
 type DocumentUpload struct {
 	Type     string
 	Filename string
@@ -414,10 +454,22 @@ type EventRevisionFeedback struct {
 	StatusLogs          []*EventStatusLogItem  `json:"statusLogs"`
 }
 
+// RespondRevisionRequest carries the organizer's reply to one revision point.
+// There is deliberately no file field: the old `proofFile` only ever transmitted
+// a filename the browser never uploaded, so the auditor was shown an attachment
+// that did not exist. Evidence now comes from the documents the organizer
+// actually replaced, recorded automatically as RevisionDocumentChange.
 type RespondRevisionRequest struct {
 	Comment     string `json:"comment"`
 	ActionTaken string `json:"actionTaken"`
-	ProofFile   string `json:"proofFile"`
+}
+
+// RevisionDocumentChange is one event document that was re-uploaded after the
+// auditor raised the revision, captured at the moment the organizer responded.
+type RevisionDocumentChange struct {
+	DocumentType string `json:"documentType"`
+	Label        string `json:"label"`
+	UploadedAt   string `json:"uploadedAt"`
 }
 
 type AuditorRevisionItem struct {
@@ -431,8 +483,13 @@ type AuditorRevisionItem struct {
 	CreatedAt            time.Time `json:"createdAt"`
 	OrganizerComment     string    `json:"organizerComment,omitempty"`
 	OrganizerActionTaken string    `json:"organizerActionTaken,omitempty"`
-	OrganizerFile        string    `json:"organizerFile,omitempty"`
 	RespondedAt          string    `json:"respondedAt,omitempty"`
+	// DocumentsChanged is never nil — an empty list means the organizer
+	// answered without touching any paperwork, which is a meaningful answer.
+	DocumentsChanged []RevisionDocumentChange `json:"documentsChanged"`
+	// PendingDocumentChanges previews, for an unanswered revision, which
+	// documents have already been re-uploaded since it was raised.
+	PendingDocumentChanges []RevisionDocumentChange `json:"pendingDocumentChanges,omitempty"`
 }
 
 type EventStatusLogItem struct {
@@ -562,6 +619,8 @@ type Repository interface {
 	SetEventArchived(ctx context.Context, eventID int, organizerID int, archived bool) error
 	SetEventListed(ctx context.Context, eventID int, organizerID int, listed bool) error
 	PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
+	GetPayoutDetails(ctx context.Context, organizerID int) (*PayoutDetails, error)
+	UpdatePayoutDetails(ctx context.Context, organizerID int, req UpdatePayoutDetailsRequest) (*PayoutDetails, error)
 	DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	ListTicketTiers(ctx context.Context, eventID int, organizerID int) ([]*OrganizerTicketTier, error)
 	CreateTicketTier(ctx context.Context, eventID int, organizerID int, tier *OrganizerTicketTier) error
@@ -612,6 +671,8 @@ type Service interface {
 	SetEventArchived(ctx context.Context, eventID int, organizerID int, archived bool) error
 	SetEventListed(ctx context.Context, eventID int, organizerID int, listed bool) error
 	PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
+	GetPayoutDetails(ctx context.Context, organizerID int) (*PayoutDetails, error)
+	UpdatePayoutDetails(ctx context.Context, organizerID int, req UpdatePayoutDetailsRequest) (*PayoutDetails, error)
 	DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	GetEventSeating(ctx context.Context, eventID int, organizerID int) (*EventSeatingResponse, error)
 	SeedEventSeating(ctx context.Context, eventID int, organizerID int, req SeedSeatingRequest) error

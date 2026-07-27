@@ -34,15 +34,6 @@ const (
 	StageFinalApproval        ReviewStage = "Final Approval"
 )
 
-type RiskLevel string
-
-const (
-	RiskLow      RiskLevel = "Low"
-	RiskMedium   RiskLevel = "Medium"
-	RiskHigh     RiskLevel = "High"
-	RiskCritical RiskLevel = "Critical"
-)
-
 // ---- Dashboard ----
 
 type DashboardStats struct {
@@ -86,18 +77,58 @@ type EventReview struct {
 	LastUpdated     string         `json:"lastUpdated"`
 	Stage           ReviewStage    `json:"stage"`
 	Status          string         `json:"status"` // pending_review, approved, rejected
-	RiskLevel       RiskLevel      `json:"riskLevel"`
 	ComplianceScore int            `json:"complianceScore"`
 	MissingDocs     int            `json:"missingDocs"`
 	AssignedAuditor string         `json:"assignedAuditor"`
 	Venue           string         `json:"venue"`
+	VenueAddress    string         `json:"venueAddress"`
 	Date            string         `json:"date"`
 	Capacity        int            `json:"capacity"`
+	TicketSold      int            `json:"ticketSold"`
 	Notes           string         `json:"notes"`
 	Documents       []ReviewDoc    `json:"documents"`
 	Finance         ReviewFinance  `json:"finance"`
 	History         []StatusEntry  `json:"history"`
 	Revisions       []Revision     `json:"revisions"`
+
+	OrganizerDetail   ReviewOrganizerDetail   `json:"organizerDetail"`
+	Checklist         []ChecklistItem         `json:"checklist"`
+	ComplianceHistory ReviewComplianceHistory `json:"complianceHistory"`
+}
+
+// ChecklistItem is a single derived pass/fail signal shown on the review
+// overview. Every item must be computed from real state — a checklist that is
+// always green tells the auditor nothing.
+type ChecklistItem struct {
+	Label string `json:"label"`
+	Done  bool   `json:"done"`
+}
+
+// ReviewOrganizerDetail is the organizer's account-level identity as attached to
+// the event under review. It comes from organizer_applications, which is
+// UNIQUE (user_id) — one business per organizer.
+type ReviewOrganizerDetail struct {
+	// ApplicationID lets the console deep-link into the organizer verification
+	// page. Zero when the organizer has no application row.
+	ApplicationID int `json:"applicationId"`
+	CompanyName   string `json:"companyName"`
+	// BusinessLicense is NOT a stored licence number — no such column exists.
+	// It reports the verification state of the organizer's NIB/SIUP document,
+	// which is the signal an auditor actually needs.
+	BusinessLicense string `json:"businessLicense"`
+	Pic             string `json:"pic"`
+	Email           string `json:"email"`
+	Phone           string `json:"phone"`
+	Address         string `json:"address"`
+}
+
+// ReviewComplianceHistory summarises the organizer's track record across their
+// OTHER events, so an auditor can weigh this submission against past behaviour.
+type ReviewComplianceHistory struct {
+	PreviousAudits         int `json:"previousAudits"`
+	PreviousViolations     int `json:"previousViolations"`
+	PreviousRevisions      int `json:"previousRevisions"`
+	PreviousApprovedEvents int `json:"previousApprovedEvents"`
 }
 
 // Document sources feeding a review. IDs are only unique WITHIN a source —
@@ -134,35 +165,41 @@ type ReviewFinance struct {
 	GatewayFee       float64            `json:"gatewayFee"`
 	TaxAmount        float64            `json:"taxAmount"`
 	NetPayout        float64            `json:"netPayout"`
-	TaxRate          float64            `json:"taxRate"`
-	TicketTiers      []ReviewTicketTier `json:"ticketTiers"`
-	TaxConfig        ReviewTaxConfig    `json:"taxConfig"`
-	Payout           ReviewPayout       `json:"payout"`
+	// TaxRate is events.entertainment_tax_rate — the only tax figure that is
+	// actually stored per event. The old TaxConfig block reported a hardcoded
+	// 11% PPN, a hardcoded "DKI Jakarta" region and three always-true
+	// applicability flags, none of which existed in the schema.
+	TaxRate     float64            `json:"taxRate"`
+	TicketTiers []ReviewTicketTier `json:"ticketTiers"`
+	Payout      ReviewPayout       `json:"payout"`
 }
 
 type ReviewTicketTier struct {
 	Category string  `json:"category"`
 	Price    float64 `json:"price"`
-	Seats    int     `json:"seats"`
-	Status   string  `json:"status"` // Available, Sold Out
+	// Seats is the tier's real sellable capacity: the number of seats painted
+	// with this tier for assigned-seating tiers, otherwise allocation_limit.
+	Seats int `json:"seats"`
+	Sold  int `json:"sold"`
+	// AssignedSeating reports which of those two rules applied, because
+	// allocation_limit is never consulted once a tier has seats.
+	AssignedSeating bool   `json:"assignedSeating"`
+	Status          string `json:"status"` // Available, Sold Out
 }
 
-type ReviewTaxConfig struct {
-	EntertainmentTax float64 `json:"entertainmentTax"`
-	Ppn              float64 `json:"ppn"`
-	Region           string  `json:"region"`
-	TaxPercentage    float64 `json:"taxPercentage"`
-	RegionMatch      bool    `json:"regionMatch"`
-	TaxApplied       bool    `json:"taxApplied"`
-	PpnApplied       bool    `json:"ppnApplied"`
-}
-
+// ReviewPayout is the organizer's payout destination. Sourced from
+// user_bank_accounts (which carries a real verification flag) and falling back
+// to the bank columns on organizer_applications. Empty strings mean the
+// organizer has not provided one — the console must say so rather than invent
+// an account.
 type ReviewPayout struct {
 	Bank            string  `json:"bank"`
 	AccountName     string  `json:"accountName"`
 	AccountNumber   string  `json:"accountNumber"`
 	EstimatedPayout float64 `json:"estimatedPayout"`
 	Verified        bool    `json:"verified"`
+	// HasAccount is false when no bank details exist in either source.
+	HasAccount bool `json:"hasAccount"`
 }
 
 type StatusEntry struct {
@@ -185,13 +222,22 @@ type Revision struct {
 	CreatedAt            string `json:"createdAt"`
 	OrganizerComment     string `json:"organizerComment,omitempty"`
 	OrganizerActionTaken string `json:"organizerActionTaken,omitempty"`
-	OrganizerFile        string `json:"organizerFile,omitempty"`
 	RespondedAt          string `json:"respondedAt,omitempty"`
+	// DocumentsChanged lists the event documents the organizer actually
+	// re-uploaded in response to this revision, snapshotted when they replied.
+	// It replaces the old organizer_file, which held a filename for a file that
+	// was never uploaded anywhere.
+	DocumentsChanged []RevisionDocumentChange `json:"documentsChanged"`
+}
+
+type RevisionDocumentChange struct {
+	DocumentType string `json:"documentType"`
+	Label        string `json:"label"`
+	UploadedAt   string `json:"uploadedAt"`
 }
 
 type EventReviewFilters struct {
 	Status    string
-	RiskLevel string
 	Search    string
 	Page      int
 	Limit     int
@@ -319,12 +365,14 @@ type AuditorPayout struct {
 	RequestedAmount float64        `json:"requestedAmount"`
 	RequestDate     string         `json:"requestDate"`
 	Status          string         `json:"status"`
-	RiskLevel       RiskLevel      `json:"riskLevel"`
-	RiskScore       int            `json:"riskScore"`
 	SalesSummary    PayoutSales    `json:"salesSummary"`
 	BankName                  string         `json:"bankName"`
 	BankAccountNum            string         `json:"bankAccountNumber"`
 	BankHolder                string         `json:"bankAccountHolder"`
+	// BankVerificationStatus is "verified" only while an auditor has confirmed
+	// the CURRENT account. Any organizer edit resets it, so a payout whose
+	// destination moved since the last check arrives flagged.
+	BankVerificationStatus    string         `json:"bankVerificationStatus"`
 	OrganizerPhone            string         `json:"organizerPhone"`
 	OrganizerBusinessLicense  string         `json:"organizerBusinessLicense"`
 	OrganizerStatus           string         `json:"organizerStatus"`
@@ -354,7 +402,6 @@ type FraudSignals struct {
 
 type PayoutFilters struct {
 	Status    string
-	RiskLevel string
 	Search    string
 	Page      int
 	Limit     int
@@ -494,19 +541,6 @@ type Service interface {
 }
 
 // ---- Helpers ----
-
-func computeRiskLevel(score int) RiskLevel {
-	switch {
-	case score < 30:
-		return RiskLow
-	case score < 60:
-		return RiskMedium
-	case score < 85:
-		return RiskHigh
-	default:
-		return RiskCritical
-	}
-}
 
 func formatTime(t time.Time) string {
 	return t.Format("2006-01-02T15:04:05Z07:00")

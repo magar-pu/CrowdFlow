@@ -165,7 +165,6 @@ func (h *Handler) handleListEventReviews(w http.ResponseWriter, r *http.Request)
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	filters := EventReviewFilters{
 		Status:    q.Get("status"),
-		RiskLevel: q.Get("riskLevel"),
 		Search:    q.Get("search"),
 		Page:      page,
 		Limit:     limit,
@@ -566,7 +565,6 @@ func (h *Handler) handleListPayouts(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	filters := PayoutFilters{
 		Status:    q.Get("status"),
-		RiskLevel: q.Get("riskLevel"),
 		Search:    q.Get("search"),
 		Page:      page,
 		Limit:     limit,

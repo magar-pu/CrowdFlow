@@ -32,7 +32,7 @@ export interface EventItem {
   revenue: number;
   // "Approved" means an auditor cleared the event but the organizer has not put
   // it on the public listing yet. "Live" means approved AND published.
-  status: "Live" | "Approved" | "Scheduled" | "Draft" | "Rejected" | "Need Revision" | "In Review";
+  status: "Live" | "Approved" | "Scheduled" | "Draft" | "Rejected" | "Need Revision" | "In Review" | "Archived";
   image: string;
 }
 
@@ -62,7 +62,10 @@ export interface TicketTier {
   price: number;
   sold: number;
   capacity: number;
-  status?: "Selling Fast" | "On Sale" | "Sold Out";
+  // "Scheduled" and "Expired" describe the sales WINDOW, not stock. A tier
+  // outside its window is not buyable and is absent from the public listing,
+  // so the console must not show it as "On Sale".
+  status?: "Selling Fast" | "On Sale" | "Sold Out" | "Scheduled" | "Expired";
   color?: string;
   maxPerOrder?: number;
   salesStart?: string;

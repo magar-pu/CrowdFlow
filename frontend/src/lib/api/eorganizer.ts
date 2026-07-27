@@ -32,6 +32,7 @@ export interface RecentEvent {
   capacity: number;
   sold: number;
   revenue: number;
+  date?: string;
   status: string;
   image: string;
 }
@@ -671,6 +672,12 @@ export async function markNotificationsRead(notificationIds?: number[]): Promise
   });
 }
 
+export interface RevisionDocumentChange {
+  documentType: string;
+  label: string;
+  uploadedAt: string;
+}
+
 export interface EventRevisionFeedback {
   eventId: number;
   eventStatus: string;
@@ -687,8 +694,11 @@ export interface EventRevisionFeedback {
     status: string;
     organizerComment?: string;
     organizerActionTaken?: string;
-    organizerFile?: string;
     respondedAt?: string;
+    /** Documents re-uploaded in response to this point, snapshotted on reply. */
+    documentsChanged?: RevisionDocumentChange[];
+    /** For an unanswered point: documents already replaced since it was raised. */
+    pendingDocumentChanges?: RevisionDocumentChange[];
   }>;
   statusLogs?: Array<{
     fromStatus: string;
@@ -704,15 +714,54 @@ export async function getEventRevisions(eventId: number): Promise<ApiResponse<Ev
   });
 }
 
+/**
+ * Sends the organizer's reply to one revision point. There is no file argument:
+ * evidence is the set of event documents they actually replaced, which the
+ * backend records automatically. The previous `proofFile` only ever sent a
+ * filename that was never uploaded anywhere.
+ */
 export async function respondToEventRevision(
   eventId: number,
   revId: number,
   comment: string,
-  actionTaken: string,
-  proofFile?: string
+  actionTaken: string
 ): Promise<ApiResponse<void>> {
   return apiRequest<void>(`/api/organizer/events/${eventId}/revisions/${revId}/respond`, {
     method: "POST",
-    body: JSON.stringify({ comment, actionTaken, proofFile }),
+    body: JSON.stringify({ comment, actionTaken }),
+  });
+}
+
+/**
+ * Payout bank details. Organizer-level, not per-event: one account receives
+ * every payout, and the auditor payout screen reads it via events.organizer_id.
+ *
+ * `editable` is false once the account is committed to something a change would
+ * silently affect (an event under review, a payout in flight); `lockReason`
+ * says which, so the form can explain itself rather than just being disabled.
+ */
+export interface PayoutDetails {
+  bankName: string;
+  bankAccountHolder: string;
+  bankAccountNumber: string;
+  complete: boolean;
+  verificationStatus: "unverified" | "verified";
+  updatedAt?: string;
+  editable: boolean;
+  lockReason?: string;
+}
+
+export async function getPayoutDetails(): Promise<ApiResponse<PayoutDetails>> {
+  return apiRequest<PayoutDetails>("/api/organizer/payout-details", {
+    method: "GET",
+  });
+}
+
+export async function updatePayoutDetails(
+  details: Pick<PayoutDetails, "bankName" | "bankAccountHolder" | "bankAccountNumber">
+): Promise<ApiResponse<PayoutDetails>> {
+  return apiRequest<PayoutDetails>("/api/organizer/payout-details", {
+    method: "PUT",
+    body: JSON.stringify(details),
   });
 }
