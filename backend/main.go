@@ -15,6 +15,7 @@ import (
 	"crowdflow-backend/internal/booking"
 	"crowdflow-backend/internal/delegation"
 	"crowdflow-backend/internal/event"
+	"crowdflow-backend/internal/mail"
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/organizer"
 	"crowdflow-backend/internal/payment"
@@ -152,10 +153,15 @@ func main() {
 	accessTTL := getDurationEnv("ACCESS_TOKEN_TTL", 15*time.Minute)
 	refreshTTL := getDurationEnv("REFRESH_TOKEN_TTL", 30*24*time.Hour)
 
+	// Initialize Mail Service (Resend Integration)
+	resendAPIKey := os.Getenv("RESEND_API_KEY")
+	resendFromEmail := os.Getenv("RESEND_FROM_EMAIL")
+	mailService := mail.NewService(resendAPIKey, resendFromEmail)
+
 	// Initialize Authentication dependencies
 	authRepo := auth.NewPostgresRepository(db)
 	sessionStore := auth.NewSessionStore(redisClient, refreshTTL)
-	authService := auth.NewAuthService(authRepo, jwtSecret, oauthConfig, sessionStore, accessTTL)
+	authService := auth.NewAuthService(authRepo, jwtSecret, oauthConfig, sessionStore, accessTTL, mailService)
 	isSecure := !devMode
 	authHandler := auth.NewHandler(authService, isSecure, accessTTL, refreshTTL)
 
@@ -178,7 +184,7 @@ func main() {
 
 	// Initialize Booking dependencies (ticket tiers, seat map, seat/GA holds)
 	bookingRepo := booking.NewPostgresRedisRepository(db, redisClient)
-	bookingService := booking.NewBookingService(bookingRepo)
+	bookingService := booking.NewBookingService(bookingRepo, mailService)
 	bookingHandler := booking.NewHandler(bookingService)
 
 	// Register Booking routes

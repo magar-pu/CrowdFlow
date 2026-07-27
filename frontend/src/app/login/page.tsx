@@ -25,21 +25,25 @@ const BACKEND_READY = true; // Flip ke true setelah Go backend live
 function SignInPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, is_authenticated, login, set_user_from_api } = useAuthStore();
+  const { user, is_authenticated, login, set_user_from_api, logout } = useAuthStore();
   const [error_message, set_error_message] = useState("");
   const [success_message, set_success_message] = useState("");
 
-  // Redirect away if already authenticated
+  // Redirect away if already authenticated (unless redirected here by middleware via ?from=)
   useEffect(() => {
-    if (is_authenticated && user) {
-      const from = searchParams.get("from");
-      if (from && from !== "/login") {
-        router.replace(from);
-      } else {
-        router.replace(getRoleLandingPath(user.role));
+    const from = searchParams.get("from");
+    if (from) {
+      // User was redirected by server middleware because HTTP cookie was missing -> reset stale state
+      if (is_authenticated) {
+        logout();
       }
+      return;
     }
-  }, [is_authenticated, user, router, searchParams]);
+
+    if (is_authenticated && user) {
+      router.replace(getRoleLandingPath(user.role));
+    }
+  }, [is_authenticated, user, router, searchParams, logout]);
 
   // Check URL query parameters for Google OAuth callback errors and registration success
   useEffect(() => {

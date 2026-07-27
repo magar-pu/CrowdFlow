@@ -37,15 +37,15 @@ const BADGE_CONFIG: Record<
   newly_added: { label: "NEWLY ADDED", class_name: "bg-secondary text-white" },
   sold_out: { label: "SOLD OUT", class_name: "bg-outline text-white" },
 };
-
 export function EventListingCard({ event }: EventListingCardProps) {
   const badge = BADGE_CONFIG[event.badge];
   const is_sold_out = event.badge === "sold_out";
 
   return (
-    <div className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-border-subtle bg-surface-white shadow-sm transition-all hover:shadow-xl">
-      {/* Full card clickable overlay */}
-      <Link href={`/events/${event.event_id}`} className="absolute inset-0 z-0" aria-label={`View ${event.title}`} />
+    <Link
+      href={`/events/${event.event_id}`}
+      className="group flex h-full flex-col overflow-hidden rounded-xl border border-border-subtle bg-surface-white shadow-sm transition-all hover:shadow-xl cursor-pointer"
+    >
       <div className="relative aspect-video overflow-hidden">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -109,7 +109,7 @@ export function EventListingCard({ event }: EventListingCardProps) {
           )}
         </div>
 
-        <div className="relative z-10 mt-auto flex items-center justify-between border-t border-border-subtle pt-4 gap-3">
+        <div className="mt-auto flex items-center justify-between border-t border-border-subtle pt-4 gap-3">
           <div className="min-w-0 flex-1">
             <p className="text-[10px] uppercase tracking-wider text-text-secondary truncate">
               Starting From
@@ -121,13 +121,11 @@ export function EventListingCard({ event }: EventListingCardProps) {
             </p>
           </div>
           {is_sold_out ? (
-            <button
-              type="button"
-              disabled
-              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-surface-container px-3 py-1.5 font-label-sm text-xs text-text-secondary"
+            <span
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-surface-container px-3 py-1.5 font-label-sm text-xs text-text-secondary opacity-60"
             >
               <Ban size={14} /> Sold Out
-            </button>
+            </span>
           ) : (
             <span
               className="flex shrink-0 items-center gap-1.5 rounded-full bg-text-primary px-3.5 py-2 font-label-sm text-xs font-bold text-white transition-all group-hover:bg-secondary active:scale-95 shadow-sm"
@@ -137,6 +135,6 @@ export function EventListingCard({ event }: EventListingCardProps) {
           )}
         </div>
       </div>
-    </div>
+    </Link>
   );
 }

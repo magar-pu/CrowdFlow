@@ -98,6 +98,7 @@ type Repository interface{
 	GetProfileStats(userID int) (ProfileStats, error)
 	GetAssociatedEvents(userID int, isOrganizer bool) ([]ProfileEventSummary, error)
 	UpdateProfile(userID int, req UpdateProfileRequest) error
+	UpdatePasswordHash(userID int, newHash string) error
 }
 
 type Service interface{
