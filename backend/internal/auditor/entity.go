@@ -376,26 +376,43 @@ type AuditorPayout struct {
 	OrganizerPhone            string         `json:"organizerPhone"`
 	OrganizerBusinessLicense  string         `json:"organizerBusinessLicense"`
 	OrganizerStatus           string         `json:"organizerStatus"`
+	// OrganizerViolations counts the organizer's rejected events, the same rule
+	// GetEventReview applies for compliance history. It excludes this payout's
+	// own event so a rejection here is not counted as prior history.
+	OrganizerViolations       int            `json:"organizerPreviousViolations"`
+	// ApplicationID and EventID let the console deep-link to the organizer
+	// profile and the event review; both screens already exist.
+	ApplicationID             int            `json:"applicationId"`
+	EventID                   int            `json:"eventId"`
+	VenueName                 string         `json:"venueName"`
+	EventStatus               string         `json:"eventStatus"`
+	TicketCapacity            int            `json:"ticketCapacity"`
 	FraudDetection            FraudSignals   `json:"fraudDetection"`
 	InternalNotes             string         `json:"internalNotes"`
 	Timeline                  []Activity     `json:"timeline"`
 }
 
+// PayoutSales is derived from `orders`, not from ticket_tiers.tickets_sold —
+// nothing in the codebase ever writes that counter, so every figure computed
+// from it was structurally zero. Each order also carries the fee rates that
+// applied when it was placed, so a historic payout is no longer recomputed at
+// today's percentages.
 type PayoutSales struct {
-	TicketsSold     int     `json:"ticketsSold"`
-	GrossRevenue    float64 `json:"grossRevenue"`
-	PlatformFee     float64 `json:"platformFee"`
-	GatewayFee      float64 `json:"paymentGatewayFee"`
+	TicketsSold      int     `json:"ticketsSold"`
+	GrossRevenue     float64 `json:"grossRevenue"`
+	PlatformFee      float64 `json:"platformFee"`
+	GatewayFee       float64 `json:"paymentGatewayFee"`
+	// PPN is the VAT actually charged on the two fees (platform_fee_ppn +
+	// gateway_fee_ppn). The rate is per-order, so it is never assumed to be 11%.
+	PPN              float64 `json:"ppn"`
 	EntertainmentTax float64 `json:"entertainmentTax"`
-	RefundAmount    float64 `json:"refundAmount"`
-	NetRevenue      float64 `json:"netRevenue"`
+	RefundAmount     float64 `json:"refundAmount"`
+	NetRevenue       float64 `json:"netRevenue"`
 }
 
 type FraudSignals struct {
 	DuplicatePayout     bool   `json:"duplicatePayout"`
 	SuspiciousRevenue   bool   `json:"suspiciousRevenue"`
-	UnusualRefundRate   bool   `json:"unusualRefundRate"`
-	HighChargeback      bool   `json:"highChargeback"`
 	HasAlert            bool   `json:"hasAlert"`
 	AlertMessage        string `json:"alertMessage"`
 }

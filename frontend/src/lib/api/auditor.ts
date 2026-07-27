@@ -329,21 +329,24 @@ export interface ListPayoutsFilters {
   limit?: number;
 }
 
+/** Derived from paid/refunded `orders`, not from ticket_tiers.tickets_sold. */
 export interface PayoutSalesDTO {
   ticketsSold: number;
   grossRevenue: number;
   platformFee: number;
   paymentGatewayFee: number;
+  /** PPN actually charged on the two fees. Per-order rate, not a fixed 11%. */
+  ppn: number;
   entertainmentTax: number;
   refundAmount: number;
   netRevenue: number;
 }
 
+/** Only conditions the backend can evaluate. Four further signals were removed:
+ *  they were hardcoded false and so could never fire. */
 export interface FraudSignalsDTO {
   duplicatePayout: boolean;
   suspiciousRevenue: boolean;
-  unusualRefundRate: boolean;
-  highChargeback: boolean;
   hasAlert: boolean;
   alertMessage: string;
 }
@@ -357,12 +360,21 @@ export interface AuditorPayoutDTO {
   requestedAmount: number;
   requestDate: string;
   status: string;
-  riskLevel: string;
-  riskScore: number;
   salesSummary: PayoutSalesDTO;
   bankName: string;
   bankAccountNumber: string;
   bankAccountHolder: string;
+  bankVerificationStatus: string;
+  organizerPhone: string;
+  organizerBusinessLicense: string;
+  organizerStatus: string;
+  organizerPreviousViolations: number;
+  /** 0 when the organizer holds the role without ever filing an application. */
+  applicationId: number;
+  eventId: number;
+  venueName: string;
+  eventStatus: string;
+  ticketCapacity: number;
   fraudDetection: FraudSignalsDTO;
   internalNotes: string;
   timeline: { id: number; actor: string; action: string; detail: string; timestamp: string }[];

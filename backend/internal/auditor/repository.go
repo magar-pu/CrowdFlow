@@ -1931,9 +1931,12 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 
 	// Gross and net are selected here because the payouts TABLE shows both
 	// columns. They previously came from nowhere, so the console read an absent
-	// field and crashed on the first rendered row. The net formula matches
-	// GetPayout exactly (5% platform, 2% gateway, per-event entertainment tax) —
-	// the two must not disagree about the same payout.
+	// field and crashed on the first rendered row.
+	//
+	// The source is `orders`, matching payoutSales() — the two must not disagree
+	// about the same payout. The old sub-select summed ticket_tiers.tickets_sold,
+	// a counter nothing in the codebase writes, and then applied hardcoded 5%/2%
+	// rates instead of the per-order rates actually charged.
 	query := `
 		SELECT
 			p.id,
@@ -1946,17 +1949,23 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 			COALESCE(oa.business_email, ''),
 			COALESCE(sales.tickets_sold, 0) AS tickets_sold,
 			COALESCE(sales.gross, 0)::float8 AS gross_revenue,
-			(COALESCE(sales.gross, 0)
-				* (1 - 0.05 - 0.02 - (e.entertainment_tax_rate / 100.0)))::float8 AS net_revenue
+			(COALESCE(sales.net, 0)
+				- COALESCE(sales.organizer_borne_tax, 0)
+				- COALESCE(sales.refunded, 0))::float8 AS net_revenue
 		FROM payouts p
 		JOIN events e ON e.id = p.event_id
 		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
 		LEFT JOIN user_profiles up ON up.user_id = e.organizer_id
 		LEFT JOIN (
 			SELECT event_id,
-			       SUM(tickets_sold) AS tickets_sold,
-			       SUM(tickets_sold * price) AS gross
-			FROM ticket_tiers
+			       SUM(quantity)     FILTER (WHERE status = 'paid') AS tickets_sold,
+			       SUM(gross_amount) FILTER (WHERE status = 'paid') AS gross,
+			       SUM(net_amount)   FILTER (WHERE status = 'paid') AS net,
+			       SUM(entertainment_tax_amount)
+			         FILTER (WHERE status = 'paid' AND NOT entertainment_tax_passed_to_buyer)
+			         AS organizer_borne_tax,
+			       SUM(gross_amount) FILTER (WHERE status = 'refunded') AS refunded
+			FROM orders
 			GROUP BY event_id
 		) sales ON sales.event_id = p.event_id
 		WHERE 1=1
@@ -2071,11 +2080,15 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 			COALESCE(oa.bank_account_holder, ''),
 			COALESCE(oa.business_phone, ''),
 			COALESCE(oa.status::text, ''),
-			COALESCE(oa.bank_verification_status, 'unverified')
+			COALESCE(oa.bank_verification_status, 'unverified'),
+			COALESCE(oa.id, 0),
+			COALESCE(v.name, ''),
+			e.status::text
 		FROM payouts p
 		JOIN events e ON e.id = p.event_id
 		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
 		LEFT JOIN user_profiles up ON up.user_id = e.organizer_id
+		LEFT JOIN venues v ON v.id = e.venue_id
 		WHERE p.id = $1
 	`
 	var p AuditorPayout
@@ -2103,6 +2116,9 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		&p.OrganizerPhone,
 		&p.OrganizerStatus,
 		&p.BankVerificationStatus,
+		&p.ApplicationID,
+		&p.VenueName,
+		&p.EventStatus,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -2120,32 +2136,11 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 	p.RequestDate = formatTime(reqTime)
 	p.EventDate = eventTime.Format("2006-01-02 15:04")
 
-	// Calculate Sales summary dynamically
-	querySales := `
-		SELECT 
-			COALESCE(SUM(tickets_sold), 0),
-			COALESCE(SUM(tickets_sold * price), 0.0)
-		FROM ticket_tiers
-		WHERE event_id = $1
-	`
-	var ticketsSold int
-	var grossRevenue float64
-	_ = r.db.QueryRowContext(ctx, querySales, eventID).Scan(&ticketsSold, &grossRevenue)
-
-	platformFee := grossRevenue * 0.05
-	gatewayFee := grossRevenue * 0.02
-	taxAmount := grossRevenue * (taxRate / 100)
-	netRevenue := grossRevenue - platformFee - gatewayFee - taxAmount
-
-	p.SalesSummary = PayoutSales{
-		TicketsSold:      ticketsSold,
-		GrossRevenue:     grossRevenue,
-		PlatformFee:      platformFee,
-		GatewayFee:       gatewayFee,
-		EntertainmentTax: taxAmount,
-		RefundAmount:     0.0,
-		NetRevenue:       netRevenue,
-	}
+	p.SalesSummary = r.payoutSales(ctx, eventID)
+	p.TicketCapacity = r.eventCapacity(ctx, eventID)
+	p.OrganizerViolations = r.organizerViolations(ctx, organizerID, eventID)
+	p.EventID = eventID
+	_ = taxRate // the per-order rate is authoritative; see payoutSales
 
 	// A duplicate approved payout is a real, checkable condition — unlike the
 	// old risk score, which was a hardcoded 20/40 that mapped to "High" for
@@ -2160,11 +2155,21 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		alertMsg = "Warning: Approved payout request already exists for this event!"
 	}
 
+	// A payout asking for more than the event actually netted is checkable and
+	// worth flagging. The previous rule (gross > 250000 && sold < 100) was a
+	// USD-era threshold — as rupiah that is about two tickets, so once revenue
+	// became real it would have flagged essentially every event.
+	if p.RequestedAmount > p.SalesSummary.NetRevenue {
+		hasAlert = true
+		if alertMsg != "" {
+			alertMsg += " "
+		}
+		alertMsg += "Requested amount exceeds the event's net revenue."
+	}
+
 	p.FraudDetection = FraudSignals{
 		DuplicatePayout:   dupCount > 0,
-		SuspiciousRevenue: grossRevenue > 250000.0 && ticketsSold < 100,
-		UnusualRefundRate: false,
-		HighChargeback:    false,
+		SuspiciousRevenue: p.RequestedAmount > p.SalesSummary.NetRevenue,
 		HasAlert:          hasAlert,
 		AlertMessage:      alertMsg,
 	}
@@ -2194,6 +2199,93 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 	}
 
 	return &p, nil
+}
+
+// payoutSales derives an event's settlement figures from `orders`.
+//
+// It replaces a query over ticket_tiers.tickets_sold * price. Nothing in the
+// codebase ever writes tickets_sold — every reference is a read — so that
+// computation returned zero for every event that has ever existed, on the
+// screen that authorises payment.
+//
+// Fees come from the per-order columns rather than being recomputed at today's
+// rates, so a payout for a past event settles at the rates its buyers were
+// actually charged.
+//
+// Net follows chk_net_amount (gross - platform_fee - platform_fee_ppn -
+// gateway_fee - gateway_fee_ppn) and then deducts entertainment tax ONLY where
+// the buyer did not already bear it: when entertainment_tax_passed_to_buyer is
+// true the tax was added on top of the ticket price, so deducting it from the
+// organizer as well would charge it twice.
+func (r *PostgresAuditorRepository) payoutSales(ctx context.Context, eventID int) PayoutSales {
+	const q = `
+		SELECT
+			COALESCE(SUM(quantity)                       FILTER (WHERE status = 'paid'), 0),
+			COALESCE(SUM(gross_amount)                   FILTER (WHERE status = 'paid'), 0),
+			COALESCE(SUM(platform_fee)                   FILTER (WHERE status = 'paid'), 0),
+			COALESCE(SUM(gateway_fee)                    FILTER (WHERE status = 'paid'), 0),
+			COALESCE(SUM(platform_fee_ppn + gateway_fee_ppn) FILTER (WHERE status = 'paid'), 0),
+			COALESCE(SUM(entertainment_tax_amount)       FILTER (WHERE status = 'paid'), 0),
+			COALESCE(SUM(net_amount)                     FILTER (WHERE status = 'paid'), 0),
+			COALESCE(SUM(entertainment_tax_amount) FILTER (WHERE status = 'paid' AND NOT entertainment_tax_passed_to_buyer), 0),
+			COALESCE(SUM(gross_amount)                   FILTER (WHERE status = 'refunded'), 0)
+		FROM orders
+		WHERE event_id = $1
+	`
+	var s PayoutSales
+	var netBeforeTax, organizerBorneTax float64
+	if err := r.db.QueryRowContext(ctx, q, eventID).Scan(
+		&s.TicketsSold,
+		&s.GrossRevenue,
+		&s.PlatformFee,
+		&s.GatewayFee,
+		&s.PPN,
+		&s.EntertainmentTax,
+		&netBeforeTax,
+		&organizerBorneTax,
+		&s.RefundAmount,
+	); err != nil {
+		return PayoutSales{}
+	}
+
+	s.NetRevenue = netBeforeTax - organizerBorneTax - s.RefundAmount
+	return s
+}
+
+// eventCapacity resolves how many tickets the event can sell. Seated-vs-GA is
+// per TIER: a tier with painted seats is bounded by its rows in
+// event_seats_matrix, and allocation_limit is simply unused for it. Mixing the
+// two would double-count, so each tier contributes whichever applies to it.
+func (r *PostgresAuditorRepository) eventCapacity(ctx context.Context, eventID int) int {
+	const q = `
+		SELECT COALESCE(SUM(
+			CASE WHEN seats.painted > 0 THEN seats.painted ELSE t.allocation_limit END
+		), 0)
+		FROM ticket_tiers t
+		LEFT JOIN LATERAL (
+			SELECT COUNT(*) AS painted
+			FROM event_seats_matrix m
+			WHERE m.event_id = t.event_id AND m.ticket_tier_id = t.id
+		) seats ON TRUE
+		WHERE t.event_id = $1
+	`
+	var capacity int
+	if err := r.db.QueryRowContext(ctx, q, eventID).Scan(&capacity); err != nil {
+		return 0
+	}
+	return capacity
+}
+
+// organizerViolations counts the organizer's rejected events — the same rule
+// GetEventReview uses for compliance history. The event this payout belongs to
+// is excluded so its own outcome never reads as prior history.
+func (r *PostgresAuditorRepository) organizerViolations(ctx context.Context, organizerID, excludeEventID int) int {
+	const q = `SELECT COUNT(*) FROM events WHERE organizer_id = $1 AND id <> $2 AND status = 'rejected'`
+	var n int
+	if err := r.db.QueryRowContext(ctx, q, organizerID, excludeEventID).Scan(&n); err != nil {
+		return 0
+	}
+	return n
 }
 
 func (r *PostgresAuditorRepository) ApprovePayout(ctx context.Context, payoutID, actorID int, req ApprovePayoutRequest) error {

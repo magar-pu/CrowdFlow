@@ -34,8 +34,8 @@ export default function AuditorPayoutDetailPage() {
           organizerEmail: raw.organizerEmail || "",
           eventName: raw.eventName || "",
           eventDate: raw.eventDate || "",
-          venue: "",
-          completionStatus: "",
+          venue: raw.venueName || "",
+          completionStatus: raw.eventStatus || "",
           revenue: raw.salesSummary?.grossRevenue || 0,
           netRevenue: raw.salesSummary?.netRevenue || 0,
           requestedAmount: raw.requestedAmount || 0,
@@ -43,21 +43,24 @@ export default function AuditorPayoutDetailPage() {
           status: mapPayoutStatus(raw.status),
           currentAuditor: "",
           organizerCompany: raw.organizerName || "",
-          organizerPhone: (raw as any).organizerPhone || "",
-          organizerBusinessLicense: (raw as any).organizerBusinessLicense || "",
-          organizerStatus: ((raw as any).organizerStatus === "approved" || (raw as any).organizerStatus === "Approved" || (raw as any).organizerStatus === "verified" || (raw as any).organizerStatus === "Verified" ? "Verified" : "Pending") as any,
-          organizerPreviousViolations: 0,
-          ticketCapacity: 0,
+          organizerPhone: raw.organizerPhone || "",
+          organizerBusinessLicense: raw.organizerBusinessLicense || "",
+          organizerStatus: (raw.organizerStatus === "approved" || raw.organizerStatus === "Approved" || raw.organizerStatus === "verified" || raw.organizerStatus === "Verified" ? "Verified" : "Pending") as any,
+          // Real: rejected events by the same organizer, this one excluded.
+          organizerPreviousViolations: raw.organizerPreviousViolations || 0,
+          ticketCapacity: raw.ticketCapacity || 0,
+          // 0 when the organizer was granted the role directly and never filed
+          // an application; the profile link is hidden in that case.
+          applicationId: raw.applicationId || 0,
+          eventId: raw.eventId || 0,
           salesSummary: {
             ticketsSold: raw.salesSummary?.ticketsSold || 0,
             grossRevenue: raw.salesSummary?.grossRevenue || 0,
             platformFee: raw.salesSummary?.platformFee || 0,
             paymentGatewayFee: raw.salesSummary?.paymentGatewayFee || 0,
+            ppn: raw.salesSummary?.ppn || 0,
             entertainmentTax: raw.salesSummary?.entertainmentTax || 0,
-            vat: 0.0,
             refundAmount: raw.salesSummary?.refundAmount || 0,
-            chargebackAmount: 0.0,
-            otherAdjustments: 0.0,
             netRevenue: raw.salesSummary?.netRevenue || 0,
           },
           // Unticked by default. These are the auditor's OWN verification
@@ -68,7 +71,6 @@ export default function AuditorPayoutDetailPage() {
             revenueMatch: false,
             ticketSalesMatch: false,
             refundCalculated: false,
-            chargebackApplied: false,
             platformFeeCorrect: false,
             taxCorrect: false,
             netRevenueCorrect: false,
@@ -83,19 +85,14 @@ export default function AuditorPayoutDetailPage() {
           bankName: raw.bankName || "",
           bankAccountNumber: raw.bankAccountNumber || "",
           bankAccountHolder: raw.bankAccountHolder || "",
-          swiftCode: "",
           // Real, from organizer_applications.bank_verification_status. Resets
           // to unverified whenever the organizer edits the account, so a
           // destination that moved since the last check shows as unverified.
           bankVerificationStatus:
-            (raw as any).bankVerificationStatus === "verified" ? "Verified" : "Unverified",
+            raw.bankVerificationStatus === "verified" ? "Verified" : "Unverified",
           fraudDetection: {
             duplicatePayout: raw.fraudDetection?.duplicatePayout || false,
             suspiciousRevenue: raw.fraudDetection?.suspiciousRevenue || false,
-            unusualRefundRate: raw.fraudDetection?.unusualRefundRate || false,
-            highChargeback: raw.fraudDetection?.highChargeback || false,
-            multipleBankChanges: false,
-            abnormalTicketSales: false,
             hasAlert: raw.fraudDetection?.hasAlert || false,
             alertMessage: raw.fraudDetection?.alertMessage || "",
           },
