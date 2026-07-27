@@ -9,6 +9,7 @@ import {
   type OrganizerTicketTier,
 } from "@/lib/api/eorganizer";
 import { formatIDR } from "@/lib/pricing";
+import Select from "@/components/ui/Select";
 
 // The backend has no tier colour; assign a stable one per position, matching the
 // Tickets tab so a tier keeps the same colour across the workspace.
@@ -126,13 +127,9 @@ export default function WorkspaceAnalytics({ eventId }: { eventId?: string }) {
       <div className="flex flex-wrap justify-between items-center gap-3 bg-white p-4 border border-border-subtle rounded-xl soft-shadow">
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold text-text-secondary">Date Range:</span>
-          <select
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
-            className="h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none cursor-pointer"
-          >
+          <Select value={dateRange} onChange={(e) => setDateRange(e.target.value)}>
             {DATE_RANGES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </select>
+          </Select>
         </div>
         <button
           onClick={() => alert(`Exporting analytics report for ${dateRange}...`)}

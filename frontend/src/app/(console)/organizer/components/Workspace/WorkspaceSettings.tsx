@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Settings, Trash2, Ticket, AlertTriangle, Archive, Undo2 } from "lucide-react";
 import WorkspaceCoverImage from "./WorkspaceCoverImage";
+import Select from "@/components/ui/Select";
 
 interface WorkspaceSettingsProps {
   eventId: number;
@@ -28,18 +29,9 @@ interface WorkspaceSettingsProps {
   /** Hides a terminal event without deleting it. */
   onArchiveEvent: () => Promise<boolean>;
   canArchive: boolean;
-}
-
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer shrink-0 ${checked ? 'bg-primary' : 'bg-surface-container'}`}
-    >
-      <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : ''}`}></span>
-    </button>
-  );
+  /** Restores an archived event back to active status. */
+  isArchived?: boolean;
+  onUnarchiveEvent?: () => Promise<boolean>;
 }
 
 export default function WorkspaceSettings({
@@ -53,6 +45,8 @@ export default function WorkspaceSettings({
   canWithdraw,
   onArchiveEvent,
   canArchive,
+  isArchived = false,
+  onUnarchiveEvent,
   coverReadOnly = false,
   onCoverUploaded
 }: WorkspaceSettingsProps) {
@@ -64,11 +58,11 @@ export default function WorkspaceSettings({
   const [deleting, setDeleting] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [unarchiving, setUnarchiving] = useState(false);
+
   // No Location field here: the venue is set in the Venue tab, which persists it.
   // This one was hardcoded and never read or saved.
 
-  const [refundPolicy, setRefundPolicy] = useState('Full refund up to 7 days before');
-  const [resaleEnabled, setResaleEnabled] = useState(false);
 
   // Title, category, description and date are real columns on the event.
   const handleSaveGeneral = async (e: React.FormEvent) => {
@@ -100,6 +94,13 @@ export default function WorkspaceSettings({
     setArchiving(false);
   };
 
+  const handleUnarchive = async () => {
+    if (!onUnarchiveEvent) return;
+    setUnarchiving(true);
+    await onUnarchiveEvent();
+    setUnarchiving(false);
+  };
+
   return (
     <div className="space-y-6 text-left animate-fade-in">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -115,11 +116,11 @@ export default function WorkspaceSettings({
             </div>
             <div className="space-y-1">
               <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Category</label>
-              <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none cursor-pointer">
+              <Select value={category} onChange={(e) => setCategory(e.target.value)}>
                 <option>Conference</option>
                 <option>Festival</option>
                 <option>Workshop</option>
-              </select>
+              </Select>
             </div>
           </div>
           <div className="space-y-1">
@@ -150,28 +151,13 @@ export default function WorkspaceSettings({
           />
 
         {/* Ticket Rules */}
-        <div className="bg-white border border-border-subtle rounded-xl p-5 shadow-sm space-y-4">
+        <div className="bg-white border border-border-subtle rounded-xl p-5 shadow-sm space-y-2">
           <h4 className="text-sm font-bold text-text-primary flex items-center gap-2">
             <Ticket className="w-4 h-4 text-secondary" /> Ticket Rules
           </h4>
           <p className="text-[10px] text-text-secondary">
-            Max purchase per order is set per ticket type, in the Tickets tab.
+            Price, allocation and max purchase per order are set per ticket type, in the Tickets tab.
           </p>
-          <div className="space-y-1">
-            <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Refund Policy</label>
-            <select value={refundPolicy} onChange={(e) => setRefundPolicy(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none cursor-pointer">
-              <option>Full refund up to 7 days before</option>
-              <option>Full refund up to 24 hours before</option>
-              <option>No refunds</option>
-            </select>
-          </div>
-          <div className="flex items-center justify-between pt-2 border-t border-border-subtle">
-            <div>
-              <p className="text-xs font-semibold text-text-primary">Official Resale</p>
-              <p className="text-[10px] text-text-secondary">Enable a price-capped resale marketplace.</p>
-            </div>
-            <Toggle checked={resaleEnabled} onChange={setResaleEnabled} />
-          </div>
         </div>
         </div>
       </div>
@@ -202,20 +188,36 @@ export default function WorkspaceSettings({
 
           <div className={`flex items-center justify-between gap-3 ${canWithdraw ? 'pt-3 border-t border-danger/20' : ''}`}>
             <div>
-              <p className="text-xs font-semibold text-text-primary">Archive Event</p>
+              <p className="text-xs font-semibold text-text-primary">
+                {isArchived ? "Unarchive Event" : "Archive Event"}
+              </p>
               <p className="text-[10px] text-text-secondary">
-                {canArchive
-                  ? 'Hide this event from your active list. Nothing is deleted and the review history is kept — you can restore it later.'
-                  : 'Only a draft or rejected event can be archived. Withdraw it from review first.'}
+                {isArchived
+                  ? "Restore this event back to your active events list."
+                  : canArchive
+                    ? "Hide this event from your active list. Nothing is deleted and the review history is kept — you can restore it later."
+                    : "Only a draft or rejected event can be archived. Withdraw it from review first."}
               </p>
             </div>
-            <button
-              onClick={handleArchive}
-              disabled={!canArchive || archiving}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-border-subtle hover:bg-surface-container-low disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-semibold text-text-primary transition-colors cursor-pointer shrink-0"
-            >
-              <Archive className="w-3.5 h-3.5" /> {archiving ? 'Archiving…' : 'Archive'}
-            </button>
+            {isArchived ? (
+              <button
+                type="button"
+                onClick={handleUnarchive}
+                disabled={unarchiving}
+                className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer shrink-0"
+              >
+                <Undo2 className="w-4 h-4 text-white" /> {unarchiving ? 'Unarchiving…' : 'Unarchive Event'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleArchive}
+                disabled={!canArchive || archiving}
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-border-subtle hover:bg-surface-container-low disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-semibold text-text-primary transition-colors cursor-pointer shrink-0"
+              >
+                <Archive className="w-3.5 h-3.5" /> {archiving ? 'Archiving…' : 'Archive'}
+              </button>
+            )}
           </div>
           <div className="flex items-center justify-between gap-3 pt-3 border-t border-danger/20">
             <div>

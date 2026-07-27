@@ -1,11 +1,11 @@
 "use client";
 
 import React from 'react';
-import { RefreshCw, ArrowRight, Check, X } from 'lucide-react';
+import { ArrowRight, Check, X } from 'lucide-react';
 import { Event, User, Transaction, VerificationApplication, SecurityAlert, Activity } from '@/types/admin';
 import DashboardStatsGrid from './DashboardStatsGrid';
 import DashboardAnalyticsChart from './DashboardAnalyticsChart';
-import DashboardAlertsAndCalendar from './DashboardAlertsAndCalendar';
+import DashboardSecurityAlerts from './DashboardSecurityAlerts';
 
 interface DashboardViewProps {
   events: Event[];
@@ -30,10 +30,6 @@ export default function DashboardView({
   onRejectVerification,
   onViewChange
 }: DashboardViewProps) {
-  const handleForceSync = () => {
-    alert('Platform data refreshed successfully.');
-  };
-
   const pendingVerificationsList = verifications.filter(v => v.status === 'Pending');
 
   return (
@@ -44,15 +40,11 @@ export default function DashboardView({
           <h1 className="text-2xl font-bold tracking-normal text-text-primary md:text-4xl">Admin Dashboard</h1>
           <p className="mt-2 text-sm text-text-secondary">Monitor events, transactions, users, and verification requests across CrowdFlow.</p>
         </div>
+        {/* "Force Sync DB" was removed: it triggered no request at all and just
+            alerted "Platform data refreshed successfully", so it reported a
+            database sync that never happened. */}
         <div className="flex items-center gap-3">
           <span className="text-xs text-text-secondary">Updated {new Date().toISOString().slice(0, 10)}</span>
-          <button 
-            onClick={handleForceSync}
-            className="flex min-h-9 items-center gap-2 rounded-lg border border-border-subtle bg-surface-white px-4 py-2 text-xs font-semibold text-text-primary shadow-sm transition-all duration-200 hover:bg-surface cursor-pointer"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            <span>Force Sync DB</span>
-          </button>
         </div>
       </div>
 
@@ -60,7 +52,9 @@ export default function DashboardView({
       <DashboardStatsGrid events={events} users={users} verifications={verifications} />
 
       {/* Analytics Donut & Bar Charts */}
-      <DashboardAnalyticsChart events={events} />
+      {/* Self-fetching: it reads the analytics endpoint rather than deriving
+          figures from the events list. */}
+      <DashboardAnalyticsChart />
 
       {/* Organizer Verifications & Transactions */}
       <div className="grid gap-6 lg:grid-cols-2">
@@ -217,8 +211,8 @@ export default function DashboardView({
         </div>
       </div>
 
-      {/* Security Alerts and Operations Calendar */}
-      <DashboardAlertsAndCalendar alerts={alerts} />
+      {/* Security Alerts */}
+      <DashboardSecurityAlerts alerts={alerts} />
     </div>
   );
 }

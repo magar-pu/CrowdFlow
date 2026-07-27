@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Smartphone, Plus, Database, Battery, Layers, QrCode, X } from 'lucide-react';
 import { Scanner, VenueSection } from '@/types/admin';
 import WorkspaceScannerSimulator from './WorkspaceScannerSimulator';
+import Select from '@/components/ui/Select';
 
 interface WorkspaceScannerAppTabProps {
   scanners: Scanner[];
@@ -163,28 +164,26 @@ export default function WorkspaceScannerAppTab({
               </div>
               <div>
                 <label className="mb-1.5 block text-[10px] font-black uppercase text-text-muted">Staff Smartphone Device Model</label>
-                <select
+                <Select
                   value={newScannerDevice}
                   onChange={(e) => setNewScannerDevice(e.target.value)}
-                  className="w-full rounded-xl border border-border-subtle bg-surface-soft px-3 py-2.5 text-xs text-text-primary outline-none focus:border-primary"
                 >
                   <option value="Apple iPhone 15 Pro">Apple iPhone 15 Pro</option>
                   <option value="Samsung Galaxy S24 Ultra">Samsung Galaxy S24 Ultra</option>
                   <option value="Google Pixel 8 Pro">Google Pixel 8 Pro</option>
                   <option value="Apple iPhone SE (Staff Edition)">Apple iPhone SE (Staff Edition)</option>
-                </select>
+                </Select>
               </div>
               <div>
                 <label className="mb-1.5 block text-[10px] font-black uppercase text-text-muted">Assigned Section Gate</label>
-                <select
+                <Select
                   value={newScannerSection}
                   onChange={(e) => setNewScannerSection(e.target.value)}
-                  className="w-full rounded-xl border border-border-subtle bg-surface-soft px-3 py-2.5 text-xs text-text-primary outline-none focus:border-primary"
                 >
                   <option value="General Admission">General Admission</option>
                   <option value="VIP Lounge">VIP Lounge</option>
                   <option value="Grandstands Balcony">Grandstands Balcony</option>
-                </select>
+                </Select>
               </div>
               <div className="mt-5 flex flex-col-reverse gap-2 border-t border-border-subtle pt-4 sm:flex-row sm:justify-end">
                 <button type="button" onClick={() => setShowAddScanner(false)} className="min-h-11 rounded-xl border border-border-subtle px-4 py-2 text-xs text-text-secondary hover:bg-surface-soft">Cancel</button>

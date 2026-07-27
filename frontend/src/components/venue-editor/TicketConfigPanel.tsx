@@ -5,6 +5,7 @@ import { Trash2, Plus, Rocket, Paintbrush, AlertTriangle, ChevronDown, ChevronUp
 import type { PricingTier, VenueSection } from "@/types/ticket";
 import { useVenueEditorStore, type ValidationError } from "@/lib/store/venueEditorStore";
 import { cn } from "@/lib/utils";
+import Select from "@/components/ui/Select";
 
 interface TierStats {
   tier_id: string;
@@ -100,21 +101,16 @@ export function TicketConfigPanel({
             <label className="text-[10px] font-medium uppercase tracking-widest text-text-secondary">
               Base Currency
             </label>
-            <div className="relative">
-              <select
-                value={base_currency}
-                onChange={(e) => on_currency_change(e.target.value)}
-                className="w-full cursor-pointer appearance-none rounded-lg border border-border-subtle bg-surface-container-low px-3 py-2 text-sm text-primary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option>USD ($)</option>
-                <option>EUR (€)</option>
-                <option>GBP (£)</option>
-                <option>IDR (Rp)</option>
-              </select>
-              <svg className="pointer-events-none absolute right-3 top-2.5 h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
+            <Select
+              selectSize="md"
+              value={base_currency}
+              onChange={(e) => on_currency_change(e.target.value)}
+            >
+              <option>USD ($)</option>
+              <option>EUR (€)</option>
+              <option>GBP (£)</option>
+              <option>IDR (Rp)</option>
+            </Select>
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-[10px] font-medium uppercase tracking-widest text-text-secondary">

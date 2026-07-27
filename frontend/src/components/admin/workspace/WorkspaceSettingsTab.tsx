@@ -1,6 +1,7 @@
 "use client";
 
 import React from 'react';
+import Select from '@/components/ui/Select';
 
 export default function WorkspaceSettingsTab() {
   return (
@@ -16,9 +17,9 @@ export default function WorkspaceSettingsTab() {
               <p className="mt-1 text-[11px] text-text-muted">Locks maximum price ceilings on secondary marketplaces to secure consumer interests.</p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <select 
+              <Select
                 id="event-settings-resale-limit"
-                className="min-h-11 w-full rounded-xl border border-border-subtle bg-surface-soft px-3.5 py-2 text-xs text-text-primary outline-none focus:border-primary sm:w-auto"
+                wrapperClassName="w-full sm:w-auto"
                 defaultValue="120"
                 onChange={() => alert('Price cap constraint adjusted. Re-indexing resale databases...')}
               >
@@ -26,7 +27,7 @@ export default function WorkspaceSettingsTab() {
                 <option value="120">120% of Face Value (Standard)</option>
                 <option value="150">150% of Face Value (Relaxed)</option>
                 <option value="200">No Limit (Not recommended)</option>
-              </select>
+              </Select>
               <span className="text-[10px] font-mono font-semibold text-status-success">Verified Security Profile</span>
             </div>
           </div>

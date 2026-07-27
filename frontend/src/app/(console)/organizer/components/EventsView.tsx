@@ -85,6 +85,7 @@ export default function EventsView({
                     event.status === 'Need Revision' ? 'bg-amber-500 text-white border-amber-600' :
                     event.status === 'Rejected' ? 'bg-rose-600 text-white border-rose-700' :
                     event.status === 'In Review' ? 'bg-blue-600 text-white border-blue-700' :
+                    event.status === 'Archived' ? 'bg-slate-500/90 text-white border-slate-600' :
                     'bg-white/90 text-text-primary border-border-subtle'
                   }`}>
                     {event.status === 'Live' && (

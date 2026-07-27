@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Search, ChevronRight } from 'lucide-react';
 import { User } from '@/types/admin';
 import RoleBadge from './RoleBadge';
+import Select from '@/components/ui/Select';
 
 interface UserDirectoryTableProps {
   users: User[];
@@ -43,11 +44,11 @@ export default function UserDirectoryTable({ users, onInspectUser }: UserDirecto
 
         {/* Role / Status select arrays */}
         <div className="flex flex-wrap items-center gap-3">
-          <select
+          <Select
+            selectSize="md"
             id="user-role-filter"
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
-            className="h-11 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-text-primary outline-none transition-colors focus:border-secondary focus:bg-surface-white focus:ring-2 focus:ring-secondary/20"
           >
             <option value="All">All Roles</option>
             <option value="Buyer">Buyers Only</option>
@@ -57,19 +58,19 @@ export default function UserDirectoryTable({ users, onInspectUser }: UserDirecto
             <option value="Gate Scanner">Gate Scanners Only</option>
             <option value="Admin">Admins Only</option>
             <option value="Mixed">Mixed Roles Only</option>
-          </select>
+          </Select>
 
-          <select
+          <Select
+            selectSize="md"
             id="user-status-filter"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="h-11 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-text-primary outline-none transition-colors focus:border-secondary focus:bg-surface-white focus:ring-2 focus:ring-secondary/20"
           >
             <option value="All">All Statuses</option>
             <option value="Verified">Verified Only</option>
             <option value="Pending">Pending Only</option>
             <option value="Suspended">Suspended Only</option>
-          </select>
+          </Select>
         </div>
       </div>
 
