@@ -16,7 +16,7 @@
  */
 
 import { Suspense, useMemo, useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/Navbar";
 import { EventSearchHero } from "@/components/event-discovery/EventSearchHero";
 import { FeaturedCarousel } from "@/components/event-discovery/FeaturedCarousel";
@@ -42,6 +42,7 @@ export default function EventsDiscoveryPage() {
 
 function EventsDiscoveryContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   // Hero search state — initialised from URL query params (set by home SearchBar)
   const [search_query, set_search_query] = useState(searchParams.get("q") ?? "");
@@ -64,6 +65,24 @@ function EventsDiscoveryContent() {
   const [dbEvents, setDbEvents] = useState<EventCardType[]>([]);
   const [loadFailed, setLoadFailed] = useState(false);
 
+  // Sync search state when URL searchParams change
+  useEffect(() => {
+    const q = searchParams.get("q");
+    set_search_query(q ?? "");
+  }, [searchParams]);
+
+  function handle_select_category(keyword: string) {
+    set_search_query(keyword);
+    const params = new URLSearchParams(searchParams.toString());
+    if (keyword) {
+      params.set("q", keyword);
+    } else {
+      params.delete("q");
+    }
+    const newUrl = params.toString() ? `/events?${params.toString()}` : "/events";
+    router.replace(newUrl, { scroll: false });
+  }
+
   useEffect(() => {
     listEvents()
       .then((res) => {
@@ -78,7 +97,7 @@ function EventsDiscoveryContent() {
             return {
               event_id: String(evt.event_id),
               title: evt.title,
-              category_label: "Music • Konser",
+              category_label: evt.category ? evt.category.replace(/_/g, " • ").toUpperCase() : "MUSIC • KONSER",
               cover_image_url: evt.cover_image_url || "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=800&auto=format&fit=crop",
               badge: "on_sale",
               trust_signal: "verified",
@@ -138,6 +157,7 @@ function EventsDiscoveryContent() {
     set_search_location("All Locations");
     set_search_date("");
     handle_clear_filters();
+    router.replace("/events", { scroll: false });
   }
 
   // Sync hero location → sidebar cities
@@ -154,19 +174,20 @@ function EventsDiscoveryContent() {
 
   useEffect(() => {
     set_visible_count(6);
-  }, [selected_cities, max_price, availability, sort_by, search_query, search_date]);
+  }, [selected_cities, max_price, availability, sort_by, active_quick_filter, search_query, search_date]);
 
   const filtered_events = useMemo(() => {
     let events = displayEvents.filter(
       (event) => event.starting_price === null || event.starting_price <= max_price
     );
 
-    // Keyword search — match against event title (case-insensitive)
+    // Keyword search — match against event title, venue label, or category label (case-insensitive)
     if (search_query.trim()) {
       const q = search_query.trim().toLowerCase();
       events = events.filter((event) =>
         event.title.toLowerCase().includes(q) ||
-        event.venue_label.toLowerCase().includes(q)
+        event.venue_label.toLowerCase().includes(q) ||
+        event.category_label.toLowerCase().includes(q)
       );
     }
 
@@ -182,6 +203,61 @@ function EventsDiscoveryContent() {
           eventDate.getMonth() === selectedDate.getMonth() &&
           eventDate.getDate() === selectedDate.getDate()
         );
+      });
+    }
+
+    // Quick Filter Chips (Today, This Week, This Month, Free Events, Nearby, Online, Newest)
+    if (active_quick_filter === "Today") {
+      const now = new Date();
+      events = events.filter((event) => {
+        const rawDate = (event as EventCardType & { _starts_at?: string })._starts_at;
+        if (!rawDate) return true;
+        const d = new Date(rawDate);
+        return (
+          d.getFullYear() === now.getFullYear() &&
+          d.getMonth() === now.getMonth() &&
+          d.getDate() === now.getDate()
+        );
+      });
+    } else if (active_quick_filter === "This Week") {
+      const now = new Date();
+      const endOfWeek = new Date();
+      endOfWeek.setDate(now.getDate() + 7);
+      events = events.filter((event) => {
+        const rawDate = (event as EventCardType & { _starts_at?: string })._starts_at;
+        if (!rawDate) return true;
+        const d = new Date(rawDate);
+        return d >= now && d <= endOfWeek;
+      });
+    } else if (active_quick_filter === "This Month") {
+      const now = new Date();
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      events = events.filter((event) => {
+        const rawDate = (event as EventCardType & { _starts_at?: string })._starts_at;
+        if (!rawDate) return true;
+        const d = new Date(rawDate);
+        return d >= now && d <= endOfMonth;
+      });
+    } else if (active_quick_filter === "Free Events") {
+      events = events.filter((event) => event.starting_price === 0);
+    } else if (active_quick_filter === "Nearby") {
+      events = events.filter(
+        (event) =>
+          event.city.toLowerCase().includes("jakarta") ||
+          event.city.toLowerCase().includes("bandung") ||
+          event.city.toLowerCase().includes("tangerang")
+      );
+    } else if (active_quick_filter === "Online") {
+      events = events.filter(
+        (event) =>
+          event.city.toLowerCase().includes("online") ||
+          event.venue_label.toLowerCase().includes("online")
+      );
+    } else if (active_quick_filter === "Newest") {
+      events = [...events].sort((a, b) => {
+        const dateA = (a as EventCardType & { _starts_at?: string })._starts_at || "";
+        const dateB = (b as EventCardType & { _starts_at?: string })._starts_at || "";
+        return dateB.localeCompare(dateA);
       });
     }
 
@@ -205,10 +281,16 @@ function EventsDiscoveryContent() {
       events = [...events].sort(
         (a, b) => (b.starting_price ?? 0) - (a.starting_price ?? 0)
       );
+    } else if (sort_by === "Newest") {
+      events = [...events].sort((a, b) => {
+        const dateA = (a as EventCardType & { _starts_at?: string })._starts_at || "";
+        const dateB = (b as EventCardType & { _starts_at?: string })._starts_at || "";
+        return dateB.localeCompare(dateA);
+      });
     }
 
     return events;
-  }, [displayEvents, selected_cities, max_price, availability, sort_by, search_query, search_date]);
+  }, [displayEvents, selected_cities, max_price, availability, sort_by, active_quick_filter, search_query, search_date]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -217,7 +299,7 @@ function EventsDiscoveryContent() {
       <main>
         <EventSearchHero
           query={search_query}
-          on_query_change={set_search_query}
+          on_query_change={handle_select_category}
           location={search_location}
           on_location_change={handle_hero_location_change}
           date={search_date}
@@ -225,7 +307,10 @@ function EventsDiscoveryContent() {
           on_reset={handle_hero_reset}
         />
         {featuredEvents.length > 0 && <FeaturedCarousel events={featuredEvents} />}
-        <CategoryIconsGrid />
+        <CategoryIconsGrid
+          active_category={search_query}
+          on_select_category={handle_select_category}
+        />
 
         <section className="bg-background py-section-gap">
           <div className="mx-auto max-w-7xl w-full px-margin-mobile md:px-margin-desktop">

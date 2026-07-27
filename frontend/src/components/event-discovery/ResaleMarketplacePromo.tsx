@@ -1,30 +1,29 @@
 /**
  * components/event-discovery/ResaleMarketplacePromo.tsx
  *
- * Dark "Tiket Habis? Beli di Marketplace Resmi Kami." promo band, with a
- * glassmorphism trust-signals card (Authenticity / Escrow / Re-Issue) on
- * the right. Matches Stitch markup exactly.
+ * Solid Dark "Tiket Habis? Beli di Marketplace Resmi Kami." promo card.
+ * Static background with clean typography and trust signals.
  */
 
 import Link from "next/link";
-import { BadgeCheck, Banknote, QrCode, ArrowRight } from "lucide-react";
+import { BadgeCheck, Banknote, QrCode, ArrowRight, ShieldCheck } from "lucide-react";
 
 const TRUST_POINTS = [
   {
     icon: BadgeCheck,
-    icon_class: "bg-success/20 text-success",
+    icon_class: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20",
     title: "100% Guaranteed Authenticity",
     description: "Tickets are checked and validated directly by our system.",
   },
   {
     icon: Banknote,
-    icon_class: "bg-secondary/20 text-secondary",
+    icon_class: "bg-blue-500/15 text-blue-400 border border-blue-500/20",
     title: "Escrow Payment System",
     description: "Seller funds will only be released after the event ends.",
   },
   {
     icon: QrCode,
-    icon_class: "bg-warning/20 text-warning",
+    icon_class: "bg-amber-500/15 text-amber-400 border border-amber-500/20",
     title: "Automatic Re-Issue",
     description: "Old ticket is voided, new buyer gets a new QR.",
   },
@@ -32,17 +31,17 @@ const TRUST_POINTS = [
 
 export function ResaleMarketplacePromo() {
   return (
-    <section className="relative overflow-hidden bg-text-primary px-margin-mobile py-section-gap md:px-margin-desktop">
-      <div className="relative z-10 mx-auto max-w-container-max">
-        <div className="grid grid-cols-1 items-center gap-16 lg:grid-cols-2">
+    <section className="my-16 px-margin-mobile md:px-margin-desktop">
+      <div className="mx-auto max-w-7xl overflow-hidden rounded-2xl border border-slate-800 bg-[#0B132B] p-8 shadow-xl lg:p-12">
+        <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2">
           <div>
-            <span className="mb-6 inline-block rounded-full bg-secondary px-4 py-1 font-label-sm text-label-sm text-white">
-              Safe Secondary Market
+            <span className="mb-6 inline-flex items-center gap-1.5 rounded-full border border-blue-400/20 bg-blue-500/10 px-4 py-1.5 font-label-md text-xs font-semibold uppercase tracking-wider text-blue-400">
+              <ShieldCheck size={14} className="text-blue-400" /> Safe Secondary Market
             </span>
-            <h2 className="mb-6 font-headline-xl text-headline-xl text-white">
+            <h2 className="mb-6 font-headline-xl text-3xl font-bold tracking-tight text-white sm:text-4xl leading-tight">
               Tickets Sold Out? Buy on Our Official Marketplace.
             </h2>
-            <p className="mb-10 font-body-lg text-body-lg leading-relaxed text-white/70">
+            <p className="mb-8 font-body-lg text-base leading-relaxed text-slate-300">
               Avoid ticket scams. CrowdFlow Marketplace guarantees ticket
               authenticity through re-issue technology with unique QR codes
               for every new buyer.
@@ -50,34 +49,30 @@ export function ResaleMarketplacePromo() {
             <div className="flex flex-wrap gap-4">
               <Link
                 href="/resale"
-                className="flex items-center gap-2 rounded-full bg-secondary px-8 py-4 font-bold text-white transition-all hover:bg-white hover:text-secondary"
+                className="flex items-center gap-2 rounded-full bg-secondary px-8 py-3.5 font-bold text-white shadow-md transition-all hover:bg-secondary/90 active:scale-95"
               >
                 Browse Marketplace
-                <ArrowRight size={20} />
+                <ArrowRight size={18} />
               </Link>
-              <button
-                type="button"
-                className="rounded-full border border-white/30 px-8 py-4 font-bold text-white transition-all hover:bg-white/10"
-              >
-                Learn More
-              </button>
             </div>
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur-xl lg:p-12">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-6 shadow-md lg:p-8">
             <div className="space-y-6">
               {TRUST_POINTS.map((point) => {
                 const Icon = point.icon;
                 return (
-                  <div key={point.title} className="flex items-center gap-4 text-white">
+                  <div key={point.title} className="flex items-start gap-4">
                     <div
-                      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${point.icon_class}`}
+                      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${point.icon_class}`}
                     >
                       <Icon size={22} />
                     </div>
                     <div>
-                      <h4 className="text-lg font-bold">{point.title}</h4>
-                      <p className="text-sm text-white/60">
+                      <h4 className="font-bold text-white text-base sm:text-lg mb-0.5">
+                        {point.title}
+                      </h4>
+                      <p className="text-sm text-slate-300/80 leading-normal">
                         {point.description}
                       </p>
                     </div>
