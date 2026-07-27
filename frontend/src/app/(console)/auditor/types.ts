@@ -226,8 +226,28 @@ export interface ChecklistItem {
   done: boolean;
 }
 
+/**
+ * Which table a review document came from. IDs are unique only WITHIN a source —
+ * organizer_documents and event_documents are separate SERIAL sequences — so an
+ * id on its own does not identify a document. Always pair it with the source.
+ */
+export type ReviewDocumentSource = 'organizer' | 'event';
+
+/**
+ * Stable identity for a review document. An id alone is NOT unique — both tables
+ * can hold an id of 5 — so every lookup, mutation and optimistic update keys on
+ * the source/id pair.
+ */
+export function docKey(doc: { id?: string | number; source?: ReviewDocumentSource }): string {
+  return `${doc.source ?? 'organizer'}:${doc.id}`;
+}
+
 export interface ReviewDocument {
   id?: string | number;
+  /** Absent on legacy payloads; treated as 'organizer'. */
+  source?: ReviewDocumentSource;
+  /** Auditor's rejection reason (per-event documents only). */
+  reviewNotes?: string;
   name: string;
   category: 'Permits & Licenses' | 'Vendor & Venue Contracts' | 'Artist & Talent Agreements' | 'Supporting Documents' | 'Business License' | 'Insurance' | 'Tax Document' | 'Emergency Plan';
   status: 'VERIFIED' | 'WAITING REVIEW' | 'READY' | 'REJECTED' | 'MISSING';

@@ -3,6 +3,8 @@ package organizer
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -75,6 +77,9 @@ func (s *OrganizerService) Apply(ctx context.Context, userID int, req ApplyReque
 
 	var docModels []*OrganizerDocument
 	for _, doc := range docs {
+		if err := validateDocumentUpload(doc); err != nil {
+			return nil, err
+		}
 		contentType := http.DetectContentType(doc.Content)
 		if !s.isValidDocumentType(contentType) {
 			return nil, fmt.Errorf("%w: invalid format for %s (must be PDF, PNG, or JPG)", ErrValidation, doc.Type)
@@ -178,6 +183,9 @@ func (s *OrganizerService) UpdateApplication(ctx context.Context, userID int, re
 
 	var docModels []*OrganizerDocument
 	for _, doc := range newDocs {
+		if err := validateDocumentUpload(doc); err != nil {
+			return nil, err
+		}
 		contentType := http.DetectContentType(doc.Content)
 		if !s.isValidDocumentType(contentType) {
 			return nil, fmt.Errorf("%w: invalid format for %s (must be PDF, PNG, or JPG)", ErrValidation, doc.Type)
@@ -233,11 +241,175 @@ func (s *OrganizerService) DeleteApplication(ctx context.Context, userID int) er
 	return s.repo.Delete(ctx, app.ID)
 }
 
+// validateDocumentUpload enforces the per-file rules on an account-level
+// application document. The event-document path had these checks from the
+// start; this path only ever sniffed the content type, so a single file was
+// bounded by nothing but the whole-request cap.
+func validateDocumentUpload(doc *DocumentUpload) error {
+	if len(doc.Content) == 0 {
+		return fmt.Errorf("%w: %s file is empty", ErrValidation, doc.Type)
+	}
+	if len(doc.Content) > maxDocumentBytes {
+		return fmt.Errorf("%w: %s exceeds the 10MB limit", ErrValidation, doc.Type)
+	}
+	return nil
+}
+
 func (s *OrganizerService) isValidDocumentType(contentType string) bool {
 	return contentType == "application/pdf" ||
 		contentType == "image/jpeg" ||
 		contentType == "image/png" ||
 		contentType == "image/webp"
+}
+
+// ============================================================================
+// Per-event documents
+// ============================================================================
+
+// maxDocumentBytes caps a SINGLE uploaded file. Documents are scans of
+// paperwork, not media; 10MB is generous for a multi-page PDF. Applies to both
+// account-level application documents (KTP/NPWP/NIB) and per-event documents.
+const maxDocumentBytes = 10 << 20
+
+// maxUploadRequestBytes caps a whole multipart request. Deliberately only 2MB
+// above the per-file cap: it is headroom for multipart framing, not room for
+// several 10MB files. It must stay <= nginx's client_max_body_size, or oversized
+// uploads die at the proxy with an HTML 413 instead of a readable 422.
+const maxUploadRequestBytes = 12 << 20
+
+// eventDocumentURLTTL is how long a minted view link stays valid.
+//
+// A presigned URL is a bearer credential: whoever holds it can read the file with
+// no identity check at all. These documents carry NIK, so the window is kept to
+// the time it takes a browser to follow the link — not the length of a work
+// session. It is minted only on an explicit view request (never handed out in
+// list responses), so a short TTL costs nothing.
+//
+// Two minutes rather than one to absorb clock skew between us and the S3/R2
+// endpoint, which invalidates a signature outright. Expiry is evaluated when the
+// request starts, so a slow download of a large PDF is unaffected.
+const eventDocumentURLTTL = 2 * time.Minute
+
+func (s *OrganizerService) ListEventDocuments(ctx context.Context, eventID int) (*EventDocumentsResponse, error) {
+	docs, err := s.repo.ListEventDocuments(ctx, eventID)
+	if err != nil {
+		return nil, err
+	}
+
+	present := map[string]bool{}
+	for _, doc := range docs {
+		// A rejected document does not count towards completeness — the publish
+		// gate applies the same rule, so the tab must agree with it.
+		if doc.Status != "rejected" {
+			present[doc.DocumentType] = true
+		}
+		// Deliberately NOT presigned here. Listing the tab used to mint a live
+		// link for every document whether or not anyone opened one, which put
+		// four bearer credentials into a response (and into browser history,
+		// devtools, and any log that captured it) on every page load.
+	}
+
+	missing := []string{}
+	for _, t := range RequiredEventDocumentTypes {
+		if !present[t] {
+			missing = append(missing, t)
+		}
+	}
+
+	return &EventDocumentsResponse{
+		Documents: docs,
+		Required:  RequiredEventDocumentTypes,
+		Missing:   missing,
+		Complete:  len(missing) == 0,
+	}, nil
+}
+
+func (s *OrganizerService) UploadEventDocument(ctx context.Context, eventID int, userID int, upload *EventDocumentUpload) (*EventDocument, error) {
+	docType := strings.ToUpper(strings.TrimSpace(upload.Type))
+	if !IsValidEventDocumentType(docType) {
+		return nil, fmt.Errorf("%w: unknown document type %q", ErrValidation, upload.Type)
+	}
+	if len(upload.Content) == 0 {
+		return nil, fmt.Errorf("%w: %s file is empty", ErrValidation, EventDocumentLabel(docType))
+	}
+	if len(upload.Content) > maxDocumentBytes {
+		return nil, fmt.Errorf("%w: %s exceeds the 10MB limit", ErrValidation, EventDocumentLabel(docType))
+	}
+
+	contentType := http.DetectContentType(upload.Content)
+	if !s.isValidDocumentType(contentType) {
+		return nil, fmt.Errorf("%w: invalid format for %s (must be PDF, PNG, or JPG)", ErrValidation, EventDocumentLabel(docType))
+	}
+
+	ext := filepath.Ext(upload.Filename)
+	if ext == "" {
+		if contentType == "application/pdf" {
+			ext = ".pdf"
+		} else {
+			ext = ".png"
+		}
+	}
+
+	// Private bucket only. These carry NIK (protected personal data under UU PDP)
+	// and are read back through short-lived presigned URLs, never GetPublicURL.
+	objectKey := fmt.Sprintf("events/%d/documents/%d_%s%s", eventID, time.Now().UnixNano(), strings.ToLower(docType), ext)
+	if err := s.storage.UploadPrivateFile(ctx, objectKey, bytes.NewReader(upload.Content), contentType); err != nil {
+		return nil, fmt.Errorf("failed to upload %s: %w", EventDocumentLabel(docType), err)
+	}
+
+	doc := &EventDocument{
+		EventID:      eventID,
+		DocumentType: docType,
+		FilePath:     objectKey,
+		FileName:     filepath.Base(upload.Filename),
+		FileSize:     int64(len(upload.Content)),
+		ContentType:  contentType,
+	}
+
+	replaced, err := s.repo.UpsertEventDocument(ctx, doc, userID)
+	if err != nil {
+		// The object is already in the bucket; drop it rather than leave an
+		// orphan no row points at.
+		_ = s.storage.DeletePrivateFile(ctx, objectKey)
+		return nil, err
+	}
+	if replaced != "" {
+		// Best effort: a surviving orphan costs storage, not correctness.
+		_ = s.storage.DeletePrivateFile(ctx, replaced)
+	}
+
+	return doc, nil
+}
+
+// GetEventDocumentURL mints a short-lived view link for one document. Separated
+// from the list call on purpose: a link is only ever created when someone
+// actually asks to open that specific file.
+func (s *OrganizerService) GetEventDocumentURL(ctx context.Context, eventID int, docID int) (*EventDocumentURL, error) {
+	doc, err := s.repo.GetEventDocument(ctx, eventID, docID)
+	if err != nil {
+		return nil, err
+	}
+
+	url, err := s.storage.GetPresignedURL(ctx, doc.FilePath, eventDocumentURLTTL)
+	if err != nil {
+		return nil, err
+	}
+
+	return &EventDocumentURL{
+		URL:       url,
+		ExpiresIn: int(eventDocumentURLTTL.Seconds()),
+	}, nil
+}
+
+func (s *OrganizerService) DeleteEventDocument(ctx context.Context, eventID int, docID int) error {
+	filePath, err := s.repo.DeleteEventDocument(ctx, eventID, docID)
+	if err != nil {
+		return err
+	}
+	if filePath != "" {
+		_ = s.storage.DeletePrivateFile(ctx, filePath)
+	}
+	return nil
 }
 
 func (s *OrganizerService) populatePresignedURLs(ctx context.Context, app *OrganizerApplication) {
@@ -257,8 +429,8 @@ func (s *OrganizerService) GetDashboardData(ctx context.Context, organizerID int
 	return s.repo.GetDashboardData(ctx, organizerID)
 }
 
-func (s *OrganizerService) ListOrganizerEvents(ctx context.Context, organizerID int) ([]*OrganizerEvent, error) {
-	return s.repo.ListOrganizerEvents(ctx, organizerID)
+func (s *OrganizerService) ListOrganizerEvents(ctx context.Context, organizerID int, archived bool) ([]*OrganizerEvent, error) {
+	return s.repo.ListOrganizerEvents(ctx, organizerID, archived)
 }
 
 func (s *OrganizerService) GetOrganizerEvent(ctx context.Context, eventID int, organizerID int) (*OrganizerEvent, error) {
@@ -266,8 +438,39 @@ func (s *OrganizerService) GetOrganizerEvent(ctx context.Context, eventID int, o
 }
 
 func (s *OrganizerService) DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error {
-	return s.repo.DeleteOrganizerEvent(ctx, eventID, organizerID)
+	err := s.repo.DeleteOrganizerEvent(ctx, eventID, organizerID)
+	// The repo's WHERE clause folds "not yours", "doesn't exist" and "not a
+	// draft" into one empty result. Ownership is already enforced by
+	// requireEventOwnership upstream, so by the time we get here the realistic
+	// cause is that the event is no longer a draft.
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotDraft
+	}
+	return err
 }
+
+// WithdrawEventFromReview pulls an event back out of the auditor queue and
+// returns it to draft, so a mis-submission can be corrected (and then deleted,
+// since deletion is draft-only). Refused once an auditor has claimed the event.
+func (s *OrganizerService) WithdrawEventFromReview(ctx context.Context, eventID int, organizerID int) error {
+	return s.repo.WithdrawEventFromReview(ctx, eventID, organizerID)
+}
+
+// SetEventArchived hides or restores an event without touching its status, so a
+// rejected event stays rejected and its review trail survives.
+func (s *OrganizerService) SetEventArchived(ctx context.Context, eventID int, organizerID int, archived bool) error {
+	return s.repo.SetEventArchived(ctx, eventID, organizerID, archived)
+}
+
+// SetEventListed puts an approved event on sale, or withdraws it. The organizer
+// has the final call: an auditor's approval makes an event eligible to be
+// listed, it does not list it.
+func (s *OrganizerService) SetEventListed(ctx context.Context, eventID int, organizerID int, listed bool) error {
+	return s.repo.SetEventListed(ctx, eventID, organizerID, listed)
+}
+
+// defaultMaxPerOrder mirrors the ticket_tiers.max_ticket_per_user column default.
+const defaultMaxPerOrder = 4
 
 func (s *OrganizerService) ListTicketTiers(ctx context.Context, eventID int, organizerID int) ([]*OrganizerTicketTier, error) {
 	return s.repo.ListTicketTiers(ctx, eventID, organizerID)
@@ -282,6 +485,12 @@ func (s *OrganizerService) CreateTicketTier(ctx context.Context, eventID int, or
 	}
 	if tier.Capacity <= 0 {
 		return fmt.Errorf("%w: ticket capacity must be greater than zero", ErrValidation)
+	}
+	// max_ticket_per_user is NOT NULL DEFAULT 4, but an explicit 0 from a caller
+	// that omits the field would override that default with "uncapped". Fall
+	// back to the column default instead.
+	if tier.MaxPerOrder <= 0 {
+		tier.MaxPerOrder = defaultMaxPerOrder
 	}
 	return s.repo.CreateTicketTier(ctx, eventID, organizerID, tier)
 }
@@ -305,6 +514,10 @@ func (s *OrganizerService) DeleteTicketTier(ctx context.Context, eventID int, or
 
 func (s *OrganizerService) ListOrders(ctx context.Context, organizerID int) ([]*OrganizerOrder, error) {
 	return s.repo.ListOrders(ctx, organizerID)
+}
+
+func (s *OrganizerService) ListEventOrders(ctx context.Context, eventID int, organizerID int) ([]*OrganizerOrder, error) {
+	return s.repo.ListEventOrders(ctx, eventID, organizerID)
 }
 
 func (s *OrganizerService) GetOrderDetails(ctx context.Context, orderID string, organizerID int) (*OrganizerOrder, error) {
@@ -348,7 +561,111 @@ func (s *OrganizerService) CreateOrganizerEvent(ctx context.Context, organizerID
 	if event.Capacity < 0 {
 		return fmt.Errorf("%w: event capacity cannot be negative", ErrValidation)
 	}
+	if err := validateVenueSelection(event); err != nil {
+		return err
+	}
 	return s.repo.CreateOrganizerEvent(ctx, organizerID, event)
+}
+
+// validateVenueSelection checks the SHAPE of a venue selection when one is
+// present. It does not require one: the creation wizard no longer asks for a
+// venue, so a draft may carry none at all and the organizer picks it later in
+// the workspace (SetEventVenue, which does require one).
+//
+// What this still catches is a half-filled inline venue — an empty name used to
+// reach the repository and create a venue row literally named "", which then
+// polluted the catalogue and the venue-designer picker.
+func validateVenueSelection(event *OrganizerEvent) error {
+	if event.VenueID > 0 {
+		return nil
+	}
+	if nv := event.NewVenue; nv != nil {
+		if strings.TrimSpace(nv.Name) == "" {
+			return fmt.Errorf("%w: new venue requires a name", ErrValidation)
+		}
+		if strings.TrimSpace(nv.Address) == "" {
+			return fmt.Errorf("%w: new venue requires a street address", ErrValidation)
+		}
+		if strings.TrimSpace(nv.City) == "" {
+			return fmt.Errorf("%w: new venue requires a city", ErrValidation)
+		}
+		return nil
+	}
+	// Legacy clients that only ever sent a bare venue name.
+	if strings.TrimSpace(event.VenueName) != "" {
+		return nil
+	}
+	// No venue at all is fine on a draft.
+	return nil
+}
+
+// maxCoverImageBytes caps a cover upload. Matches the event package's own cover
+// handler so the two entry points can't disagree on what's acceptable.
+const maxCoverImageBytes = 10 << 20
+
+// UploadEventCover stores new cover art in the PUBLIC bucket and points the
+// event at it. The creation wizard only ever carried the picked file's *name*
+// into cover_image_url, which produced a broken URL like "poster.jpg"; this is
+// the path that actually persists an image.
+//
+// The previous object is intentionally left in the bucket: cover_image_url is
+// public and may already be cached by a CDN or referenced by a shared link, and
+// an event page rendering a 404 is worse than an orphaned object.
+func (s *OrganizerService) UploadEventCover(ctx context.Context, eventID int, organizerID int, upload *CoverImageUpload) (string, error) {
+	if len(upload.Content) == 0 {
+		return "", fmt.Errorf("%w: cover image is empty", ErrValidation)
+	}
+	if len(upload.Content) > maxCoverImageBytes {
+		return "", fmt.Errorf("%w: cover image exceeds the 10MB limit", ErrValidation)
+	}
+
+	// Sniff the real type rather than trusting the extension or the client's
+	// Content-Type, both of which are caller-controlled.
+	contentType := http.DetectContentType(upload.Content)
+	switch contentType {
+	case "image/png", "image/jpeg", "image/webp":
+	default:
+		return "", fmt.Errorf("%w: cover image must be PNG, JPG, or WebP", ErrValidation)
+	}
+
+	ext := strings.ToLower(filepath.Ext(upload.Filename))
+	if ext == "" {
+		switch contentType {
+		case "image/png":
+			ext = ".png"
+		case "image/webp":
+			ext = ".webp"
+		default:
+			ext = ".jpg"
+		}
+	}
+
+	objectKey := fmt.Sprintf("events/covers/%d_%d%s", eventID, time.Now().UnixNano(), ext)
+	if err := s.storage.UploadPublicFile(ctx, objectKey, bytes.NewReader(upload.Content), contentType); err != nil {
+		return "", fmt.Errorf("failed to upload cover image: %w", err)
+	}
+
+	url := s.storage.GetPublicURL(objectKey)
+	if err := s.repo.SetEventCoverImage(ctx, eventID, organizerID, url); err != nil {
+		return "", err
+	}
+	return url, nil
+}
+
+// SetEventVenue binds the event to a venue from the workspace's Venue tab.
+// Unlike creation, a venue is mandatory here — this endpoint exists for no
+// other purpose.
+func (s *OrganizerService) SetEventVenue(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error {
+	if eventID <= 0 {
+		return fmt.Errorf("%w: invalid event ID", ErrValidation)
+	}
+	if event.VenueID <= 0 && event.NewVenue == nil {
+		return fmt.Errorf("%w: pick an existing venue or supply a new one", ErrValidation)
+	}
+	if err := validateVenueSelection(event); err != nil {
+		return err
+	}
+	return s.repo.SetEventVenue(ctx, eventID, organizerID, event)
 }
 
 func (s *OrganizerService) UpdateOrganizerEvent(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error {
@@ -383,6 +700,13 @@ func (s *OrganizerService) GetEventAnalytics(ctx context.Context, eventID int, o
 		return nil, fmt.Errorf("%w: invalid event ID", ErrValidation)
 	}
 	return s.repo.GetEventAnalytics(ctx, eventID, organizerID, dateRange)
+}
+
+func (s *OrganizerService) GetEventCheckInStats(ctx context.Context, eventID int, organizerID int) (*EventCheckInStats, error) {
+	if eventID <= 0 {
+		return nil, fmt.Errorf("%w: invalid event ID", ErrValidation)
+	}
+	return s.repo.GetEventCheckInStats(ctx, eventID, organizerID)
 }
 
 func (s *OrganizerService) CheckInAttendee(ctx context.Context, eventID int, organizerID int, qrToken string) (*CheckInResponse, error) {

@@ -1,6 +1,10 @@
+"use client";
+
 import React from 'react';
 import { AuditorView } from '../types';
-import { LayoutDashboard, ClipboardCheck, Bell, Settings, ShieldCheck, X, Users2, DollarSign } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useAuthStore } from '@/lib/store/authStore';
+import { LayoutDashboard, ClipboardCheck, Bell, Settings, ShieldCheck, X, Users2, DollarSign, LogOut } from 'lucide-react';
 
 interface MobileNavDrawerProps {
   isOpen: boolean;
@@ -22,6 +26,15 @@ const NAV_ITEMS = [
 ];
 
 export default function MobileNavDrawer({ isOpen, onClose, currentView, setView, pendingReviewsCount, pendingDocumentsCount, pendingOrganizersCount }: MobileNavDrawerProps) {
+  const router = useRouter();
+  const { logout } = useAuthStore();
+
+  const handleLogout = async () => {
+    onClose();
+    await logout();
+    router.push('/login');
+  };
+
   const badgeFor = (view: AuditorView) => {
     if (view === 'reviews') return pendingReviewsCount > 0 ? pendingReviewsCount : undefined;
     if (view === 'documents') return pendingDocumentsCount > 0 ? pendingDocumentsCount : undefined;
@@ -87,6 +100,18 @@ export default function MobileNavDrawer({ isOpen, onClose, currentView, setView,
             );
           })}
         </nav>
+
+        <div className="border-t border-border-subtle p-4">
+          <div className="flex flex-col gap-2">
+          <button
+            onClick={handleLogout}
+            className="w-full flex min-h-11 items-center gap-3 rounded-lg px-4 py-2.5 font-sans text-sm font-medium text-text-secondary transition-all duration-200 hover:bg-danger/5 hover:text-danger cursor-pointer"
+          >
+            <LogOut className="w-4 h-4 shrink-0" />
+            <span>Log out</span>
+          </button>
+          </div>
+        </div>
       </aside>
     </>
   );

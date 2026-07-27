@@ -411,13 +411,6 @@ export interface TrendingEventCard {
 // Venue Editor (VenueMaster Pro)
 // ─────────────────────────────────────────────────────────────────────────
 
-/** Active tool in the VenueMaster Pro sidebar. */
-export type VenueEditorTool =
-  | "seat_mapper"
-  | "section_zone"
-  | "facility_icons"
-  | "layer_manager";
-
 /** Layout form a group of selected seats can be arranged into. */
 export type SeatArrangeForm = "grid" | "arc" | "diagonal" | "ellipse";
 

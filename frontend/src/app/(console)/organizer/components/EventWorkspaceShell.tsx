@@ -4,8 +4,14 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import EventWorkspaceHeader from "./EventWorkspaceHeader";
 import { useOrganizerData } from "../OrganizerDataContext";
-import { getEventRevisions, publishOrganizerEvent, EventRevisionFeedback } from "@/lib/api/eorganizer";
-import { AlertTriangle, XCircle, Send, CheckCircle2, Clock, ShieldAlert } from "lucide-react";
+import {
+  getEventRevisions,
+  publishOrganizerEvent,
+  listEventPublicly,
+  unlistEvent,
+  EventRevisionFeedback,
+} from "@/lib/api/eorganizer";
+import { AlertTriangle, XCircle, Send, CheckCircle2, Clock, ShieldAlert, Globe, EyeOff } from "lucide-react";
 
 interface EventWorkspaceShellProps {
   eventId: string;
@@ -22,6 +28,8 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resubmitSuccess, setResubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [listingBusy, setListingBusy] = useState(false);
+  const [listingError, setListingError] = useState<string | null>(null);
 
   useEffect(() => {
     const s = event?.status?.toLowerCase() || "";
@@ -57,6 +65,27 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
     }
   };
 
+  // The organizer's own go-live switch, separate from the auditor's approval.
+  const handleSetListed = async (listed: boolean) => {
+    if (!listed && !confirm(
+      "Withdraw this event from public listing?\n\n" +
+      "It will disappear from browse and search, and no new tickets can be sold. " +
+      "Tickets already sold stay valid. You can publish it again at any time."
+    )) return;
+
+    setListingBusy(true);
+    setListingError(null);
+    const res = listed
+      ? await listEventPublicly(Number(eventId))
+      : await unlistEvent(Number(eventId));
+    if (res.success) {
+      await fetchData();
+    } else {
+      setListingError(res.error?.message ?? "Failed to update the public listing.");
+    }
+    setListingBusy(false);
+  };
+
   if (!event) {
     return (
       <div className="bg-white border border-border-subtle rounded-xl p-10 text-center animate-fade-in">
@@ -80,6 +109,9 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
   // submitted at all.
   const isDraft = sLower === "draft" || sLower === "";
   const isPendingReview = sLower === "pending_review" || sLower === "pending review";
+  // Approved by an auditor but not yet put on sale — the organizer's call.
+  const isApprovedUnlisted = sLower === "approved";
+  const isLive = sLower === "live";
 
   return (
     <>
@@ -116,6 +148,67 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
             <div className="mt-3 flex items-start gap-2 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
               <p className="text-xs font-semibold text-danger">{submitError}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Approved by the auditor, but the organizer decides when it goes on sale. */}
+      {isApprovedUnlisted && (
+        <div className="mt-4 p-5 rounded-xl border border-success/30 bg-success/5 shadow-sm text-left animate-fade-in">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
+                <h4 className="text-sm font-bold text-text-primary">Approved — ready to go live</h4>
+              </div>
+              <p className="text-xs text-text-secondary">
+                An auditor has approved this event. It is <strong>not visible to buyers yet</strong> —
+                publish it when you&apos;re ready to start selling.
+              </p>
+            </div>
+
+            <button
+              onClick={() => handleSetListed(true)}
+              disabled={listingBusy}
+              className="flex shrink-0 items-center gap-2 px-4 py-2 bg-success hover:bg-success/90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>{listingBusy ? "Publishing…" : "Publish Event"}</span>
+            </button>
+          </div>
+
+          {listingError && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+              <p className="text-xs font-semibold text-danger">{listingError}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Live to the public — the organizer can pull it back at any time. */}
+      {isLive && (
+        <div className="mt-4 rounded-xl border border-border-subtle bg-white shadow-sm px-5 py-3 text-left animate-fade-in">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <p className="flex items-center gap-2 text-xs font-semibold text-text-secondary">
+              <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse shrink-0" />
+              This event is live and on sale to the public.
+            </p>
+            <button
+              onClick={() => handleSetListed(false)}
+              disabled={listingBusy}
+              className="flex shrink-0 items-center gap-1.5 px-3 py-1.5 border border-border-subtle hover:bg-surface-container-low disabled:opacity-50 disabled:cursor-not-allowed text-text-primary text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+              <span>{listingBusy ? "Withdrawing…" : "Withdraw from public"}</span>
+            </button>
+          </div>
+
+          {listingError && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+              <p className="text-xs font-semibold text-danger">{listingError}</p>
             </div>
           )}
         </div>

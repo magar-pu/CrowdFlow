@@ -89,6 +89,15 @@ type Repository interface {
 	// (event_seats_matrix rows exist for it) as opposed to general admission.
 	IsAssignedSeating(ticketTierID int) (bool, error)
 
+	// GetMaxPerOrder returns the tier's per-order ticket cap
+	// (ticket_tiers.max_ticket_per_user). Zero or less means uncapped.
+	GetMaxPerOrder(ticketTierID int) (int, error)
+
+	// IsTierBookable reports whether the tier's event is currently on sale:
+	// approved by an auditor, published by its organizer, and not archived.
+	// Resolved from the TIER, not the client-supplied event_id.
+	IsTierBookable(ticketTierID int) (bool, error)
+
 	// AcquireSeatHolds attempts to lock every seat in seatIDs under holdToken.
 	// All-or-nothing: if any seat is already held/sold, everything acquired
 	// during this call is released before returning ok=false.

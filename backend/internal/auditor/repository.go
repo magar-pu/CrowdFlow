@@ -3,6 +3,7 @@ package auditor
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -458,18 +459,43 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 	rev.Status = mapEventReviewStatus(dbStatus)
 	rev.BannerURL = formatBannerURL(rev.BannerURL)
 
-	// 2. Fetch Organizer application documents
+	// 2. Fetch the documents backing this review, from BOTH sources:
+	//   - organizer_documents: the organizer's account-level paperwork (KTP, NPWP,
+	//     NIB), submitted once when they applied and reused for every event.
+	//   - event_documents: submitted for THIS event specifically (proposal, crowd
+	//     permit, PIC id, venue permit).
+	//
+	// The two tables have independent SERIAL sequences, so `source` is carried
+	// through to the client — an id on its own does not identify a document, and
+	// verify/reject route on the pair.
 	queryDocs := `
-		SELECT 
+		SELECT
 			od.id,
+			'` + DocSourceOrganizer + `' AS source,
 			od.document_type,
 			od.file_path,
-			od.status,
-			od.uploaded_at
+			od.status::text,
+			od.uploaded_at,
+			NULL::text AS review_notes
 		FROM organizer_documents od
 		JOIN organizer_applications oa ON oa.id = od.application_id
 		JOIN events e ON e.organizer_id = oa.user_id
 		WHERE e.id = $1
+
+		UNION ALL
+
+		SELECT
+			ed.id,
+			'` + DocSourceEvent + `' AS source,
+			ed.document_type,
+			ed.file_path,
+			ed.status::text,
+			ed.uploaded_at,
+			ed.review_notes
+		FROM event_documents ed
+		WHERE ed.event_id = $1
+
+		ORDER BY source DESC, uploaded_at DESC
 	`
 	rowsDocs, err := r.db.QueryContext(ctx, queryDocs, eventID)
 	if err != nil {
@@ -481,24 +507,37 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 	var missingCount int
 	var verifiedCount int
 	var totalDocs int
+	// Which required per-event documents actually arrived, so a genuinely absent
+	// one can be reported rather than silently omitted.
+	presentEventDocs := map[string]bool{}
 
 	for rowsDocs.Next() {
 		var doc ReviewDoc
 		var docStatus string
 		var uploadedAt time.Time
-		err = rowsDocs.Scan(&doc.ID, &doc.DocumentType, &doc.FileURL, &docStatus, &uploadedAt)
+		var reviewNotes sql.NullString
+		err = rowsDocs.Scan(&doc.ID, &doc.Source, &doc.DocumentType, &doc.FileURL, &docStatus, &uploadedAt, &reviewNotes)
 		if err != nil {
 			return nil, err
 		}
 		doc.Status = mapVerificationStatus(docStatus)
 		doc.UploadedAt = formatTime(uploadedAt)
+		if reviewNotes.Valid {
+			doc.ReviewNotes = reviewNotes.String
+		}
 
-		// Map category dynamically
-		switch strings.ToUpper(doc.DocumentType) {
-		case "KTP", "NPWP", "SIUP", "NIB":
-			doc.Category = "Permits & Licenses"
-		default:
-			doc.Category = "Supporting Documents"
+		if doc.Source == DocSourceEvent {
+			presentEventDocs[doc.DocumentType] = true
+			doc.Category = eventDocCategory(doc.DocumentType)
+			doc.DocumentType = eventDocLabel(doc.DocumentType)
+		} else {
+			// Map category dynamically
+			switch strings.ToUpper(doc.DocumentType) {
+			case "KTP", "NPWP", "SIUP", "NIB":
+				doc.Category = "Permits & Licenses"
+			default:
+				doc.Category = "Supporting Documents"
+			}
 		}
 
 		if doc.Status == "pending" {
@@ -508,6 +547,27 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 		}
 		totalDocs++
 		rev.Documents = append(rev.Documents, doc)
+	}
+	if err = rowsDocs.Err(); err != nil {
+		return nil, err
+	}
+
+	// A required event document that was never uploaded is a MISSING row rather
+	// than an absence. Without this the auditor sees three documents and no
+	// indication that a fourth was required — the publish gate blocks this in
+	// normal flow, but an event submitted before the gate existed can reach here.
+	for _, t := range requiredEventDocTypes {
+		if presentEventDocs[t] {
+			continue
+		}
+		rev.Documents = append(rev.Documents, ReviewDoc{
+			Source:       DocSourceEvent,
+			DocumentType: eventDocLabel(t),
+			Category:     eventDocCategory(t),
+			Status:       "missing",
+		})
+		missingCount++
+		totalDocs++
 	}
 	rev.MissingDocs = missingCount
 	if totalDocs == 0 {
@@ -745,11 +805,11 @@ func (r *PostgresAuditorRepository) ApproveEventReview(ctx context.Context, even
 	// do what it looked like it did - it silently poisoned the tx and the
 	// approval came back as "commit unexpectedly resulted in rollback".
 	go func() {
-		msg := fmt.Sprintf("Event %q telah disetujui oleh auditor.", eventName)
+		msg := fmt.Sprintf("Event %q has been approved by an auditor.", eventName)
 		if organizerUserID > 0 {
-			_ = r.CreateNotification(context.Background(), organizerUserID, "✅ Event Disetujui!", msg, "event", strconv.Itoa(eventID))
+			_ = r.CreateNotification(context.Background(), organizerUserID, "✅ Event Approved!", msg, "event", strconv.Itoa(eventID))
 		}
-		_ = r.CreateNotificationForAuditors(context.Background(), "✅ Event Disetujui", msg, "event", strconv.Itoa(eventID))
+		_ = r.CreateNotificationForAuditors(context.Background(), "✅ Event Approved", msg, "event", strconv.Itoa(eventID))
 	}()
 
 	return nil
@@ -810,10 +870,10 @@ func (r *PostgresAuditorRepository) RejectEventReview(ctx context.Context, event
 	// After the commit - see the note in ApproveEventReview.
 	go func() {
 		if organizerUserID > 0 {
-			_ = r.CreateNotification(context.Background(), organizerUserID, "❌ Event Ditolak",
-				fmt.Sprintf("Event %q ditolak oleh Auditor. Alasan: %s. Catatan: %s", eventName, reason, notes), "event", strconv.Itoa(eventID))
+			_ = r.CreateNotification(context.Background(), organizerUserID, "❌ Event Rejected",
+				fmt.Sprintf("Event %q was rejected by an auditor. Reason: %s. Notes: %s", eventName, reason, notes), "event", strconv.Itoa(eventID))
 		}
-		_ = r.CreateNotificationForAuditors(context.Background(), "❌ Event Ditolak", fmt.Sprintf("Event %q telah ditolak. Alasan: %s", eventName, reason), "event", strconv.Itoa(eventID))
+		_ = r.CreateNotificationForAuditors(context.Background(), "❌ Event Rejected", fmt.Sprintf("Event %q has been rejected. Reason: %s", eventName, reason), "event", strconv.Itoa(eventID))
 	}()
 
 	return nil
@@ -877,8 +937,8 @@ func (r *PostgresAuditorRepository) RequestEventChanges(ctx context.Context, eve
 	// After the commit - see the note in ApproveEventReview.
 	go func() {
 		if organizerUserID > 0 {
-			_ = r.CreateNotification(context.Background(), organizerUserID, "⚠️ Perlu Revisi Event",
-				fmt.Sprintf("Event %q memerlukan revisi. Catatan Auditor: %s", eventName, notes), "event", strconv.Itoa(eventID))
+			_ = r.CreateNotification(context.Background(), organizerUserID, "⚠️ Event Revision Required",
+				fmt.Sprintf("Event %q requires revision. Auditor notes: %s", eventName, notes), "event", strconv.Itoa(eventID))
 		}
 	}()
 
@@ -943,7 +1003,7 @@ func (r *PostgresAuditorRepository) AddEventRevision(ctx context.Context, eventI
 		_, _ = r.db.ExecContext(ctx, `
 			INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
 			VALUES ($1, $2, $3, 'event', $4, FALSE, now())
-		`, organizerUserID, fmt.Sprintf("⚠️ Perlu Revisi: %s", req.Title), fmt.Sprintf("Event %q memerlukan tindakan: %s (%s)", eventName, req.RequiredAction, req.Description), strconv.Itoa(eventID))
+		`, organizerUserID, fmt.Sprintf("⚠️ Revision Required: %s", req.Title), fmt.Sprintf("Event %q requires action: %s (%s)", eventName, req.RequiredAction, req.Description), strconv.Itoa(eventID))
 	}
 
 	return nil
@@ -979,7 +1039,7 @@ func (r *PostgresAuditorRepository) UpdateRevisionStatus(ctx context.Context, re
 			_, _ = r.db.ExecContext(ctx, `
 				INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
 				VALUES ($1, $2, $3, 'event', $4, FALSE, now())
-			`, organizerUserID, fmt.Sprintf("✅ Revisi Disetujui: %s", title), fmt.Sprintf("Auditor telah menyetujui perbaikan revisi untuk event %q.", eventName), strconv.Itoa(eventID))
+			`, organizerUserID, fmt.Sprintf("✅ Revision Approved: %s", title), fmt.Sprintf("An auditor approved the revision fix for event %q.", eventName), strconv.Itoa(eventID))
 		}
 	} else if status == "Sent" || status == "Draft" {
 		_, _ = r.db.ExecContext(ctx, `UPDATE events SET status = 'needs_revision', updated_at = now() WHERE id = $1`, eventID)
@@ -987,7 +1047,7 @@ func (r *PostgresAuditorRepository) UpdateRevisionStatus(ctx context.Context, re
 			_, _ = r.db.ExecContext(ctx, `
 				INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
 				VALUES ($1, $2, $3, 'event', $4, FALSE, now())
-			`, organizerUserID, fmt.Sprintf("⚠️ Perlu Revisi Tambahan: %s", title), fmt.Sprintf("Auditor meminta perbaikan tambahan untuk event %q.", eventName), strconv.Itoa(eventID))
+			`, organizerUserID, fmt.Sprintf("⚠️ Further Revision Required: %s", title), fmt.Sprintf("An auditor requested further changes for event %q.", eventName), strconv.Itoa(eventID))
 		}
 	} else if status == "Rejected" {
 		_, _ = r.db.ExecContext(ctx, `UPDATE events SET status = 'rejected', updated_at = now() WHERE id = $1`, eventID)
@@ -995,7 +1055,7 @@ func (r *PostgresAuditorRepository) UpdateRevisionStatus(ctx context.Context, re
 			_, _ = r.db.ExecContext(ctx, `
 				INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
 				VALUES ($1, $2, $3, 'event', $4, FALSE, now())
-			`, organizerUserID, fmt.Sprintf("❌ Perbaikan Ditolak: %s", title), fmt.Sprintf("Auditor menolak hasil perbaikan revisi untuk event %q.", eventName), strconv.Itoa(eventID))
+			`, organizerUserID, fmt.Sprintf("❌ Revision Rejected: %s", title), fmt.Sprintf("An auditor rejected the submitted revision for event %q.", eventName), strconv.Itoa(eventID))
 		}
 	}
 
@@ -1954,7 +2014,7 @@ func (r *PostgresAuditorRepository) ApprovePayout(ctx context.Context, payoutID,
 	}
 
 	go func() {
-		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Disetujui", fmt.Sprintf("Payout #%d telah disetujui.", payoutID), "payout", strconv.Itoa(payoutID))
+		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Approved", fmt.Sprintf("Payout #%d has been approved.", payoutID), "payout", strconv.Itoa(payoutID))
 	}()
 
 	return nil
@@ -1994,7 +2054,7 @@ func (r *PostgresAuditorRepository) RejectPayout(ctx context.Context, payoutID, 
 	}
 
 	go func() {
-		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Ditolak", fmt.Sprintf("Payout #%d telah ditolak. Alasan: %s", payoutID, req.Reason), "payout", strconv.Itoa(payoutID))
+		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Rejected", fmt.Sprintf("Payout #%d was rejected. Reason: %s", payoutID, req.Reason), "payout", strconv.Itoa(payoutID))
 	}()
 
 	return nil
@@ -2034,7 +2094,7 @@ func (r *PostgresAuditorRepository) HoldPayout(ctx context.Context, payoutID, ac
 	}
 
 	go func() {
-		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Ditahan", fmt.Sprintf("Payout #%d telah ditahan. Alasan: %s", payoutID, req.Reason), "payout", strconv.Itoa(payoutID))
+		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout On Hold", fmt.Sprintf("Payout #%d has been put on hold. Reason: %s", payoutID, req.Reason), "payout", strconv.Itoa(payoutID))
 	}()
 
 	return nil
@@ -2146,4 +2206,80 @@ func formatBannerURL(rawURL string) string {
 		cleaned = "events/covers/" + cleaned
 	}
 	return base + "/" + cleaned
+}
+
+// ============================================================================
+// Per-event documents
+//
+// These live in event_documents, NOT organizer_documents, so they cannot go
+// through VerifyReviewDocument/RejectReviewDocument: auditor_document_reviews
+// has an FK to organizer_documents(id), and the two id sequences overlap.
+// The decision is recorded on the row itself (migration 0016 carries
+// review_notes / reviewed_at / reviewed_by for exactly this).
+// ============================================================================
+
+func (r *PostgresAuditorRepository) VerifyEventDocument(ctx context.Context, docID, actorID int) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE event_documents
+		SET status = 'verified', review_notes = NULL, reviewed_at = now(), reviewed_by = $2
+		WHERE id = $1
+	`, docID, actorID)
+	if err != nil {
+		return err
+	}
+	return checkAffected(res)
+}
+
+func (r *PostgresAuditorRepository) RejectEventDocument(ctx context.Context, docID, actorID int, reason string) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE event_documents
+		SET status = 'rejected', review_notes = $3, reviewed_at = now(), reviewed_by = $2
+		WHERE id = $1
+	`, docID, actorID, reason)
+	if err != nil {
+		return err
+	}
+	return checkAffected(res)
+}
+
+// GetDocumentPath resolves a (source, id) pair to its private-bucket object key.
+// The source discriminator is what makes the id unambiguous.
+func (r *PostgresAuditorRepository) GetDocumentPath(ctx context.Context, source string, docID int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	var query string
+	switch source {
+	case DocSourceEvent:
+		query = `SELECT file_path FROM event_documents WHERE id = $1`
+	case DocSourceOrganizer:
+		query = `SELECT file_path FROM organizer_documents WHERE id = $1`
+	default:
+		return "", ErrValidation
+	}
+
+	var path string
+	err := r.db.QueryRowContext(ctx, query, docID).Scan(&path)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return path, err
+}
+
+// checkAffected turns a no-op UPDATE into a not-found rather than a silent success.
+func checkAffected(res sql.Result) error {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

@@ -1,6 +1,6 @@
 import React from 'react';
 import { EventItem } from '../types';
-import { ArrowLeft, CalendarDays, MapPin, Globe2, LayoutDashboard, Ticket, Map, Radio, TrendingUp, Settings2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, CalendarDays, MapPin, LayoutDashboard, Ticket, Map, Radio, TrendingUp, Settings2, AlertTriangle, FileText } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 interface EventWorkspaceHeaderProps {
@@ -13,6 +13,7 @@ interface EventWorkspaceHeaderProps {
 const TABS: { id: string; label: string; icon: LucideIcon }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'revisions', label: 'Revisions', icon: AlertTriangle },
+  { id: 'documents', label: 'Documents', icon: FileText },
   { id: 'tickets', label: 'Tickets', icon: Ticket },
   { id: 'venue', label: 'Venue', icon: Map },
   { id: 'scanner', label: 'Scanner', icon: Radio },
@@ -23,6 +24,8 @@ const TABS: { id: string; label: string; icon: LucideIcon }[] = [
 export default function EventWorkspaceHeader({ event, workspaceTab, setWorkspaceTab, onBack }: EventWorkspaceHeaderProps) {
   const statusStyle =
     event.status === 'Live' ? 'bg-success/10 text-success border-success/20' :
+    // Approved but not published: cleared by the auditor, not yet on sale.
+    event.status === 'Approved' ? 'bg-success/5 text-success border-success/20' :
     event.status === 'Need Revision' ? 'bg-amber-500/10 text-amber-700 border-amber-500/30' :
     event.status === 'Rejected' ? 'bg-rose-500/10 text-rose-700 border-rose-500/30' :
     event.status === 'In Review' ? 'bg-blue-500/10 text-blue-700 border-blue-500/30' :
@@ -52,8 +55,9 @@ export default function EventWorkspaceHeader({ event, workspaceTab, setWorkspace
             <CalendarDays className="w-3.5 h-3.5 shrink-0" /> {event.date}
           </span>
           <span className="flex items-center gap-1.5">
-            {event.locationType === 'physical' ? <MapPin className="w-3.5 h-3.5 shrink-0" /> : <Globe2 className="w-3.5 h-3.5 shrink-0" />}
-            {event.venueName || event.location}
+            <MapPin className="w-3.5 h-3.5 shrink-0" />
+            {/* Drafts start with no venue — it's set in the Venue tab. */}
+            {event.location || <span className="italic text-on-surface-variant">No venue set</span>}
           </span>
         </div>
       </div>

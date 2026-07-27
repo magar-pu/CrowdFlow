@@ -31,11 +31,10 @@ function sidebarViewFromSegments(segments: string[]): AppView {
 function ShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { adminName, adminRole, toast, handleResetData, handleTriggerLiveScan, events, logs } = useOrganizerData();
+  const { adminName, adminRole, toast, events, logs } = useOrganizerData();
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
 
   const segments = parseSegments(pathname);
   const currentView = sidebarViewFromSegments(segments);
@@ -88,11 +87,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         <Header
           currentTabName={currentTabName}
           selectedEventName={workspaceEvent?.name}
-          onResetData={handleResetData}
-          onTriggerLiveScan={isWorkspace ? handleTriggerLiveScan : undefined}
           recentLogs={isWorkspace ? logs : undefined}
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
           onOpenMenu={() => setIsMobileMenuOpen(true)}
           user={{ name: adminName, role: adminRole, avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop' }}
         />
