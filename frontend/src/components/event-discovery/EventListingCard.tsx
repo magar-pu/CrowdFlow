@@ -9,12 +9,8 @@
  * card, so any event can carry any combination.
  */
 
-"use client";
-
-import { useState } from "react";
 import Link from "next/link";
 import {
-  Heart,
   CalendarDays,
   MapPin,
   BadgeCheck,
@@ -43,7 +39,6 @@ const BADGE_CONFIG: Record<
 };
 
 export function EventListingCard({ event }: EventListingCardProps) {
-  const [is_favorited, set_is_favorited] = useState(false);
   const badge = BADGE_CONFIG[event.badge];
   const is_sold_out = event.badge === "sold_out";
 
@@ -78,18 +73,6 @@ export function EventListingCard({ event }: EventListingCardProps) {
             </span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            set_is_favorited((fav) => !fav);
-          }}
-          aria-label={is_favorited ? "Remove from favorites" : "Add to favorites"}
-          className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur transition-all hover:bg-white hover:text-danger"
-        >
-          <Heart size={20} fill={is_favorited ? "currentColor" : "none"} />
-        </button>
       </div>
 
       <div className="flex flex-1 flex-col p-6">

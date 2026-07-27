@@ -71,20 +71,9 @@ export function AuthShell({ children, footer }: AuthShellProps) {
               <Ticket size={48} className="text-primary" fill="currentColor" />
             </div>
 
-            {/* Auth card Wrapper with Animated Border */}
-            <div className="relative z-10 rounded-[24px] p-[1px] shadow-[0_8px_32px_rgba(0,0,0,0.08)] overflow-hidden">
-              {/* Spinning Gradient - Monochromatic Minimalist Theme */}
-              <div 
-                className="absolute inset-[-100%] z-0 opacity-100"
-                style={{
-                  background: 'conic-gradient(from 0deg, transparent 0%, rgba(15,23,42,0.1) 25%, rgba(15,23,42,0.3) 50%, rgba(15,23,42,0.1) 75%, transparent 100%)',
-                  animation: 'spinSlow 5s linear infinite'
-                }}
-              />
-              {/* Inner Auth card */}
-              <div className="relative z-10 w-full rounded-[23px] bg-white/80 backdrop-blur-3xl overflow-hidden">
-                {children}
-              </div>
+            {/* Auth card Wrapper with Clean Static Border */}
+            <div className="relative z-10 w-full rounded-[24px] border border-slate-200/80 bg-white/90 backdrop-blur-3xl p-0 shadow-[0_8px_32px_rgba(0,0,0,0.06)] overflow-hidden">
+              {children}
             </div>
 
             {footer && (
