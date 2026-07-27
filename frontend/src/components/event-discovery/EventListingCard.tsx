@@ -22,6 +22,7 @@ import {
   Lock,
   Zap,
   Ban,
+  ArrowRight,
 } from "lucide-react";
 import { formatIDR } from "@/lib/pricing";
 import type { EventListingCard as EventListingCardType } from "@/types/ticket";
@@ -125,12 +126,12 @@ export function EventListingCard({ event }: EventListingCardProps) {
           )}
         </div>
 
-        <div className="relative z-10 mt-auto flex items-center justify-between border-t border-border-subtle pt-6">
-          <div className="pointer-events-none">
-            <p className="text-[11px] uppercase tracking-wider text-text-secondary">
+        <div className="relative z-10 mt-auto flex items-center justify-between border-t border-border-subtle pt-4 gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] uppercase tracking-wider text-text-secondary truncate">
               Starting From
             </p>
-            <p className="font-headline-sm text-text-primary">
+            <p className="font-bold text-text-primary text-base sm:text-lg whitespace-nowrap">
               {event.starting_price === null
                 ? "—"
                 : formatIDR(event.starting_price)}
@@ -140,17 +141,16 @@ export function EventListingCard({ event }: EventListingCardProps) {
             <button
               type="button"
               disabled
-              className="flex items-center gap-2 rounded-lg bg-surface-container px-6 py-2.5 font-label-md text-label-md text-text-secondary"
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-surface-container px-3 py-1.5 font-label-sm text-xs text-text-secondary"
             >
-              <Ban size={16} /> Sold Out
+              <Ban size={14} /> Sold Out
             </button>
           ) : (
-            <Link
-              href={`/events/${event.event_id}`}
-              className="rounded-lg bg-text-primary px-6 py-2.5 font-label-md text-label-md text-white transition-all hover:bg-secondary active:scale-95"
+            <span
+              className="flex shrink-0 items-center gap-1.5 rounded-full bg-text-primary px-3.5 py-2 font-label-sm text-xs font-bold text-white transition-all group-hover:bg-secondary active:scale-95 shadow-sm"
             >
-              View Event
-            </Link>
+              View <ArrowRight size={14} />
+            </span>
           )}
         </div>
       </div>
