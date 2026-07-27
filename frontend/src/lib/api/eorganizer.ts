@@ -731,3 +731,37 @@ export async function respondToEventRevision(
     body: JSON.stringify({ comment, actionTaken }),
   });
 }
+
+/**
+ * Payout bank details. Organizer-level, not per-event: one account receives
+ * every payout, and the auditor payout screen reads it via events.organizer_id.
+ *
+ * `editable` is false once the account is committed to something a change would
+ * silently affect (an event under review, a payout in flight); `lockReason`
+ * says which, so the form can explain itself rather than just being disabled.
+ */
+export interface PayoutDetails {
+  bankName: string;
+  bankAccountHolder: string;
+  bankAccountNumber: string;
+  complete: boolean;
+  verificationStatus: "unverified" | "verified";
+  updatedAt?: string;
+  editable: boolean;
+  lockReason?: string;
+}
+
+export async function getPayoutDetails(): Promise<ApiResponse<PayoutDetails>> {
+  return apiRequest<PayoutDetails>("/api/organizer/payout-details", {
+    method: "GET",
+  });
+}
+
+export async function updatePayoutDetails(
+  details: Pick<PayoutDetails, "bankName" | "bankAccountHolder" | "bankAccountNumber">
+): Promise<ApiResponse<PayoutDetails>> {
+  return apiRequest<PayoutDetails>("/api/organizer/payout-details", {
+    method: "PUT",
+    body: JSON.stringify(details),
+  });
+}

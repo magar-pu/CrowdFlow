@@ -91,6 +91,10 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /api/organizer/events/{id}/attendees", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleListEventAttendees)))))
 
 	// Finance & Payouts
+	// Payout details are organizer-level, so they sit outside the per-event
+	// routes even though the publish gate for each event depends on them.
+	mux.Handle("GET /api/organizer/payout-details", authenticate(verifiedOrganizer(http.HandlerFunc(h.handleGetPayoutDetails))))
+	mux.Handle("PUT /api/organizer/payout-details", authenticate(verifiedOrganizer(http.HandlerFunc(h.handleUpdatePayoutDetails))))
 	mux.Handle("GET /api/organizer/finance", authenticate(verifiedOrganizer(http.HandlerFunc(h.handleGetFinanceSummary))))
 	mux.Handle("GET /api/organizer/payouts", authenticate(verifiedOrganizer(http.HandlerFunc(h.handleListPayouts))))
 	mux.Handle("POST /api/organizer/payout-request", authenticate(verifiedOrganizer(http.HandlerFunc(h.handleCreatePayoutRequest))))
@@ -590,6 +594,10 @@ func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, ErrDocumentsIncomplete) {
 			response.Error(w, http.StatusUnprocessableEntity, "DOCUMENTS_INCOMPLETE", err.Error())
+			return
+		}
+		if errors.Is(err, ErrPayoutDetailsRequired) {
+			response.Error(w, http.StatusUnprocessableEntity, "PAYOUT_DETAILS_REQUIRED", err.Error())
 			return
 		}
 		log.Printf("PublishOrganizerEvent error: %v", err)
@@ -1113,6 +1121,64 @@ func (h *Handler) handleListPayouts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.JSON(w, http.StatusOK, payouts)
+}
+
+func (h *Handler) handleGetPayoutDetails(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
+		return
+	}
+
+	details, err := h.service.GetPayoutDetails(r.Context(), userID)
+	if err != nil {
+		log.Printf("GetPayoutDetails error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load payout details")
+		return
+	}
+	response.JSON(w, http.StatusOK, details)
+}
+
+func (h *Handler) handleUpdatePayoutDetails(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
+		return
+	}
+
+	var req UpdatePayoutDetailsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse request")
+		return
+	}
+
+	details, err := h.service.UpdatePayoutDetails(r.Context(), userID, req)
+	if err != nil {
+		// 409, not 422: the payload may be perfectly valid and still be refused
+		// because the account is committed to an event under review.
+		if errors.Is(err, ErrPayoutDetailsLocked) {
+			response.Error(w, http.StatusConflict, "PAYOUT_DETAILS_LOCKED", err.Error())
+			return
+		}
+		if errors.Is(err, ErrValidation) {
+			response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_ERROR", err.Error())
+			return
+		}
+		log.Printf("UpdatePayoutDetails error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to save payout details")
+		return
+	}
+	response.JSON(w, http.StatusOK, details)
 }
 
 func (h *Handler) handleCreatePayoutRequest(w http.ResponseWriter, r *http.Request) {

@@ -1929,6 +1929,11 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 	}
 	offset := (filters.Page - 1) * filters.Limit
 
+	// Gross and net are selected here because the payouts TABLE shows both
+	// columns. They previously came from nowhere, so the console read an absent
+	// field and crashed on the first rendered row. The net formula matches
+	// GetPayout exactly (5% platform, 2% gateway, per-event entertainment tax) —
+	// the two must not disagree about the same payout.
 	query := `
 		SELECT
 			p.id,
@@ -1938,11 +1943,22 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 			e.event_name,
 			e.event_start,
 			COALESCE(up.full_name, 'Unknown Organizer'),
-			COALESCE(oa.business_email, '')
+			COALESCE(oa.business_email, ''),
+			COALESCE(sales.tickets_sold, 0) AS tickets_sold,
+			COALESCE(sales.gross, 0)::float8 AS gross_revenue,
+			(COALESCE(sales.gross, 0)
+				* (1 - 0.05 - 0.02 - (e.entertainment_tax_rate / 100.0)))::float8 AS net_revenue
 		FROM payouts p
 		JOIN events e ON e.id = p.event_id
 		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
 		LEFT JOIN user_profiles up ON up.user_id = e.organizer_id
+		LEFT JOIN (
+			SELECT event_id,
+			       SUM(tickets_sold) AS tickets_sold,
+			       SUM(tickets_sold * price) AS gross
+			FROM ticket_tiers
+			GROUP BY event_id
+		) sales ON sales.event_id = p.event_id
 		WHERE 1=1
 	`
 	args := []interface{}{}
@@ -1985,6 +2001,9 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 		var reqTime, eventTime time.Time
 		var dbStatus string
 
+		var ticketsSold int
+		var gross, net float64
+
 		err = rows.Scan(
 			&p.ID,
 			&p.RequestedAmount,
@@ -1994,6 +2013,9 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 			&eventTime,
 			&p.OrganizerName,
 			&p.OrganizerEmail,
+			&ticketsSold,
+			&gross,
+			&net,
 		)
 		if err != nil {
 			return nil, err
@@ -2002,6 +2024,13 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 		p.Status = string(dbStatus)
 		p.RequestDate = formatTime(reqTime)
 		p.EventDate = eventTime.Format("2006-01-02 15:04")
+		// Only the figures this query actually computes. The rest of
+		// PayoutSales is detail-only and stays zero rather than being guessed.
+		p.SalesSummary = PayoutSales{
+			TicketsSold:  ticketsSold,
+			GrossRevenue: gross,
+			NetRevenue:   net,
+		}
 
 		list = append(list, &p)
 	}
@@ -2041,7 +2070,8 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 			COALESCE(oa.bank_account_number, ''),
 			COALESCE(oa.bank_account_holder, ''),
 			COALESCE(oa.business_phone, ''),
-			COALESCE(oa.status::text, '')
+			COALESCE(oa.status::text, ''),
+			COALESCE(oa.bank_verification_status, 'unverified')
 		FROM payouts p
 		JOIN events e ON e.id = p.event_id
 		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
@@ -2072,6 +2102,7 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		&p.BankHolder,
 		&p.OrganizerPhone,
 		&p.OrganizerStatus,
+		&p.BankVerificationStatus,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {

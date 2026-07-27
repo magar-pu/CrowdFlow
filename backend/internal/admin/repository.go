@@ -88,6 +88,134 @@ func (r *PostgresRepository) GetDashboardStats() (*DashboardStats, error) {
 	return &stats, nil
 }
 
+// GetPlatformAnalytics builds the dashboard's time series and revenue split
+// from paid orders and user signups.
+//
+// Bucketing is chosen per range so the bar count stays readable: 7 days, then
+// weeks, then months. generate_series supplies the buckets so a period with no
+// activity renders as a zero bar rather than being silently dropped, which
+// would compress the axis and misrepresent a quiet week as a missing one.
+func (r *PostgresRepository) GetPlatformAnalytics(rangeKey string) (*PlatformAnalytics, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// bucketCount is a number of BUCKETS, not of days. Counting back in days
+	// lands the series on arbitrary offsets — 90 days before the start of this
+	// month is the 3rd of a month, and since the aggregates are grouped by
+	// date_trunc (always the 1st), no bucket would ever match and every bar
+	// would read zero while the current month went missing entirely.
+	var bucket string // date_trunc unit, also the generate_series step
+	var bucketCount int
+	var labelFormat string
+	switch rangeKey {
+	case "7d":
+		bucket, bucketCount, labelFormat = "day", 7, "Dy"
+	case "90d":
+		bucket, bucketCount, labelFormat = "month", 3, "Mon"
+	default:
+		rangeKey = "30d"
+		// Five Monday-aligned weeks span the last ~30 days. Labelled by the date
+		// the week starts, because to_char's 'W' is week-of-month and produced
+		// a meaningless "W5, W1, W2, W3" sequence.
+		bucket, bucketCount, labelFormat = "week", 5, "DD Mon"
+	}
+
+	// Revenue is the buyer-facing gross of paid orders bucketed by paid_at;
+	// registrations are users bucketed by created_at; events by created_at.
+	// Each is aggregated in its own subquery before joining, so one table having
+	// no rows in a bucket cannot multiply another's count.
+	query := `
+		WITH buckets AS (
+			SELECT generate_series(
+				date_trunc($1, now()) - (($2::int - 1) || ' ' || $1)::interval,
+				date_trunc($1, now()),
+				('1 ' || $1)::interval
+			) AS bucket_start
+		),
+		revenue AS (
+			SELECT date_trunc($1, paid_at) AS bucket_start,
+			       SUM(gross_amount) AS revenue,
+			       SUM(entertainment_tax_amount) AS tax
+			FROM orders
+			WHERE status = 'paid' AND paid_at IS NOT NULL
+			GROUP BY 1
+		),
+		signups AS (
+			SELECT date_trunc($1, created_at) AS bucket_start, COUNT(*) AS registrations
+			FROM users
+			GROUP BY 1
+		),
+		created_events AS (
+			SELECT date_trunc($1, created_at) AS bucket_start, COUNT(*) AS events
+			FROM events
+			GROUP BY 1
+		),
+		sold AS (
+			SELECT date_trunc($1, o.paid_at) AS bucket_start, COUNT(t.id) AS tickets_sold
+			FROM orders o
+			JOIN tickets t ON t.order_id = o.id
+			WHERE o.status = 'paid' AND o.paid_at IS NOT NULL
+			GROUP BY 1
+		)
+		SELECT
+			to_char(b.bucket_start, $3) AS label,
+			COALESCE(revenue.revenue, 0)::float8,
+			COALESCE(signups.registrations, 0)::int,
+			COALESCE(created_events.events, 0)::int,
+			COALESCE(sold.tickets_sold, 0)::int
+		FROM buckets b
+		LEFT JOIN revenue ON revenue.bucket_start = b.bucket_start
+		LEFT JOIN signups ON signups.bucket_start = b.bucket_start
+		LEFT JOIN created_events ON created_events.bucket_start = b.bucket_start
+		LEFT JOIN sold ON sold.bucket_start = b.bucket_start
+		ORDER BY b.bucket_start
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, bucket, bucketCount, labelFormat)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := &PlatformAnalytics{Range: rangeKey, Series: make([]*AnalyticsPoint, 0)}
+	for rows.Next() {
+		var p AnalyticsPoint
+		if err := rows.Scan(&p.Label, &p.Revenue, &p.Registrations, &p.Events, &p.TicketsSold); err != nil {
+			return nil, err
+		}
+		result.Series = append(result.Series, &p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// The breakdown is over the same window as the series, so the donut and the
+	// bars describe one period rather than two different ones.
+	err = r.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(SUM(ticket_face_value_total), 0)::float8,
+			COALESCE(SUM(platform_fee + platform_fee_ppn), 0)::float8,
+			COALESCE(SUM(gateway_fee + gateway_fee_ppn), 0)::float8,
+			COALESCE(SUM(entertainment_tax_amount), 0)::float8,
+			COALESCE(SUM(gross_amount), 0)::float8
+		FROM orders
+		WHERE status = 'paid'
+		  AND paid_at IS NOT NULL
+		  AND paid_at >= date_trunc($1, now()) - (($2::int - 1) || ' ' || $1)::interval
+	`, bucket, bucketCount).Scan(
+		&result.Breakdown.TicketFaceValue,
+		&result.Breakdown.PlatformFee,
+		&result.Breakdown.GatewayFee,
+		&result.Breakdown.EntertainmentTax,
+		&result.Breakdown.GrossTotal,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
 func (r *PostgresRepository) ListEvents(limit, offset int) ([]*Event, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

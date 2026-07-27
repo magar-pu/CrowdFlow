@@ -23,6 +23,7 @@ import {
   AuditorNotification,
   DashboardStats
 } from "@/lib/api/auditor";
+import { mapPayoutListItem } from "./payoutMapping";
 
 interface AuditorDataValue {
   submissions: EventSubmission[];
@@ -117,11 +118,10 @@ export function AuditorDataProvider({ children }: { children: React.ReactNode })
       // Load payout requests
       const payoutsRes = await listPayouts({ limit: 100 });
       if (payoutsRes.success && payoutsRes.data) {
-        const payoutList = payoutsRes.data.map((pay: any) => ({
-          ...pay,
-          id: String(pay.id),
-        })) as any[];
-        setPayouts(payoutList);
+        // Mapped, not spread. A bare spread left the PayoutRequest fields the
+        // list endpoint does not return undefined, and the table crashed on the
+        // first row it rendered.
+        setPayouts(payoutsRes.data.map(mapPayoutListItem));
       }
 
       // Load notifications

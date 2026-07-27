@@ -369,6 +369,10 @@ type AuditorPayout struct {
 	BankName                  string         `json:"bankName"`
 	BankAccountNum            string         `json:"bankAccountNumber"`
 	BankHolder                string         `json:"bankAccountHolder"`
+	// BankVerificationStatus is "verified" only while an auditor has confirmed
+	// the CURRENT account. Any organizer edit resets it, so a payout whose
+	// destination moved since the last check arrives flagged.
+	BankVerificationStatus    string         `json:"bankVerificationStatus"`
 	OrganizerPhone            string         `json:"organizerPhone"`
 	OrganizerBusinessLicense  string         `json:"organizerBusinessLicense"`
 	OrganizerStatus           string         `json:"organizerStatus"`

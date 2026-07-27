@@ -208,6 +208,46 @@ type ApplyRequest struct {
 	BusinessAddress   string `json:"business_address"`
 }
 
+// PayoutDetails is the organizer's payout bank account plus everything the
+// console needs to decide whether the form is editable and what to warn about.
+//
+// The account is organizer-level, not per-event: organizer_applications is
+// UNIQUE (user_id) and the auditor payout screen joins to it via
+// events.organizer_id, so one account receives every payout.
+type PayoutDetails struct {
+	BankName          string `json:"bankName"`
+	BankAccountHolder string `json:"bankAccountHolder"`
+	BankAccountNumber string `json:"bankAccountNumber"`
+
+	// Complete reports whether all three fields are present. The publish gate
+	// uses the same condition, so the console can pre-empt it.
+	Complete           bool   `json:"complete"`
+	VerificationStatus string `json:"verificationStatus"` // "unverified" | "verified"
+	UpdatedAt          string `json:"updatedAt,omitempty"`
+
+	// Editable is false once the details are committed to something: an event
+	// awaiting an auditor, or a payout already in flight. LockReason says which,
+	// so the console explains the lock instead of just disabling the form.
+	Editable   bool   `json:"editable"`
+	LockReason string `json:"lockReason,omitempty"`
+}
+
+// UpdatePayoutDetailsRequest is the payload of PUT /api/organizer/payout-details.
+type UpdatePayoutDetailsRequest struct {
+	BankName          string `json:"bankName"`
+	BankAccountHolder string `json:"bankAccountHolder"`
+	BankAccountNumber string `json:"bankAccountNumber"`
+}
+
+// ErrPayoutDetailsLocked is returned when bank details are edited while an
+// event is under review or a payout is in flight. Distinct from
+// ErrApplicationLocked, which is about the application wizard.
+var ErrPayoutDetailsLocked = errors.New("payout details are locked")
+
+// ErrPayoutDetailsRequired gates event submission: an event cannot go to an
+// auditor until the organizer has an account for the money to land in.
+var ErrPayoutDetailsRequired = errors.New("payout bank details are required")
+
 type DocumentUpload struct {
 	Type     string
 	Filename string
@@ -579,6 +619,8 @@ type Repository interface {
 	SetEventArchived(ctx context.Context, eventID int, organizerID int, archived bool) error
 	SetEventListed(ctx context.Context, eventID int, organizerID int, listed bool) error
 	PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
+	GetPayoutDetails(ctx context.Context, organizerID int) (*PayoutDetails, error)
+	UpdatePayoutDetails(ctx context.Context, organizerID int, req UpdatePayoutDetailsRequest) (*PayoutDetails, error)
 	DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	ListTicketTiers(ctx context.Context, eventID int, organizerID int) ([]*OrganizerTicketTier, error)
 	CreateTicketTier(ctx context.Context, eventID int, organizerID int, tier *OrganizerTicketTier) error
@@ -629,6 +671,8 @@ type Service interface {
 	SetEventArchived(ctx context.Context, eventID int, organizerID int, archived bool) error
 	SetEventListed(ctx context.Context, eventID int, organizerID int, listed bool) error
 	PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
+	GetPayoutDetails(ctx context.Context, organizerID int) (*PayoutDetails, error)
+	UpdatePayoutDetails(ctx context.Context, organizerID int, req UpdatePayoutDetailsRequest) (*PayoutDetails, error)
 	DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	GetEventSeating(ctx context.Context, eventID int, organizerID int) (*EventSeatingResponse, error)
 	SeedEventSeating(ctx context.Context, eventID int, organizerID int, req SeedSeatingRequest) error

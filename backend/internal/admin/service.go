@@ -19,6 +19,12 @@ func NewAdminService(repo Repository) *AdminService {
 	return &AdminService{repo: repo}
 }
 
+func (s *AdminService) GetPlatformAnalytics(rangeKey string) (*PlatformAnalytics, error) {
+	// Anything unrecognised falls through to the repository's 30d default rather
+	// than erroring: a bad query string should not blank the dashboard.
+	return s.repo.GetPlatformAnalytics(rangeKey)
+}
+
 func (s *AdminService) GetDashboardStats() (*DashboardStats, error) {
 	return s.repo.GetDashboardStats()
 }

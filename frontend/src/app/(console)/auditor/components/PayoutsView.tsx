@@ -41,12 +41,15 @@ export default function PayoutsView({
     .filter(p => {
       const matchesStatus = statusFilter === 'All' || p.status === statusFilter;
       const q = search.toLowerCase();
-      const matchesSearch = !q ||
-        p.organizerName.toLowerCase().includes(q) ||
-        p.eventName.toLowerCase().includes(q) ||
-        p.id.toLowerCase().includes(q) ||
-        p.bankAccountNumber.toLowerCase().includes(q) ||
-        p.invoiceNumber.toLowerCase().includes(q);
+      // Every field is optional on a LIST row, so match defensively: one
+      // undefined field used to take out the entire tab.
+      const matchesSearch = !q || [
+        p.organizerName,
+        p.eventName,
+        p.id,
+        p.bankAccountNumber,
+        p.invoiceNumber,
+      ].some(field => (field ?? '').toLowerCase().includes(q));
       return matchesStatus && matchesSearch;
     })
     .sort((a, b) => {
@@ -70,7 +73,7 @@ export default function PayoutsView({
     complianceRate: Math.round(
       (payouts.filter(p => p.status === 'Approved' || p.status === 'Paid').length / (payouts.length || 1)) * 100
     ),
-    fraudAlerts: payouts.filter(p => p.fraudDetection.hasAlert).length,
+    fraudAlerts: payouts.filter(p => p.fraudDetection?.hasAlert).length,
   };
 
   const statCards = [
@@ -165,11 +168,14 @@ export default function PayoutsView({
                 <td className="py-3.5 px-3 font-mono font-bold text-text-primary">{p.id}</td>
                 <td className="py-3.5 px-3 font-semibold text-text-primary">{p.organizerName}</td>
                 <td className="py-3.5 px-3 text-text-secondary">{p.eventName}</td>
-                <td className="py-3.5 px-3 text-text-secondary font-mono">${p.revenue.toLocaleString()}</td>
-                <td className="py-3.5 px-3 text-text-secondary font-mono">${p.netRevenue.toLocaleString()}</td>
-                <td className="py-3.5 px-3 font-bold text-text-primary font-mono">${p.requestedAmount.toLocaleString()}</td>
+                {/* formatIDR, not a "$" prefix: every amount on this platform is
+                    rupiah, and labelling it as dollars on the screen that
+                    releases funds misstates the sum by ~16,000x. */}
+                <td className="py-3.5 px-3 text-text-secondary font-mono">{formatIDR(p.revenue ?? 0)}</td>
+                <td className="py-3.5 px-3 text-text-secondary font-mono">{formatIDR(p.netRevenue ?? 0)}</td>
+                <td className="py-3.5 px-3 font-bold text-text-primary font-mono">{formatIDR(p.requestedAmount ?? 0)}</td>
                 <td className="py-3.5 px-3">
-                  <span className={`px-2.5 py-0.5 rounded-full font-mono text-[9px] font-bold border ${statusColors[p.status]}`}>
+                  <span className={`px-2.5 py-0.5 rounded-full font-mono text-[9px] font-bold border ${statusColors[p.status] ?? 'bg-surface-container text-text-secondary border-border-subtle'}`}>
                     {p.status}
                   </span>
                 </td>

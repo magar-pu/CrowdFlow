@@ -62,7 +62,10 @@ export interface TicketTier {
   price: number;
   sold: number;
   capacity: number;
-  status?: "Selling Fast" | "On Sale" | "Sold Out";
+  // "Scheduled" and "Expired" describe the sales WINDOW, not stock. A tier
+  // outside its window is not buyable and is absent from the public listing,
+  // so the console must not show it as "On Sale".
+  status?: "Selling Fast" | "On Sale" | "Sold Out" | "Scheduled" | "Expired";
   color?: string;
   maxPerOrder?: number;
   salesStart?: string;

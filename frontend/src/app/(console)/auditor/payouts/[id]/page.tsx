@@ -6,6 +6,7 @@ import PayoutDetailView from "../../components/PayoutDetailView";
 import { useAuditorData } from "../../AuditorDataContext";
 import { getPayout } from "@/lib/api/auditor";
 import { PayoutRequest } from "../../types";
+import { mapPayoutStatus } from "../../payoutMapping";
 
 export default function AuditorPayoutDetailPage() {
   const params = useParams<{ id: string }>();
@@ -39,7 +40,7 @@ export default function AuditorPayoutDetailPage() {
           netRevenue: raw.salesSummary?.netRevenue || 0,
           requestedAmount: raw.requestedAmount || 0,
           requestDate: raw.requestDate || "",
-          status: (raw.status === "processed" || raw.status === "Processed" ? "Paid" : raw.status === "failed" || raw.status === "Failed" ? "Rejected" : raw.status === "on_hold" || raw.status === "On Hold" ? "On Hold" : "Pending") as any,
+          status: mapPayoutStatus(raw.status),
           currentAuditor: "",
           organizerCompany: raw.organizerName || "",
           organizerPhone: (raw as any).organizerPhone || "",
@@ -83,7 +84,11 @@ export default function AuditorPayoutDetailPage() {
           bankAccountNumber: raw.bankAccountNumber || "",
           bankAccountHolder: raw.bankAccountHolder || "",
           swiftCode: "",
-          bankVerificationStatus: "Unverified",
+          // Real, from organizer_applications.bank_verification_status. Resets
+          // to unverified whenever the organizer edits the account, so a
+          // destination that moved since the last check shows as unverified.
+          bankVerificationStatus:
+            (raw as any).bankVerificationStatus === "verified" ? "Verified" : "Unverified",
           fraudDetection: {
             duplicatePayout: raw.fraudDetection?.duplicatePayout || false,
             suspiciousRevenue: raw.fraudDetection?.suspiciousRevenue || false,

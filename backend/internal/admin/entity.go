@@ -14,6 +14,37 @@ type DashboardStats struct {
 	TicketsSold  int     `json:"ticketsSold"`
 }
 
+// AnalyticsPoint is one bucket of the platform analytics time series. Buckets
+// are days for 7d, weeks for 30d, months for 90d — whatever keeps the bar count
+// readable for the range.
+type AnalyticsPoint struct {
+	Label         string  `json:"label"`
+	Revenue       float64 `json:"revenue"`
+	Registrations int     `json:"registrations"`
+	Events        int     `json:"events"`
+	TicketsSold   int     `json:"ticketsSold"`
+}
+
+// RevenueBreakdown splits paid orders into the components the orders table
+// actually records. Every field is a summed column, not an assumed percentage:
+// the dashboard used to hardcode a 72/18/10 tickets/fees/resale split that
+// corresponded to nothing.
+type RevenueBreakdown struct {
+	TicketFaceValue  float64 `json:"ticketFaceValue"`
+	PlatformFee      float64 `json:"platformFee"`
+	GatewayFee       float64 `json:"gatewayFee"`
+	EntertainmentTax float64 `json:"entertainmentTax"`
+	GrossTotal       float64 `json:"grossTotal"`
+}
+
+// PlatformAnalytics backs the admin dashboard's Platform Analytics chart and
+// Revenue Breakdown donut.
+type PlatformAnalytics struct {
+	Range     string            `json:"range"`
+	Series    []*AnalyticsPoint `json:"series"`
+	Breakdown RevenueBreakdown  `json:"breakdown"`
+}
+
 type Event struct {
 	ID           string  `json:"id"`
 	Name         string  `json:"name"`
@@ -169,6 +200,7 @@ type MarkNotificationsReadRequest struct {
 
 type Repository interface {
 	GetDashboardStats() (*DashboardStats, error)
+	GetPlatformAnalytics(rangeKey string) (*PlatformAnalytics, error)
 	ListEvents(limit, offset int) ([]*Event, error)
 	ApproveEvent(eventID, auditorID int, notes string) error
 	RejectEvent(eventID, auditorID int, notes string) error
@@ -195,6 +227,7 @@ type Repository interface {
 
 type Service interface {
 	GetDashboardStats() (*DashboardStats, error)
+	GetPlatformAnalytics(rangeKey string) (*PlatformAnalytics, error)
 	ListEvents(limit, offset int) ([]*Event, error)
 	ApproveEvent(eventID, auditorID int, notes string) error
 	RejectEvent(eventID, auditorID int, notes string) error

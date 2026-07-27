@@ -472,6 +472,96 @@ func (s *OrganizerService) SetEventListed(ctx context.Context, eventID int, orga
 // defaultMaxPerOrder mirrors the ticket_tiers.max_ticket_per_user column default.
 const defaultMaxPerOrder = 4
 
+// salesDateLayout is what the console sends for a tier's sales window: a bare
+// calendar date, no time and no zone.
+const salesDateLayout = "2006-01-02"
+
+// eventTimeZone is the zone a bare sales date is interpreted in. The platform
+// is Indonesia-only (prices are IDR, tax is the local entertainment tax), and
+// there is no per-event timezone column, so an organizer picking "July 27"
+// means July 27 in Jakarta. If events ever span regions this must become a
+// column on events rather than a constant.
+var eventTimeZone = func() *time.Location {
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		// Zone databases are absent from some minimal container images. UTC+7
+		// has no DST, so a fixed offset is exactly equivalent here.
+		return time.FixedZone("WIB", 7*60*60)
+	}
+	return loc
+}()
+
+// parseSalesStart reads a sales-window opening date as the FIRST instant of
+// that day, local time.
+func parseSalesStart(value string) (time.Time, error) {
+	t, err := time.ParseInLocation(salesDateLayout, strings.TrimSpace(value), eventTimeZone)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%w: sales start must be a date in YYYY-MM-DD form", ErrValidation)
+	}
+	return t, nil
+}
+
+// parseSalesEnd reads a sales-window closing date as the LAST instant of that
+// day, local time.
+//
+// Parsing it as midnight — which is what time.Parse yields, and in UTC at that
+// — closed sales at 07:00 Jakarta on the chosen day, silently discarding the
+// whole of the organizer's final selling day. "Sales end July 27" means sales
+// are open through July 27.
+func parseSalesEnd(value string) (time.Time, error) {
+	t, err := time.ParseInLocation(salesDateLayout, strings.TrimSpace(value), eventTimeZone)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%w: sales end must be a date in YYYY-MM-DD form", ErrValidation)
+	}
+	return t.Add(24*time.Hour - time.Second), nil
+}
+
+// validateSalesWindow rejects a window that is absent, malformed, or backwards.
+// These used to fall back to now() and now()+1 month, which meant a tier saved
+// with blank dates quietly stopped selling a month later and a typo'd date was
+// indistinguishable from a deliberate one.
+func validateSalesWindow(tier *OrganizerTicketTier) error {
+	start, err := parseSalesStart(tier.SalesStart)
+	if err != nil {
+		return err
+	}
+	end, err := parseSalesEnd(tier.SalesEnd)
+	if err != nil {
+		return err
+	}
+	if !end.After(start) {
+		return fmt.Errorf("%w: sales end must be on or after the sales start date", ErrValidation)
+	}
+	return nil
+}
+
+// validateSalesWindowUpdate applies the same rules to an update, where the
+// payload may legitimately be partial: an omitted date means "leave that
+// endpoint of the window alone", matching how maxPerOrder behaves. A date that
+// IS supplied must still be well-formed.
+//
+// Ordering can only be checked when both arrive together; a partial update that
+// moves one endpoint past the other is caught by the CHECK the migration adds.
+func validateSalesWindowUpdate(tier *OrganizerTicketTier) error {
+	hasStart := strings.TrimSpace(tier.SalesStart) != ""
+	hasEnd := strings.TrimSpace(tier.SalesEnd) != ""
+
+	if hasStart {
+		if _, err := parseSalesStart(tier.SalesStart); err != nil {
+			return err
+		}
+	}
+	if hasEnd {
+		if _, err := parseSalesEnd(tier.SalesEnd); err != nil {
+			return err
+		}
+	}
+	if hasStart && hasEnd {
+		return validateSalesWindow(tier)
+	}
+	return nil
+}
+
 func (s *OrganizerService) ListTicketTiers(ctx context.Context, eventID int, organizerID int) ([]*OrganizerTicketTier, error) {
 	return s.repo.ListTicketTiers(ctx, eventID, organizerID)
 }
@@ -492,6 +582,9 @@ func (s *OrganizerService) CreateTicketTier(ctx context.Context, eventID int, or
 	if tier.MaxPerOrder <= 0 {
 		tier.MaxPerOrder = defaultMaxPerOrder
 	}
+	if err := validateSalesWindow(tier); err != nil {
+		return err
+	}
 	return s.repo.CreateTicketTier(ctx, eventID, organizerID, tier)
 }
 
@@ -504,6 +597,9 @@ func (s *OrganizerService) UpdateTicketTier(ctx context.Context, eventID int, or
 	}
 	if tier.Capacity <= 0 {
 		return fmt.Errorf("%w: ticket capacity must be greater than zero", ErrValidation)
+	}
+	if err := validateSalesWindowUpdate(tier); err != nil {
+		return err
 	}
 	return s.repo.UpdateTicketTier(ctx, eventID, organizerID, tierID, tier)
 }
@@ -682,6 +778,66 @@ func (s *OrganizerService) UpdateOrganizerEvent(ctx context.Context, eventID int
 		return fmt.Errorf("%w: event capacity cannot be negative", ErrValidation)
 	}
 	return s.repo.UpdateOrganizerEvent(ctx, eventID, organizerID, event)
+}
+
+func (s *OrganizerService) GetPayoutDetails(ctx context.Context, organizerID int) (*PayoutDetails, error) {
+	if organizerID <= 0 {
+		return nil, fmt.Errorf("%w: invalid organizer ID", ErrValidation)
+	}
+	return s.repo.GetPayoutDetails(ctx, organizerID)
+}
+
+func (s *OrganizerService) UpdatePayoutDetails(ctx context.Context, organizerID int, req UpdatePayoutDetailsRequest) (*PayoutDetails, error) {
+	if organizerID <= 0 {
+		return nil, fmt.Errorf("%w: invalid organizer ID", ErrValidation)
+	}
+
+	req.BankName = strings.TrimSpace(req.BankName)
+	req.BankAccountHolder = strings.TrimSpace(req.BankAccountHolder)
+	req.BankAccountNumber = strings.TrimSpace(req.BankAccountNumber)
+
+	// All three or nothing. A partial account cannot receive a payout, and
+	// storing one would satisfy no gate while looking to the organizer like the
+	// task was done.
+	if req.BankName == "" {
+		return nil, fmt.Errorf("%w: bank name is required", ErrValidation)
+	}
+	if req.BankAccountHolder == "" {
+		return nil, fmt.Errorf("%w: account holder name is required", ErrValidation)
+	}
+	if req.BankAccountNumber == "" {
+		return nil, fmt.Errorf("%w: account number is required", ErrValidation)
+	}
+
+	// Indonesian bank account numbers are digits only, typically 10-16. Spaces
+	// and dashes are how people write them down, so strip rather than reject.
+	digits := strings.Map(func(rn rune) rune {
+		if rn >= '0' && rn <= '9' {
+			return rn
+		}
+		if rn == ' ' || rn == '-' {
+			return -1
+		}
+		return rn
+	}, req.BankAccountNumber)
+	for _, rn := range digits {
+		if rn < '0' || rn > '9' {
+			return nil, fmt.Errorf("%w: account number may only contain digits", ErrValidation)
+		}
+	}
+	if len(digits) < 8 || len(digits) > 20 {
+		return nil, fmt.Errorf("%w: account number must be between 8 and 20 digits", ErrValidation)
+	}
+	req.BankAccountNumber = digits
+
+	if len(req.BankName) > 100 {
+		return nil, fmt.Errorf("%w: bank name is too long", ErrValidation)
+	}
+	if len(req.BankAccountHolder) > 150 {
+		return nil, fmt.Errorf("%w: account holder name is too long", ErrValidation)
+	}
+
+	return s.repo.UpdatePayoutDetails(ctx, organizerID, req)
 }
 
 func (s *OrganizerService) PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error {

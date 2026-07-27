@@ -2,11 +2,13 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import EventWorkspaceHeader from "./EventWorkspaceHeader";
 import { useOrganizerData } from "../OrganizerDataContext";
 import {
   getEventRevisions,
   publishOrganizerEvent,
+  getPayoutDetails,
   listEventPublicly,
   unlistEvent,
   EventRevisionFeedback,
@@ -28,6 +30,9 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resubmitSuccess, setResubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // null while unknown, so the button is not disabled on a slow/failed lookup —
+  // the server gate is authoritative either way.
+  const [payoutReady, setPayoutReady] = useState<boolean | null>(null);
   const [listingBusy, setListingBusy] = useState(false);
   const [listingError, setListingError] = useState<string | null>(null);
 
@@ -40,6 +45,23 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
         }
       });
     }
+  }, [event?.id, event?.status]);
+
+  // Only drafts can be submitted, so only drafts need the payout pre-check.
+  useEffect(() => {
+    const s = event?.status?.toLowerCase() || "";
+    if (!event || !(s === "draft" || s === "")) return;
+    let cancelled = false;
+    getPayoutDetails().then((res) => {
+      if (cancelled) return;
+      // A failed lookup leaves this null rather than false: blocking submission
+      // because a secondary request failed would be worse than letting the
+      // server gate reject it with the real reason.
+      setPayoutReady(res.success && res.data ? res.data.complete : null);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [event?.id, event?.status]);
 
   /**
@@ -146,13 +168,29 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
 
             <button
               onClick={handleResubmit}
-              disabled={isSubmitting}
-              className="flex shrink-0 items-center gap-2 px-4 py-2 bg-secondary hover:bg-secondary/90 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
+              disabled={isSubmitting || payoutReady === false}
+              className="flex shrink-0 items-center gap-2 px-4 py-2 bg-secondary hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
             >
               <Send className="w-3.5 h-3.5" />
               <span>{isSubmitting ? "Submitting..." : "Submit Event to Auditor"}</span>
             </button>
           </div>
+
+          {/* Checked up front rather than left to the 422: payout details are
+              the one submission requirement fixed OUTSIDE this workspace, so
+              failing at the button would send the organizer hunting. */}
+          {payoutReady === false && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+              <p className="text-xs font-semibold text-warning">
+                Add your payout bank details before submitting.{" "}
+                <Link href="/organizer/settings" className="underline hover:no-underline">
+                  Go to Settings
+                </Link>
+                . Submitting locks the account for this event.
+              </p>
+            </div>
+          )}
 
           {submitError && (
             <div className="mt-3 flex items-start gap-2 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2">

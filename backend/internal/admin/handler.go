@@ -66,6 +66,7 @@ func (h *Handler) RegisterRoutes(
 	}
 
 	mux.Handle("GET /dashboard/stats", admin(h.handleGetDashboardStats))
+	mux.Handle("GET /dashboard/analytics", admin(h.handleGetPlatformAnalytics))
 	mux.Handle("GET /dashboard/alerts", admin(h.handleListSecurityAlerts))
 	mux.Handle("GET /dashboard/activities", admin(h.handleListActivities))
 
@@ -143,6 +144,16 @@ func (h *Handler) handleListActivities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.JSON(w, http.StatusOK, activities)
+}
+
+func (h *Handler) handleGetPlatformAnalytics(w http.ResponseWriter, r *http.Request) {
+	analytics, err := h.service.GetPlatformAnalytics(r.URL.Query().Get("range"))
+	if err != nil {
+		log.Printf("admin GetPlatformAnalytics: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load platform analytics")
+		return
+	}
+	response.JSON(w, http.StatusOK, analytics)
 }
 
 func (h *Handler) handleListNotifications(w http.ResponseWriter, r *http.Request) {

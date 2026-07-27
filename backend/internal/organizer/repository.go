@@ -833,17 +833,31 @@ func (r *PostgresRepository) ListTicketTiers(ctx context.Context, eventID int, o
 			}
 			t.SalesStart = start.Format("2006-01-02T15:04:05Z")
 			t.SalesEnd = end.Format("2006-01-02T15:04:05Z")
-			if t.Sold >= t.Capacity {
-				t.Status = "Sold Out"
-			} else if t.Capacity-t.Sold < 30 {
-				t.Status = "Selling Fast"
-			} else {
-				t.Status = "On Sale"
-			}
+			t.Status = tierStatus(t.Sold, t.Capacity, start, end, time.Now())
 			tiers = append(tiers, &t)
 		}
 	}
 	return tiers, nil
+}
+
+// tierStatus describes a tier the way the organizer needs to see it. The sales
+// WINDOW is checked before the capacity: a tier whose window has closed is not
+// buyable no matter how much stock is left, and reporting it as "On Sale"
+// (which this did) meant the organizer console showed tiers as live that the
+// public listing had already dropped — with nothing to explain the difference.
+func tierStatus(sold, capacity int, start, end, now time.Time) string {
+	switch {
+	case now.Before(start):
+		return "Scheduled"
+	case now.After(end):
+		return "Expired"
+	case sold >= capacity:
+		return "Sold Out"
+	case capacity-sold < 30:
+		return "Selling Fast"
+	default:
+		return "On Sale"
+	}
 }
 
 func (r *PostgresRepository) CreateTicketTier(ctx context.Context, eventID int, organizerID int, tier *OrganizerTicketTier) error {
@@ -857,13 +871,13 @@ func (r *PostgresRepository) CreateTicketTier(ctx context.Context, eventID int, 
 		return fmt.Errorf("event not found or unauthorized")
 	}
 
-	start, err := time.Parse("2006-01-02", tier.SalesStart)
+	start, err := parseSalesStart(tier.SalesStart)
 	if err != nil {
-		start = time.Now()
+		return err
 	}
-	end, err := time.Parse("2006-01-02", tier.SalesEnd)
+	end, err := parseSalesEnd(tier.SalesEnd)
 	if err != nil {
-		end = time.Now().AddDate(0, 1, 0)
+		return err
 	}
 
 	query := `
@@ -885,13 +899,23 @@ func (r *PostgresRepository) UpdateTicketTier(ctx context.Context, eventID int, 
 		return fmt.Errorf("event not found or unauthorized")
 	}
 
-	start, err := time.Parse("2006-01-02", tier.SalesStart)
-	if err != nil {
-		start = time.Now()
+	// An omitted date means "leave that endpoint of the sales window alone",
+	// the same partial-update rule maxPerOrder follows below. NULL is the signal
+	// for that; it is never written to the columns, which are NOT NULL.
+	var start, end sql.NullTime
+	if strings.TrimSpace(tier.SalesStart) != "" {
+		t, err := parseSalesStart(tier.SalesStart)
+		if err != nil {
+			return err
+		}
+		start = sql.NullTime{Time: t, Valid: true}
 	}
-	end, err := time.Parse("2006-01-02", tier.SalesEnd)
-	if err != nil {
-		end = time.Now().AddDate(0, 1, 0)
+	if strings.TrimSpace(tier.SalesEnd) != "" {
+		t, err := parseSalesEnd(tier.SalesEnd)
+		if err != nil {
+			return err
+		}
+		end = sql.NullTime{Time: t, Valid: true}
 	}
 
 	// Callers may send a partial tier that omits maxPerOrder, which arrives as 0.
@@ -899,7 +923,9 @@ func (r *PostgresRepository) UpdateTicketTier(ctx context.Context, eventID int, 
 	// the booking service reads as uncapped.
 	query := `
 		UPDATE ticket_tiers
-		SET name = $1, description = $2, price = $3, allocation_limit = $4, sales_start = $5, sales_end = $6,
+		SET name = $1, description = $2, price = $3, allocation_limit = $4,
+		    sales_start = COALESCE($5, sales_start),
+		    sales_end = COALESCE($6, sales_end),
 		    max_ticket_per_user = CASE WHEN $7 > 0 THEN $7 ELSE max_ticket_per_user END
 		WHERE id = $8 AND event_id = $9
 	`
@@ -1789,6 +1815,210 @@ func (r *PostgresRepository) SetEventCoverImage(ctx context.Context, eventID int
 	return nil
 }
 
+// payoutDetailsLockReason reports why an organizer's bank details are locked,
+// or "" when they are still editable.
+//
+// The account is a redirect target for money, so it freezes as soon as it is
+// committed to something a change would silently affect: an event an auditor is
+// currently assessing, or a payout that is queued or already paid. Both checks
+// span ALL of the organizer's events, because the account is shared by all of
+// them — locking per-event would let a second event's draft state unlock the
+// destination of a payout in flight for the first.
+//
+// CALLERS MUST SKIP THIS when no account is on file yet. Locking an empty
+// account is not protection, it is a dead end: organizers who were granted the
+// Event Organizer role directly (bypassing the application wizard) already have
+// approved events and pending payouts with no bank details, and would be unable
+// to ever supply them. Setting an account for the first time redirects nothing.
+func payoutDetailsLockReason(ctx context.Context, q queryRower, organizerID int) (string, error) {
+	var underReview int
+	if err := q.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM events
+		WHERE organizer_id = $1 AND status IN ('pending_review', 'approved')
+	`, organizerID).Scan(&underReview); err != nil {
+		return "", err
+	}
+	if underReview > 0 {
+		return fmt.Sprintf("%d event(s) are submitted for review or approved. Withdraw them to change payout details.", underReview), nil
+	}
+
+	var payouts int
+	if err := q.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM payouts p
+		JOIN events e ON e.id = p.event_id
+		WHERE e.organizer_id = $1 AND p.status IN ('pending', 'processed')
+	`, organizerID).Scan(&payouts); err != nil {
+		return "", err
+	}
+	if payouts > 0 {
+		return fmt.Sprintf("%d payout request(s) are pending or already paid. Contact support to change payout details.", payouts), nil
+	}
+
+	return "", nil
+}
+
+// queryRower is the subset of *sql.DB / *sql.Tx the lock check needs, so it can
+// run inside the publish transaction as well as standalone.
+type queryRower interface {
+	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
+}
+
+func (r *PostgresRepository) GetPayoutDetails(ctx context.Context, organizerID int) (*PayoutDetails, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	var d PayoutDetails
+	var name, holder, number sql.NullString
+	var status sql.NullString
+	var updatedAt sql.NullTime
+
+	err := r.db.QueryRowContext(ctx, `
+		SELECT bank_name, bank_account_holder, bank_account_number,
+		       bank_verification_status, bank_details_updated_at
+		FROM organizer_applications
+		WHERE user_id = $1
+	`, organizerID).Scan(&name, &holder, &number, &status, &updatedAt)
+	if err == sql.ErrNoRows {
+		// No application row: the organizer has nothing on file yet. An empty,
+		// editable form is the correct answer, not a 404.
+		return &PayoutDetails{VerificationStatus: "unverified", Editable: true}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	d.BankName = strings.TrimSpace(name.String)
+	d.BankAccountHolder = strings.TrimSpace(holder.String)
+	d.BankAccountNumber = strings.TrimSpace(number.String)
+	d.Complete = d.BankName != "" && d.BankAccountHolder != "" && d.BankAccountNumber != ""
+	d.VerificationStatus = status.String
+	if d.VerificationStatus == "" {
+		d.VerificationStatus = "unverified"
+	}
+	if updatedAt.Valid {
+		d.UpdatedAt = updatedAt.Time.Format(time.RFC3339)
+	}
+
+	// Nothing on file yet: always editable, whatever else is in flight.
+	if !d.Complete {
+		d.Editable = true
+		return &d, nil
+	}
+
+	reason, err := payoutDetailsLockReason(ctx, r.db, organizerID)
+	if err != nil {
+		return nil, err
+	}
+	d.Editable = reason == ""
+	d.LockReason = reason
+
+	return &d, nil
+}
+
+// UpdatePayoutDetails writes the organizer's bank account, re-checking the lock
+// inside the transaction so a concurrent event submission cannot slip past the
+// check the console did when it rendered the form.
+//
+// Any change resets verification to 'unverified': the auditor confirmed a
+// specific account, and that confirmation does not carry over to a new one.
+func (r *PostgresRepository) UpdatePayoutDetails(ctx context.Context, organizerID int, req UpdatePayoutDetailsRequest) (*PayoutDetails, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	// Re-read inside the transaction: the lock only applies to CHANGING an
+	// account that already exists, and this is also what stops a form rendered
+	// before an event was submitted from writing after it.
+	var curName, curHolder, curNumber sql.NullString
+	err = tx.QueryRowContext(ctx, `
+		SELECT bank_name, bank_account_holder, bank_account_number
+		FROM organizer_applications WHERE user_id = $1
+	`, organizerID).Scan(&curName, &curHolder, &curNumber)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+	alreadyOnFile := strings.TrimSpace(curName.String) != "" &&
+		strings.TrimSpace(curHolder.String) != "" &&
+		strings.TrimSpace(curNumber.String) != ""
+
+	if alreadyOnFile {
+		reason, err := payoutDetailsLockReason(ctx, tx, organizerID)
+		if err != nil {
+			return nil, err
+		}
+		if reason != "" {
+			return nil, fmt.Errorf("%w: %s", ErrPayoutDetailsLocked, reason)
+		}
+	}
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE organizer_applications
+		SET bank_name = $1,
+		    bank_account_holder = $2,
+		    bank_account_number = $3,
+		    bank_verification_status = 'unverified',
+		    bank_details_updated_at = now()
+		WHERE user_id = $4
+	`, req.BankName, req.BankAccountHolder, req.BankAccountNumber, organizerID)
+	if err != nil {
+		return nil, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if affected == 0 {
+		// No application row. This is NOT necessarily an organizer who skipped the
+		// wizard: an admin can grant the Event Organizer role directly from the
+		// Users screen, which bypasses organizer_applications entirely. Those
+		// organizers can create and run events but have nowhere to put bank
+		// details, so refusing here would leave them permanently unable to be
+		// paid.
+		//
+		// The row is created from data that actually exists — the user's own
+		// profile name and login email. business_type and business_phone are NOT
+		// NULL with no honest value available, so they are left empty and render
+		// as "Not provided" rather than being invented.
+		//
+		// status is 'approved' because it already is: the role grant WAS the
+		// approval. reviewed_by stays NULL — no auditor reviewed an application
+		// that was never submitted, and naming one would fabricate an audit trail.
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO organizer_applications (
+				user_id, business_name, business_type, business_email, business_phone,
+				status, bank_name, bank_account_holder, bank_account_number,
+				bank_verification_status, bank_details_updated_at
+			)
+			SELECT
+				u.id,
+				COALESCE(NULLIF(TRIM(up.full_name), ''), u.email),
+				'',
+				u.email,
+				'',
+				'approved',
+				$2, $3, $4,
+				'unverified',
+				now()
+			FROM users u
+			LEFT JOIN user_profiles up ON up.user_id = u.id
+			WHERE u.id = $1
+		`, organizerID, req.BankName, req.BankAccountHolder, req.BankAccountNumber); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return r.GetPayoutDetails(ctx, organizerID)
+}
+
 func (r *PostgresRepository) PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -1810,6 +2040,30 @@ func (r *PostgresRepository) PublishOrganizerEvent(ctx context.Context, eventID 
 	if currentStatus == "pending_review" || currentStatus == "approved" {
 		// Already review pending or approved, do nothing
 		return nil
+	}
+
+	// Payout gate: an event must not reach an auditor until there is an account
+	// for its revenue to be paid into. Checked first because it is the cheapest
+	// to fix and, unlike the others, is fixed OUTSIDE this event's workspace —
+	// telling the organizer about it before the venue/seating/document work
+	// avoids sending them back to Settings after they think they are done.
+	//
+	// This is also the point of no return for the account: submitting locks it
+	// (see payoutDetailsLockReason), so the details must be right now.
+	var bankName, bankHolder, bankNumber sql.NullString
+	err = tx.QueryRowContext(ctx, `
+		SELECT bank_name, bank_account_holder, bank_account_number
+		FROM organizer_applications WHERE user_id = $1
+	`, organizerID).Scan(&bankName, &bankHolder, &bankNumber)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("%w: add your payout bank details in Settings before submitting", ErrPayoutDetailsRequired)
+	} else if err != nil {
+		return err
+	}
+	if strings.TrimSpace(bankName.String) == "" ||
+		strings.TrimSpace(bankHolder.String) == "" ||
+		strings.TrimSpace(bankNumber.String) == "" {
+		return fmt.Errorf("%w: add your payout bank details in Settings before submitting", ErrPayoutDetailsRequired)
 	}
 
 	// Venue gate: drafts are created without a venue (it is picked in the
