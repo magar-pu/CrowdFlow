@@ -9,12 +9,8 @@
  * card, so any event can carry any combination.
  */
 
-"use client";
-
-import { useState } from "react";
 import Link from "next/link";
 import {
-  Heart,
   CalendarDays,
   MapPin,
   BadgeCheck,
@@ -22,6 +18,7 @@ import {
   Lock,
   Zap,
   Ban,
+  ArrowRight,
 } from "lucide-react";
 import { formatIDR } from "@/lib/pricing";
 import type { EventListingCard as EventListingCardType } from "@/types/ticket";
@@ -42,7 +39,6 @@ const BADGE_CONFIG: Record<
 };
 
 export function EventListingCard({ event }: EventListingCardProps) {
-  const [is_favorited, set_is_favorited] = useState(false);
   const badge = BADGE_CONFIG[event.badge];
   const is_sold_out = event.badge === "sold_out";
 
@@ -57,38 +53,26 @@ export function EventListingCard({ event }: EventListingCardProps) {
           alt={event.title}
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
-        <div className="absolute left-4 top-4 flex flex-col gap-2">
+        <div className="absolute left-3 top-3 z-10 flex flex-wrap items-center gap-1.5">
           <span
             className={cn(
-              "rounded-full px-3 py-1 font-label-sm text-label-sm shadow-lg",
+              "rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wider shadow-sm uppercase",
               badge.class_name
             )}
           >
             {badge.label}
           </span>
           {event.trust_signal === "verified" && (
-            <span className="flex items-center gap-1 rounded-full bg-white/90 px-3 py-1 font-label-sm text-label-sm text-primary backdrop-blur">
-              <BadgeCheck size={14} /> Verified
+            <span className="flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-0.5 text-[10px] font-bold tracking-wider text-primary shadow-sm backdrop-blur-md">
+              <BadgeCheck size={12} className="text-success shrink-0" /> Verified
             </span>
           )}
           {event.trust_signal === "identity_required" && (
-            <span className="flex items-center gap-1 rounded-full bg-white/90 px-3 py-1 font-label-sm text-label-sm text-primary backdrop-blur">
-              <ShieldCheck size={14} /> Identity Required
+            <span className="flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-0.5 text-[10px] font-bold tracking-wider text-primary shadow-sm backdrop-blur-md">
+              <ShieldCheck size={12} className="text-secondary shrink-0" /> Identity Required
             </span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            set_is_favorited((fav) => !fav);
-          }}
-          aria-label={is_favorited ? "Remove from favorites" : "Add to favorites"}
-          className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur transition-all hover:bg-white hover:text-danger"
-        >
-          <Heart size={20} fill={is_favorited ? "currentColor" : "none"} />
-        </button>
       </div>
 
       <div className="flex flex-1 flex-col p-6">
@@ -125,12 +109,12 @@ export function EventListingCard({ event }: EventListingCardProps) {
           )}
         </div>
 
-        <div className="relative z-10 mt-auto flex items-center justify-between border-t border-border-subtle pt-6">
-          <div className="pointer-events-none">
-            <p className="text-[11px] uppercase tracking-wider text-text-secondary">
+        <div className="relative z-10 mt-auto flex items-center justify-between border-t border-border-subtle pt-4 gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] uppercase tracking-wider text-text-secondary truncate">
               Starting From
             </p>
-            <p className="font-headline-sm text-text-primary">
+            <p className="font-bold text-text-primary text-base sm:text-lg whitespace-nowrap">
               {event.starting_price === null
                 ? "—"
                 : formatIDR(event.starting_price)}
@@ -140,17 +124,16 @@ export function EventListingCard({ event }: EventListingCardProps) {
             <button
               type="button"
               disabled
-              className="flex items-center gap-2 rounded-lg bg-surface-container px-6 py-2.5 font-label-md text-label-md text-text-secondary"
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-surface-container px-3 py-1.5 font-label-sm text-xs text-text-secondary"
             >
-              <Ban size={16} /> Sold Out
+              <Ban size={14} /> Sold Out
             </button>
           ) : (
-            <Link
-              href={`/events/${event.event_id}`}
-              className="rounded-lg bg-text-primary px-6 py-2.5 font-label-md text-label-md text-white transition-all hover:bg-secondary active:scale-95"
+            <span
+              className="flex shrink-0 items-center gap-1.5 rounded-full bg-text-primary px-3.5 py-2 font-label-sm text-xs font-bold text-white transition-all group-hover:bg-secondary active:scale-95 shadow-sm"
             >
-              View Event
-            </Link>
+              View <ArrowRight size={14} />
+            </span>
           )}
         </div>
       </div>

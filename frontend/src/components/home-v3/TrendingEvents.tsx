@@ -36,7 +36,7 @@ export function TrendingEvents({ events }: TrendingEventsProps) {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {events.map((event) => (
+        {events.slice(0, 4).map((event) => (
           <Link
             key={event.event_id}
             href={`/events/${event.event_id}`}

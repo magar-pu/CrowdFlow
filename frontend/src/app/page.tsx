@@ -14,7 +14,6 @@ import type { TrendingEventCard } from "@/types/ticket";
 const FALLBACK_COVER =
   "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=600&auto=format&fit=crop";
 import { TrendingEvents } from "@/components/home-v3/TrendingEvents";
-import { FlashSaleEvents } from "@/components/home-v3/FlashSaleEvents";
 
 export default function HomePage() {
   const [trendingEvents, setTrendingEvents] = useState<TrendingEventCard[]>([]);
@@ -52,12 +51,8 @@ export default function HomePage() {
           <SearchBar />
           
           <div className="px-6 lg:px-16 max-w-7xl mx-auto">
-            {/* Both grids render real events; each hides itself when empty.
-                FlashSaleEvents stays static — the backend has no flash-sale
-                concept to drive it from. */}
             <UpcomingConcerts events={trendingEvents.slice(0, 4)} />
-            <TrendingEvents events={trendingEvents.slice(4, 8)} />
-            <FlashSaleEvents />
+            <TrendingEvents events={trendingEvents.length > 4 ? trendingEvents.slice(4, 12) : trendingEvents.slice(0, 4)} />
             <StatsBanner />
             <BentoCollections />
           </div>

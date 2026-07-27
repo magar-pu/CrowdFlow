@@ -125,26 +125,37 @@ export function Navbar({ active_href = "/", is_authenticated: override, isTransp
           )}>
             CrowdFlow
           </Link>
-          <div className="ml-8 hidden items-center gap-1 md:flex">
+          <div className="ml-8 hidden items-center gap-2 md:flex">
             {NAV_LINKS.filter(link => {
               if (link.label === "Venue Editor") {
                 return (display_user.role as string) === "super_admin" || display_user.role === "verified_organizer";
               }
               return true;
-            }).map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={cn(
-                  "rounded-lg px-3 py-2 font-label-md text-label-md transition-all duration-200",
-                  active_href === link.href
-                    ? is_transparent ? "font-semibold text-white drop-shadow-sm" : "font-semibold text-primary"
-                    : is_transparent ? "text-white/90 drop-shadow-sm hover:text-white" : "text-text-secondary hover:text-primary hover:bg-surface-container-high"
-                )}
-              >
-                {link.label}
-              </Link>
-            ))}
+            }).map((link) => {
+              const isActive = active_href === link.href;
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={cn(
+                    "group relative px-3 py-2 font-label-md text-label-md transition-colors duration-200",
+                    isActive
+                      ? is_transparent ? "font-bold text-white drop-shadow-sm" : "font-bold text-primary"
+                      : is_transparent ? "text-white/80 drop-shadow-sm hover:text-white" : "text-text-secondary hover:text-primary"
+                  )}
+                >
+                  {link.label}
+                  <span
+                    className={cn(
+                      "absolute bottom-0 left-3 right-3 h-[2.5px] rounded-full transition-all duration-300 ease-out",
+                      isActive
+                        ? is_transparent ? "bg-white opacity-100 scale-x-100" : "bg-secondary opacity-100 scale-x-100"
+                        : "bg-secondary/60 opacity-0 scale-x-0 group-hover:opacity-100 group-hover:scale-x-100"
+                    )}
+                  />
+                </Link>
+              );
+            })}
           </div>
         </div>
 

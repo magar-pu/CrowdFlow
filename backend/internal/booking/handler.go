@@ -2,6 +2,7 @@ package booking
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -65,7 +66,8 @@ func (h *Handler) handleCreateHold(w http.ResponseWriter, r *http.Request) {
 
 	hold, err := h.service.CreateHold(req)
 	if err != nil {
-		response.Error(w, http.StatusConflict, "HOLD_FAILED", err.Error())
+		log.Printf("Failed to create hold: %v", err)
+		response.Error(w, http.StatusConflict, "HOLD_FAILED", "Failed to process hold request")
 		return
 	}
 	response.JSON(w, http.StatusCreated, hold)
@@ -79,7 +81,8 @@ func (h *Handler) handleReleaseHold(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.ReleaseHold(token); err != nil {
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+		log.Printf("Failed to release hold: %v", err)
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "Failed to release ticket hold")
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Hold released"})
