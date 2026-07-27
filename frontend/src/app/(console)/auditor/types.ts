@@ -100,7 +100,10 @@ export interface PayoutRequest {
   eventName: string;
   eventDate: string;
   venue: string;
-  completionStatus: 'Completed' | 'Ongoing' | 'Cancelled';
+  // Empty when the payout API does not report the event's completion state,
+  // which it currently never does. Rendered as "Not provided" rather than
+  // being defaulted to 'Completed'.
+  completionStatus: 'Completed' | 'Ongoing' | 'Cancelled' | '';
   revenue: number;
   netRevenue: number;
   requestedAmount: number;

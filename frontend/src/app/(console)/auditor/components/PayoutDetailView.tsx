@@ -113,6 +113,13 @@ export default function PayoutDetailView({
   };
 
   const s = payout.salesSummary;
+
+  // An absent value must read as absent. Rendering "" leaves a blank cell that
+  // is easily taken for a value the reader simply cannot see, which on a
+  // money-release screen is the same failure as inventing one.
+  const NOT_PROVIDED = 'Not provided';
+  const fieldValue = (value: string) => value?.trim() ? value : NOT_PROVIDED;
+  const isMissing = (value: string) => !value?.trim();
   const allChecklistValues = [...Object.values(payout.financialChecklist), ...Object.values(payout.complianceChecklist)];
   const complianceScore = Math.round((allChecklistValues.filter(Boolean).length / allChecklistValues.length) * 100);
 
@@ -174,7 +181,7 @@ export default function PayoutDetailView({
         <div className="flex items-center gap-2 flex-wrap shrink-0">
           <span className={`px-2.5 py-0.5 rounded-full font-mono text-[10px] font-bold border ${statusColors[payout.status]}`}>{payout.status}</span>
           <span className="font-mono text-[10px] font-bold text-text-secondary bg-surface border border-border-subtle px-2.5 py-1 rounded-lg">Created: {payout.requestDate}</span>
-          <span className="font-mono text-[10px] font-bold text-text-secondary bg-surface border border-border-subtle px-2.5 py-1 rounded-lg">Auditor: {payout.currentAuditor}</span>
+          <span className="font-mono text-[10px] font-bold text-text-secondary bg-surface border border-border-subtle px-2.5 py-1 rounded-lg">Auditor: {payout.currentAuditor?.trim() || 'Unassigned'}</span>
         </div>
       </div>
 
@@ -208,7 +215,7 @@ export default function PayoutDetailView({
                 ].map(r => (
                   <div key={r.label} className="flex justify-between border-b border-border-subtle pb-1.5">
                     <span className="text-text-secondary">{r.label}</span>
-                    <span className="font-semibold text-text-primary text-right">{r.value}</span>
+                    <span className={`font-semibold text-right ${isMissing(r.value) ? 'text-text-secondary italic font-normal' : 'text-text-primary'}`}>{fieldValue(r.value)}</span>
                   </div>
                 ))}
                 <div className="flex justify-between items-center pt-1">
@@ -231,7 +238,7 @@ export default function PayoutDetailView({
                 ].map(r => (
                   <div key={r.label} className="flex justify-between border-b border-border-subtle pb-1.5">
                     <span className="text-text-secondary">{r.label}</span>
-                    <span className="font-semibold text-text-primary text-right">{r.value}</span>
+                    <span className={`font-semibold text-right ${isMissing(r.value) ? 'text-text-secondary italic font-normal' : 'text-text-primary'}`}>{fieldValue(r.value)}</span>
                   </div>
                 ))}
                 <div className="space-y-1.5 pt-1">
@@ -262,18 +269,18 @@ export default function PayoutDetailView({
                 ].map(r => (
                   <div key={r.label} className="flex justify-between border-b border-border-subtle pb-1.5">
                     <span className="text-text-secondary">{r.label}</span>
-                    <span className="font-semibold text-text-primary text-right">{r.value}</span>
+                    <span className={`font-semibold text-right ${isMissing(r.value) ? 'text-text-secondary italic font-normal' : 'text-text-primary'}`}>{fieldValue(r.value)}</span>
                   </div>
                 ))}
               </div>
               <div className="space-y-2 text-xs">
                 {[
-                  { label: 'Ticket Capacity', value: payout.ticketCapacity.toLocaleString() },
+                  { label: 'Ticket Capacity', value: payout.ticketCapacity ? payout.ticketCapacity.toLocaleString() : '' },
                   { label: 'Tickets Sold', value: s.ticketsSold.toLocaleString() },
                 ].map(r => (
                   <div key={r.label} className="flex justify-between border-b border-border-subtle pb-1.5">
                     <span className="text-text-secondary">{r.label}</span>
-                    <span className="font-semibold text-text-primary text-right">{r.value}</span>
+                    <span className={`font-semibold text-right ${isMissing(r.value) ? 'text-text-secondary italic font-normal' : 'text-text-primary'}`}>{fieldValue(r.value)}</span>
                   </div>
                 ))}
                 <button onClick={() => alert(`Opening event detail for "${payout.eventName}"...`)} className="w-full flex items-center justify-center gap-1.5 mt-1 px-3 py-2 border border-border-subtle text-text-secondary rounded-lg text-[11px] font-bold hover:bg-surface-container-low transition-colors cursor-pointer">
@@ -399,6 +406,13 @@ export default function PayoutDetailView({
           {/* Section 13: Attachments */}
           <SectionCard title="Attachments">
             <div className="space-y-2">
+              {payout.attachments.length === 0 && (
+                <div className="flex flex-col items-center gap-1.5 rounded-lg border border-dashed border-border-subtle py-6 text-center">
+                  <Paperclip className="w-4 h-4 text-on-surface-variant" />
+                  <p className="text-xs font-bold text-text-primary">No attachments</p>
+                  <p className="text-[11px] text-text-secondary">Supporting files for this payout have not been uploaded.</p>
+                </div>
+              )}
               {payout.attachments.map((att, idx) => (
                 <div key={idx} className="flex items-center justify-between gap-3 text-xs border border-border-subtle rounded-lg p-3">
                   <div className="flex items-center gap-2 min-w-0">

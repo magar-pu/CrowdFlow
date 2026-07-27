@@ -880,6 +880,46 @@ func licenseStatusLabel(status string) string {
 	}
 }
 
+// organizerLicenceStatus reports the verification state of an organizer's
+// business-registration document (NIB or SIUP). The schema stores no licence
+// NUMBER, so the auditor-facing "Business License" field carries this status
+// string instead.
+//
+// A verified licence wins over a pending one when the organizer uploaded both.
+// Errors are folded into the "no licence" result on purpose: this is one
+// display field on a payout, and failing the whole payout load because a
+// secondary lookup broke would hide the payout entirely.
+func (r *PostgresAuditorRepository) organizerLicenceStatus(ctx context.Context, organizerID int) string {
+	const q = `
+		SELECT od.document_type, od.status::text
+		FROM organizer_documents od
+		JOIN organizer_applications oa ON oa.id = od.application_id
+		WHERE oa.user_id = $1
+		  AND UPPER(od.document_type) IN ('NIB', 'SIUP')
+	`
+	rows, err := r.db.QueryContext(ctx, q, organizerID)
+	if err != nil {
+		return "No NIB/SIUP on file"
+	}
+	defer rows.Close()
+
+	var status string
+	for rows.Next() {
+		var docType, dbStatus string
+		if err := rows.Scan(&docType, &dbStatus); err != nil {
+			return "No NIB/SIUP on file"
+		}
+		mapped := mapVerificationStatus(dbStatus)
+		if status == "" || mapped == "verified" {
+			status = strings.ToUpper(docType) + " — " + licenseStatusLabel(mapped)
+		}
+	}
+	if err := rows.Err(); err != nil || status == "" {
+		return "No NIB/SIUP on file"
+	}
+	return status
+}
+
 func (r *PostgresAuditorRepository) ApproveEventReview(ctx context.Context, eventID, actorID int, notes string) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -1898,7 +1938,7 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 			e.event_name,
 			e.event_start,
 			COALESCE(up.full_name, 'Unknown Organizer'),
-			COALESCE(oa.business_email, 'org@crowdflow.com')
+			COALESCE(oa.business_email, '')
 		FROM payouts p
 		JOIN events e ON e.id = p.event_id
 		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
@@ -1977,6 +2017,12 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
+	// Every column here is read by an auditor deciding whether to release money.
+	// A COALESCE default would therefore be a fabricated bank account rendered as
+	// fact — this query returns empty strings for absent data instead, and the
+	// console shows "Not provided" so the auditor knows to withhold approval.
+	// oa.business_license is deliberately absent: no such column exists (see the
+	// licence-status query below).
 	query := `
 		SELECT
 			p.id,
@@ -1984,18 +2030,18 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 			p.status,
 			p.requested_at,
 			e.id AS event_id,
+			e.organizer_id,
 			e.event_name,
 			e.event_start,
-			COALESCE(up.full_name, 'Unknown Organizer'),
-			COALESCE(oa.business_email, 'org@crowdflow.com'),
+			COALESCE(up.full_name, ''),
+			COALESCE(oa.business_email, ''),
 			COALESCE(oa.notes, ''),
 			e.entertainment_tax_rate,
-			COALESCE(oa.bank_name, 'Bank Central Asia (BCA)'),
-			COALESCE(oa.bank_account_number, '8024927501'),
-			COALESCE(oa.bank_account_holder, up.full_name, 'Unknown Organizer'),
-			COALESCE(oa.business_phone, '+62 812-3456-7890'),
-			COALESCE(oa.business_license, 'BL-2026-ID-00123'),
-			COALESCE(oa.status::text, 'Verified')
+			COALESCE(oa.bank_name, ''),
+			COALESCE(oa.bank_account_number, ''),
+			COALESCE(oa.bank_account_holder, ''),
+			COALESCE(oa.business_phone, ''),
+			COALESCE(oa.status::text, '')
 		FROM payouts p
 		JOIN events e ON e.id = p.event_id
 		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
@@ -2005,7 +2051,7 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 	var p AuditorPayout
 	var reqTime, eventTime time.Time
 	var dbStatus string
-	var eventID int
+	var eventID, organizerID int
 	var taxRate float64
 
 	err := r.db.QueryRowContext(ctx, query, payoutID).Scan(
@@ -2014,6 +2060,7 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		&dbStatus,
 		&reqTime,
 		&eventID,
+		&organizerID,
 		&p.EventName,
 		&eventTime,
 		&p.OrganizerName,
@@ -2024,7 +2071,6 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		&p.BankAccountNum,
 		&p.BankHolder,
 		&p.OrganizerPhone,
-		&p.OrganizerBusinessLicense,
 		&p.OrganizerStatus,
 	)
 	if err != nil {
@@ -2033,6 +2079,11 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		}
 		return nil, err
 	}
+
+	// There is no licence-number column anywhere in the schema. Report the
+	// verification state of the organizer's NIB/SIUP instead — the same signal
+	// GetEventReview surfaces, so the two consoles agree.
+	p.OrganizerBusinessLicense = r.organizerLicenceStatus(ctx, organizerID)
 
 	p.Status = string(dbStatus)
 	p.RequestDate = formatTime(reqTime)
