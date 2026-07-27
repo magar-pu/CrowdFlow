@@ -8,6 +8,8 @@ import {
   getAccountDocumentURL,
   ACCOUNT_DOCUMENT_TYPES,
   ACCOUNT_DOCUMENT_LABELS,
+  getAccountDocumentReadiness,
+  type AccountDocumentReadiness,
   type OrganizerAccountDocument,
 } from "@/lib/api/eorganizer";
 
@@ -47,6 +49,7 @@ export default function AccountDocumentsCard() {
   const [loading, setLoading] = useState(true);
   const [busyType, setBusyType] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [readiness, setReadiness] = useState<AccountDocumentReadiness | null>(null);
 
   // One hidden input per document type, so "Replace" opens the picker for the
   // row that was clicked rather than a shared input whose target must be
@@ -58,13 +61,20 @@ export default function AccountDocumentsCard() {
   // repo's lint rejects it). `loading` already starts true, and refreshes after
   // an upload are covered by the per-row busy state.
   const load = useCallback(async () => {
-    const res = await listAccountDocuments();
+    // Readiness comes from the server rather than being recomputed here: it is
+    // the same check the publish gate runs, and a local copy of "which types are
+    // required" would drift the moment the backend list changed.
+    const [res, readinessRes] = await Promise.all([
+      listAccountDocuments(),
+      getAccountDocumentReadiness(),
+    ]);
     if (res.success && res.data) {
       setDocs(res.data);
       setError(null);
     } else {
       setError(res.error?.message ?? "Failed to load documents");
     }
+    setReadiness(readinessRes.success && readinessRes.data ? readinessRes.data : null);
     setLoading(false);
   }, []);
 
@@ -123,6 +133,19 @@ export default function AccountDocumentsCard() {
         </div>
       )}
 
+      {/* Only shown while something is actually outstanding. A permanent
+          "these are required" notice on a complete account is noise, and an
+          exempt organizer is not being asked for anything. */}
+      {readiness && !readiness.ready && !readiness.exempt && (
+        <div className="mt-4 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5">
+          <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+          <p className="text-xs font-semibold text-warning">
+            You cannot submit an event for review until an auditor has verified these
+            documents. Outstanding: {readiness.missing.join(", ")}.
+          </p>
+        </div>
+      )}
+
       <ul className="mt-4 space-y-2">
         {ACCOUNT_DOCUMENT_TYPES.map((type) => {
           const doc = byType.get(type);
@@ -135,8 +158,15 @@ export default function AccountDocumentsCard() {
               className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border-subtle px-3 py-2.5"
             >
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-text-primary">
-                  {ACCOUNT_DOCUMENT_LABELS[type] ?? type}
+                <p className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-text-primary">
+                  <span>{ACCOUNT_DOCUMENT_LABELS[type] ?? type}</span>
+                  {/* Which types block submission comes from the server, so this
+                      marker cannot drift from the gate that enforces it. */}
+                  {readiness?.required.includes(type) && (
+                    <span className="rounded-full border border-border-subtle px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-text-secondary">
+                      Required to submit events
+                    </span>
+                  )}
                 </p>
                 {doc && style ? (
                   <span

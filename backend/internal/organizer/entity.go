@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -59,6 +60,12 @@ var (
 	ErrEventArchived = errors.New("event is archived")
 
 	ErrEventNotFound = errors.New("event not found")
+
+	// ErrOrganizerDocumentsRequired blocks submitting an event while the
+	// organizer's own ACCOUNT paperwork has not been verified by an auditor.
+	// Distinct from ErrDocumentsIncomplete, which is about the event's own
+	// documents: this one is fixed in Settings, not in the event workspace.
+	ErrOrganizerDocumentsRequired = errors.New("organizer account documents are not verified")
 )
 
 // Per-event document types. These are distinct from the ACCOUNT-level documents
@@ -210,6 +217,60 @@ type OrganizerDocument struct {
 // document was being collected in two places and reviewed through two separate
 // flows. The event-side equivalent of VENUE_AGREEMENT is DocTypeVenuePermit.
 var AccountDocumentTypes = []string{"KTP", "NPWP", "NIB", "SIUP", "BUSINESS_LICENSE"}
+
+// RequiredAccountDocumentTypes must all be VERIFIED by an auditor before the
+// organizer may submit any event for review. Identity, tax and business
+// registration: the three every Indonesian organizer has, whatever their
+// business type.
+//
+// SIUP and BUSINESS_LICENSE stay uploadable and reviewable but deliberately do
+// NOT block — they do not apply uniformly across business types, and gating on
+// a document some organizers cannot obtain would be a gate nobody can pass.
+var RequiredAccountDocumentTypes = []string{"KTP", "NPWP", "NIB"}
+
+// AccountDocumentLabel renders an account document type for humans. These
+// strings reach the organizer verbatim through the publish gate's error, so
+// they cannot read NPWP.
+func AccountDocumentLabel(t string) string {
+	switch t {
+	case "KTP":
+		return "KTP (Director's ID)"
+	case "NPWP":
+		return "NPWP (Tax ID)"
+	case "NIB":
+		return "NIB (Business Registration)"
+	case "SIUP":
+		return "SIUP (Trading Licence)"
+	case "BUSINESS_LICENSE":
+		return "Business Licence"
+	default:
+		return t
+	}
+}
+
+// accountDocumentLabels renders a list of type keys as a human sentence
+// fragment, for error messages that reach the organizer verbatim.
+func accountDocumentLabels(types []string) string {
+	labels := make([]string, 0, len(types))
+	for _, t := range types {
+		labels = append(labels, AccountDocumentLabel(t))
+	}
+	return strings.Join(labels, ", ")
+}
+
+// AccountDocumentReadiness reports whether the organizer may submit events, so
+// the console can disable Submit with a reason instead of letting the publish
+// call 422 after the fact.
+type AccountDocumentReadiness struct {
+	Ready bool `json:"ready"`
+	// Exempt is true for organizers grandfathered by migration 0027 — they were
+	// already running approved events when the gate was introduced.
+	Exempt   bool     `json:"exempt"`
+	Required []string `json:"required"`
+	// Missing carries human labels, not type keys, and covers both "never
+	// uploaded" and "uploaded but not verified".
+	Missing []string `json:"missing"`
+}
 
 func IsValidAccountDocumentType(t string) bool {
 	for _, valid := range AccountDocumentTypes {
@@ -632,6 +693,7 @@ type Repository interface {
 	// type. organizer_documents keeps superseded rows so a rejection stays on
 	// the record, so anything counting or listing must filter is_current.
 	ListAccountDocuments(ctx context.Context, userID int) ([]*OrganizerDocument, error)
+	GetAccountDocumentReadiness(ctx context.Context, userID int) (*AccountDocumentReadiness, error)
 	ReplaceAccountDocument(ctx context.Context, userID int, doc *OrganizerDocument) error
 	GetAccountDocumentPath(ctx context.Context, userID, docID int) (string, error)
 	GetByID(ctx context.Context, id int) (*OrganizerApplication, error)
@@ -689,6 +751,7 @@ type Service interface {
 	GetApplication(ctx context.Context, userID int) (*OrganizerApplication, error)
 	UpdateApplication(ctx context.Context, userID int, req ApplyRequest, newDocs []*DocumentUpload) (*OrganizerApplication, error)
 	ListAccountDocuments(ctx context.Context, userID int) ([]*OrganizerDocument, error)
+	GetAccountDocumentReadiness(ctx context.Context, userID int) (*AccountDocumentReadiness, error)
 	UploadAccountDocument(ctx context.Context, userID int, doc *DocumentUpload) (*OrganizerDocument, error)
 	GetAccountDocumentURL(ctx context.Context, userID, docID int) (string, error)
 	DeleteApplication(ctx context.Context, userID int) error

@@ -137,6 +137,13 @@ func (s *OrganizerService) ListAccountDocuments(ctx context.Context, userID int)
 	return s.repo.ListAccountDocuments(ctx, userID)
 }
 
+// GetAccountDocumentReadiness reports whether the organizer's account paperwork
+// clears the submission gate, so the console can say so before they build an
+// entire event.
+func (s *OrganizerService) GetAccountDocumentReadiness(ctx context.Context, userID int) (*AccountDocumentReadiness, error) {
+	return s.repo.GetAccountDocumentReadiness(ctx, userID)
+}
+
 // UploadAccountDocument files a new version of one account document.
 //
 // Note what this does NOT check: whether the application is approved.

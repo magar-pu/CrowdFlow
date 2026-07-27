@@ -809,6 +809,24 @@ export async function listAccountDocuments(): Promise<ApiResponse<OrganizerAccou
   return apiRequest<OrganizerAccountDocument[]>("/api/organizer/documents", { method: "GET" });
 }
 
+/** Whether the organizer's account paperwork clears the submission gate.
+ *
+ *  `missing` carries human labels and covers both "never uploaded" and
+ *  "uploaded but not yet verified" — from the organizer's point of view both
+ *  are the same blocker. `exempt` is true for organizers grandfathered by
+ *  migration 0027, who were already running approved events when the gate
+ *  was introduced. */
+export interface AccountDocumentReadiness {
+  ready: boolean;
+  exempt: boolean;
+  required: string[];
+  missing: string[];
+}
+
+export async function getAccountDocumentReadiness(): Promise<ApiResponse<AccountDocumentReadiness>> {
+  return apiRequest<AccountDocumentReadiness>("/api/organizer/documents/readiness", { method: "GET" });
+}
+
 /** Upload or replace one account document. A replacement supersedes the
  *  previous version rather than overwriting it, and re-enters review: the
  *  auditor verified the file that was there before, not this one. */

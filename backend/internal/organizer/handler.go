@@ -41,6 +41,10 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /api/organizer/documents", authenticate(http.HandlerFunc(h.handleListAccountDocuments)))
 	mux.Handle("POST /api/organizer/documents", authenticate(http.HandlerFunc(h.handleUploadAccountDocument)))
 	mux.Handle("GET /api/organizer/documents/{docId}/url", authenticate(http.HandlerFunc(h.handleGetAccountDocumentURL)))
+	// Readiness is read by the event workspace to disable Submit with a reason.
+	// Registered before the {docId} route above would ever be consulted, since
+	// ServeMux prefers the more specific literal path.
+	mux.Handle("GET /api/organizer/documents/readiness", authenticate(http.HandlerFunc(h.handleAccountDocumentReadiness)))
 
 	// Guard for verified organizers
 	verifiedOrganizer := requirePlatformRole("Event Organizer")
@@ -140,6 +144,20 @@ func (h *Handler) handleListAccountDocuments(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	response.JSON(w, http.StatusOK, docs)
+}
+
+func (h *Handler) handleAccountDocumentReadiness(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.userID(w, r)
+	if !ok {
+		return
+	}
+	readiness, err := h.service.GetAccountDocumentReadiness(r.Context(), userID)
+	if err != nil {
+		log.Printf("handleAccountDocumentReadiness: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to check document status")
+		return
+	}
+	response.JSON(w, http.StatusOK, readiness)
 }
 
 func (h *Handler) handleUploadAccountDocument(w http.ResponseWriter, r *http.Request) {
@@ -711,6 +729,10 @@ func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, ErrPayoutDetailsRequired) {
 			response.Error(w, http.StatusUnprocessableEntity, "PAYOUT_DETAILS_REQUIRED", err.Error())
+			return
+		}
+		if errors.Is(err, ErrOrganizerDocumentsRequired) {
+			response.Error(w, http.StatusUnprocessableEntity, "ORGANIZER_DOCUMENTS_REQUIRED", err.Error())
 			return
 		}
 		log.Printf("PublishOrganizerEvent error: %v", err)
