@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Settings, Trash2, Ticket, AlertTriangle, Archive, Undo2 } from "lucide-react";
 import WorkspaceCoverImage from "./WorkspaceCoverImage";
+import Select from "@/components/ui/Select";
 
 interface WorkspaceSettingsProps {
   eventId: number;
@@ -115,11 +116,11 @@ export default function WorkspaceSettings({
             </div>
             <div className="space-y-1">
               <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Category</label>
-              <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none cursor-pointer">
+              <Select value={category} onChange={(e) => setCategory(e.target.value)}>
                 <option>Conference</option>
                 <option>Festival</option>
                 <option>Workshop</option>
-              </select>
+              </Select>
             </div>
           </div>
           <div className="space-y-1">

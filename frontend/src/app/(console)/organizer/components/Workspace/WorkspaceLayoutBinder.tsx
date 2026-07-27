@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Layers, Maximize2, MapPin } from "lucide-react";
+import Select from "@/components/ui/Select";
 import {
   getEventLayoutBinding,
   bindEventLayout,
@@ -94,11 +95,10 @@ export default function WorkspaceLayoutBinder({ eventId }: WorkspaceLayoutBinder
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <select
+          <Select
             value={binding?.layout_id ?? ""}
             disabled={saving || loading || (binding?.venue_id ?? 0) === 0}
             onChange={(e) => onBind(e.target.value === "" ? null : Number(e.target.value))}
-            className="h-9 rounded-lg border border-border-subtle bg-surface-container-low px-3 text-xs text-text-primary outline-none focus:border-outline disabled:opacity-50"
           >
             <option value="">— No layout —</option>
             {layouts.map((l) => (
@@ -106,7 +106,7 @@ export default function WorkspaceLayoutBinder({ eventId }: WorkspaceLayoutBinder
                 {l.name} (#{l.id})
               </option>
             ))}
-          </select>
+          </Select>
           <Link
             href="/venue-designer"
             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-on-primary shadow-sm transition-colors hover:bg-primary-container"
