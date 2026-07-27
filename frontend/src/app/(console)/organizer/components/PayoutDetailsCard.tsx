@@ -16,23 +16,6 @@ import {
 // backend re-checks that on save, so a stale form cannot slip a change past it;
 // this component only mirrors the state so the reason is visible.
 
-// Indonesian banks, by transaction volume. Free text is still accepted for
-// regional and syariah banks that are not listed.
-const COMMON_BANKS = [
-  "Bank Central Asia (BCA)",
-  "Bank Mandiri",
-  "Bank Rakyat Indonesia (BRI)",
-  "Bank Negara Indonesia (BNI)",
-  "Bank Tabungan Negara (BTN)",
-  "Bank Syariah Indonesia (BSI)",
-  "CIMB Niaga",
-  "Bank Danamon",
-  "Bank Permata",
-  "OCBC Indonesia",
-  "Panin Bank",
-  "Maybank Indonesia",
-];
-
 // Show only the last four digits of a stored account number. The full value is
 // still in the input when editing; this is for the read-only summary.
 function maskAccount(value: string) {
@@ -192,18 +175,15 @@ export default function PayoutDetailsCard() {
             </label>
             <input
               id="payout-bank-name"
-              list="payout-bank-options"
               required
               value={bankName}
               onChange={(e) => setBankName(e.target.value)}
               placeholder="e.g. Bank Central Asia (BCA)"
               className="h-9 w-full rounded-lg border border-border-subtle bg-white px-3 text-xs outline-none focus:border-secondary focus:ring-1 focus:ring-secondary/20"
             />
-            <datalist id="payout-bank-options">
-              {COMMON_BANKS.map((b) => (
-                <option key={b} value={b} />
-              ))}
-            </datalist>
+            <p className="text-[10px] text-text-secondary">
+              Write the bank&apos;s full name as it appears on your account.
+            </p>
           </div>
 
           <div className="space-y-1">
