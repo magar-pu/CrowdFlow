@@ -765,3 +765,65 @@ export async function updatePayoutDetails(
     body: JSON.stringify(details),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Account-level documents (KTP/NPWP/NIB/SIUP...)
+//
+// Distinct from per-event documents. These belong to the organizer's
+// application and are reused across every event, which is why they are not
+// scoped to an event id.
+// ---------------------------------------------------------------------------
+
+export interface OrganizerAccountDocument {
+  id: number;
+  application_id: number;
+  document_type: string;
+  status: "pending_verification" | "verified" | "rejected";
+  uploaded_at: string;
+  is_current: boolean;
+}
+
+/** The document types the backend accepts, in the order the console shows them. */
+export const ACCOUNT_DOCUMENT_TYPES = [
+  "KTP",
+  "NPWP",
+  "NIB",
+  "SIUP",
+  "BUSINESS_LICENSE",
+  "VENUE_AGREEMENT",
+  "EVENT_PROPOSAL",
+] as const;
+
+export const ACCOUNT_DOCUMENT_LABELS: Record<string, string> = {
+  KTP: "KTP (Director's ID)",
+  NPWP: "NPWP (Tax ID)",
+  NIB: "NIB (Business Registration)",
+  SIUP: "SIUP (Trading Licence)",
+  BUSINESS_LICENSE: "Business Licence",
+  VENUE_AGREEMENT: "Venue Agreement",
+  EVENT_PROPOSAL: "Event Proposal",
+};
+
+export async function listAccountDocuments(): Promise<ApiResponse<OrganizerAccountDocument[]>> {
+  return apiRequest<OrganizerAccountDocument[]>("/api/organizer/documents", { method: "GET" });
+}
+
+/** Upload or replace one account document. A replacement supersedes the
+ *  previous version rather than overwriting it, and re-enters review: the
+ *  auditor verified the file that was there before, not this one. */
+export async function uploadAccountDocument(
+  documentType: string,
+  file: File,
+): Promise<ApiResponse<OrganizerAccountDocument>> {
+  const form = new FormData();
+  form.append("document_type", documentType);
+  form.append("file", file);
+  return apiRequest<OrganizerAccountDocument>("/api/organizer/documents", {
+    method: "POST",
+    body: form,
+  });
+}
+
+export async function getAccountDocumentURL(docId: number): Promise<ApiResponse<{ url: string }>> {
+  return apiRequest<{ url: string }>(`/api/organizer/documents/${docId}/url`, { method: "GET" });
+}

@@ -132,6 +132,66 @@ func (s *OrganizerService) GetApplication(ctx context.Context, userID int) (*Org
 	return app, nil
 }
 
+// ListAccountDocuments returns the organizer's current account documents.
+func (s *OrganizerService) ListAccountDocuments(ctx context.Context, userID int) ([]*OrganizerDocument, error) {
+	return s.repo.ListAccountDocuments(ctx, userID)
+}
+
+// UploadAccountDocument files a new version of one account document.
+//
+// Note what this does NOT check: whether the application is approved.
+// UpdateApplication refuses once approved, which is right for business details
+// but left an approved organizer unable to answer a document rejection. Filing
+// a document is the one change an approved organizer must always be able to
+// make.
+func (s *OrganizerService) UploadAccountDocument(ctx context.Context, userID int, doc *DocumentUpload) (*OrganizerDocument, error) {
+	doc.Type = strings.ToUpper(strings.TrimSpace(doc.Type))
+	if !IsValidAccountDocumentType(doc.Type) {
+		return nil, fmt.Errorf("%w: unknown document type %q", ErrValidation, doc.Type)
+	}
+	if err := validateDocumentUpload(doc); err != nil {
+		return nil, err
+	}
+
+	contentType := http.DetectContentType(doc.Content)
+	if !s.isValidDocumentType(contentType) {
+		return nil, fmt.Errorf("%w: invalid format for %s (must be PDF, PNG, or JPG)", ErrValidation, doc.Type)
+	}
+
+	ext := filepath.Ext(doc.Filename)
+	if ext == "" {
+		if contentType == "application/pdf" {
+			ext = ".pdf"
+		} else {
+			ext = ".png"
+		}
+	}
+
+	// Same key shape as Apply, including the timestamp: a replacement must not
+	// overwrite the object the superseded row still points at.
+	objectKey := fmt.Sprintf("organizers/documents/%d_%d_%s%s", userID, time.Now().UnixNano(), strings.ToLower(doc.Type), ext)
+	if err := s.storage.UploadPrivateFile(ctx, objectKey, bytes.NewReader(doc.Content), contentType); err != nil {
+		return nil, fmt.Errorf("failed to upload %s: %w", doc.Type, err)
+	}
+
+	model := &OrganizerDocument{DocumentType: doc.Type, FilePath: objectKey}
+	if err := s.repo.ReplaceAccountDocument(ctx, userID, model); err != nil {
+		return nil, err
+	}
+	return model, nil
+}
+
+// GetAccountDocumentURL mints a short-lived link to a document the caller owns.
+// The bucket is private, so the stored file_path is an object key and is never
+// itself a usable URL.
+func (s *OrganizerService) GetAccountDocumentURL(ctx context.Context, userID, docID int) (string, error) {
+	path, err := s.repo.GetAccountDocumentPath(ctx, userID, docID)
+	if err != nil {
+		return "", err
+	}
+	return s.storage.GetPresignedURL(ctx, path, 2*time.Minute)
+}
+
 func (s *OrganizerService) UpdateApplication(ctx context.Context, userID int, req ApplyRequest, newDocs []*DocumentUpload) (*OrganizerApplication, error) {
 	app, err := s.repo.GetByUserID(ctx, userID)
 	if err != nil {

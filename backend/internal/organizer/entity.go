@@ -193,6 +193,24 @@ type OrganizerDocument struct {
 	PresignedURL  string    `json:"url,omitempty"` // populated dynamically at runtime
 	Status        string    `json:"status"`        // 'pending_verification', 'verified', 'rejected'
 	UploadedAt    time.Time `json:"uploaded_at"`
+	// IsCurrent is false on superseded uploads. The organizer console only ever
+	// shows current rows; the history exists so an auditor can see that an
+	// earlier version was rejected.
+	IsCurrent     bool      `json:"is_current"`
+}
+
+// AccountDocumentTypes are the account-level documents an organizer can file.
+// Mirrors the multipart field names accepted by POST /api/organizer/apply, so
+// the two paths cannot drift into accepting different sets.
+var AccountDocumentTypes = []string{"KTP", "NPWP", "NIB", "SIUP", "BUSINESS_LICENSE", "VENUE_AGREEMENT", "EVENT_PROPOSAL"}
+
+func IsValidAccountDocumentType(t string) bool {
+	for _, valid := range AccountDocumentTypes {
+		if valid == t {
+			return true
+		}
+	}
+	return false
 }
 
 type ApplyRequest struct {
@@ -603,6 +621,12 @@ type HourlyCheckInPoint struct {
 type Repository interface {
 	Create(ctx context.Context, app *OrganizerApplication, docs []*OrganizerDocument) error
 	GetByUserID(ctx context.Context, userID int) (*OrganizerApplication, error)
+	// ListAccountDocuments returns only the CURRENT version of each document
+	// type. organizer_documents keeps superseded rows so a rejection stays on
+	// the record, so anything counting or listing must filter is_current.
+	ListAccountDocuments(ctx context.Context, userID int) ([]*OrganizerDocument, error)
+	ReplaceAccountDocument(ctx context.Context, userID int, doc *OrganizerDocument) error
+	GetAccountDocumentPath(ctx context.Context, userID, docID int) (string, error)
 	GetByID(ctx context.Context, id int) (*OrganizerApplication, error)
 	Update(ctx context.Context, app *OrganizerApplication) error
 	Delete(ctx context.Context, id int) error
@@ -657,6 +681,9 @@ type Service interface {
 	Apply(ctx context.Context, userID int, req ApplyRequest, docs []*DocumentUpload) (*OrganizerApplication, error)
 	GetApplication(ctx context.Context, userID int) (*OrganizerApplication, error)
 	UpdateApplication(ctx context.Context, userID int, req ApplyRequest, newDocs []*DocumentUpload) (*OrganizerApplication, error)
+	ListAccountDocuments(ctx context.Context, userID int) ([]*OrganizerDocument, error)
+	UploadAccountDocument(ctx context.Context, userID int, doc *DocumentUpload) (*OrganizerDocument, error)
+	GetAccountDocumentURL(ctx context.Context, userID, docID int) (string, error)
 	DeleteApplication(ctx context.Context, userID int) error
 
 	// eorganizer methods

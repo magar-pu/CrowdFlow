@@ -98,6 +98,8 @@ export function mapPayoutListItem(raw: any): PayoutRequest {
     bankAccountNumber: "",
     bankAccountHolder: "",
     bankVerificationStatus: "Unverified",
+    bankVerifiedBy: "",
+    bankVerifiedAt: "",
     fraudDetection: {
       duplicatePayout: raw?.fraudDetection?.duplicatePayout ?? false,
       suspiciousRevenue: raw?.fraudDetection?.suspiciousRevenue ?? false,

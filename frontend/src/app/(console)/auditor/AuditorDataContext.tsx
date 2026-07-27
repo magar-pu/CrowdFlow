@@ -19,6 +19,8 @@ import {
   approvePayout,
   rejectPayout,
   holdPayout,
+  revisePayout,
+  updatePayoutNotes,
   listAuditorNotifications,
   AuditorNotification,
   DashboardStats
@@ -246,6 +248,12 @@ export function AuditorDataProvider({ children }: { children: React.ReactNode })
     setOrganizers(prev => prev.map(o => o.id === id ? { ...o, checklist } : o));
   };
 
+  // Every branch must issue a request. Previously only Approved/Rejected/On Hold
+  // were handled, so 'Need Revision' — and Save Draft, which passes the payout's
+  // CURRENT status — fell through with `res` undefined and reported
+  // "Failed to update payout status: unknown error" while sending nothing at
+  // all. A save that silently does nothing but claims to have failed is worse
+  // than either outcome on its own.
   const handleUpdatePayoutStatus = async (id: string, status: PayoutStatus, notes: string, financeNotes: string) => {
     try {
       let res;
@@ -255,18 +263,30 @@ export function AuditorDataProvider({ children }: { children: React.ReactNode })
         res = await rejectPayout(id, financeNotes || "Payout details invalid", notes);
       } else if (status === 'On Hold') {
         res = await holdPayout(id, financeNotes || "Verification pending");
+      } else if (status === 'Need Revision') {
+        res = await revisePayout(id, financeNotes || "Revision required", notes);
+      } else {
+        // Save Draft: keep the status, persist the notes.
+        res = await updatePayoutNotes(id, notes, financeNotes);
       }
 
       if (res && res.success) {
         fetchDashboard();
-      } else {
-        alert("Failed to update payout status: " + (res?.error?.message || "unknown error"));
+        return true;
       }
+      alert("Failed to save: " + (res?.error?.message || "unknown error"));
+      return false;
     } catch (err) {
       console.error("Error updating payout status:", err);
+      alert("Failed to save: the request could not be sent.");
+      return false;
     }
   };
 
+  // Updates the LIST copy only. The detail page keeps its own state, because
+  // this handler used to be the sole store: the page rendered a local object
+  // fetched from getPayout, so toggling a checklist mutated a different object
+  // and the box never even ticked. Checklists are not persisted anywhere yet.
   const handleUpdatePayoutChecklists = (
     id: string,
     financialChecklist: PayoutRequest['financialChecklist'],

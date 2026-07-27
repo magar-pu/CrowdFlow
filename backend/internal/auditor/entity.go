@@ -300,6 +300,14 @@ type OrganizerVerification struct {
 	BankName          string               `json:"bankName"`
 	BankAccountHolder string               `json:"bankAccountHolder"`
 	BankAccountNumber string               `json:"bankAccountNumber"`
+	// BankVerificationStatus was missing entirely, so the organizer profile's
+	// mapper fell back to a literal "Pending" and that screen could never show
+	// the real value — not even for an account an auditor had verified. The
+	// payout screen read the same column correctly, which is how the two
+	// disagreed about one organizer.
+	BankVerificationStatus string          `json:"bankVerificationStatus"`
+	BankVerifiedBy    string               `json:"bankVerifiedBy"`
+	BankVerifiedAt    string               `json:"bankVerifiedAt"`
 	Address           string               `json:"address"`
 }
 
@@ -380,6 +388,14 @@ type AuditorPayout struct {
 	// GetEventReview applies for compliance history. It excludes this payout's
 	// own event so a rejection here is not counted as prior history.
 	OrganizerViolations       int            `json:"organizerPreviousViolations"`
+	// OrganizerNotes is shown to the organizer; InternalNotes is not. Both live
+	// on `payouts` — reading them off the organizer's application, as this once
+	// did, meant one note appeared on every payout that organizer requested.
+	OrganizerNotes            string         `json:"financeNotes"`
+	// BankVerifiedBy/At record who authorised the destination of the money.
+	// Empty on accounts grandfathered in by migration 0022.
+	BankVerifiedBy            string         `json:"bankVerifiedBy"`
+	BankVerifiedAt            string         `json:"bankVerifiedAt"`
 	// ApplicationID and EventID let the console deep-link to the organizer
 	// profile and the event review; both screens already exist.
 	ApplicationID             int            `json:"applicationId"`
@@ -422,6 +438,31 @@ type PayoutFilters struct {
 	Search    string
 	Page      int
 	Limit     int
+}
+
+// RevisePayoutRequest sends a payout back to the organizer. Reason is required:
+// a payout returned without saying what to fix leaves the organizer guessing,
+// and the console already collects the text.
+type RevisePayoutRequest struct {
+	Reason        string `json:"reason"`
+	InternalNotes string `json:"internalNotes"`
+}
+
+// UpdatePayoutNotesRequest saves notes without touching status — what the
+// console's "Save Draft" button has always claimed to do.
+type UpdatePayoutNotesRequest struct {
+	InternalNotes  string `json:"internalNotes"`
+	OrganizerNotes string `json:"financeNotes"`
+}
+
+// VerifyBankAccountRequest confirms the bank account a payout will be sent to.
+//
+// AccountNumber is echoed back by the console and checked against what is on
+// file: an auditor verifies the account they were shown, and the organizer may
+// have changed it since the page loaded. A mismatch is refused rather than
+// silently verifying the newer value.
+type VerifyBankAccountRequest struct {
+	AccountNumber string `json:"accountNumber"`
 }
 
 type ApprovePayoutRequest struct {
@@ -499,6 +540,9 @@ type Repository interface {
 	ApprovePayout(ctx context.Context, payoutID, actorID int, req ApprovePayoutRequest) error
 	RejectPayout(ctx context.Context, payoutID, actorID int, req RejectPayoutRequest) error
 	HoldPayout(ctx context.Context, payoutID, actorID int, req HoldPayoutRequest) error
+	RevisePayout(ctx context.Context, payoutID, actorID int, req RevisePayoutRequest) error
+	UpdatePayoutNotes(ctx context.Context, payoutID, actorID int, req UpdatePayoutNotesRequest) error
+	VerifyPayoutBankAccount(ctx context.Context, payoutID, actorID int, req VerifyBankAccountRequest) error
 
 	// Notifications
 	ListNotifications(ctx context.Context, userID int) ([]*AuditorNotification, error)
@@ -551,6 +595,9 @@ type Service interface {
 	ApprovePayout(ctx context.Context, payoutID, actorID int, req ApprovePayoutRequest) error
 	RejectPayout(ctx context.Context, payoutID, actorID int, req RejectPayoutRequest) error
 	HoldPayout(ctx context.Context, payoutID, actorID int, req HoldPayoutRequest) error
+	RevisePayout(ctx context.Context, payoutID, actorID int, req RevisePayoutRequest) error
+	UpdatePayoutNotes(ctx context.Context, payoutID, actorID int, req UpdatePayoutNotesRequest) error
+	VerifyPayoutBankAccount(ctx context.Context, payoutID, actorID int, req VerifyBankAccountRequest) error
 
 	// Notifications
 	ListNotifications(ctx context.Context, userID int) ([]*AuditorNotification, error)

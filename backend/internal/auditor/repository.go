@@ -1643,9 +1643,13 @@ func (r *PostgresAuditorRepository) GetOrganizer(ctx context.Context, appID int)
 			COALESCE(oa.bank_name, ''),
 			COALESCE(oa.bank_account_holder, ''),
 			COALESCE(oa.bank_account_number, ''),
+			COALESCE(oa.bank_verification_status, 'unverified'),
+			COALESCE(vb.full_name, ''),
+			COALESCE(to_char(oa.bank_verified_at, 'YYYY-MM-DD HH24:MI'), ''),
 			COALESCE(oa.business_address, '')
 		FROM organizer_applications oa
 		LEFT JOIN user_profiles up ON up.user_id = oa.user_id
+		LEFT JOIN user_profiles vb ON vb.user_id = oa.bank_verified_by
 		WHERE oa.id = $1
 	`
 	var org OrganizerVerification
@@ -1668,6 +1672,9 @@ func (r *PostgresAuditorRepository) GetOrganizer(ctx context.Context, appID int)
 		&org.BankName,
 		&org.BankAccountHolder,
 		&org.BankAccountNumber,
+		&org.BankVerificationStatus,
+		&org.BankVerifiedBy,
+		&org.BankVerifiedAt,
 		&org.Address,
 	)
 	if err != nil {
@@ -1917,6 +1924,33 @@ func (r *PostgresAuditorRepository) UpdateOrganizerStatus(ctx context.Context, a
 
 // ---- Payout Verification ----
 
+// payoutStatusFilter maps a console filter label onto a payout_status value.
+//
+// The console's filter row carries labels the enum has never had ("Processing",
+// "Paid", "Under Review"). Returning ok=false for those is deliberate: the
+// alternative the previous code chose was to substitute 'pending', which
+// answered a question nobody asked and looked like a real result.
+func payoutStatusFilter(label string) (string, bool) {
+	switch strings.ToLower(strings.ReplaceAll(label, " ", "_")) {
+	case "pending":
+		return "pending", true
+	case "approved":
+		return "approved", true
+	case "rejected":
+		return "rejected", true
+	case "on_hold":
+		return "on_hold", true
+	case "need_revision":
+		return "need_revision", true
+	case "processed", "paid":
+		return "processed", true
+	case "failed":
+		return "failed", true
+	default:
+		return "", false
+	}
+}
+
 func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters PayoutFilters) ([]*AuditorPayout, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -1973,16 +2007,15 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 	args := []interface{}{}
 	argIndex := 1
 
+	// The console offers more filter labels than the enum has values, and the
+	// previous mapping sent everything it did not recognise to 'pending'. So
+	// filtering by "Paid" or "Under Review" quietly returned the pending rows
+	// instead — a wrong answer presented as a real one. An unmappable filter now
+	// returns nothing, which is at least honest about matching no payout.
 	if filters.Status != "" {
-		dbStatus := strings.ToLower(filters.Status)
-		if dbStatus == "approved" {
-			dbStatus = "approved"
-		} else if dbStatus == "rejected" {
-			dbStatus = "rejected"
-		} else if dbStatus == "on hold" || dbStatus == "on_hold" {
-			dbStatus = "on_hold"
-		} else {
-			dbStatus = "pending"
+		dbStatus, ok := payoutStatusFilter(filters.Status)
+		if !ok {
+			return []*AuditorPayout{}, nil
 		}
 		query += fmt.Sprintf(" AND p.status = $%d::payout_status", argIndex)
 		args = append(args, dbStatus)
@@ -2073,7 +2106,11 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 			e.event_start,
 			COALESCE(up.full_name, ''),
 			COALESCE(oa.business_email, ''),
-			COALESCE(oa.notes, ''),
+			-- Was COALESCE(oa.notes, ''), the ORGANIZER APPLICATION's review
+			-- notes: the same text surfaced on every payout that organizer ever
+			-- requested. These two belong to this payout.
+			p.internal_notes,
+			p.organizer_notes,
 			e.entertainment_tax_rate,
 			COALESCE(oa.bank_name, ''),
 			COALESCE(oa.bank_account_number, ''),
@@ -2081,6 +2118,8 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 			COALESCE(oa.business_phone, ''),
 			COALESCE(oa.status::text, ''),
 			COALESCE(oa.bank_verification_status, 'unverified'),
+			COALESCE(vb.full_name, ''),
+			COALESCE(to_char(oa.bank_verified_at, 'YYYY-MM-DD HH24:MI'), ''),
 			COALESCE(oa.id, 0),
 			COALESCE(v.name, ''),
 			e.status::text
@@ -2089,6 +2128,7 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
 		LEFT JOIN user_profiles up ON up.user_id = e.organizer_id
 		LEFT JOIN venues v ON v.id = e.venue_id
+		LEFT JOIN user_profiles vb ON vb.user_id = oa.bank_verified_by
 		WHERE p.id = $1
 	`
 	var p AuditorPayout
@@ -2109,6 +2149,7 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		&p.OrganizerName,
 		&p.OrganizerEmail,
 		&p.InternalNotes,
+		&p.OrganizerNotes,
 		&taxRate,
 		&p.BankName,
 		&p.BankAccountNum,
@@ -2116,6 +2157,8 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		&p.OrganizerPhone,
 		&p.OrganizerStatus,
 		&p.BankVerificationStatus,
+		&p.BankVerifiedBy,
+		&p.BankVerifiedAt,
 		&p.ApplicationID,
 		&p.VenueName,
 		&p.EventStatus,
@@ -2148,8 +2191,16 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 	hasAlert := false
 	alertMsg := ""
 
+	// `id <> $2` excludes the payout being viewed. Without it an approved payout
+	// counts itself and reports that an approved payout already exists for the
+	// event — announcing itself as its own duplicate. Harmless while the
+	// 'approved' label did not exist (migration 0023 added it), and a false
+	// fraud alert on a money-release screen the moment it did.
 	var dupCount int
-	_ = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM payouts WHERE event_id = $1 AND status = 'approved'`, eventID).Scan(&dupCount)
+	_ = r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM payouts
+		WHERE event_id = $1 AND id <> $2 AND status = 'approved'
+	`, eventID, payoutID).Scan(&dupCount)
 	if dupCount > 0 {
 		hasAlert = true
 		alertMsg = "Warning: Approved payout request already exists for this event!"
@@ -2286,6 +2337,155 @@ func (r *PostgresAuditorRepository) organizerViolations(ctx context.Context, org
 		return 0
 	}
 	return n
+}
+
+// RevisePayout sends a payout back to the organizer with an explanation.
+//
+// Distinct from HoldPayout: a hold means the auditor is investigating, a
+// revision means the organizer has something to do. The console has always
+// offered them as separate actions, and the payouts list needs to tell them
+// apart, so they are separate statuses rather than one status plus free text.
+func (r *PostgresAuditorRepository) RevisePayout(ctx context.Context, payoutID, actorID int, req RevisePayoutRequest) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE payouts
+		SET status = 'need_revision',
+		    organizer_notes = $1,
+		    internal_notes = CASE WHEN $2 = '' THEN internal_notes ELSE $2 END,
+		    updated_at = now()
+		WHERE id = $3
+	`, req.Reason, req.InternalNotes, payoutID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+
+	detail := fmt.Sprintf("Requested revision on payout %d. Reason: %s", payoutID, req.Reason)
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO activity_log (actor_id, action, detail) VALUES ($1, 'Revise Payout', $2)
+	`, actorID, detail); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	go func() {
+		_ = r.CreateNotificationForAuditors(context.Background(), "✏️ Payout Revision Requested",
+			fmt.Sprintf("Payout #%d was sent back to the organizer.", payoutID), "payout", strconv.Itoa(payoutID))
+	}()
+	return nil
+}
+
+// UpdatePayoutNotes saves notes without touching status.
+//
+// The console's "Save Draft" has always called the status handler with the
+// payout's CURRENT status, which matched no branch and reported a failure while
+// sending nothing. Notes previously had nowhere to go at all: approve and
+// reject stitched them into an activity_log string.
+func (r *PostgresAuditorRepository) UpdatePayoutNotes(ctx context.Context, payoutID, actorID int, req UpdatePayoutNotesRequest) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE payouts
+		SET internal_notes = $1, organizer_notes = $2, updated_at = now()
+		WHERE id = $3
+	`, req.InternalNotes, req.OrganizerNotes, payoutID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// VerifyPayoutBankAccount marks the organizer's account confirmed.
+//
+// One-way by design: an auditor can verify, and only an organizer edit resets
+// it (organizer/repository.go sets 'unverified' on any change). An auditor
+// un-verifying mid-flight would leave a payout in a state nobody asked for.
+//
+// The account number the console displayed is echoed back and compared inside
+// the transaction. Without that, an organizer editing their details between
+// page load and click would have the NEW account verified by an auditor who
+// never saw it — the exact substitution this flag exists to prevent.
+func (r *PostgresAuditorRepository) VerifyPayoutBankAccount(ctx context.Context, payoutID, actorID int, req VerifyBankAccountRequest) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var appID int
+	var onFile string
+	err = tx.QueryRowContext(ctx, `
+		SELECT oa.id, COALESCE(oa.bank_account_number, '')
+		FROM payouts p
+		JOIN events e ON e.id = p.event_id
+		JOIN organizer_applications oa ON oa.user_id = e.organizer_id
+		WHERE p.id = $1
+	`, payoutID).Scan(&appID, &onFile)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	if strings.TrimSpace(onFile) == "" {
+		return ErrValidation
+	}
+	if digitsOnly(req.AccountNumber) != digitsOnly(onFile) {
+		return ErrValidation
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE organizer_applications
+		SET bank_verification_status = 'verified',
+		    bank_verified_by = $1,
+		    bank_verified_at = now()
+		WHERE id = $2
+	`, actorID, appID); err != nil {
+		return err
+	}
+
+	detail := fmt.Sprintf("Verified the bank account for payout %d.", payoutID)
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO activity_log (actor_id, action, detail) VALUES ($1, 'Verify Bank Account', $2)
+	`, actorID, detail); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// digitsOnly normalises an account number for comparison. The organizer form
+// strips spaces and dashes before storing, but a value that predates that rule
+// may still carry them.
+func digitsOnly(v string) string {
+	var b strings.Builder
+	for _, r := range v {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func (r *PostgresAuditorRepository) ApprovePayout(ctx context.Context, payoutID, actorID int, req ApprovePayoutRequest) error {

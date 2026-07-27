@@ -53,7 +53,9 @@ export interface OrganizerVerification {
   bankName: string;
   bankAccountHolder: string;
   bankAccountNumber: string;
-  bankVerificationStatus: 'Verified' | 'Pending' | 'Unverified';
+  /** 'Pending' is gone: it was only ever produced by a mapper fallback covering
+   *  a field the backend never sent. The column holds verified|unverified. */
+  bankVerificationStatus: 'Verified' | 'Unverified';
   
   // Checklists
   checklist: {
@@ -162,6 +164,11 @@ export interface PayoutRequest {
   bankAccountNumber: string;
   bankAccountHolder: string;
   bankVerificationStatus: 'Verified' | 'Pending' | 'Unverified';
+  /** Who confirmed the account, and when. Empty on rows grandfathered in by
+   *  migration 0022 — those were verified by nobody, and naming an actor would
+   *  fabricate an audit trail. */
+  bankVerifiedBy: string;
+  bankVerifiedAt: string;
 
   // Fraud checks. Only conditions the backend can actually evaluate:
   // a second approved payout for the event, and a request exceeding net revenue.

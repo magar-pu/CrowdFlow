@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import PayoutDetailView from "../../components/PayoutDetailView";
 import { useAuditorData } from "../../AuditorDataContext";
-import { getPayout } from "@/lib/api/auditor";
+import { getPayout, verifyPayoutBankAccount } from "@/lib/api/auditor";
 import { PayoutRequest } from "../../types";
 import { mapPayoutStatus } from "../../payoutMapping";
 
@@ -90,6 +90,8 @@ export default function AuditorPayoutDetailPage() {
           // destination that moved since the last check shows as unverified.
           bankVerificationStatus:
             raw.bankVerificationStatus === "verified" ? "Verified" : "Unverified",
+          bankVerifiedBy: raw.bankVerifiedBy || "",
+          bankVerifiedAt: raw.bankVerifiedAt || "",
           fraudDetection: {
             duplicatePayout: raw.fraudDetection?.duplicatePayout || false,
             suspiciousRevenue: raw.fraudDetection?.suspiciousRevenue || false,
@@ -97,7 +99,10 @@ export default function AuditorPayoutDetailPage() {
             alertMessage: raw.fraudDetection?.alertMessage || "",
           },
           internalNotes: raw.internalNotes || "",
-          financeNotes: "",
+          // Real now: `payouts.organizer_notes`. This used to be hardcoded ""
+          // while internalNotes came off the ORGANIZER APPLICATION, so the same
+          // text appeared on every payout that organizer ever requested.
+          financeNotes: raw.financeNotes || "",
           timeline: (raw.timeline || []).map((t: any) => ({
             stage: t.action || "Verification",
             actor: t.actor || "System",
@@ -132,6 +137,21 @@ export default function AuditorPayoutDetailPage() {
     await loadDetail();
   };
 
+  // Verification is one-way: an auditor confirms the account, and only an
+  // organizer editing their details resets it. The account number displayed on
+  // screen is echoed back so the server can refuse if the organizer changed it
+  // after this page loaded — otherwise the auditor would be confirming an
+  // account they never saw.
+  const handleVerifyBankAccount = async (id: string, accountNumber: string) => {
+    const res = await verifyPayoutBankAccount(id, accountNumber);
+    if (!res.success) {
+      alert(res.error?.message || "Could not verify the bank account. It may have changed since this page loaded — reload and check the details again.");
+      return false;
+    }
+    await loadDetail();
+    return true;
+  };
+
   if (loading) {
     return (
       <div className="bg-white border border-border-subtle rounded-xl p-10 text-center animate-fade-in">
@@ -161,6 +181,7 @@ export default function AuditorPayoutDetailPage() {
       onBack={() => router.push('/auditor/payouts')}
       onUpdatePayoutStatus={handleUpdatePayoutStatusAction}
       onUpdatePayoutChecklists={handleUpdatePayoutChecklists}
+      onVerifyBankAccount={handleVerifyBankAccount}
     />
   );
 }

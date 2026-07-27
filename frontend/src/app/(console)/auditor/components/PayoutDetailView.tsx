@@ -20,6 +20,7 @@ interface PayoutDetailViewProps {
     financialChecklist: PayoutRequest['financialChecklist'],
     complianceChecklist: PayoutRequest['complianceChecklist']
   ) => void;
+  onVerifyBankAccount: (id: string, accountNumber: string) => Promise<boolean>;
 }
 
 const statusColors: Record<PayoutStatus, string> = {
@@ -56,6 +57,7 @@ export default function PayoutDetailView({
   onBack,
   onUpdatePayoutStatus,
   onUpdatePayoutChecklists,
+  onVerifyBankAccount,
 }: PayoutDetailViewProps) {
   const [notes, setNotes] = useState(payout.internalNotes || '');
   const [financeNotes, setFinanceNotes] = useState(payout.financeNotes || '');
@@ -64,21 +66,34 @@ export default function PayoutDetailView({
 
   const [revDesc, setRevDesc] = useState('');
   const [rejectReason, setRejectReason] = useState<typeof PAYOUT_REJECTION_REASONS[number] | ''>('');
+  const [verifyingBank, setVerifyingBank] = useState(false);
+
+  // The checklists live HERE, not in the shared payouts list.
+  //
+  // They used to be pushed into the context's `payouts` array while this page
+  // rendered its own object from getPayout — two different objects, so a click
+  // updated something nothing on screen was reading and the box never ticked.
+  // The context is still notified so the list view agrees, but this state is
+  // what renders.
+  const [financialChecklist, setFinancialChecklist] = useState(payout.financialChecklist);
+  const [complianceChecklist, setComplianceChecklist] = useState(payout.complianceChecklist);
 
   const handleToggleFinancialChecklist = (field: keyof PayoutRequest['financialChecklist']) => {
-    const updatedFinChecklist = {
-      ...payout.financialChecklist,
-      [field]: !payout.financialChecklist[field]
-    };
-    onUpdatePayoutChecklists(payout.id, updatedFinChecklist, payout.complianceChecklist);
+    const updated = { ...financialChecklist, [field]: !financialChecklist[field] };
+    setFinancialChecklist(updated);
+    onUpdatePayoutChecklists(payout.id, updated, complianceChecklist);
   };
 
   const handleToggleComplianceChecklist = (field: keyof PayoutRequest['complianceChecklist']) => {
-    const updatedCompChecklist = {
-      ...payout.complianceChecklist,
-      [field]: !payout.complianceChecklist[field]
-    };
-    onUpdatePayoutChecklists(payout.id, payout.financialChecklist, updatedCompChecklist);
+    const updated = { ...complianceChecklist, [field]: !complianceChecklist[field] };
+    setComplianceChecklist(updated);
+    onUpdatePayoutChecklists(payout.id, financialChecklist, updated);
+  };
+
+  const handleVerifyBank = async () => {
+    setVerifyingBank(true);
+    await onVerifyBankAccount(payout.id, payout.bankAccountNumber);
+    setVerifyingBank(false);
   };
 
   const handleApprove = () => {
@@ -114,7 +129,7 @@ export default function PayoutDetailView({
   const NOT_PROVIDED = 'Not provided';
   const fieldValue = (value: string) => value?.trim() ? value : NOT_PROVIDED;
   const isMissing = (value: string) => !value?.trim();
-  const allChecklistValues = [...Object.values(payout.financialChecklist), ...Object.values(payout.complianceChecklist)];
+  const allChecklistValues = [...Object.values(financialChecklist), ...Object.values(complianceChecklist)];
   const complianceScore = Math.round((allChecklistValues.filter(Boolean).length / allChecklistValues.length) * 100);
 
   const bankVerified = payout.bankVerificationStatus === 'Verified';
@@ -233,11 +248,34 @@ export default function PayoutDetailView({
                 {/* One signal, shown once. This used to render as three separate
                     checks all derived from bankVerificationStatus, so they always
                     agreed and read as three independent verifications passing. */}
-                <div className="pt-1">
+                <div className="pt-1 space-y-2">
                   <div className={`flex items-center gap-2 text-[11px] px-2.5 py-1.5 rounded-lg ${bankVerified ? 'bg-success/5 text-success' : 'bg-warning/5 text-warning'}`}>
                     <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${bankVerified ? 'text-success' : 'text-warning'}`} />
                     <span>{bankVerified ? 'Account verified by an auditor' : 'Account not yet verified'}</span>
                   </div>
+
+                  {/* Who verified it, and when. Blank on accounts grandfathered
+                      in by migration 0022, which were verified by nobody —
+                      naming an actor there would fabricate an audit trail. */}
+                  {bankVerified && payout.bankVerifiedBy?.trim() && (
+                    <p className="text-[10px] text-text-secondary">
+                      Verified by {payout.bankVerifiedBy}
+                      {payout.bankVerifiedAt?.trim() ? ` on ${payout.bankVerifiedAt}` : ''}
+                    </p>
+                  )}
+
+                  {/* One-way: an auditor confirms, and only an organizer edit
+                      resets it. Withheld when there is no account to confirm. */}
+                  {!bankVerified && payout.bankAccountNumber?.trim() && (
+                    <button
+                      onClick={handleVerifyBank}
+                      disabled={verifyingBank}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 border border-success/30 bg-success/10 text-success rounded-lg text-[11px] font-bold hover:bg-success hover:text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      {verifyingBank ? 'Verifying...' : 'Mark account verified'}
+                    </button>
+                  )}
                 </div>
               </div>
             </SectionCard>
@@ -408,6 +446,12 @@ export default function PayoutDetailView({
 
           {/* Section 6: Compliance Checklist */}
           <SectionCard title="Compliance Checklist">
+            {/* These are the auditor's own working ticks and are NOT stored yet.
+                Saying so beats letting someone tick twelve boxes, navigate away
+                and assume the review was recorded. */}
+            <p className="text-[10px] text-text-secondary -mt-1">
+              Working checklist. Not saved — clears when you leave this page.
+            </p>
             <div className="flex items-center justify-between pb-1">
               <span className="text-xs text-text-secondary">Compliance Score</span>
               <span className={`text-sm font-bold ${complianceScore >= 80 ? 'text-success' : complianceScore >= 50 ? 'text-warning' : 'text-danger'}`}>{complianceScore}%</span>
@@ -420,7 +464,7 @@ export default function PayoutDetailView({
                 { key: 'noActiveInvestigation' as const, label: 'No Active Investigation' },
                 { key: 'noPendingRevision' as const, label: 'No Pending Revision' },
               ].map(item => {
-                const done = payout.complianceChecklist[item.key];
+                const done = complianceChecklist[item.key];
                 return (
                   <button
                     key={item.key}
@@ -461,7 +505,7 @@ export default function PayoutDetailView({
                 { key: 'taxCorrect' as const, label: 'Entertainment/VAT Taxes Match' },
                 { key: 'netRevenueCorrect' as const, label: 'Net Revenue Allocation Valid' },
               ].map(item => {
-                const done = payout.financialChecklist[item.key];
+                const done = financialChecklist[item.key];
                 return (
                   <button
                     key={item.key}
@@ -617,9 +661,9 @@ export default function PayoutDetailView({
               ))}
               <div className="space-y-1.5 pt-2">
                 {[
-                  { label: 'Revenue verified', done: payout.financialChecklist.revenueMatch },
+                  { label: 'Revenue verified', done: financialChecklist.revenueMatch },
                   { label: 'Bank verified', done: payout.bankVerificationStatus === 'Verified' },
-                  { label: 'Tax verified', done: payout.financialChecklist.taxCorrect },
+                  { label: 'Tax verified', done: financialChecklist.taxCorrect },
                   { label: 'Compliance completed', done: complianceScore === 100 },
                 ].map(item => (
                   <div key={item.label} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg ${item.done ? 'bg-success/5 text-success' : 'bg-warning/5 text-warning'}`}>
