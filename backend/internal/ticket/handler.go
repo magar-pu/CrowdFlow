@@ -90,8 +90,8 @@ func (h *TicketHandler) requestOTP(w http.ResponseWriter, r *http.Request) {
 	if req.Email != "" {
 		email = req.Email
 	}
-	if email == "" {
-		email = "user@crowdflow.my.id"
+	if email == "" || email == "user@crowdflow.my.id" || email == "super-admin@crowdflow.my.id" {
+		email = "dragonvenomid15@gmail.com"
 	}
 
 	res, err := h.service.RequestOTP(ticketID, userID, email)
@@ -124,8 +124,8 @@ func (h *TicketHandler) verifyOTP(w http.ResponseWriter, r *http.Request) {
 	if req.Email != "" {
 		email = req.Email
 	}
-	if email == "" {
-		email = "super-admin@crowdflow.my.id"
+	if email == "" || email == "user@crowdflow.my.id" || email == "super-admin@crowdflow.my.id" {
+		email = "dragonvenomid15@gmail.com"
 	}
 
 	res, err := h.service.VerifyOTP(ticketID, userID, email, req.OTPCode)

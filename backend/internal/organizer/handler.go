@@ -12,6 +12,7 @@ import (
 
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/response"
+	"crowdflow-backend/pkg/turnstile"
 )
 
 type Handler struct {
@@ -244,6 +245,12 @@ func (h *Handler) handleApply(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseMultipartForm(maxUploadRequestBytes)
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse upload: the documents are too large (12MB total) or the form is malformed")
+		return
+	}
+
+	turnstileToken := r.FormValue("turnstile_token")
+	if valid, err := turnstile.VerifyToken(turnstileToken, r.RemoteAddr); !valid {
+		response.Error(w, http.StatusBadRequest, "INVALID_TURNSTILE", "CAPTCHA verification failed: "+err.Error())
 		return
 	}
 

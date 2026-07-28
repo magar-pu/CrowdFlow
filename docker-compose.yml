@@ -33,8 +33,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - GOOGLE_CLIENT_ID=91716845059-1l96nahbcu7nb39k1sa9r4ev8p2nitdu.apps.googleusercontent.com
-      - DEV_MODE=false
+      - DEV_MODE=true
       - REDIS_ADDR=redis:6379
       # No DB_DSN here on purpose. It belongs to backend/.env, and an entry in
       # this block would silently win over it — compose `environment:` overrides
@@ -67,6 +66,7 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
+      - "127.0.0.1:80:80"
       - "127.0.0.1:${NGINX_PORT:-8000}:80"
     restart: always
     depends_on:

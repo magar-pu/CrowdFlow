@@ -9,6 +9,7 @@ import { TicketActions } from "@/components/your-ticket/TicketActions";
 import ResellTicketModal from "@/components/your-ticket/ResellTicketModal";
 import { getMyTickets, UserTicket } from "@/lib/api/tickets";
 import { cancelResaleListing } from "@/lib/api/resale";
+import { generateTicketPdf } from "@/utils/generateTicketPdf";
 import type { PurchasedTicket } from "@/types/ticket";
 
 export default function EventTicketSlugPage() {
@@ -96,7 +97,7 @@ export default function EventTicketSlugPage() {
   }
 
   function handle_download_pdf() {
-    console.log("Download PDF ticket:", currentTicket.ticket_id);
+    generateTicketPdf(currentTicket, orderAmount, userEmail);
   }
 
   async function handle_share() {

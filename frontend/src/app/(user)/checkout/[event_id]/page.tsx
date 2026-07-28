@@ -17,7 +17,7 @@
  * letting them pay for seats they no longer have.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo, Suspense } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import Script from "next/script";
 import Link from "next/link";
@@ -28,15 +28,16 @@ import { HoldTimer } from "@/components/booking/HoldTimer";
 import { getHold, type HoldDetail } from "@/lib/api/booking";
 import { getEvent } from "@/lib/api/events";
 import { createOrder } from "@/lib/api/payment";
+import { useAuthStore } from "@/lib/store/authStore";
 import { useHoldCountdown } from "@/lib/hooks/useHoldCountdown";
 import { storeHoldToken } from "@/lib/holdStorage";
 import type { CartItem, Event } from "@/types/ticket";
 
 /** The slice of the Midtrans Snap global this page uses. */
 interface SnapCallbacks {
-  onSuccess?: () => void;
-  onPending?: () => void;
-  onError?: () => void;
+  onSuccess?: (result?: any) => void;
+  onPending?: (result?: any) => void;
+  onError?: (result?: any) => void;
   onClose?: () => void;
 }
 
@@ -49,7 +50,7 @@ declare global {
 /** The subset of the event CheckoutSummary renders. */
 type SummaryEvent = Pick<Event, "title" | "cover_image_url" | "starts_at" | "venue">;
 
-export default function CheckoutPage() {
+function CheckoutContent() {
   const router = useRouter();
   const params = useParams();
   const search = useSearchParams();
@@ -61,8 +62,6 @@ export default function CheckoutPage() {
 
   const [hold, set_hold] = useState<HoldDetail | null>(null);
   const [event, set_event] = useState<SummaryEvent | null>(null);
-  // Nothing to load without a token, so this starts false rather than being
-  // switched off inside the effect.
   const [loading, set_loading] = useState(Boolean(hold_token));
   const [load_error, set_load_error] = useState<string | null>(null);
   const [is_submitting, set_is_submitting] = useState(false);
@@ -123,8 +122,9 @@ export default function CheckoutPage() {
 
   // One line per tier: a seated hold may span several, so this mirrors whatever
   // the buyer picked on the map.
-  const cart_items: CartItem[] = hold
-    ? hold.items.map((item) => ({
+  const cart_items: CartItem[] = useMemo(() => {
+    if (hold) {
+      return hold.items.map((item) => ({
         cart_item_id: `hold-${hold.hold_token}-${item.ticket_tier_id}`,
         event_id: String(hold.event_id),
         ticket_category_id: String(item.ticket_tier_id),
@@ -133,8 +133,28 @@ export default function CheckoutPage() {
         unit_face_value: item.unit_price,
         quantity: item.quantity,
         currency: "IDR",
-      }))
-    : [];
+      }));
+    }
+    const queryTierId = search.get("ticket_category_id") || search.get("tier_id");
+    const queryQuantity = parseInt(search.get("quantity") || "1", 10);
+    const queryPrice = parseFloat(search.get("price") || "0");
+    const queryName = search.get("name") || search.get("tier_name");
+    if (queryTierId && queryPrice > 0) {
+      return [
+        {
+          cart_item_id: `cart_item_${queryTierId}`,
+          event_id: String(paramEventId || 1),
+          ticket_category_id: queryTierId,
+          ticket_category_name: queryName || "Selected Ticket",
+          sale_channel: "primary",
+          unit_face_value: queryPrice,
+          quantity: queryQuantity > 0 ? queryQuantity : 1,
+          currency: "IDR",
+        },
+      ];
+    }
+    return [];
+  }, [hold, search, paramEventId]);
 
   async function handle_confirm(payment_method: string) {
     // Expiry mid-click: the effect above is about to swap this page out, and
@@ -144,7 +164,7 @@ export default function CheckoutPage() {
 
     try {
       const res = await createOrder({
-        event_id: hold.event_id,
+        event_id: hold ? hold.event_id : Number(paramEventId),
         payment_method,
         cart_items,
       });
@@ -155,11 +175,15 @@ export default function CheckoutPage() {
         return;
       }
 
-      const order_id = res.data.order_id;
-
+      // Open Midtrans Snap Popup
       window.snap.pay(res.data.snap_token, {
-        onSuccess: function () {
-          router.push(`/orders/${order_id}`);
+        onSuccess: function (result: any) {
+          console.log("Payment success:", result);
+          const finalOrderId = res.data?.order_id || result?.order_id;
+          const userEmail = useAuthStore.getState().user?.email || "";
+          const totalAmount = cart_items.reduce((sum, item) => sum + (item.unit_face_value * item.quantity), 0);
+          const ticketTitle = cart_items[0]?.ticket_category_name || "Event Ticket";
+          router.push(`/orders/${finalOrderId}?amount=${totalAmount}&email=${encodeURIComponent(userEmail)}&title=${encodeURIComponent(ticketTitle)}`);
         },
         onPending: function () {
           alert("Payment is pending. Please complete your payment.");
@@ -192,8 +216,6 @@ export default function CheckoutPage() {
   }
 
   if (!hold_token || load_error || !hold || !event) {
-    // Back to the seat map for this event where possible; the hold's own event
-    // id is gone with the hold, so the route param is the only hint left.
     const back_href = paramEventId ? `/events/${paramEventId}/seats` : "/events";
     return (
       <div className="min-h-screen bg-surface">
@@ -227,16 +249,6 @@ export default function CheckoutPage() {
       />
       <Navbar is_authenticated active_href="" />
 
-      {/*
-        Back to the seat map, not router.back(): the buyer may have arrived here
-        from a bookmark or a reload, where history has somewhere else entirely.
-        The event comes from the hold rather than the route param, since the
-        hold is the authority on what is being bought.
-
-        The hold is deliberately left alone. It survives for its full 10 minutes
-        and the seat map restores the selection from it, so going back and
-        returning keeps the same seats rather than releasing and re-taking them.
-      */}
       <div className="mx-auto flex w-full max-w-container-max flex-wrap items-center justify-between gap-3 px-margin-mobile pt-6 md:px-margin-desktop">
         <Link
           href={`/events/${hold.event_id}/seats`}
@@ -246,8 +258,6 @@ export default function CheckoutPage() {
           Back to seat selection
         </Link>
 
-        {/* The same deadline the seat map counts down, so crossing between the
-            two screens never shows two different clocks. */}
         <HoldTimer
           seconds_left={hold_seconds_left}
           is_expired={hold_expired}
@@ -262,5 +272,13 @@ export default function CheckoutPage() {
         on_confirm={handle_confirm}
       />
     </div>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center">Loading checkout...</div>}>
+      <CheckoutContent />
+    </Suspense>
   );
 }

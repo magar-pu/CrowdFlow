@@ -5,18 +5,33 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
+
+	"crowdflow-backend/internal/mail"
 )
 
 const holdTTL = 10 * time.Minute
 
 type BookingService struct {
-	repo Repository
+	repo        Repository
+	mailService mail.Service
 }
 
-func NewBookingService(repo Repository) *BookingService {
-	return &BookingService{repo: repo}
+func NewBookingService(repo Repository, mailService mail.Service) *BookingService {
+	return &BookingService{repo: repo, mailService: mailService}
+}
+
+func (s *BookingService) SendETicketEmail(toEmail string, eventTitle string, dateVenue string, qrCodeURL string, ticketTier string) {
+	if s.mailService == nil {
+		return
+	}
+	go func() {
+		if err := s.mailService.SendETicket(toEmail, eventTitle, dateVenue, qrCodeURL, ticketTier); err != nil {
+			log.Printf("[BOOKING MAIL ERROR] Failed to send E-Ticket email to %s: %v", toEmail, err)
+		}
+	}()
 }
 
 // ErrEventNotOnSale means the event is not visible to buyers — never approved,

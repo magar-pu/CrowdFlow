@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { RefreshCw, ShieldCheck, Clock, Lock, KeyRound, CheckCircle2, AlertTriangle } from "lucide-react";
+import { RefreshCw, ShieldCheck, Clock, Lock, KeyRound, CheckCircle2, AlertTriangle, Info } from "lucide-react";
 import { getTicketQR, requestTicketOTP, verifyTicketOTP, getTicketVaultData } from "@/lib/api/tickets";
 import {
   importSecretKey,
@@ -15,6 +15,7 @@ import {
   VaultTicketRecord
 } from "@/lib/ticketVault";
 import type { PurchasedTicket } from "@/types/ticket";
+import { useAuthStore } from "@/lib/store/authStore";
 
 interface DigitalTicketCardProps {
   ticket: PurchasedTicket;
@@ -100,6 +101,26 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
       alert("📱 Cara menambah Shortcut Ke Home Screen HP:\n\n1. Tekan tombol titik 3 (atau ikon Share di Safari/Chrome).\n2. Pilih 'Tambahkan ke Layar Utama' / 'Add to Home Screen'.\n3. Tiket CrowdFlow Anda siap dibuka 1-klik dari Home Screen!");
     }
   }
+
+  // Handle OTP request for high-friction vault activation
+  async function handleRequestOTP() {
+    setOtpError("");
+    try {
+      const targetEmail = useAuthStore.getState().user?.email || "dragonvenomid15@gmail.com";
+      const res = await requestTicketOTP(ticketId, targetEmail);
+      if (res.success) {
+        setOtpStep("SENT");
+        if (res.data?.debugOtp) {
+          setDebugOtp(res.data.debugOtp);
+        }
+      } else {
+        setOtpError(res.error?.message || "Gagal mengirimkan OTP ke email");
+      }
+    } catch (err: any) {
+      setOtpError(err.message || "Gagal menghubungi server OTP");
+    }
+  }
+
   useEffect(() => {
     if (!ticketId) return;
 
@@ -119,6 +140,9 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
             setCryptoKey(key);
             setIsVaulted(true);
           }
+        } else {
+          // Auto trigger OTP email dispatch when card opens for unvaulted ticket
+          handleRequestOTP();
         }
       } catch (err) {
         console.warn("IndexedDB init failed:", err);
@@ -143,18 +167,12 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
       setSecondsRemaining(rem);
 
       try {
-        let keyToUse = cryptoKey;
-        if (!keyToUse) {
-          const fallbackSecret = deriveDefaultSecret(ticketId);
-          keyToUse = await importSecretKey(fallbackSecret);
+        if (cryptoKey) {
+          const code = await generateSubtleTOTP(cryptoKey, 300);
+          setTotpCode(code);
         }
-        const code = await generateSubtleTOTP(keyToUse, 300);
-        setTotpCode(code);
-        const rawPayload = `${ticketId}|${code}`;
-        const base64Payload = typeof window !== "undefined" ? btoa(rawPayload) : rawPayload;
-        setQrToken(base64Payload);
-      } catch (err) {
-        console.warn("SubtleCrypto TOTP generation failed:", err);
+      } catch (e) {
+        console.warn("TOTP calc error:", e);
       }
     }
 
@@ -163,24 +181,6 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
 
     return () => clearInterval(interval);
   }, [ticketId, cryptoKey]);
-
-  // Handle OTP request for high-friction vault activation
-  async function handleRequestOTP() {
-    setOtpError("");
-    try {
-      const res = await requestTicketOTP(ticketId);
-      if (res.success) {
-        setOtpStep("SENT");
-        if (res.data?.debugOtp) {
-          setDebugOtp(res.data.debugOtp);
-        }
-      } else {
-        setOtpError(res.error?.message || "Gagal mengirimkan OTP ke email");
-      }
-    } catch (err: any) {
-      setOtpError(err.message || "Gagal menghubungi server OTP");
-    }
-  }
 
   // Handle OTP verification & vault storing
   async function handleVerifyOTP() {
@@ -259,7 +259,8 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
     }
 
     try {
-      const verifyRes = await verifyTicketOTP(ticketId, codeToVerify);
+      const targetEmail = useAuthStore.getState().user?.email || "dragonvenomid15@gmail.com";
+      const verifyRes = await verifyTicketOTP(ticketId, codeToVerify, targetEmail);
       if (!verifyRes.success || !verifyRes.data?.verified) {
         setOtpError(verifyRes.error?.message || "Invalid OTP code");
         setOtpStep("SENT");
@@ -333,27 +334,27 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
   // REQUIRE OTP VERIFICATION BEFORE REVEALING TICKET IF NOT VAULTED YET
   if (!isVaulted) {
     return (
-      <div className="relative flex w-full max-w-[420px] flex-col rounded-2xl border border-indigo-200 bg-white p-6 shadow-xl text-center select-none">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600">
+      <div className="relative flex w-full max-w-[420px] flex-col rounded-2xl border border-border-subtle bg-white p-6 shadow-xl text-center select-none">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-neutral-100 border border-neutral-200 text-neutral-900">
           <Lock className="h-7 w-7" />
         </div>
         <h2 className="text-xl font-bold text-text-primary mb-1">
           Ticket Verification (Email OTP)
         </h2>
         <p className="text-xs text-text-secondary leading-relaxed mb-4">
-          To prevent scalping and unauthorized ticket transfers, enter the 6-digit OTP code sent to your email to unlock and vault this ticket locally (*SubtleCrypto Vault*).
+          To prevent scalping and unauthorized ticket transfers, enter the 6-digit OTP code sent to your email to unlock your ticket for offline access.
         </p>
 
-        <div className="mb-4 rounded-lg bg-amber-50 p-2.5 border border-amber-200 text-left text-[11px] text-amber-800">
-          <p className="font-bold mb-0.5">ℹ️ Important Notice:</p>
-          <p className="text-[10.5px]">
+        <div className="mb-4 rounded-lg bg-amber-50 p-3 border border-amber-200 text-left text-amber-800">
+          <div className="flex items-center gap-1.5 font-bold mb-1 text-xs">
+            <Info className="h-4 w-4 text-amber-600 shrink-0" />
+            <span>Important Notice:</span>
+          </div>
+          <p className="text-[11px] leading-relaxed">
             OTP verification is only required once. Afterwards, this ticket is automatically saved offline on your device and can be accessed anytime without internet connection or OTP.
           </p>
         </div>
 
-        <div className="mb-3 rounded-lg bg-indigo-50/60 p-2 border border-indigo-100 font-mono text-xs text-indigo-900">
-          [TEST ADMIN OTP CODE]: <strong>123456</strong>
-        </div>
 
         {otpError && (
           <div className="mb-3 rounded-lg bg-red-50 p-2.5 text-xs font-semibold text-red-600 border border-red-200">
@@ -371,22 +372,22 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
             value={otpCodeInput}
             onChange={(e) => setOtpCodeInput(e.target.value)}
             placeholder="123456"
-            className="w-full text-center tracking-[0.4em] font-mono text-xl font-bold py-3 border border-border-subtle rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600 bg-surface-container-low"
+            className="w-full text-center tracking-[0.4em] font-mono text-xl font-bold py-3 border border-border-subtle rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900 bg-surface-container-low"
           />
         </div>
 
         <button
           onClick={handleVerifyOTP}
           disabled={otpStep === "VERIFYING"}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm py-3 rounded-xl transition-all shadow-md cursor-pointer mb-2 flex items-center justify-center gap-2"
+          className="w-full bg-neutral-900 hover:bg-black text-white font-bold text-sm py-3 rounded-xl transition-all shadow-md cursor-pointer mb-2 flex items-center justify-center gap-2"
         >
-          <KeyRound className="w-4 h-4" />
-          <span>{otpStep === "VERIFYING" ? "Verifying..." : "🔓 Unlock & Save Ticket Offline"}</span>
+          <Lock className="w-4 h-4" />
+          <span>{otpStep === "VERIFYING" ? "Verifying..." : "Unlock & Save Ticket Offline"}</span>
         </button>
 
         <button
           onClick={handleRequestOTP}
-          className="text-xs text-indigo-600 font-medium hover:underline py-1 cursor-pointer"
+          className="text-xs text-neutral-700 font-medium hover:text-black hover:underline py-1 cursor-pointer"
         >
           Resend OTP to Email
         </button>
@@ -507,13 +508,13 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
         {isVaulted && (
           <div className="mt-4 w-full flex flex-col gap-2 pt-3 border-t border-border-subtle">
             <p className="text-[10px] text-emerald-600 font-medium text-center">
-              🔒 SubtleCrypto key securely stored in IndexedDB (Offline ready for venue entry)
+              🔒 Ticket key securely saved on your device (Offline ready for venue entry)
             </p>
             <button
               onClick={handleResetVault}
               className="w-full mt-1 text-[10px] text-gray-400 hover:text-red-600 font-medium text-center py-1 hover:underline cursor-pointer"
             >
-              🔄 Test OTP Re-Authentication (Reset Device Vault)
+              🔄 Reset Local Vault (Test Re-Auth)
             </button>
           </div>
         )}
@@ -525,7 +526,7 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
           <div className="w-full max-w-sm rounded-xl bg-surface-white p-6 shadow-2xl border border-border-subtle">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2 text-primary font-bold text-base">
-                <Lock className="w-5 h-5 text-indigo-600" />
+                <Lock className="w-5 h-5 text-neutral-900" />
                 <span>Otentikasi Tiket (OTP)</span>
               </div>
               <button
@@ -537,14 +538,9 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
             </div>
 
             <p className="text-xs text-text-secondary mb-4 leading-relaxed">
-              Untuk mencegah calo dan pembajakan tiket, verifikasi kode OTP yang dikirimkan ke email Anda untuk menyimpan kunci rahasia ke brankas HP (*SubtleCrypto Vault*).
+              Untuk mencegah calo dan pembajakan tiket, verifikasi kode OTP yang dikirimkan ke email Anda untuk menyimpan kunci rahasia ke brankas HP Anda.
             </p>
 
-            {debugOtp && (
-              <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-800 font-mono">
-                [DEV OTP CODE]: <strong>{debugOtp}</strong>
-              </div>
-            )}
 
             {otpError && (
               <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">
@@ -562,7 +558,7 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
                 value={otpCodeInput}
                 onChange={(e) => setOtpCodeInput(e.target.value)}
                 placeholder="123456"
-                className="w-full text-center tracking-[0.5em] font-mono text-lg font-bold py-2 border border-border-subtle rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full text-center tracking-[0.5em] font-mono text-lg font-bold py-2 border border-border-subtle rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900"
               />
             </div>
 
@@ -570,7 +566,7 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
               <button
                 onClick={handleVerifyOTP}
                 disabled={otpStep === "VERIFYING"}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-2.5 rounded-lg transition-colors cursor-pointer"
+                className="flex-1 bg-neutral-900 hover:bg-black text-white text-xs font-bold py-2.5 rounded-lg transition-colors cursor-pointer"
               >
                 {otpStep === "VERIFYING" ? "Memverifikasi..." : "Verifikasi & Simpan Tiket"}
               </button>

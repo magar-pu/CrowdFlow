@@ -101,10 +101,7 @@ function EventsDiscoveryContent() {
               cover_image_url: evt.cover_image_url || "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=800&auto=format&fit=crop",
               badge: "on_sale",
               trust_signal: "verified",
-              date_label: `${formattedDate} • ${startsAtDate.toLocaleTimeString("en-GB", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })} WIB`,
+              date_label: formattedDate,
               venue_label: evt.venue ? `${evt.venue.name}, ${evt.venue.city}` : "Lokasi Belum Ditentukan",
               starting_price: evt.starting_price ?? null,
               city: evt.venue ? evt.venue.city : "Jakarta",
@@ -371,8 +368,6 @@ function EventsDiscoveryContent() {
             </div>
           </div>
         </section>
-
-        <ResaleMarketplacePromo />
       </main>
 
       <HomeFooterV3 />

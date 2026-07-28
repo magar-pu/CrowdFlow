@@ -61,6 +61,7 @@ func (h *Handler) handleGetSeatMap(w http.ResponseWriter, r *http.Request) {
 			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Event not found")
 			return
 		}
+		log.Printf("[GET SEATMAP ERROR] Event %d failed: %v", eventID, err)
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load seat map")
 		return
 	}

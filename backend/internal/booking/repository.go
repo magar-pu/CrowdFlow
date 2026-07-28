@@ -147,7 +147,7 @@ func (r *PostgresRedisRepository) seatMapTiers(ctx context.Context, eventID int)
 	// seats clickable — while the GA half of the same screen, which goes
 	// through ListTicketTiers, correctly hid it.
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT tt.id, tt.name, tt.price, tt.color,
+		SELECT tt.id, tt.name, tt.price, '' AS color,
 			s.id, s.row_number, s.seat_number, esm.current_state, s.pos_x, s.pos_y
 		FROM event_seats_matrix esm
 		JOIN ticket_tiers tt ON tt.id = esm.ticket_tier_id

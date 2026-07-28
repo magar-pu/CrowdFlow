@@ -33,16 +33,19 @@ import { useAuthStore } from "@/lib/store/authStore";
 const NAV_LINKS = [
   { label: "Home", href: "/" },
   { label: "Events", href: "/events" },
-  { label: "Resale Marketplace", href: "/resale" },
   { label: "Business", href: "/business" },
 ];
 
-const PROFILE_MENU = [
+const PROFILE_MENU: Array<{
+  label: string;
+  href: string;
+  icon: any;
+  badge?: string;
+}> = [
   { label: "My Profile", href: "/profile", icon: UserCircle },
   { label: "Payments", href: "/profile/payments", icon: CreditCard },
   { label: "Purchase History", href: "/profile/history", icon: ClockIcon },
   { label: "My Tickets", href: "/orders", icon: Ticket },
-  { label: "Resale", href: "/resale/my-listings", icon: RefreshCw, badge: "BARU!" },
 ];
 
 interface NavbarProps {
@@ -90,10 +93,10 @@ export function Navbar({ active_href = "/", is_authenticated: override, isTransp
     return () => window.removeEventListener("scroll", handle_scroll);
   }, [isTransparentOnTop]);
 
-  function handle_logout() {
-    logout();
+  async function handle_logout() {
     set_profile_open(false);
-    router.push("/");
+    await logout();
+    window.location.href = "/";
   }
 
   const initials = display_user.full_name
@@ -140,8 +143,8 @@ export function Navbar({ active_href = "/", is_authenticated: override, isTransp
                   className={cn(
                     "group relative px-3 py-2 font-label-md text-label-md transition-colors duration-200",
                     isActive
-                      ? is_transparent ? "font-bold text-white drop-shadow-sm" : "font-bold text-primary"
-                      : is_transparent ? "text-white/80 drop-shadow-sm hover:text-white" : "text-text-secondary hover:text-primary"
+                      ? is_transparent ? "font-bold text-blue-400 drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]" : "font-bold text-secondary"
+                      : is_transparent ? "text-white/80 drop-shadow-sm hover:text-white" : "text-text-secondary hover:text-secondary"
                   )}
                 >
                   {link.label}
@@ -149,7 +152,7 @@ export function Navbar({ active_href = "/", is_authenticated: override, isTransp
                     className={cn(
                       "absolute bottom-0 left-3 right-3 h-[2.5px] rounded-full transition-all duration-300 ease-out",
                       isActive
-                        ? is_transparent ? "bg-white opacity-100 scale-x-100" : "bg-secondary opacity-100 scale-x-100"
+                        ? is_transparent ? "bg-blue-400 opacity-100 scale-x-100 shadow-[0_0_10px_rgba(96,165,250,0.9)]" : "bg-secondary opacity-100 scale-x-100"
                         : "bg-secondary/60 opacity-0 scale-x-0 group-hover:opacity-100 group-hover:scale-x-100"
                     )}
                   />
@@ -344,7 +347,7 @@ export function Navbar({ active_href = "/", is_authenticated: override, isTransp
                 className={cn(
                   "rounded-lg px-3 py-2.5 font-label-md text-label-md transition-colors",
                   active_href === link.href
-                    ? "bg-surface-container-high font-semibold text-primary"
+                    ? "bg-secondary/10 font-bold text-secondary"
                     : "text-text-secondary hover:bg-surface-container-high hover:text-primary"
                 )}>
                 {link.label}
