@@ -13,6 +13,7 @@ import (
 
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/response"
+	"crowdflow-backend/pkg/turnstile"
 )
 
 // rolePriority defines the privilege hierarchy for platform-level roles.
@@ -145,6 +146,11 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if valid, err := turnstile.VerifyToken(req.TurnstileToken, r.RemoteAddr); !valid {
+		response.Error(w, http.StatusBadRequest, "INVALID_TURNSTILE", "CAPTCHA verification failed: "+err.Error())
+		return
+	}
+
 	if err := h.service.Register(req); err != nil {
 		if err.Error() == "email is already registered" {
 			response.Error(w, http.StatusConflict, "EMAIL_ALREADY_REGISTERED", "This email address is already registered.")
@@ -166,6 +172,11 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body or payload too large")
+		return
+	}
+
+	if valid, err := turnstile.VerifyToken(req.TurnstileToken, r.RemoteAddr); !valid {
+		response.Error(w, http.StatusBadRequest, "INVALID_TURNSTILE", "CAPTCHA verification failed: "+err.Error())
 		return
 	}
 

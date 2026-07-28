@@ -8,6 +8,7 @@ import { useAuthStore } from "@/lib/store/authStore";
 import { applyOrganizer, getOrganizerApplication, updateOrganizerApplication, deleteOrganizerApplication, OrganizerApplicationResponse } from "@/lib/api/organizer";
 import { getMe } from "@/lib/api/auth";
 import { CheckCircle2, AlertTriangle, Clock, RefreshCw, Trash2, Building, Mail, Phone, Globe, FileText, UploadCloud, AlertCircle } from "lucide-react";
+import { Turnstile } from "@/components/common/Turnstile";
 
 export default function BusinessPage() {
   const router = useRouter();
@@ -37,6 +38,7 @@ export default function BusinessPage() {
   // Error & Success Feedback
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
 
   useEffect(() => {
     if (is_authenticated) {
@@ -105,6 +107,7 @@ export default function BusinessPage() {
     formData.append("bank_account_holder", bankAccountHolder);
     formData.append("bank_account_number", bankAccountNumber);
     formData.append("business_address", businessAddress);
+    if (turnstileToken) formData.append("turnstile_token", turnstileToken);
     
     if (ktp) formData.append("ktp", ktp);
     if (npwp) formData.append("npwp", npwp);
@@ -713,6 +716,9 @@ export default function BusinessPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Turnstile CAPTCHA */}
+              <Turnstile onVerify={(token) => setTurnstileToken(token)} />
 
               <div className="border-t border-border-subtle pt-6 flex justify-end">
                 <button

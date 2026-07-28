@@ -56,14 +56,15 @@ function SignInPageContent() {
   async function handle_submit(
     email: string,
     password: string,
-    _stay_signed_in: boolean
+    _stay_signed_in: boolean,
+    turnstile_token?: string
   ) {
     set_error_message("");
     set_success_message("");
 
     if (BACKEND_READY) {
       // ── Path A: Real backend ──────────────────────────────────────
-      const result = await loginUser({ email, password });
+      const result = await loginUser({ email, password, turnstile_token });
 
       if (result.success && result.data) {
         // Sync user from API response to Zustand

@@ -59,14 +59,16 @@ type UpdateProfileRequest struct {
 }
 
 type RegisterRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	FullName string `json:"full_name"`
+	Email          string `json:"email"`
+	Password       string `json:"password"`
+	FullName       string `json:"full_name"`
+	TurnstileToken string `json:"turnstile_token,omitempty"`
 }
 
 type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email          string `json:"email"`
+	Password       string `json:"password"`
+	TurnstileToken string `json:"turnstile_token,omitempty"`
 }
 
 type GoogleLoginRequest struct {
