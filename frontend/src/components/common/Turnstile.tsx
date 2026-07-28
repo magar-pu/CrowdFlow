@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 
 interface TurnstileProps {
   onVerify: (token: string) => void;
@@ -33,7 +33,7 @@ declare global {
 const PROD_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "0x4AAAAAAEAEX6a9UFtsReh-";
 const DEV_SITE_KEY = "1x00000000000000000000AA";
 
-export function Turnstile({
+export const Turnstile = memo(function Turnstile({
   onVerify,
   onExpire,
   onError,
@@ -42,6 +42,17 @@ export function Turnstile({
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
   const [scriptLoaded, setScriptLoaded] = useState(false);
+
+  // Store latest callbacks in refs so changing parent handlers never re-trigger render
+  const onVerifyRef = useRef(onVerify);
+  const onExpireRef = useRef(onExpire);
+  const onErrorRef = useRef(onError);
+
+  useEffect(() => {
+    onVerifyRef.current = onVerify;
+    onExpireRef.current = onExpire;
+    onErrorRef.current = onError;
+  }, [onVerify, onExpire, onError]);
 
   useEffect(() => {
     // Check if script is already present
@@ -70,13 +81,7 @@ export function Turnstile({
 
   useEffect(() => {
     if (!scriptLoaded || !containerRef.current || !window.turnstile) return;
-
-    // Clear previous widget instance if any
-    if (widgetIdRef.current) {
-      try {
-        window.turnstile.remove(widgetIdRef.current);
-      } catch (e) {}
-    }
+    if (widgetIdRef.current) return; // Prevent re-rendering if already rendered
 
     const isLocalhost =
       typeof window !== "undefined" &&
@@ -90,13 +95,13 @@ export function Turnstile({
       const id = window.turnstile.render(containerRef.current, {
         sitekey: activeSiteKey,
         callback: (token: string) => {
-          onVerify(token);
+          onVerifyRef.current(token);
         },
         "expired-callback": () => {
-          onExpire?.();
+          onExpireRef.current?.();
         },
         "error-callback": (err) => {
-          onError?.(err);
+          onErrorRef.current?.(err);
         },
         theme: "light",
       });
@@ -109,14 +114,16 @@ export function Turnstile({
       if (widgetIdRef.current && window.turnstile) {
         try {
           window.turnstile.remove(widgetIdRef.current);
+          widgetIdRef.current = null;
         } catch (e) {}
       }
     };
-  }, [scriptLoaded, onVerify, onExpire, onError]);
+  }, [scriptLoaded]);
 
   return (
     <div className={`my-3 flex justify-center ${className}`}>
       <div ref={containerRef} />
     </div>
   );
-}
+});
+
