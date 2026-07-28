@@ -87,6 +87,12 @@ export interface Event {
   // Cheapest ticket tier price (MIN of ticket_tiers.price), from GET /api/v1/events.
   // null when the event has no tiers yet — distinct from a free event priced at 0.
   starting_price?: number | null;
+  // Tickets sold on paid orders in the last 7 days, from both the list and
+  // detail endpoints. The only sales-velocity signal the platform has.
+  recent_sales?: number;
+  // Organizer-supplied map link for this event (migration 0029). Empty when
+  // unset — the buyer page then searches on the venue name and address.
+  google_maps_url?: string;
   sales_open_at: string; // ISO-8601 — when the virtual waiting room queue opens
   sales_close_at: string; // ISO-8601
   ticket_categories: TicketCategory[];
@@ -405,6 +411,12 @@ export interface TrendingEventCard {
    * here — the platform has no reviews system, so those cannot be sourced.
    */
   starting_price: number | null;
+  /**
+   * Tickets sold on paid orders in the last 7 days, from GET /api/v1/events.
+   * This is the only sales-velocity signal the platform exposes — the
+   * "Selling Fast" badge must be driven by this and nothing else.
+   */
+  recent_sales: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

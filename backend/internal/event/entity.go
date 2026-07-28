@@ -41,16 +41,60 @@ type Event struct {
 	EventTypeID                   int       `json:"event_type_id"`
 	CoverImageURL                 string    `json:"cover_image_url"`
 	LayoutID                      *int      `json:"layout_id"` // bound venue layout; nil = none
+	// PublishedAt is the organizer's decision to go on sale, distinct from the
+	// auditor's `status`. nil means withdrawn or never published, which hides
+	// the event from buyers even while it stays 'approved'.
+	PublishedAt *time.Time `json:"published_at"`
+	// GoogleMapsURL is the organizer's own map link for this event (0029).
+	// Empty means none set — clients fall back to a name+address search.
+	GoogleMapsURL string `json:"google_maps_url"`
 	// StartingPrice is the cheapest ticket tier for this event (MIN of
 	// ticket_tiers.price). nil when the event has no tiers yet, which is
 	// distinct from a genuine price of 0 — callers must not conflate them.
 	StartingPrice *float64   `json:"starting_price"`
-	Venue         *Venue     `json:"venue,omitempty"`
-	Organizer     *Organizer `json:"organizer,omitempty"`
+	// RecentSales is the number of tickets sold on paid orders in the last 7
+	// days. It is the only sales-velocity signal the public listing exposes,
+	// and it is what "trending" actually means here — there is no other one.
+	RecentSales int        `json:"recent_sales"`
+	Venue       *Venue     `json:"venue,omitempty"`
+	Organizer   *Organizer `json:"organizer,omitempty"`
+}
+
+// EventSort names an ordering for the public event listing.
+//
+// The public query previously had no ORDER BY at all, so row order was whatever
+// Postgres happened to return and LIMIT/OFFSET paging could duplicate or skip
+// events between pages. Every ordering below ends in e.id so paging is stable.
+type EventSort string
+
+const (
+	// SortNewest orders by creation time. It is the default because the
+	// /events browse page shares this endpoint and expects the full catalogue.
+	SortNewest EventSort = "newest"
+	// SortUpcoming orders by start time and hides events that have already
+	// finished.
+	SortUpcoming EventSort = "upcoming"
+	// SortTrending orders by RecentSales.
+	SortTrending EventSort = "trending"
+)
+
+// ParseEventSort maps a query-string value onto a known sort, falling back to
+// SortNewest for anything unrecognised. All user input must pass through here:
+// the sort selects one of a fixed set of SQL fragments and is never
+// interpolated into the query.
+func ParseEventSort(s string) EventSort {
+	switch EventSort(s) {
+	case SortUpcoming:
+		return SortUpcoming
+	case SortTrending:
+		return SortTrending
+	default:
+		return SortNewest
+	}
 }
 
 type Repository interface {
-	GetAll(limit, offset int) ([]*Event, error)
+	GetAll(limit, offset int, sort EventSort) ([]*Event, error)
 	GetAllAdmin(limit, offset int) ([]*Event, error)
 	GetByID(id int) (*Event, error)
 	Create(event *Event) error
@@ -61,7 +105,7 @@ type Repository interface {
 }
 
 type Service interface {
-	ListEvents(limit, offset int) ([]*Event, error)
+	ListEvents(limit, offset int, sort EventSort) ([]*Event, error)
 	GetAllAdminEvents(limit, offset int) ([]*Event, error)
 	GetEventDetails(id int) (*Event, error)
 	CreateEvent(event *Event) error

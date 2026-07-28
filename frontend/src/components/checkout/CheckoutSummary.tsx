@@ -30,7 +30,6 @@ interface CheckoutSummaryProps {
   event: Pick<Event, "title" | "cover_image_url" | "starts_at" | "venue">;
   cart_items: CartItem[];
   breadcrumb_steps?: string[];
-  on_apply_promo_code?: (code: string) => void;
   on_confirm: (payment_method: PaymentMethod) => void;
   is_submitting?: boolean;
 }
@@ -65,13 +64,11 @@ export function CheckoutSummary({
   event,
   cart_items,
   breadcrumb_steps = ["Detail", "Seats", "Queue", "Checkout"],
-  on_apply_promo_code,
   on_confirm,
   is_submitting = false,
 }: CheckoutSummaryProps) {
   const [selected_payment_method, set_selected_payment_method] =
     useState<PaymentMethod>("bca_va");
-  const [promo_code, set_promo_code] = useState("");
 
   const breakdown = useMemo(
     () => calculatePriceBreakdown(cart_items, selected_payment_method),
@@ -159,32 +156,9 @@ export function CheckoutSummary({
               </div>
             </div>
 
-            {/* Promo code */}
-            <div>
-              <label
-                htmlFor="promo"
-                className="mb-stack-sm block font-label-sm text-label-sm text-text-secondary"
-              >
-                Promo Code
-              </label>
-              <div className="flex gap-stack-sm">
-                <input
-                  id="promo"
-                  type="text"
-                  placeholder="Enter code"
-                  value={promo_code}
-                  onChange={(e) => set_promo_code(e.target.value)}
-                  className="min-w-0 flex-1 rounded-lg border border-border-subtle bg-surface-white px-3 py-2 font-body-md text-body-md transition-all focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/20"
-                />
-                <button
-                  type="button"
-                  onClick={() => on_apply_promo_code?.(promo_code)}
-                  className="shrink-0 rounded-lg bg-surface-container-high px-4 py-2 font-label-md text-label-md text-primary transition-colors hover:bg-surface-dim sm:px-6"
-                >
-                  Apply
-                </button>
-              </div>
-            </div>
+            {/* No promo code field: the platform has no promo codes. There is
+                nothing in the backend to validate or redeem one against, so the
+                input only ever offered a discount that could not exist. */}
           </div>
         </div>
 

@@ -27,6 +27,8 @@ interface AuthState {
   /** Mock login — used when backend is not ready */
   login: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
   logout: () => Promise<void>;
+  /** Local-only reset for when the server has already invalidated the session. */
+  clear_session: () => void;
 }
 
 const MOCK_USERS: (AuthUser & { password: string })[] = [
@@ -154,6 +156,18 @@ export const useAuthStore = create<AuthState>()(
         }
         set({ user: null, is_authenticated: false });
       },
+
+      /**
+       * Drop the local session without calling the server.
+       *
+       * For when the server has already told us the session is gone — a failed
+       * token refresh. This state is persisted to localStorage, so without it
+       * `is_authenticated` outlived the server session: /login saw the stale
+       * flag, bounced straight back to `?from=`, that page hit another 401, and
+       * the two ping-ponged. Calling logout() here instead would fire a request
+       * that is guaranteed to fail on a session that no longer exists.
+       */
+      clear_session: () => set({ user: null, is_authenticated: false }),
     }),
     { name: "crowdflow_auth" }
   )
