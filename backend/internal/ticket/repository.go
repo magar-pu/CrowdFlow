@@ -85,13 +85,14 @@ func (r *PostgresRepository) GetUserTickets(userID int) ([]*Ticket, error) {
 			t.unit_price,
 			t.created_at,
 			t.updated_at,
-			COALESCE(esm.section_name || ' Row ' || esm.row_name || ' Seat ' || esm.seat_number::text, 'General Admission') as seat_label
+			COALESCE('Row ' || s.row_number || ' Seat ' || s.seat_number, 'General Admission') as seat_label
 		FROM tickets t
 		JOIN orders o ON t.order_id = o.id
 		JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
 		LEFT JOIN events e ON tt.event_id = e.id
 		LEFT JOIN event_seats_matrix esm ON t.event_seats_matrix_id = esm.id
-		WHERE o.user_id = $1
+		LEFT JOIN seats s ON s.id = esm.seat_id
+		WHERE o.purchaser_id = $1
 		ORDER BY t.created_at DESC
 	`
 
@@ -147,13 +148,14 @@ func (r *PostgresRepository) GetTicketByID(ticketID string, userID int) (*Ticket
 			t.unit_price,
 			t.created_at,
 			t.updated_at,
-			COALESCE(esm.section_name || ' Row ' || esm.row_name || ' Seat ' || esm.seat_number::text, 'General Admission') as seat_label
+			COALESCE('Row ' || s.row_number || ' Seat ' || s.seat_number, 'General Admission') as seat_label
 		FROM tickets t
 		JOIN orders o ON t.order_id = o.id
 		JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
 		LEFT JOIN events e ON tt.event_id = e.id
 		LEFT JOIN event_seats_matrix esm ON t.event_seats_matrix_id = esm.id
-		WHERE t.id = $1 AND o.user_id = $2
+		LEFT JOIN seats s ON s.id = esm.seat_id
+		WHERE t.id = $1 AND o.purchaser_id = $2
 	`
 
 	t := &Ticket{}
@@ -419,16 +421,17 @@ func (r *PostgresRepository) GetTicketVaultData(ticketID string, userID int) (*T
 			tt.name as tier_name,
 			t.attendee_full_name,
 			t.attendee_email,
-			COALESCE(esm.section_name || ' Row ' || esm.row_name || ' Seat ' || esm.seat_number::text, 'General Admission') as seat_label,
+			COALESCE('Row ' || s.row_number || ' Seat ' || s.seat_number, 'General Admission') as seat_label,
 			t.ticket_status::text,
 			COALESCE(t.secret_key, '') as secret_key,
-			COALESCE(to_char(e.end_time, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(e.start_date + INTERVAL '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), '') as event_end_time
+			COALESCE(to_char(e.event_end, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(e.event_start + INTERVAL '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), '') as event_end_time
 		FROM tickets t
 		JOIN orders o ON t.order_id = o.id
 		JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
 		LEFT JOIN events e ON tt.event_id = e.id
 		LEFT JOIN event_seats_matrix esm ON t.event_seats_matrix_id = esm.id
-		WHERE (t.id::text = $1 OR t.order_id::text = $1) AND ($2 = 0 OR o.user_id = $2)
+		LEFT JOIN seats s ON s.id = esm.seat_id
+		WHERE (t.id::text = $1 OR t.order_id::text = $1) AND ($2 = 0 OR o.purchaser_id = $2)
 		LIMIT 1
 	`
 
