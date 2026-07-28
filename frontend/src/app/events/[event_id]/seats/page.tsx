@@ -22,7 +22,7 @@
  * is why choosing a GA tier clears any seats and vice versa.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { SeatMapHeader } from "@/components/seat-selection/SeatMapHeader";
 import {
@@ -31,15 +31,20 @@ import {
   type SelectionMode,
 } from "@/components/seat-selection/TicketTypeSelector";
 import { MapLegend } from "@/components/seat-selection/MapLegend";
-import { MapBottomToolbar } from "@/components/seat-selection/MapBottomToolbar";
+import { MapZoomControls } from "@/components/seat-selection/MapZoomControls";
 import { SelectionPanel } from "@/components/seat-selection/SelectionPanel";
 import { LayoutPreview } from "@/components/venue-editor/LayoutPreview";
 import { useEventSeatMap } from "@/lib/hooks/useEventSeatMap";
 import { useSeatSelection } from "@/lib/hooks/useSeatSelection";
+import { useHoldCountdown } from "@/lib/hooks/useHoldCountdown";
+import { readStoredHoldToken, storeHoldToken } from "@/lib/holdStorage";
 import {
   createHold,
+  getHold,
+  releaseHold,
   seatMapToRenderableLayout,
   seatStatesFrom,
+  type HoldDetail,
   type SeatMapSeat,
 } from "@/lib/api/booking";
 import { getEvent, listTicketTiers, type PublicTicketTier } from "@/lib/api/events";
@@ -53,6 +58,14 @@ const FALLBACK_MAX_PER_TRANSACTION = 4;
 
 /** Matches the "Unavailable" swatch in MapLegend. */
 const UNAVAILABLE_SEAT_COLOR = "#cbd5e1";
+
+/** Order-independent comparison of two seat-id selections. */
+function sameSeats(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  const sorted_a = [...a].sort((x, y) => x - y);
+  const sorted_b = [...b].sort((x, y) => x - y);
+  return sorted_a.every((id, i) => id === sorted_b[i]);
+}
 
 export default function SeatSelectionPage() {
   const router = useRouter();
@@ -70,6 +83,8 @@ export default function SeatSelectionPage() {
   const [quantity, set_quantity] = useState(0);
   const [is_submitting, set_is_submitting] = useState(false);
   const [hold_error, set_hold_error] = useState<string | null>(null);
+  /** A hold this buyer already owns for this event, restored on return. */
+  const [active_hold, set_active_hold] = useState<HoldDetail | null>(null);
 
   const { seat_map, loading: map_loading, error: map_error, reload } = useEventSeatMap(event_id);
 
@@ -172,11 +187,97 @@ export default function SeatSelectionPage() {
 
   const {
     zoom, pan_x, pan_y,
-    zoom_in, zoom_out, reset_view,
+    zoom_in, zoom_out, reset_view, can_zoom_in, can_zoom_out, is_default_view,
     start_pan, do_pan, end_pan, handle_wheel_zoom,
     chosen_seats, seat_groups, selected_seat_ids, limit_notice,
-    toggle_seat, remove_seat, clear_seats,
+    toggle_seat, restore_seats, remove_seat, clear_seats,
   } = useSeatSelection({ max_per_tier });
+
+  /**
+   * Rebuild the selection from a hold this buyer still owns. Everything the
+   * chips and the cart need is on the hold itself, so this does not wait for
+   * the seat map.
+   */
+  useEffect(() => {
+    if (!event_id) return;
+    const token = readStoredHoldToken(event_id);
+    if (!token) return;
+
+    let cancelled = false;
+    getHold(token).then((res) => {
+      if (cancelled) return;
+      if (!res.success || !res.data) {
+        // Expired, released, or from another session — forget it rather than
+        // leaving a dead token to fail again on the next visit.
+        storeHoldToken(event_id, null);
+        return;
+      }
+
+      set_active_hold(res.data);
+
+      const seated = res.data.items.filter((item) => item.seats.length > 0);
+      if (seated.length > 0) {
+        restore_seats(
+          seated.flatMap((item) =>
+            item.seats.map((seat) => ({
+              seat_id: seat.seat_id,
+              row: seat.row,
+              number: seat.number,
+              ticket_tier_id: item.ticket_tier_id,
+              tier_name: item.tier_name,
+              unit_face_value: item.unit_price,
+            }))
+          )
+        );
+        return;
+      }
+
+      // General admission: no seats, so restore the tier and quantity instead.
+      const ga = res.data.items[0];
+      if (ga) {
+        set_chosen_mode("ga");
+        set_chosen_ga_tier_id(ga.ticket_tier_id);
+        set_quantity(ga.quantity);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [event_id, restore_seats]);
+
+  /**
+   * The hold lapsed while the buyer was still on the map. Redis released those
+   * seats the moment the key died, so what is drawn as "yours" is no longer
+   * yours — drop the selection, forget the token, and refetch so the map shows
+   * who holds them now. Letting it stand would send them to checkout with a
+   * dead token and fail there instead.
+   */
+  const handle_hold_expired = useCallback(() => {
+    storeHoldToken(event_id, null);
+    set_active_hold(null);
+    clear_seats();
+    set_quantity(0);
+    set_hold_error(
+      "Your hold expired and the tickets were released. Please choose again."
+    );
+    reload();
+  }, [event_id, clear_seats, reload]);
+
+  const { seconds_left: hold_seconds_left, is_expired: hold_expired } =
+    useHoldCountdown(active_hold?.expires_at ?? null, handle_hold_expired);
+
+  /**
+   * Seats locked by THIS buyer's hold. The seat map reports them as "held",
+   * which is correct for everyone else and wrong for them.
+   */
+  const my_held_seat_ids = useMemo(() => {
+    const ids = new Set<number>();
+    active_hold?.items.forEach((item) =>
+      item.seats.forEach((seat) => ids.add(seat.seat_id))
+    );
+    return ids;
+  }, [active_hold]);
 
   function handle_choose_seats() {
     if (mode === "seats") return;
@@ -231,11 +332,15 @@ export default function SeatSelectionPage() {
     if (mode !== "seats") return ids;
     seat_map?.tiers.forEach((t) =>
       t.seats.forEach((s) => {
-        if (s.status === "available") ids.add(s.seat_id);
+        // Seats this buyer is already holding read as "held" from the server;
+        // to them they are still theirs to keep or give up.
+        if (s.status === "available" || my_held_seat_ids.has(s.seat_id)) {
+          ids.add(s.seat_id);
+        }
       })
     );
     return ids;
-  }, [seat_map, mode]);
+  }, [seat_map, mode, my_held_seat_ids]);
 
   /**
    * Tier colour per seat, so the map reads the same as the event page — but
@@ -248,12 +353,16 @@ export default function SeatSelectionPage() {
     const colors = new Map<number, string>();
     seat_map?.tiers.forEach((tier, i) => {
       const color = tierColor(tier.color, i);
-      tier.seats.forEach((s) =>
-        colors.set(s.seat_id, s.status === "available" ? color : UNAVAILABLE_SEAT_COLOR)
-      );
+      tier.seats.forEach((s) => {
+        const mine = my_held_seat_ids.has(s.seat_id);
+        colors.set(
+          s.seat_id,
+          s.status === "available" || mine ? color : UNAVAILABLE_SEAT_COLOR
+        );
+      });
     });
     return colors;
-  }, [seat_map]);
+  }, [seat_map, my_held_seat_ids]);
 
   /** Back here after logging in. */
   function login_redirect() {
@@ -276,6 +385,26 @@ export default function SeatSelectionPage() {
 
     set_is_submitting(true);
 
+    const seat_ids = chosen_seats.map((s) => s.seat_id);
+
+    // Unchanged from the hold already owned: reuse it rather than releasing and
+    // re-acquiring the same seats, which would briefly put them back on sale.
+    if (active_hold && mode === "seats" && sameSeats(seat_ids, [...my_held_seat_ids])) {
+      set_is_submitting(false);
+      router.push(
+        `/checkout/${event_id}?hold_token=${encodeURIComponent(active_hold.hold_token)}`
+      );
+      return;
+    }
+
+    // The selection changed. The old hold still locks its seats — including any
+    // the buyer kept — so it has to go before the new one can take them.
+    if (active_hold) {
+      await releaseHold(active_hold.hold_token);
+      storeHoldToken(event_id, null);
+      set_active_hold(null);
+    }
+
     // Seat ids only: the server derives each seat's tier, so a mixed selection
     // needs no tier from us and cannot be mispriced by us.
     const res = await createHold(
@@ -285,15 +414,15 @@ export default function SeatSelectionPage() {
             ticket_tier_id: active_ga_tier.ticket_tier_id,
             quantity,
           }
-        : {
-            event_id: Number(event_id),
-            seat_ids: chosen_seats.map((s) => s.seat_id),
-          }
+        : { event_id: Number(event_id), seat_ids }
     );
 
     set_is_submitting(false);
 
     if (res.success && res.data) {
+      // Remembered so returning to this map restores the selection instead of
+      // showing the buyer their own seats as taken.
+      storeHoldToken(event_id, res.data.hold_token);
       router.push(
         `/checkout/${event_id}?hold_token=${encodeURIComponent(res.data.hold_token)}`
       );
@@ -328,7 +457,12 @@ export default function SeatSelectionPage() {
       })
     : "";
 
-  const has_selection = mode === "ga" ? quantity > 0 : chosen_seats.length > 0;
+  // Mobile bottom sheet. Explicit state rather than "is anything selected",
+  // which forced the sheet open over the map on the first seat click and gave
+  // no way back short of clearing the selection. Collapsed still shows the
+  // running count and total in the header, so picking seats needs no round
+  // trip through the sheet.
+  const [sheet_open, set_sheet_open] = useState(false);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#F8F9FA]">
@@ -337,6 +471,8 @@ export default function SeatSelectionPage() {
         event_date={event_date}
         event_time={event_time}
         event_venue={event?.venue?.name ?? ""}
+        hold_seconds_left={active_hold ? hold_seconds_left : null}
+        hold_expired={hold_expired}
         on_close={() => router.push(`/events/${event_id}`)}
       />
 
@@ -412,13 +548,19 @@ export default function SeatSelectionPage() {
             </div>
           )}
 
-          {!map_loading && mode === "seats" && tiers.length > 0 && (
+          {/* Only over an actual map: the GA panel and the empty states have
+              nothing to zoom. Legend sits bottom-left, zoom top-right, so
+              neither covers the other or the middle of the map. */}
+          {!map_loading && mode === "seats" && tiers.length > 0 && renderable && (
             <>
               <MapLegend tiers={tiers} />
-              <MapBottomToolbar
+              <MapZoomControls
                 on_zoom_in={zoom_in}
                 on_zoom_out={zoom_out}
-                on_fullscreen={reset_view}
+                on_reset_view={reset_view}
+                can_zoom_in={can_zoom_in}
+                can_zoom_out={can_zoom_out}
+                is_default_view={is_default_view}
               />
             </>
           )}
@@ -429,7 +571,9 @@ export default function SeatSelectionPage() {
           className={cn(
             "fixed inset-x-0 bottom-0 z-50 flex h-[85vh] shrink-0 flex-col rounded-t-3xl border-t border-border-subtle bg-white shadow-[0_-8px_30px_rgba(0,0,0,0.12)] transition-transform duration-300",
             "md:static md:h-full md:w-[360px] md:translate-y-0 md:rounded-none md:border-l md:border-t-0 md:shadow-[-4px_0_24px_rgba(0,0,0,0.04)]",
-            has_selection ? "translate-y-0" : "translate-y-[calc(100%-5rem)] md:translate-y-0"
+            // Collapsed leaves the handle + header visible; the header is the
+            // toggle back open.
+            sheet_open ? "translate-y-0" : "translate-y-[calc(100%-5.5rem)] md:translate-y-0"
           )}
         >
           <SelectionPanel
@@ -445,6 +589,8 @@ export default function SeatSelectionPage() {
               set_quantity(Math.min(Math.max(0, next), max_ga_quantity))
             }
             on_proceed={handle_proceed}
+            is_sheet_open={sheet_open}
+            on_toggle_sheet={() => set_sheet_open((open) => !open)}
           />
         </aside>
       </main>

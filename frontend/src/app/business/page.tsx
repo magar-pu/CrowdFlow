@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/Navbar";
 import { HomeFooterV2 } from "@/components/home-v2/HomeFooterV2";
@@ -8,6 +8,48 @@ import { useAuthStore } from "@/lib/store/authStore";
 import { applyOrganizer, getOrganizerApplication, updateOrganizerApplication, deleteOrganizerApplication, OrganizerApplicationResponse } from "@/lib/api/organizer";
 import { getMe } from "@/lib/api/auth";
 import { CheckCircle2, AlertTriangle, Clock, RefreshCw, Trash2, Building, Mail, Phone, Globe, FileText, UploadCloud, AlertCircle } from "lucide-react";
+
+/**
+ * The marketing hero for /business.
+ *
+ * Shown to everyone. It used to render only for signed-out visitors, so
+ * signing in replaced the pitch with a bare application form and a returning
+ * organizer never saw the page the site links to. Only the call to action
+ * changes with who is looking.
+ */
+function BusinessLandingHero({
+  cta_label,
+  on_cta,
+}: {
+  cta_label: string;
+  on_cta: () => void;
+}) {
+  return (
+    <section className="flex flex-col items-center px-6 py-20 text-center">
+      <div className="max-w-2xl space-y-6">
+        <div className="inline-flex rounded-full bg-secondary/10 px-4 py-1.5 text-xs font-semibold text-secondary">
+          CrowdFlow Business Dashboard
+        </div>
+        <h1 className="text-4xl font-bold tracking-tight text-text-primary md:text-5xl">
+          Host and Manage Your Events at Scale
+        </h1>
+        <p className="text-lg text-text-secondary">
+          Verify your business account, create custom seating charts, sell tickets with
+          high concurrency, and request real-time payouts directly to your local
+          Indonesian bank account.
+        </p>
+        <div className="flex justify-center gap-4 pt-4">
+          <button
+            onClick={on_cta}
+            className="cursor-pointer rounded-lg bg-primary px-8 py-3 font-semibold text-white shadow transition-all duration-250 hover:bg-primary/95"
+          >
+            {cta_label}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export default function BusinessPage() {
   const router = useRouter();
@@ -37,6 +79,9 @@ export default function BusinessPage() {
   // Error & Success Feedback
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+
+  /** Scroll target for the hero CTA, which sits above the application. */
+  const application_ref = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (is_authenticated) {
@@ -178,31 +223,17 @@ export default function BusinessPage() {
     );
   }
 
-  // Case A: User is not authenticated -> Show Landing Hero
+  // Case A: not signed in — the hero alone, with the CTA sending them to log in
+  // first. Everything below the hero needs an account.
   if (!is_authenticated) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <Navbar active_href="/business" />
-        <main className="flex-1 flex flex-col justify-center items-center py-20 px-6">
-          <div className="max-w-2xl text-center space-y-6">
-            <div className="inline-flex bg-secondary/10 text-secondary text-xs font-semibold px-4 py-1.5 rounded-full">
-              CrowdFlow Business Dashboard
-            </div>
-            <h1 className="text-4xl md:text-5xl font-bold text-text-primary tracking-tight">
-              Host and Manage Your Events at Scale
-            </h1>
-            <p className="text-text-secondary text-lg">
-              Verify your business account, create custom seating charts, sell tickets with high concurrency, and request real-time payouts directly to your local Indonesian bank account.
-            </p>
-            <div className="flex justify-center gap-4 pt-4">
-              <button
-                onClick={() => router.push("/login?from=/business")}
-                className="bg-primary hover:bg-primary/95 text-white font-semibold px-8 py-3 rounded-lg shadow transition-all duration-250 cursor-pointer"
-              >
-                Apply to Become Organizer
-              </button>
-            </div>
-          </div>
+        <main className="flex-1">
+          <BusinessLandingHero
+            cta_label="Apply to Become Organizer"
+            on_cta={() => router.push("/login?from=/business")}
+          />
         </main>
         <HomeFooterV2 />
       </div>
@@ -214,7 +245,11 @@ export default function BusinessPage() {
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <Navbar active_href="/business" />
-        <main className="flex-1 flex flex-col justify-center items-center py-20 px-6">
+        <BusinessLandingHero
+          cta_label="Enter Organizer Dashboard"
+          on_cta={() => router.push("/organizer")}
+        />
+        <main className="flex-1 flex flex-col justify-center items-center pb-20 px-6">
           <div className="max-w-lg w-full bg-surface-white border border-border-subtle rounded-xl p-8 shadow-sm space-y-6 text-center">
             <div className="flex justify-center">
               <div className="h-16 w-16 bg-success/10 rounded-full flex items-center justify-center text-success">
@@ -240,11 +275,23 @@ export default function BusinessPage() {
     );
   }
 
-  // Case C: User is authenticated but waiting for approval, rejected, or has not applied
+  // Case C: signed in, but not a verified organizer yet — no application, or one
+  // that is pending, needs revision, or was rejected.
+  //
+  // The hero comes first here too, so the page reads the same as it does signed
+  // out. The CTA scrolls to the application rather than navigating: it is
+  // already on this page, and a signed-in buyer arriving from the navbar should
+  // still see what they are applying for before the form.
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Navbar active_href="/business" />
-      <main className="flex-1 py-12 px-6 max-w-4xl mx-auto w-full">
+      <BusinessLandingHero
+        cta_label={application ? "View your application" : "Apply to Become Organizer"}
+        on_cta={() =>
+          application_ref.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+        }
+      />
+      <main ref={application_ref} className="flex-1 pb-12 px-6 max-w-4xl mx-auto w-full scroll-mt-6">
         {successMsg && (
           <div className="mb-6 rounded-lg border border-success/20 bg-success/5 px-4 py-3 font-body-sm text-body-sm text-success flex items-center gap-2">
             <CheckCircle2 size={18} />

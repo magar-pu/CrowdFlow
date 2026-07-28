@@ -105,8 +105,23 @@ export async function apiRequest<T>(
       if (refreshed) {
         return apiRequest<T>(url, options, true);
       }
-      // Refresh failed: fall through and return the 401 body so callers/guards
-      // (AuthGuard, edge middleware) can react.
+      // Refresh failed, so the session is definitively gone. Drop the local
+      // copy: it is persisted to localStorage and otherwise outlives the server
+      // session, which made /login believe the user was still signed in and
+      // bounce straight back to `?from=` — into the same 401, and round again.
+      //
+      // Imported lazily because authStore -> lib/api/auth -> this module, and a
+      // static import would close that cycle.
+      // Awaited so the store is already cleared by the time the caller reacts
+      // to the 401 and navigates.
+      try {
+        const { useAuthStore } = await import("@/lib/store/authStore");
+        useAuthStore.getState().clear_session();
+      } catch {
+        // Nothing to recover: the 401 below still reaches the caller.
+      }
+      // Fall through and return the 401 body so callers/guards (AuthGuard,
+      // edge middleware) can react.
     }
 
     if (!response.ok) {

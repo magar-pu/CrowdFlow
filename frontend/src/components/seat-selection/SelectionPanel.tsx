@@ -18,8 +18,9 @@
 
 "use client";
 
-import { ArrowRight, Lock, Minus, Plus, X } from "lucide-react";
+import { ArrowRight, ChevronDown, Lock, Minus, Plus, X } from "lucide-react";
 import { formatIDR, calculatePriceBreakdown } from "@/lib/pricing";
+import { cn } from "@/lib/utils";
 import type { CartItem } from "@/types/ticket";
 import type { SeatGroup } from "@/lib/hooks/useSeatSelection";
 import type { SelectableTier } from "./TicketTypeSelector";
@@ -39,6 +40,9 @@ interface SelectionPanelProps {
   on_remove_seat: (seat_id: number) => void;
   on_change_quantity: (next: number) => void;
   on_proceed: () => void;
+  /** Mobile bottom-sheet state. Ignored from md up, where this is a fixed column. */
+  is_sheet_open: boolean;
+  on_toggle_sheet: () => void;
 }
 
 export function SelectionPanel({
@@ -52,6 +56,8 @@ export function SelectionPanel({
   on_remove_seat,
   on_change_quantity,
   on_proceed,
+  is_sheet_open,
+  on_toggle_sheet,
 }: SelectionPanelProps) {
   const is_ga = active_tier?.is_general_admission ?? false;
   const seat_count = seat_groups.reduce((n, g) => n + g.seats.length, 0);
@@ -89,13 +95,62 @@ export function SelectionPanel({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="border-b border-border-subtle px-5 py-4">
-        <h2 className="font-headline-sm text-headline-sm font-bold text-text-primary">
-          Your Selection
-        </h2>
+      {/* Grab handle — affordance that the sheet moves. Mobile only. */}
+      <div aria-hidden className="flex justify-center pt-2 md:hidden">
+        <span className="h-1 w-10 rounded-full bg-border-subtle" />
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      {/*
+        The header doubles as the sheet toggle on mobile. The sheet used to be
+        driven purely by whether anything was selected, so the first seat click
+        threw it open over the map and the only way back was emptying the
+        selection. Inert from md up, where the panel is a static column.
+      */}
+      <button
+        type="button"
+        onClick={on_toggle_sheet}
+        aria-expanded={is_sheet_open}
+        aria-controls="selection-panel-body"
+        className="flex w-full items-center justify-between gap-3 border-b border-border-subtle px-5 py-4 text-left md:pointer-events-none"
+      >
+        <div className="min-w-0">
+          <h2 className="font-headline-sm text-headline-sm font-bold text-text-primary">
+            Your Selection
+          </h2>
+          {/*
+            Collapsed, this line is the only feedback that a click registered.
+            A refused click (a tier's per-order cap) has to surface here too:
+            the notice further down is inside the hidden body, so without this
+            the seat simply would not appear and nothing would say why.
+          */}
+          {notice ? (
+            <p role="status" className="truncate font-body-sm text-body-sm text-danger md:hidden">
+              {notice}
+            </p>
+          ) : (
+            ticket_count > 0 && (
+              <p className="truncate font-body-sm text-body-sm text-text-secondary md:hidden">
+                {ticket_count} {ticket_count === 1 ? "ticket" : "tickets"} ·{" "}
+                {formatIDR(breakdown.grand_total)}
+              </p>
+            )
+          )}
+        </div>
+        <span className="flex items-center gap-2 md:hidden">
+          <span className="font-label-sm text-label-sm text-secondary">
+            {is_sheet_open ? "Hide" : "View"}
+          </span>
+          <ChevronDown
+            size={18}
+            className={cn(
+              "shrink-0 text-text-secondary transition-transform duration-200",
+              is_sheet_open && "rotate-180"
+            )}
+          />
+        </span>
+      </button>
+
+      <div id="selection-panel-body" className="flex-1 overflow-y-auto">
         {/* Active tier — general admission only; seated selections show their
             tiers as groups below, since there may be several. */}
         {is_ga && active_tier && (

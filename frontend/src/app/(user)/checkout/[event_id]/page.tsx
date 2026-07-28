@@ -17,15 +17,19 @@
  * letting them pay for seats they no longer have.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import Script from "next/script";
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { CheckoutSummary } from "@/components/checkout/CheckoutSummary";
+import { HoldTimer } from "@/components/booking/HoldTimer";
 import { getHold, type HoldDetail } from "@/lib/api/booking";
 import { getEvent } from "@/lib/api/events";
 import { createOrder } from "@/lib/api/payment";
+import { useHoldCountdown } from "@/lib/hooks/useHoldCountdown";
+import { storeHoldToken } from "@/lib/holdStorage";
 import type { CartItem, Event } from "@/types/ticket";
 
 /** The slice of the Midtrans Snap global this page uses. */
@@ -99,6 +103,24 @@ export default function CheckoutPage() {
     };
   }, [hold_token]);
 
+  /**
+   * The hold ran out while the buyer sat on this page. The seats are already
+   * back on the map, so paying now would buy nothing — fall through to the
+   * expired screen, which is the same one a dead token lands on.
+   *
+   * The stored token goes too: without this, going "back to seat selection"
+   * would try to restore a hold that no longer exists.
+   */
+  const handle_hold_expired = useCallback(() => {
+    if (hold) storeHoldToken(String(hold.event_id), null);
+    set_load_error(
+      "Your seat hold expired. The tickets have been released back to the map."
+    );
+  }, [hold]);
+
+  const { seconds_left: hold_seconds_left, is_expired: hold_expired } =
+    useHoldCountdown(hold?.expires_at ?? null, handle_hold_expired);
+
   // One line per tier: a seated hold may span several, so this mirrors whatever
   // the buyer picked on the map.
   const cart_items: CartItem[] = hold
@@ -115,7 +137,9 @@ export default function CheckoutPage() {
     : [];
 
   async function handle_confirm(payment_method: string) {
-    if (!hold) return;
+    // Expiry mid-click: the effect above is about to swap this page out, and
+    // the seats are gone either way.
+    if (!hold || hold_expired) return;
     set_is_submitting(true);
 
     try {
@@ -202,6 +226,35 @@ export default function CheckoutPage() {
         data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY}
       />
       <Navbar is_authenticated active_href="" />
+
+      {/*
+        Back to the seat map, not router.back(): the buyer may have arrived here
+        from a bookmark or a reload, where history has somewhere else entirely.
+        The event comes from the hold rather than the route param, since the
+        hold is the authority on what is being bought.
+
+        The hold is deliberately left alone. It survives for its full 10 minutes
+        and the seat map restores the selection from it, so going back and
+        returning keeps the same seats rather than releasing and re-taking them.
+      */}
+      <div className="mx-auto flex w-full max-w-container-max flex-wrap items-center justify-between gap-3 px-margin-mobile pt-6 md:px-margin-desktop">
+        <Link
+          href={`/events/${hold.event_id}/seats`}
+          className="inline-flex items-center gap-2 rounded-lg py-2 font-label-md text-label-md text-text-secondary transition-colors hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
+        >
+          <ArrowLeft size={18} />
+          Back to seat selection
+        </Link>
+
+        {/* The same deadline the seat map counts down, so crossing between the
+            two screens never shows two different clocks. */}
+        <HoldTimer
+          seconds_left={hold_seconds_left}
+          is_expired={hold_expired}
+          label="Held for you"
+        />
+      </div>
+
       <CheckoutSummary
         event={event}
         cart_items={cart_items}

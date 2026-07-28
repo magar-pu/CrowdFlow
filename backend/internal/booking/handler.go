@@ -76,8 +76,19 @@ func (h *Handler) handleCreateHold(w http.ResponseWriter, r *http.Request) {
 
 	hold, err := h.service.CreateHold(req)
 	if err != nil {
-		log.Printf("Failed to create hold: %v", err)
-		response.Error(w, http.StatusConflict, "HOLD_FAILED", "Failed to process hold request")
+		// A BookingError is something the buyer can act on and already carries
+		// the wording to show them. Collapsing all of these into one generic
+		// 409 told a buyer whose seat had just been taken exactly as much as it
+		// told one who had hit a per-order cap: nothing.
+		var bookingErr *BookingError
+		if errors.As(err, &bookingErr) {
+			response.Error(w, bookingErr.Status, bookingErr.Code, bookingErr.Message)
+			return
+		}
+		// Anything else is our fault, so it is logged and not shown.
+		log.Printf("CreateHold error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR",
+			"We couldn't hold those seats just now. Please try again.")
 		return
 	}
 	response.JSON(w, http.StatusCreated, hold)

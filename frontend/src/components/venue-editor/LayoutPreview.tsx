@@ -49,14 +49,29 @@ const SEAT_RADIUS = 6;
 const PADDING = 40;
 const FALLBACK_SEAT_COLOR = "#94a3b8";
 
-/** Seat fill by live state. Selected wins over everything. */
+/** Seat fill by live state, used when no tier colour applies. */
 const SEAT_COLOR: Record<SeatStatus, string> = {
   available: "#22c55e",
   sold: "#cbd5e1",
   held: "#f59e0b",
   blocked: "#94a3b8",
 };
-const SELECTED_SEAT_COLOR = "#2563eb";
+
+/**
+ * Selection is drawn as a RING, not a fill.
+ *
+ * It used to replace the fill with #2563eb — which is byte-identical to
+ * TIER_PALETTE[0], so the cheapest tier's seats looked permanently selected and
+ * a genuinely selected seat in that tier looked like nothing had happened.
+ * Overriding the fill also hid which tier a seat belonged to, and a selection
+ * can now span tiers, so that information matters while choosing.
+ *
+ * The white halo sits between the seat and the dark ring so the ring reads
+ * against every palette colour and against the map background.
+ */
+const SELECTED_RING = "#0f172a";
+const SELECTED_RING_HALO = "#ffffff";
+const SELECTED_RING_WIDTH = 2;
 
 /** Narrow an unknown JSONB value to a VenueShape when it has usable geometry. */
 function asShape(value: unknown): VenueShape | null {
@@ -226,13 +241,13 @@ export function LayoutPreview({
           status !== "blocked" &&
           status !== "held";
 
-        // Precedence: selection, then the tier's colour, then live status, then
-        // neutral. An untiered template hits the neutral branch, which is what
-        // a plain reusable layout should look like.
+        // Precedence: the tier's colour, then live status, then neutral. An
+        // untiered template hits the neutral branch, which is what a plain
+        // reusable layout should look like. Selection no longer participates —
+        // it is a ring drawn on top, so a selected seat keeps showing which
+        // tier it belongs to.
         let fill: string;
-        if (isSelected) {
-          fill = SELECTED_SEAT_COLOR;
-        } else if (seat_colors?.get(seat.id)) {
+        if (seat_colors?.get(seat.id)) {
           fill = seat_colors.get(seat.id)!;
         } else if (status) {
           fill = SEAT_COLOR[status];
@@ -241,35 +256,51 @@ export function LayoutPreview({
         }
 
         return (
-          <circle
-            key={`seat-${seat.id}`}
-            cx={seat.pos_x!}
-            cy={seat.pos_y!}
-            r={SEAT_RADIUS}
-            fill={fill}
-            className={isSelectable ? "cursor-pointer" : undefined}
-            // Sold/held/blocked seats stay visible but inert.
-            style={isInteractive && !isSelectable && !isSelected ? { opacity: 0.55 } : undefined}
-            role={isSelectable ? "button" : undefined}
-            tabIndex={isSelectable ? 0 : undefined}
-            aria-pressed={isSelectable ? isSelected : undefined}
-            aria-label={
-              isInteractive
-                ? `Row ${seat.row} seat ${seat.number}${status ? `, ${status}` : ""}`
-                : undefined
-            }
-            onClick={isSelectable ? () => on_seat_click!(seat.id) : undefined}
-            onKeyDown={
-              isSelectable
-                ? (e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      on_seat_click!(seat.id);
+          <g key={`seat-${seat.id}`}>
+            {/* Halo first so the ring below draws over it. pointerEvents off:
+                these are decoration and must not eat the seat's own clicks. */}
+            {isSelected && (
+              <circle
+                cx={seat.pos_x!}
+                cy={seat.pos_y!}
+                r={SEAT_RADIUS + SELECTED_RING_WIDTH}
+                fill="none"
+                stroke={SELECTED_RING_HALO}
+                strokeWidth={SELECTED_RING_WIDTH + 1}
+                pointerEvents="none"
+              />
+            )}
+            <circle
+              cx={seat.pos_x!}
+              cy={seat.pos_y!}
+              r={SEAT_RADIUS}
+              fill={fill}
+              stroke={isSelected ? SELECTED_RING : undefined}
+              strokeWidth={isSelected ? SELECTED_RING_WIDTH : undefined}
+              className={isSelectable ? "cursor-pointer" : undefined}
+              // Sold/held/blocked seats stay visible but inert.
+              style={isInteractive && !isSelectable && !isSelected ? { opacity: 0.55 } : undefined}
+              role={isSelectable ? "button" : undefined}
+              tabIndex={isSelectable ? 0 : undefined}
+              aria-pressed={isSelectable ? isSelected : undefined}
+              aria-label={
+                isInteractive
+                  ? `Row ${seat.row} seat ${seat.number}${status ? `, ${status}` : ""}`
+                  : undefined
+              }
+              onClick={isSelectable ? () => on_seat_click!(seat.id) : undefined}
+              onKeyDown={
+                isSelectable
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        on_seat_click!(seat.id);
+                      }
                     }
-                  }
-                : undefined
-            }
-          />
+                  : undefined
+              }
+            />
+          </g>
         );
       })}
       </g>

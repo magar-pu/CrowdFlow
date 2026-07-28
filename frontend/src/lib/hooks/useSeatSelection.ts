@@ -78,6 +78,12 @@ export function useSeatSelection({ max_per_tier }: UseSeatSelectionOptions) {
   const zoom_in = useCallback(() => set_zoom_clamped(zoom + ZOOM_STEP), [zoom, set_zoom_clamped]);
   const zoom_out = useCallback(() => set_zoom_clamped(zoom - ZOOM_STEP), [zoom, set_zoom_clamped]);
 
+  // Exposed so controls can disable at the limits rather than duplicating the
+  // clamp bounds, which live here.
+  const can_zoom_in = zoom < MAX_ZOOM;
+  const can_zoom_out = zoom > MIN_ZOOM;
+  const is_default_view = zoom === 1 && pan_x === 0 && pan_y === 0;
+
   const reset_view = useCallback(() => {
     set_zoom(1);
     set_pan_x(0);
@@ -146,6 +152,17 @@ export function useSeatSelection({ max_per_tier }: UseSeatSelectionOptions) {
     [max_per_tier]
   );
 
+  /**
+   * Replace the selection wholesale, used to rebuild it from a hold the buyer
+   * still owns after navigating back to the map. Bypasses the per-tier caps on
+   * purpose: these seats are already locked to them and were capped when the
+   * hold was taken.
+   */
+  const restore_seats = useCallback((seats: ChosenSeat[]) => {
+    set_limit_notice(null);
+    set_chosen_seats(seats);
+  }, []);
+
   const remove_seat = useCallback((seat_id: number) => {
     set_limit_notice(null);
     set_chosen_seats((seats) => seats.filter((s) => s.seat_id !== seat_id));
@@ -197,6 +214,9 @@ export function useSeatSelection({ max_per_tier }: UseSeatSelectionOptions) {
     zoom_in,
     zoom_out,
     reset_view,
+    can_zoom_in,
+    can_zoom_out,
+    is_default_view,
     start_pan,
     do_pan,
     end_pan,
@@ -208,6 +228,7 @@ export function useSeatSelection({ max_per_tier }: UseSeatSelectionOptions) {
     subtotal,
     limit_notice,
     toggle_seat,
+    restore_seats,
     remove_seat,
     clear_seats,
   };

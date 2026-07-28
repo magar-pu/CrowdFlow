@@ -15,10 +15,18 @@ import { ChevronUp, ChevronDown } from "lucide-react";
 import { formatIDR } from "@/lib/pricing";
 import type { SelectableTier } from "./TicketTypeSelector";
 
-/** Kept in step with SEAT_COLOR / SELECTED_SEAT_COLOR in LayoutPreview. */
-const STATE_ITEMS = [
-  { color: "#2563eb", label: "Selected" },
-  { color: "#cbd5e1", label: "Unavailable" },
+/**
+ * Kept in step with LayoutPreview.
+ *
+ * "Selected" is a ring rather than a fill, because that is how the map draws
+ * it: a selected seat keeps its tier colour and gains a dark ring. Showing a
+ * solid blue swatch here was doubly wrong — it matched no seat on the map, and
+ * the blue it used is TIER_PALETTE[0], so it collided with the cheapest tier's
+ * own entry directly above it in this legend.
+ */
+const STATE_ITEMS: { label: string; color?: string; ring?: boolean }[] = [
+  { label: "Selected", ring: true },
+  { label: "Unavailable", color: "#cbd5e1" },
 ];
 
 interface MapLegendProps {
@@ -65,10 +73,18 @@ export function MapLegend({ tiers }: MapLegendProps) {
         <div className="mt-1 border-t border-border-subtle pt-2">
           {STATE_ITEMS.map((item) => (
             <div key={item.label} className="flex items-center gap-2 py-0.5">
-              <div
-                className="h-3 w-3 rounded-full border border-white/50 shadow-sm md:h-4 md:w-4"
-                style={{ backgroundColor: item.color }}
-              />
+              {item.ring ? (
+                // Neutral fill so the ring is what reads, exactly as on the map
+                // where the fill underneath is whatever tier the seat is in.
+                <div
+                  className="h-3 w-3 rounded-full border-2 border-[#0f172a] bg-surface-container-low md:h-4 md:w-4"
+                />
+              ) : (
+                <div
+                  className="h-3 w-3 rounded-full border border-white/50 shadow-sm md:h-4 md:w-4"
+                  style={{ backgroundColor: item.color }}
+                />
+              )}
               <span className="font-body-sm text-xs text-text-primary md:text-sm">{item.label}</span>
             </div>
           ))}
