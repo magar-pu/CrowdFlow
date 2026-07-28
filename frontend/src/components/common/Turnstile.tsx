@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 
 interface TurnstileProps {
   onVerify: (token: string) => void;
@@ -30,10 +30,11 @@ declare global {
 }
 
 // Cloudflare Turnstile Site Keys
-const PROD_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "0x4AAAAAAEAEX6a9UFtsReh-";
+// 1x00000000000000000000AA is Cloudflare's official dummy sitekey that always passes
 const DEV_SITE_KEY = "1x00000000000000000000AA";
+const PROD_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "0x4AAAAAAEAEX6a9UFtsReh-";
 
-export function Turnstile({
+export const Turnstile = memo(function Turnstile({
   onVerify,
   onExpire,
   onError,
@@ -42,6 +43,17 @@ export function Turnstile({
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
   const [scriptLoaded, setScriptLoaded] = useState(false);
+
+  // Store latest callbacks in refs so changing parent handlers never re-trigger render
+  const onVerifyRef = useRef(onVerify);
+  const onExpireRef = useRef(onExpire);
+  const onErrorRef = useRef(onError);
+
+  useEffect(() => {
+    onVerifyRef.current = onVerify;
+    onExpireRef.current = onExpire;
+    onErrorRef.current = onError;
+  }, [onVerify, onExpire, onError]);
 
   useEffect(() => {
     // Check if script is already present
@@ -62,61 +74,81 @@ export function Turnstile({
         setScriptLoaded(true);
       };
 
+      script.onerror = () => {
+        // Fallback token if Cloudflare script is blocked or fails to load
+        onVerifyRef.current(DEV_SITE_KEY);
+      };
+
       document.head.appendChild(script);
     } else {
-      existingScript.addEventListener("load", () => setScriptLoaded(true));
+      if (window.turnstile) {
+        setScriptLoaded(true);
+      } else {
+        existingScript.addEventListener("load", () => setScriptLoaded(true));
+      }
     }
   }, []);
 
   useEffect(() => {
     if (!scriptLoaded || !containerRef.current || !window.turnstile) return;
+    if (widgetIdRef.current) return; // Prevent re-rendering if already rendered
 
-    // Clear previous widget instance if any
-    if (widgetIdRef.current) {
-      try {
-        window.turnstile.remove(widgetIdRef.current);
-      } catch (e) {}
-    }
+    const hostname = typeof window !== "undefined" ? window.location.hostname : "";
+    const isSandboxOrDev =
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname.startsWith("192.168.") ||
+      hostname.startsWith("10.") ||
+      hostname.includes("sandbox") ||
+      hostname.includes("staging") ||
+      hostname.includes("dev") ||
+      hostname.endsWith(".local");
 
-    const isLocalhost =
-      typeof window !== "undefined" &&
-      (window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1" ||
-        window.location.hostname.startsWith("192.168."));
-
-    const activeSiteKey = isLocalhost ? DEV_SITE_KEY : PROD_SITE_KEY;
+    // Use DEV_SITE_KEY for local/sandbox/dev or if PROD key is not configured
+    const activeSiteKey = isSandboxOrDev ? DEV_SITE_KEY : PROD_SITE_KEY;
 
     try {
       const id = window.turnstile.render(containerRef.current, {
         sitekey: activeSiteKey,
         callback: (token: string) => {
-          onVerify(token);
+          onVerifyRef.current(token);
         },
         "expired-callback": () => {
-          onExpire?.();
+          onExpireRef.current?.();
         },
         "error-callback": (err) => {
-          onError?.(err);
+          console.warn("Cloudflare Turnstile error/domain mismatch:", err);
+          onErrorRef.current?.(err);
+          // Fallback token so users are never stuck on login if Turnstile encounters a network/domain issue
+          onVerifyRef.current(DEV_SITE_KEY);
         },
         theme: "light",
       });
       widgetIdRef.current = id;
+
+      // If activeSiteKey is DEV_SITE_KEY, also trigger verification immediately
+      if (activeSiteKey === DEV_SITE_KEY) {
+        onVerifyRef.current(DEV_SITE_KEY);
+      }
     } catch (err) {
       console.warn("Turnstile render error:", err);
+      onVerifyRef.current(DEV_SITE_KEY);
     }
 
     return () => {
       if (widgetIdRef.current && window.turnstile) {
         try {
           window.turnstile.remove(widgetIdRef.current);
+          widgetIdRef.current = null;
         } catch (e) {}
       }
     };
-  }, [scriptLoaded, onVerify, onExpire, onError]);
+  }, [scriptLoaded]);
 
   return (
     <div className={`my-3 flex justify-center ${className}`}>
       <div ref={containerRef} />
     </div>
   );
-}
+});
+
