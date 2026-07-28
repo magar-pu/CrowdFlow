@@ -29,10 +29,20 @@ type Order struct {
 	ExpiresAt              time.Time `json:"expires_at"`
 }
 
+type OrderMailDetails struct {
+	PurchaserEmail string
+	EventTitle     string
+	DateVenue      string
+	TicketTier     string
+	TicketCode     string
+}
+
 type Repository interface {
 	CreateOrder(ctx context.Context, order *Order) error
 	UpdateOrderStatus(ctx context.Context, orderID string, status string, externalTransactionID string) error
 	GetOrderByID(ctx context.Context, orderID string) (*Order, error)
+	GetOrderDetailsForMail(ctx context.Context, orderID string) (*OrderMailDetails, error)
+	GetUserForPayment(ctx context.Context, userID int) (email string, fullName string, err error)
 }
 
 type Service interface {

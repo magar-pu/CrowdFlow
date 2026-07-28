@@ -1,11 +1,21 @@
 package ticket
 
+import (
+	"log"
+
+	"crowdflow-backend/internal/mail"
+)
+
 type TicketService struct {
-	repo Repository
+	repo        Repository
+	mailService mail.Service
 }
 
-func NewService(repo Repository) *TicketService {
-	return &TicketService{repo: repo}
+func NewService(repo Repository, mailService mail.Service) *TicketService {
+	return &TicketService{
+		repo:        repo,
+		mailService: mailService,
+	}
 }
 
 func (s *TicketService) GetUserTickets(userID int) ([]*Ticket, error) {
@@ -45,6 +55,17 @@ func (s *TicketService) RequestOTP(ticketID string, userID int, email string) (*
 	if err != nil {
 		return nil, err
 	}
+
+	if s.mailService != nil && email != "" {
+		go func(to string, code string) {
+			if err := s.mailService.SendOTP(to, code, "Klaim Tiket Event"); err != nil {
+				log.Printf("[TICKET OTP ERROR] Failed to send OTP email to %s: %v", to, err)
+			} else {
+				log.Printf("[TICKET OTP SUCCESS] Verification OTP sent to %s via Resend", to)
+			}
+		}(email, otpCode)
+	}
+
 	return &RequestOTPResponse{
 		Message:  "OTP sent successfully to " + email,
 		DebugOTP: otpCode,

@@ -25,19 +25,16 @@ const BACKEND_READY = true; // Flip ke true setelah Go backend live
 function SignInPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, is_authenticated, login, set_user_from_api } = useAuthStore();
+  const { user, is_authenticated, login, set_user_from_api, logout } = useAuthStore();
   const [error_message, set_error_message] = useState("");
   const [success_message, set_success_message] = useState("");
 
-  // Redirect away if already authenticated
+  // Redirect away if already authenticated (respecting ?from= query param)
   useEffect(() => {
     if (is_authenticated && user) {
       const from = searchParams.get("from");
-      if (from && from !== "/login") {
-        router.replace(from);
-      } else {
-        router.replace(getRoleLandingPath(user.role));
-      }
+      const validFrom = from && !from.startsWith("/login") && !from.startsWith("/register") ? from : null;
+      router.replace(validFrom || getRoleLandingPath(user.role));
     }
   }, [is_authenticated, user, router, searchParams]);
 
@@ -59,22 +56,24 @@ function SignInPageContent() {
   async function handle_submit(
     email: string,
     password: string,
-    _stay_signed_in: boolean
+    _stay_signed_in: boolean,
+    turnstile_token?: string
   ) {
     set_error_message("");
     set_success_message("");
 
     if (BACKEND_READY) {
       // ── Path A: Real backend ──────────────────────────────────────
-      const result = await loginUser({ email, password });
+      const result = await loginUser({ email, password, turnstile_token });
 
       if (result.success && result.data) {
         // Sync user from API response to Zustand
         set_user_from_api(result.data);
 
-        // Redirect dynamically based on user platform role — super_admin →
-        // /admin, verified_organizer → /organizer, auditor → /auditor, else /.
-        router.push(getRoleLandingPath(result.data.role ?? ""));
+        const from = searchParams.get("from");
+        const validFrom = from && !from.startsWith("/login") && !from.startsWith("/register") ? from : null;
+        const targetPath = validFrom || getRoleLandingPath(result.data.role ?? "");
+        router.push(targetPath);
       } else {
         set_error_message(result.error?.message ?? "Login failed.");
         throw new Error(result.error?.message);
@@ -86,7 +85,9 @@ function SignInPageContent() {
         set_error_message(result.message);
         throw new Error(result.message);
       }
-      router.push("/");
+      const from = searchParams.get("from");
+      const validFrom = from && !from.startsWith("/login") && !from.startsWith("/register") ? from : null;
+      router.push(validFrom || "/");
     }
   }
 
@@ -105,8 +106,10 @@ function SignInPageContent() {
       if (result.success) {
         // Sync Google user to Zustand as well
         set_user_from_api(result.data);
-        // Same role-based landing as the password flow.
-        router.push(getRoleLandingPath(result.data?.role ?? ""));
+        const from = searchParams.get("from");
+        const validFrom = from && !from.startsWith("/login") && !from.startsWith("/register") ? from : null;
+        const targetPath = validFrom || getRoleLandingPath(result.data?.role ?? "");
+        router.push(targetPath);
       } else {
         set_error_message(result.error?.message ?? "Google login failed.");
       }

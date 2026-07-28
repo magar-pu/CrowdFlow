@@ -9,11 +9,21 @@ import { TicketActions } from "@/components/your-ticket/TicketActions";
 import ResellTicketModal from "@/components/your-ticket/ResellTicketModal";
 import { getMyTickets, UserTicket } from "@/lib/api/tickets";
 import { cancelResaleListing } from "@/lib/api/resale";
+import { generateTicketPdf } from "@/utils/generateTicketPdf";
 import type { PurchasedTicket, Order } from "@/types/ticket";
+
+import { useSearchParams } from "next/navigation";
+import { useAuthStore } from "@/lib/store/authStore";
 
 export default function YourTicketPage() {
   const params = useParams<{ order_id: string }>();
+  const searchParams = useSearchParams();
+  const authUser = useAuthStore((state) => state.user);
   const orderIdParam = params.order_id || "";
+
+  const queryAmount = Number(searchParams?.get("amount") || searchParams?.get("price") || 0);
+  const queryEmail = searchParams?.get("email") || authUser?.email || "";
+  const queryTitle = searchParams?.get("title") || searchParams?.get("event_title") || "";
 
   const [show_resell_modal, set_show_resell_modal] = useState(false);
   const [isListed, setIsListed] = useState(false);
@@ -22,7 +32,7 @@ export default function YourTicketPage() {
     ticket_id: orderIdParam || "test-ticket-id",
     order_id: orderIdParam || "test-order-id",
     event_id: "18",
-    event_title: "events test",
+    event_title: queryTitle || "events test",
     event_category_label: "VIP Test Tier",
     cover_image_url: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=900&auto=format&fit=crop",
     starts_at: new Date().toISOString(),
@@ -35,8 +45,8 @@ export default function YourTicketPage() {
     qr_payload: "",
   });
 
-  const [orderAmount, setOrderAmount] = useState<number>(150000);
-  const [userEmail, setUserEmail] = useState<string>("admin@crowdflow.my.id");
+  const [orderAmount, setOrderAmount] = useState<number>(queryAmount > 0 ? queryAmount : 150000);
+  const [userEmail, setUserEmail] = useState<string>(queryEmail || "your email");
 
   // Load sticky state & fetch dynamic ticket from DB
   useEffect(() => {
@@ -59,7 +69,7 @@ export default function YourTicketPage() {
               ticket_id: matched.id,
               order_id: matched.orderId,
               event_id: String(matched.eventId),
-              event_title: matched.eventName || "events test",
+              event_title: matched.eventName || queryTitle || "events test",
               event_category_label: matched.tierName || "VIP Pass",
               cover_image_url: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=900&auto=format&fit=crop",
               starts_at: matched.createdAt || new Date().toISOString(),
@@ -71,7 +81,7 @@ export default function YourTicketPage() {
               ticket_code: `CF-${matched.id.substring(0, 8).toUpperCase()}`,
               qr_payload: "",
             });
-            if (matched.unitPrice) setOrderAmount(matched.unitPrice);
+            if (matched.unitPrice && matched.unitPrice > 0) setOrderAmount(matched.unitPrice);
             if (matched.attendeeEmail) setUserEmail(matched.attendeeEmail);
           }
         }
@@ -83,14 +93,14 @@ export default function YourTicketPage() {
     }
 
     loadDynamicTicket();
-  }, [orderIdParam]);
+  }, [orderIdParam, queryTitle]);
 
   function handle_add_to_wallet() {
     console.log("Add to Apple Wallet:", currentTicket.ticket_id);
   }
 
   function handle_download_pdf() {
-    console.log("Download PDF ticket:", currentTicket.ticket_id);
+    generateTicketPdf(currentTicket, orderAmount, userEmail);
   }
 
   async function handle_share() {
@@ -109,22 +119,19 @@ export default function YourTicketPage() {
   }
 
   async function handle_cancel_listing() {
-    const listingId = localStorage.getItem("dummy_listing_id");
-    if (!listingId) {
-      alert("Error: Listing ID not found in local storage.");
-      return;
-    }
-
-    const res = await cancelResaleListing(listingId);
-    if (!res.success) {
-      alert(res.error?.message || "Failed to cancel listing.");
-      return;
+    const listingId = localStorage.getItem('dummy_listing_id');
+    if (listingId) {
+      const res = await cancelResaleListing(listingId);
+      if (!res.success) {
+        alert(res.error?.message || "Failed to cancel listing.");
+        return;
+      }
     }
 
     setIsListed(false);
-    localStorage.setItem("dummy_is_listed", "false");
-    localStorage.removeItem("dummy_listing_id");
-    alert("Resale listing cancelled successfully. The ticket is back in your possession.");
+    localStorage.removeItem('dummy_is_listed');
+    localStorage.removeItem('dummy_listing_id');
+    alert("Resale listing cancelled. The ticket is back in your possession.");
   }
 
   return (

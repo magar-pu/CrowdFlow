@@ -292,7 +292,8 @@ export default function SeatSelectionPage() {
   function handle_choose_ga(next_id: number) {
     if (mode === "ga" && next_id === ga_tier_id) return;
     clear_seats();
-    set_quantity(0);
+    const target = tiers.find((t) => t.ticket_tier_id === next_id);
+    set_quantity(target?.is_general_admission ? 1 : 0);
     set_hold_error(null);
     set_chosen_mode("ga");
     set_chosen_ga_tier_id(next_id);
@@ -422,11 +423,11 @@ export default function SeatSelectionPage() {
     set_is_submitting(false);
 
     if (res.success && res.data) {
-      // Remembered so returning to this map restores the selection instead of
-      // showing the buyer their own seats as taken.
       storeHoldToken(event_id, res.data.hold_token);
+      const active_tier = active_ga_tier || tiers[0] || { ticket_tier_id: 1, price: 0, name: "Ticket", is_general_admission: false };
+      const qty = active_tier.is_general_admission ? quantity : chosen_seats.length;
       router.push(
-        `/checkout/${event_id}?hold_token=${encodeURIComponent(res.data.hold_token)}`
+        `/checkout/${event_id}?hold_token=${encodeURIComponent(res.data.hold_token)}&ticket_category_id=${active_tier.ticket_tier_id}&quantity=${qty || 1}&price=${active_tier.price}&name=${encodeURIComponent(active_tier.name)}`
       );
       return;
     }
@@ -571,11 +572,8 @@ export default function SeatSelectionPage() {
         {/* Right panel (desktop) / bottom sheet (mobile) */}
         <aside
           className={cn(
-            "fixed inset-x-0 bottom-0 z-50 flex h-[85vh] shrink-0 flex-col rounded-t-3xl border-t border-border-subtle bg-white shadow-[0_-8px_30px_rgba(0,0,0,0.12)] transition-transform duration-300",
-            "md:static md:h-full md:w-[360px] md:translate-y-0 md:rounded-none md:border-l md:border-t-0 md:shadow-[-4px_0_24px_rgba(0,0,0,0.04)]",
-            // Collapsed leaves the handle + header visible; the header is the
-            // toggle back open.
-            sheet_open ? "translate-y-0" : "translate-y-[calc(100%-5.5rem)] md:translate-y-0"
+            "fixed inset-x-0 bottom-0 z-50 flex max-h-[85vh] shrink-0 flex-col rounded-t-3xl border-t border-border-subtle bg-white shadow-[0_-8px_30px_rgba(0,0,0,0.12)] transition-transform duration-300 translate-y-0",
+            "md:static md:h-full md:w-[360px] md:rounded-none md:border-l md:border-t-0 md:shadow-[-4px_0_24px_rgba(0,0,0,0.04)]"
           )}
         >
           <SelectionPanel

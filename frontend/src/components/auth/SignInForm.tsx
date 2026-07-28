@@ -16,11 +16,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { Mail, Eye, EyeOff, ArrowRight, CircleCheck, Loader2, Ticket } from "lucide-react";
 import GoogleLogin from "./GoogleLogin";
+import { Turnstile } from "@/components/common/Turnstile";
 
 type SubmitState = "idle" | "loading" | "success";
 
 interface SignInFormProps {
-  on_submit: (email: string, password: string, stay_signed_in: boolean) => Promise<void> | void;
+  on_submit: (email: string, password: string, stay_signed_in: boolean, turnstile_token?: string) => Promise<void> | void;
   on_google_success: (token: string) => void;
   on_google_error: () => void;
 }
@@ -31,6 +32,7 @@ export function SignInForm({ on_submit, on_google_success, on_google_error }: Si
   const [show_password, set_show_password] = useState(false);
   const [stay_signed_in, set_stay_signed_in] = useState(false);
   const [submit_state, set_submit_state] = useState<SubmitState>("idle");
+  const [turnstileToken, setTurnstileToken] = useState("");
 
   async function handle_submit(e: React.FormEvent) {
     e.preventDefault();
@@ -38,7 +40,7 @@ export function SignInForm({ on_submit, on_google_success, on_google_error }: Si
 
     set_submit_state("loading");
     try {
-      await on_submit(email, password, stay_signed_in);
+      await on_submit(email, password, stay_signed_in, turnstileToken);
       set_submit_state("success");
       // Matches the Stitch screen's 1.5s success pause before resetting —
       // here it instead stays on "success" since the real flow will have
@@ -148,6 +150,9 @@ export function SignInForm({ on_submit, on_google_success, on_google_error }: Si
             Stay signed in for 30 days
           </label>
         </div>
+
+        {/* Turnstile CAPTCHA */}
+        <Turnstile onVerify={(token) => setTurnstileToken(token)} />
 
         {/* Submit */}
         <button
