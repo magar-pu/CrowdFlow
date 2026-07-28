@@ -151,7 +151,8 @@ SELECT v, 'adopted: artifact already present' FROM (VALUES
     ('0025_bank_verification_actor.sql',                  pg_temp.col('organizer_applications', 'bank_verified_by')),
     ('0026_organizer_document_versions.sql',              pg_temp.col('organizer_documents', 'is_current')),
     ('0027_organizer_document_gate.sql',                  pg_temp.col('organizer_applications', 'document_gate_exempt')),
-    ('0028_payout_review_checks.sql',                     pg_temp.tbl('public.payout_review_checks'))
+    ('0028_payout_review_checks.sql',                     pg_temp.tbl('public.payout_review_checks')),
+    ('0029_event_google_maps_url.sql',                    pg_temp.col('events', 'google_maps_url'))
 ) AS probe(v, present)
 WHERE present
 ON CONFLICT (version) DO NOTHING;
@@ -417,6 +418,14 @@ SELECT NOT EXISTS (SELECT 1 FROM crowdflow_migrations WHERE version = :'f') AS r
 \if :run_it
 \echo '  applying 0028_payout_review_checks.sql'
 \ir 0028_payout_review_checks.sql
+INSERT INTO crowdflow_migrations (version) VALUES (:'f');
+\endif
+
+\set f '0029_event_google_maps_url.sql'
+SELECT NOT EXISTS (SELECT 1 FROM crowdflow_migrations WHERE version = :'f') AS run_it \gset
+\if :run_it
+\echo '  applying 0029_event_google_maps_url.sql'
+\ir 0029_event_google_maps_url.sql
 INSERT INTO crowdflow_migrations (version) VALUES (:'f');
 \endif
 
