@@ -18,12 +18,37 @@ func NewBookingService(repo Repository) *BookingService {
 	return &BookingService{repo: repo}
 }
 
+// ErrEventNotOnSale means the event is not visible to buyers — never approved,
+// withdrawn from sale by its organizer, or archived. Handlers turn it into a
+// 404 rather than a 403, so an event id cannot be confirmed by probing.
+var ErrEventNotOnSale = errors.New("event is not on sale")
+
 func (s *BookingService) ListTicketTiers(eventID int) ([]*TicketTier, error) {
+	if err := s.assertOnSale(eventID); err != nil {
+		return nil, err
+	}
 	return s.repo.ListTicketTiers(eventID)
 }
 
 func (s *BookingService) GetSeatMap(eventID int) (*SeatMap, error) {
+	if err := s.assertOnSale(eventID); err != nil {
+		return nil, err
+	}
 	return s.repo.GetSeatMap(eventID)
+}
+
+// assertOnSale guards the buyer-facing reads. Without it an unpublished event
+// still served its tiers and a fully interactive seat map to anyone with the
+// link; the refusal only came at the hold, after the buyer had picked seats.
+func (s *BookingService) assertOnSale(eventID int) error {
+	onSale, err := s.repo.IsEventOnSale(eventID)
+	if err != nil {
+		return err
+	}
+	if !onSale {
+		return ErrEventNotOnSale
+	}
+	return nil
 }
 
 // CreateHold locks inventory for a buyer's selection.

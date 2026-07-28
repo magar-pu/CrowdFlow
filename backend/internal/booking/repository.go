@@ -268,6 +268,30 @@ func (r *PostgresRedisRepository) GetMaxPerOrder(ticketTierID int) (int, error) 
 	return max, err
 }
 
+// IsEventOnSale is the event-level counterpart to IsTierBookable, for the
+// endpoints that take an event id rather than a tier id.
+//
+// The seat map and the public tier list did not check this at all, so an
+// unpublished event still served a full, selectable seat map over a direct
+// link and only refused at the hold — the last click of the funnel.
+func (r *PostgresRedisRepository) IsEventOnSale(eventID int) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var onSale bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT status = 'approved'
+		   AND published_at IS NOT NULL
+		   AND archived_at IS NULL
+		FROM events
+		WHERE id = $1
+	`, eventID).Scan(&onSale)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	return onSale, err
+}
+
 // IsTierBookable resolves the event from the ticket tier rather than trusting
 // req.EventID, which is client-supplied and never cross-checked against the
 // tier anywhere else in the hold path.

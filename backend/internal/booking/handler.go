@@ -2,6 +2,7 @@ package booking
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -37,6 +38,10 @@ func (h *Handler) handleListTicketTiers(w http.ResponseWriter, r *http.Request) 
 
 	tiers, err := h.service.ListTicketTiers(eventID)
 	if err != nil {
+		if errors.Is(err, ErrEventNotOnSale) {
+			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Event not found")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load ticket tiers")
 		return
 	}
@@ -52,6 +57,10 @@ func (h *Handler) handleGetSeatMap(w http.ResponseWriter, r *http.Request) {
 
 	seatMap, err := h.service.GetSeatMap(eventID)
 	if err != nil {
+		if errors.Is(err, ErrEventNotOnSale) {
+			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Event not found")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load seat map")
 		return
 	}

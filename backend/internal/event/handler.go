@@ -264,8 +264,14 @@ func (h *Handler) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If event is not approved, authorize the request (only organizer or Super Admin can view)
-	if evt.Status != "approved" {
+	// Hidden from buyers unless BOTH hold: the auditor approved it, and the
+	// organizer has it published. Gating on status alone let an unpublished
+	// event keep serving its detail page — it stays 'approved' when the
+	// organizer withdraws it, so the check below was skipped entirely and a
+	// direct link still reached a page with a working buy CTA.
+	//
+	// Only the organizer or a Super Admin may see it in that state.
+	if evt.Status != "approved" || evt.PublishedAt == nil {
 		claims, ok := middleware.GetClaims(r.Context())
 		if !ok {
 			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Event not found or not approved")

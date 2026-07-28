@@ -143,6 +143,10 @@ type Repository interface {
 	// (ticket_tiers.max_ticket_per_user). Zero or less means uncapped.
 	GetMaxPerOrder(ticketTierID int) (int, error)
 
+	// IsEventOnSale reports whether the event itself is visible to buyers:
+	// approved by an auditor, published by its organizer, and not archived.
+	IsEventOnSale(eventID int) (bool, error)
+
 	// IsTierBookable reports whether the tier's event is currently on sale:
 	// approved by an auditor, published by its organizer, and not archived.
 	// Resolved from the TIER, not the client-supplied event_id.

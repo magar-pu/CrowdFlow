@@ -41,6 +41,10 @@ type Event struct {
 	EventTypeID                   int       `json:"event_type_id"`
 	CoverImageURL                 string    `json:"cover_image_url"`
 	LayoutID                      *int      `json:"layout_id"` // bound venue layout; nil = none
+	// PublishedAt is the organizer's decision to go on sale, distinct from the
+	// auditor's `status`. nil means withdrawn or never published, which hides
+	// the event from buyers even while it stays 'approved'.
+	PublishedAt *time.Time `json:"published_at"`
 	// GoogleMapsURL is the organizer's own map link for this event (0029).
 	// Empty means none set — clients fall back to a name+address search.
 	GoogleMapsURL string `json:"google_maps_url"`
