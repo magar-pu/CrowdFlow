@@ -11,6 +11,8 @@ import {
   updateTicketTier,
   deleteTicketTier,
   getEventSeating,
+  getOrganizerEvent,
+  setEventMaxTicketsPerOrder,
   type OrganizerTicketTier,
   type EventSeating,
 } from "@/lib/api/eorganizer";
@@ -29,7 +31,6 @@ function toTicketTier(t: OrganizerTicketTier, i: number): TicketTier {
     capacity: t.capacity,
     status: (t.status as TicketTier["status"]) || "On Sale",
     color: TIER_COLORS[i % TIER_COLORS.length],
-    maxPerOrder: t.maxPerOrder,
     salesStart: t.salesStart ? t.salesStart.slice(0, 10) : undefined,
     salesEnd: t.salesEnd ? t.salesEnd.slice(0, 10) : undefined,
     description: t.description,
@@ -43,6 +44,9 @@ export default function OrganizerEventTicketsPage() {
   // Seat-map figures back the "Seats Priced" tile: real capacity is however many
   // seats carry a tier, not the sum of the tiers' allocation limits.
   const [seating, setSeating] = useState<EventSeating | null>(null);
+  // Event-level order cap. 0 means uncapped, which is a real setting rather
+  // than a missing one, so it is seeded from the event and not defaulted here.
+  const [maxTicketsPerOrder, setMaxTicketsPerOrder] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,9 +58,10 @@ export default function OrganizerEventTicketsPage() {
     }
     setLoading(true);
     setError(null);
-    const [res, seatingRes] = await Promise.all([
+    const [res, seatingRes, eventRes] = await Promise.all([
       listTicketTiers(eventId),
       getEventSeating(eventId),
+      getOrganizerEvent(eventId),
     ]);
     if (res.success && res.data) {
       setTiers(res.data.map(toTicketTier));
@@ -66,6 +71,9 @@ export default function OrganizerEventTicketsPage() {
     // A missing seat map is the normal state of a draft, not an error — the tile
     // renders "No seat map yet" rather than failing the whole tab.
     setSeating(seatingRes.success && seatingRes.data ? seatingRes.data : null);
+    if (eventRes.success && eventRes.data) {
+      setMaxTicketsPerOrder(eventRes.data.maxTicketsPerOrder ?? 0);
+    }
     setLoading(false);
   }, [eventId]);
 
@@ -79,9 +87,6 @@ export default function OrganizerEventTicketsPage() {
       price: tier.price,
       capacity: tier.capacity,
       status: tier.status ?? "On Sale",
-      // 0 lets the backend fall back to the ticket_tiers column default (4)
-      // rather than writing "uncapped".
-      maxPerOrder: tier.maxPerOrder ?? 0,
       salesStart: tier.salesStart ?? "",
       salesEnd: tier.salesEnd ?? "",
       description: tier.description ?? "",
@@ -94,6 +99,19 @@ export default function OrganizerEventTicketsPage() {
     const res = await updateTicketTier(eventId, Number(id), updated as Partial<OrganizerTicketTier>);
     if (res.success) await load();
     else setError(res.error?.message ?? "Failed to update ticket tier");
+  };
+
+  /**
+   * Throws on failure so the card can show its own inline error and keep the
+   * value the organizer typed, rather than this page replacing the whole tab
+   * with a banner.
+   */
+  const handleSaveMaxTicketsPerOrder = async (value: number) => {
+    const res = await setEventMaxTicketsPerOrder(eventId, value);
+    if (!res.success) {
+      throw new Error(res.error?.message ?? "Failed to save the order limit");
+    }
+    setMaxTicketsPerOrder(value);
   };
 
   const handleDelete = async (id: string) => {
@@ -115,6 +133,8 @@ export default function OrganizerEventTicketsPage() {
         <WorkspaceTickets
           ticketTiers={tiers}
           seating={seating}
+          maxTicketsPerOrder={maxTicketsPerOrder}
+          onSaveMaxTicketsPerOrder={handleSaveMaxTicketsPerOrder}
           onCreateTier={handleCreate}
           onUpdateTier={handleUpdate}
           onDeleteTier={handleDelete}

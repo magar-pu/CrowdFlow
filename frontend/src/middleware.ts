@@ -31,7 +31,13 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
-  // 2. Smart Auto-Redirect for common typos & aliases
+  // 2. The buyer wallet existed only to settle resale payouts, so it went with
+  // resale. Bank accounts (organizer payout destinations) live on /profile.
+  if (pathname.startsWith("/profile/payments")) {
+    return NextResponse.redirect(new URL("/profile", request.url));
+  }
+
+  // 3. Smart Auto-Redirect for common typos & aliases
   if (SMART_REDIRECT_ALIASES[lowerPath]) {
     return NextResponse.redirect(new URL(SMART_REDIRECT_ALIASES[lowerPath], request.url));
   }

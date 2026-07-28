@@ -18,6 +18,10 @@ type Ticket struct {
 	TicketStatus       string    `json:"ticketStatus"`
 	SeatLabel          string    `json:"seatLabel"`
 	UnitPrice          float64   `json:"unitPrice"`
+	EventStart         *time.Time `json:"eventStart,omitempty"`
+	VenueName          string    `json:"venueName,omitempty"`
+	VenueCity          string    `json:"venueCity,omitempty"`
+	CoverImageURL      string    `json:"coverImageUrl,omitempty"`
 	SecretKey          string    `json:"secretKey,omitempty"`
 	EventEndTime       string    `json:"eventEndTime,omitempty"`
 	CreatedAt          time.Time `json:"createdAt"`
@@ -59,8 +63,7 @@ type RequestOTPRequest struct {
 }
 
 type RequestOTPResponse struct {
-	Message  string `json:"message"`
-	DebugOTP string `json:"debugOtp,omitempty"`
+	Message string `json:"message"`
 }
 
 type VerifyOTPRequest struct {

@@ -53,7 +53,6 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
   const [otpCodeInput, setOtpCodeInput] = useState<string>("");
   const [otpStep, setOtpStep] = useState<"IDLE" | "SENT" | "VERIFYING">("IDLE");
   const [otpError, setOtpError] = useState<string>("");
-  const [debugOtp, setDebugOtp] = useState<string>("");
 
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isCached, setIsCached] = useState<boolean>(false);
@@ -110,9 +109,6 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
       const res = await requestTicketOTP(ticketId, targetEmail);
       if (res.success) {
         setOtpStep("SENT");
-        if (res.data?.debugOtp) {
-          setDebugOtp(res.data.debugOtp);
-        }
       } else {
         setOtpError(res.error?.message || "Gagal mengirimkan OTP ke email");
       }

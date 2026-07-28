@@ -265,7 +265,7 @@ func (r *PostgresRepository) GetByID(id int) (*Event, error) {
 			e.id, e.venue_id, e.organizer_id, e.event_name, COALESCE(e.description, ''), e.event_start, e.event_end,
 			e.entertainment_tax_rate, e.entertainment_tax_passed_to_buyer, e.status, e.created_at, e.updated_at,
 			e.event_type_id, COALESCE(e.cover_image_url, ''), e.layout_id,
-			COALESCE(e.google_maps_url, ''), e.published_at,
+			COALESCE(e.google_maps_url, ''), e.published_at, e.max_tickets_per_order,
 			COALESCE(sales.recent_sold, 0),
 			v.id, COALESCE(v.name, ''), COALESCE(v.address, ''), COALESCE(v.city, ''), COALESCE(v.province, ''), COALESCE(v.total_capacity, 0),
 			u.id, COALESCE(up.full_name, ''), COALESCE(up.avatar_pic, '')
@@ -291,7 +291,7 @@ func (r *PostgresRepository) GetByID(id int) (*Event, error) {
 	`, id).Scan(
 		&e.ID, &e.VenueID, &e.OrganizerID, &e.EventName, &e.Description, &e.EventStart, &e.EventEnd,
 		&e.EntertainmentTaxRate, &e.EntertainmentTaxPassedToBuyer, &e.Status, &e.CreatedAt, &e.UpdatedAt,
-		&eventTypeID, &coverImageURL, &layoutID, &e.GoogleMapsURL, &publishedAt, &e.RecentSales,
+		&eventTypeID, &coverImageURL, &layoutID, &e.GoogleMapsURL, &publishedAt, &e.MaxTicketsPerOrder, &e.RecentSales,
 		&vID, &vName, &vAddress, &vCity, &vProvince, &vCapacity,
 		&oID, &oName, &oAvatar,
 	)

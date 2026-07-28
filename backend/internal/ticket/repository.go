@@ -85,13 +85,19 @@ func (r *PostgresRepository) GetUserTickets(userID int) ([]*Ticket, error) {
 			t.unit_price,
 			t.created_at,
 			t.updated_at,
-			COALESCE(esm.section_name || ' Row ' || esm.row_name || ' Seat ' || esm.seat_number::text, 'General Admission') as seat_label
+			COALESCE('Row ' || s.row_number || ' Seat ' || s.seat_number, 'General Admission') as seat_label,
+			e.event_start,
+			COALESCE(v.name, '') as venue_name,
+			COALESCE(v.city, '') as venue_city,
+			COALESCE(e.cover_image_url, '') as cover_image_url
 		FROM tickets t
 		JOIN orders o ON t.order_id = o.id
 		JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
 		LEFT JOIN events e ON tt.event_id = e.id
+		LEFT JOIN venues v ON v.id = e.venue_id
 		LEFT JOIN event_seats_matrix esm ON t.event_seats_matrix_id = esm.id
-		WHERE o.user_id = $1
+		LEFT JOIN seats s ON s.id = esm.seat_id
+		WHERE o.purchaser_id = $1
 		ORDER BY t.created_at DESC
 	`
 
@@ -104,6 +110,9 @@ func (r *PostgresRepository) GetUserTickets(userID int) ([]*Ticket, error) {
 	var result []*Ticket
 	for rows.Next() {
 		t := &Ticket{}
+		// events is LEFT JOINed, so a ticket whose event row is missing still
+		// returns rather than failing the whole list.
+		var eventStart sql.NullTime
 		err := rows.Scan(
 			&t.ID,
 			&t.OrderID,
@@ -120,9 +129,16 @@ func (r *PostgresRepository) GetUserTickets(userID int) ([]*Ticket, error) {
 			&t.CreatedAt,
 			&t.UpdatedAt,
 			&t.SeatLabel,
+			&eventStart,
+			&t.VenueName,
+			&t.VenueCity,
+			&t.CoverImageURL,
 		)
 		if err != nil {
 			return nil, err
+		}
+		if eventStart.Valid {
+			t.EventStart = &eventStart.Time
 		}
 		result = append(result, t)
 	}
@@ -147,16 +163,23 @@ func (r *PostgresRepository) GetTicketByID(ticketID string, userID int) (*Ticket
 			t.unit_price,
 			t.created_at,
 			t.updated_at,
-			COALESCE(esm.section_name || ' Row ' || esm.row_name || ' Seat ' || esm.seat_number::text, 'General Admission') as seat_label
+			COALESCE('Row ' || s.row_number || ' Seat ' || s.seat_number, 'General Admission') as seat_label,
+			e.event_start,
+			COALESCE(v.name, '') as venue_name,
+			COALESCE(v.city, '') as venue_city,
+			COALESCE(e.cover_image_url, '') as cover_image_url
 		FROM tickets t
 		JOIN orders o ON t.order_id = o.id
 		JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
 		LEFT JOIN events e ON tt.event_id = e.id
+		LEFT JOIN venues v ON v.id = e.venue_id
 		LEFT JOIN event_seats_matrix esm ON t.event_seats_matrix_id = esm.id
-		WHERE t.id = $1 AND o.user_id = $2
+		LEFT JOIN seats s ON s.id = esm.seat_id
+		WHERE t.id = $1 AND o.purchaser_id = $2
 	`
 
 	t := &Ticket{}
+	var eventStart sql.NullTime
 	err := r.db.QueryRow(query, ticketID, userID).Scan(
 		&t.ID,
 		&t.OrderID,
@@ -173,9 +196,16 @@ func (r *PostgresRepository) GetTicketByID(ticketID string, userID int) (*Ticket
 		&t.CreatedAt,
 		&t.UpdatedAt,
 		&t.SeatLabel,
+		&eventStart,
+		&t.VenueName,
+		&t.VenueCity,
+		&t.CoverImageURL,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("ticket not found or access denied")
+	}
+	if eventStart.Valid {
+		t.EventStart = &eventStart.Time
 	}
 
 	return t, nil
@@ -387,18 +417,27 @@ func minLen(s string, n int) int {
 func (r *PostgresRepository) VerifyTicketOTP(ticketID string, userID int, email string, otpCode string) (bool, string, error) {
 	otpCode = strings.TrimSpace(otpCode)
 
-	// Dev/Admin fallback shortcut
-	if otpCode == "123456" {
-		vaultToken := fmt.Sprintf("vt-%s-%d", ticketID[:minLen(ticketID, 8)], time.Now().Unix())
-		return true, vaultToken, nil
-	}
-
+	// The OTP must be bound to the ticket it was issued for, to the email it was
+	// sent to, and to its validity window. Matching on otp_code alone let any
+	// outstanding code open any ticket's vault, forever.
+	//
+	// ticketID may be either a ticket id or an order id: RequestTicketOTP
+	// resolves both to the ticket UUID before storing, so the lookup has to
+	// accept both here too.
 	var otpID int
 	err := r.db.QueryRow(`
-		SELECT tao.id FROM ticket_access_otps tao
-		WHERE tao.otp_code = $1 AND tao.is_verified = false
+		SELECT tao.id
+		FROM ticket_access_otps tao
+		JOIN tickets t ON t.id = tao.ticket_id
+		JOIN orders o ON o.id = t.order_id
+		WHERE (t.id::text = $1 OR t.order_id::text = $1)
+		  AND tao.otp_code = $2
+		  AND lower(tao.email) = lower($3)
+		  AND tao.is_verified = false
+		  AND tao.expires_at > NOW()
+		  AND ($4 = 0 OR o.purchaser_id = $4)
 		ORDER BY tao.created_at DESC LIMIT 1
-	`, otpCode).Scan(&otpID)
+	`, ticketID, otpCode, email, userID).Scan(&otpID)
 
 	if err != nil {
 		return false, "", fmt.Errorf("kode OTP tidak valid atau sudah kadaluarsa")
@@ -419,16 +458,17 @@ func (r *PostgresRepository) GetTicketVaultData(ticketID string, userID int) (*T
 			tt.name as tier_name,
 			t.attendee_full_name,
 			t.attendee_email,
-			COALESCE(esm.section_name || ' Row ' || esm.row_name || ' Seat ' || esm.seat_number::text, 'General Admission') as seat_label,
+			COALESCE('Row ' || s.row_number || ' Seat ' || s.seat_number, 'General Admission') as seat_label,
 			t.ticket_status::text,
 			COALESCE(t.secret_key, '') as secret_key,
-			COALESCE(to_char(e.end_time, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(e.start_date + INTERVAL '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), '') as event_end_time
+			COALESCE(to_char(e.event_end, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(e.event_start + INTERVAL '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), '') as event_end_time
 		FROM tickets t
 		JOIN orders o ON t.order_id = o.id
 		JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
 		LEFT JOIN events e ON tt.event_id = e.id
 		LEFT JOIN event_seats_matrix esm ON t.event_seats_matrix_id = esm.id
-		WHERE (t.id::text = $1 OR t.order_id::text = $1) AND ($2 = 0 OR o.user_id = $2)
+		LEFT JOIN seats s ON s.id = esm.seat_id
+		WHERE (t.id::text = $1 OR t.order_id::text = $1) AND ($2 = 0 OR o.purchaser_id = $2)
 		LIMIT 1
 	`
 

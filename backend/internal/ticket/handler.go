@@ -118,7 +118,8 @@ func (h *TicketHandler) verifyOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.OTPCode == "" {
-		req.OTPCode = "123456" // Default test admin OTP code
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Kode OTP wajib diisi")
+		return
 	}
 
 	if req.Email != "" {

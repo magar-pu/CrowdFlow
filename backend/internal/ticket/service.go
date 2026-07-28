@@ -66,9 +66,11 @@ func (s *TicketService) RequestOTP(ticketID string, userID int, email string) (*
 		}(email, otpCode)
 	}
 
+	// The OTP is deliberately NOT echoed back in the response: the whole point
+	// of the mail round-trip is to prove the caller controls the mailbox.
+	// In development the code is still recoverable from the backend log.
 	return &RequestOTPResponse{
-		Message:  "OTP sent successfully to " + email,
-		DebugOTP: otpCode,
+		Message: "OTP sent successfully to " + email,
 	}, nil
 }
 

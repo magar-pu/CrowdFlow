@@ -62,6 +62,7 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("PUT /api/organizer/events/{id}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUpdateEvent)))))
 	mux.Handle("PUT /api/organizer/events/{id}/venue", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleSetEventVenue)))))
 	mux.Handle("PUT /api/organizer/events/{id}/maps-url", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleSetEventMapsURL)))))
+	mux.Handle("PUT /api/organizer/events/{id}/max-tickets-per-order", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleSetEventMaxTicketsPerOrder)))))
 	mux.Handle("POST /api/organizer/events/{id}/cover", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUploadEventCover)))))
 	mux.Handle("POST /api/organizer/events/{id}/withdraw", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleWithdrawEvent)))))
 	// "listing" rather than "publish": PATCH .../publish above already means
@@ -686,6 +687,54 @@ func (h *Handler) handleSetEventMapsURL(w http.ResponseWriter, r *http.Request) 
 	}
 
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Map link updated successfully"})
+}
+
+// handleSetEventMaxTicketsPerOrder stores how many tickets one order may
+// contain for this event, across all ticket types combined. 0 means no limit.
+func (h *Handler) handleSetEventMaxTicketsPerOrder(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
+		return
+	}
+
+	eventID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+
+	// A pointer distinguishes "field omitted" from an explicit 0, which is a
+	// meaningful value here (uncapped) rather than a missing one.
+	var body struct {
+		MaxTicketsPerOrder *int `json:"max_tickets_per_order"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request payload")
+		return
+	}
+	if body.MaxTicketsPerOrder == nil {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "max_tickets_per_order is required")
+		return
+	}
+
+	err = h.service.SetEventMaxTicketsPerOrder(r.Context(), eventID, userID, *body.MaxTicketsPerOrder)
+	if err != nil {
+		if errors.Is(err, ErrValidation) {
+			response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+			return
+		}
+		log.Printf("SetEventMaxTicketsPerOrder error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to save the ticket limit")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Ticket limit updated successfully"})
 }
 
 // handleUploadEventCover replaces the event's cover art. Multipart, one file

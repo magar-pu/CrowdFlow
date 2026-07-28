@@ -6,9 +6,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { PurchaseSuccessHeader } from "@/components/your-ticket/PurchaseSuccessHeader";
 import { DigitalTicketCard } from "@/components/your-ticket/DigitalTicketCard";
 import { TicketActions } from "@/components/your-ticket/TicketActions";
-import ResellTicketModal from "@/components/your-ticket/ResellTicketModal";
 import { getMyTickets, UserTicket } from "@/lib/api/tickets";
-import { cancelResaleListing } from "@/lib/api/resale";
 import { generateTicketPdf } from "@/utils/generateTicketPdf";
 import type { PurchasedTicket, Order } from "@/types/ticket";
 
@@ -25,8 +23,6 @@ export default function YourTicketPage() {
   const queryEmail = searchParams?.get("email") || authUser?.email || "";
   const queryTitle = searchParams?.get("title") || searchParams?.get("event_title") || "";
 
-  const [show_resell_modal, set_show_resell_modal] = useState(false);
-  const [isListed, setIsListed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [currentTicket, setCurrentTicket] = useState<PurchasedTicket>({
     ticket_id: orderIdParam || "test-ticket-id",
@@ -48,13 +44,8 @@ export default function YourTicketPage() {
   const [orderAmount, setOrderAmount] = useState<number>(queryAmount > 0 ? queryAmount : 150000);
   const [userEmail, setUserEmail] = useState<string>(queryEmail || "your email");
 
-  // Load sticky state & fetch dynamic ticket from DB
+  // Fetch dynamic ticket from DB
   useEffect(() => {
-    const listed = localStorage.getItem("dummy_is_listed");
-    if (listed === "true") {
-      setIsListed(true);
-    }
-
     async function loadDynamicTicket() {
       setLoading(true);
       try {
@@ -118,22 +109,6 @@ export default function YourTicketPage() {
     }
   }
 
-  async function handle_cancel_listing() {
-    const listingId = localStorage.getItem('dummy_listing_id');
-    if (listingId) {
-      const res = await cancelResaleListing(listingId);
-      if (!res.success) {
-        alert(res.error?.message || "Failed to cancel listing.");
-        return;
-      }
-    }
-
-    setIsListed(false);
-    localStorage.removeItem('dummy_is_listed');
-    localStorage.removeItem('dummy_listing_id');
-    alert("Resale listing cancelled. The ticket is back in your possession.");
-  }
-
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Navbar active_href="" />
@@ -151,26 +126,8 @@ export default function YourTicketPage() {
           on_add_to_wallet={handle_add_to_wallet}
           on_download_pdf={handle_download_pdf}
           on_share={handle_share}
-          on_resell_ticket={() => set_show_resell_modal(true)}
-          on_cancel_resale={handle_cancel_listing}
-          is_listed={isListed}
         />
       </main>
-
-      {show_resell_modal && (
-        <ResellTicketModal
-          ticketId={currentTicket.ticket_id}
-          originalPrice={currentTicket ? orderAmount : 150000}
-          onClose={(success, listingId) => {
-            set_show_resell_modal(false);
-            if (success) {
-              setIsListed(true);
-              localStorage.setItem("dummy_is_listed", "true");
-              if (listingId) localStorage.setItem("dummy_listing_id", listingId);
-            }
-          }}
-        />
-      )}
     </div>
   );
 }

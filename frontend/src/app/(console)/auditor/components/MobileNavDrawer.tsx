@@ -4,7 +4,7 @@ import React from 'react';
 import { AuditorView } from '../types';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store/authStore';
-import { LayoutDashboard, ClipboardCheck, Bell, Settings, ShieldCheck, X, Users2, DollarSign, LogOut } from 'lucide-react';
+import { LayoutDashboard, ClipboardCheck, Bell, Settings, ShieldCheck, X, Users2, DollarSign, Database, LogOut } from 'lucide-react';
 
 interface MobileNavDrawerProps {
   isOpen: boolean;
@@ -16,8 +16,14 @@ interface MobileNavDrawerProps {
   pendingOrganizersCount?: number;
 }
 
+// Order mirrors Sidebar.tsx, which is the desktop equivalent of this list.
+// `events` was missing here, and the desktop Sidebar is `hidden lg:flex` — so
+// below 1024px (tablet AND mobile) this drawer is the only full nav, and the
+// Master Event List was unreachable. `documents` is deliberately kept even
+// though the Sidebar drops it: the Header bell is the desktop route to it.
 const NAV_ITEMS = [
   { view: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
+  { view: 'events' as const, label: 'Events', icon: Database },
   { view: 'reviews' as const, label: 'Reviews', icon: ClipboardCheck },
   { view: 'documents' as const, label: 'Notifications', icon: Bell },
   { view: 'organizers' as const, label: 'Organizers', icon: Users2 },

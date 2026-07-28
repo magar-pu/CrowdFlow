@@ -1,50 +1,76 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ChevronLeft,
   Clock,
   Ticket,
   Search,
-  Download,
   Eye,
-  CheckCircle2,
   AlertCircle,
   RefreshCw,
   Calendar,
-  CreditCard,
-  FileText,
-  Filter,
 } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { getMyTickets, UserTicket } from "@/lib/api/tickets";
 import { formatIDR } from "@/lib/pricing";
 
-type FilterTab = "all" | "paid" | "refunded" | "cancelled" | "expired";
+/**
+ * Only the statuses the backend actually writes.
+ *
+ * The ticket_status enum also carries reserved / resold / cancelled / refunded /
+ * expired / ready, but nothing in the codebase ever writes them — a grep of
+ * every ticket_status assignment turns up only 'issued' and 'used'. The
+ * "refunded" and "cancelled" tabs could therefore never match a row, and
+ * "expired" was wired to 'used', which means checked in, not expired.
+ *
+ * Add tabs back when something writes the status they filter on.
+ */
+type FilterTab = "all" | "paid" | "attended";
+
+const FILTER_TABS: { key: FilterTab; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "paid", label: "Paid" },
+  { key: "attended", label: "Attended" },
+];
 
 export default function PurchaseHistoryPage() {
   const [tickets, setTickets] = useState<UserTicket[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  useEffect(() => {
-    async function loadHistory() {
-      try {
-        const res = await getMyTickets();
-        if (res.success && res.data) {
-          setTickets(res.data.tickets || []);
-        }
-      } catch {
-        // Fallback
-      } finally {
-        setLoading(false);
+  // A failed request used to be swallowed outright, leaving the page showing
+  // "No Purchase Records Found" — indistinguishable from having bought nothing.
+  const loadHistory = useCallback(async () => {
+    try {
+      const res = await getMyTickets();
+      setError(null);
+      if (!res.success) {
+        setError(res.error?.message || "We couldn't load your purchase history.");
+        setTickets([]);
+        return;
       }
+      setTickets(res.data?.tickets ?? []);
+    } catch {
+      setError("We couldn't reach the server. Check your connection and try again.");
+      setTickets([]);
+    } finally {
+      setLoading(false);
     }
-    loadHistory();
   }, []);
+
+  useEffect(() => {
+    // Wrapped so react-hooks/set-state-in-effect can see no synchronous
+    // setState in the effect body.
+    async function run() {
+      await loadHistory();
+    }
+    run();
+  }, [loadHistory]);
 
   const filteredTickets = tickets.filter((t) => {
     const title = t.eventName || "";
@@ -53,11 +79,8 @@ export default function PurchaseHistoryPage() {
       title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       order.toLowerCase().includes(searchQuery.toLowerCase());
 
-    if (activeTab === "all") return matchesSearch;
     if (activeTab === "paid") return matchesSearch && t.ticketStatus === "issued";
-    if (activeTab === "refunded") return matchesSearch && t.ticketStatus === "refunded";
-    if (activeTab === "cancelled") return matchesSearch && t.ticketStatus === "cancelled";
-    if (activeTab === "expired") return matchesSearch && t.ticketStatus === "used";
+    if (activeTab === "attended") return matchesSearch && t.ticketStatus === "used";
     return matchesSearch;
   });
 
@@ -97,17 +120,17 @@ export default function PurchaseHistoryPage() {
         {/* Filter Bar */}
         <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-border-subtle bg-white p-4 shadow-xs sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap gap-2">
-            {(["all", "paid", "refunded", "cancelled", "expired"] as const).map((tab) => (
+            {FILTER_TABS.map((tab) => (
               <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`rounded-xl px-3.5 py-2 text-xs font-bold transition-all capitalize cursor-pointer ${
-                  activeTab === tab
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`rounded-xl px-3.5 py-2 text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === tab.key
                     ? "bg-black text-white shadow-xs"
                     : "bg-surface text-text-secondary hover:bg-surface-container-high"
                 }`}
               >
-                {tab}
+                {tab.label}
               </button>
             ))}
           </div>
@@ -129,6 +152,24 @@ export default function PurchaseHistoryPage() {
           <div className="flex py-16 items-center justify-center text-xs text-text-secondary">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent mr-2"></div>
             Loading purchase history...
+          </div>
+        ) : error ? (
+          <div className="rounded-2xl border border-danger/20 bg-danger/5 p-12 text-center shadow-xs">
+            <AlertCircle className="mx-auto h-12 w-12 text-danger/50" />
+            <h3 className="mt-4 text-base font-bold text-text-primary">
+              Couldn&apos;t load your purchase history
+            </h3>
+            <p className="mt-1 text-xs text-text-secondary max-w-sm mx-auto">{error}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setLoading(true);
+                loadHistory();
+              }}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-primary/90 transition-colors cursor-pointer"
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Try Again
+            </button>
           </div>
         ) : filteredTickets.length === 0 ? (
           <div className="rounded-2xl border border-border-subtle bg-white p-12 text-center shadow-xs">
@@ -153,11 +194,16 @@ export default function PurchaseHistoryPage() {
               >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex gap-4 items-start sm:items-center">
-                    <img
-                      src="https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=300"
-                      alt={t.eventName}
-                      className="h-16 w-16 rounded-xl object-cover border border-border-subtle shrink-0"
-                    />
+                    {t.coverImageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={t.coverImageUrl}
+                        alt={t.eventName}
+                        className="h-16 w-16 rounded-xl object-cover border border-border-subtle shrink-0"
+                      />
+                    ) : (
+                      <div className="h-16 w-16 rounded-xl border border-border-subtle bg-gradient-to-br from-secondary/30 to-primary/20 shrink-0" />
+                    )}
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-mono font-bold text-primary uppercase">
@@ -170,7 +216,11 @@ export default function PurchaseHistoryPage() {
                               : "bg-warning/10 text-warning"
                           }`}
                         >
-                          {t.ticketStatus === "issued" ? "PAID" : t.ticketStatus.toUpperCase()}
+                          {t.ticketStatus === "issued"
+                            ? "PAID"
+                            : t.ticketStatus === "used"
+                              ? "ATTENDED"
+                              : t.ticketStatus.toUpperCase()}
                         </span>
                       </div>
                       <h4 className="mt-1 text-base font-bold text-text-primary leading-tight">
@@ -189,20 +239,16 @@ export default function PurchaseHistoryPage() {
 
                   <div className="flex items-center justify-between border-t border-border-subtle pt-3 sm:border-0 sm:pt-0 sm:flex-col sm:items-end">
                     <div className="text-right">
-                      <span className="block text-[10px] font-mono text-text-secondary">TOTAL AMOUNT</span>
+                      {/* Per-ticket price, not an order total: this list is one
+                          row per ticket, so a multi-ticket order appears more
+                          than once and summing is not implied. */}
+                      <span className="block text-[10px] font-mono text-text-secondary">TICKET PRICE</span>
                       <span className="text-base font-extrabold text-primary">
                         {formatIDR(t.unitPrice || 0)}
                       </span>
                     </div>
 
                     <div className="flex items-center gap-2 mt-2">
-                      <button
-                        type="button"
-                        onClick={() => alert(`Downloading Invoice for ${t.orderId}...`)}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-semibold text-text-primary hover:bg-surface transition-colors cursor-pointer"
-                      >
-                        <Download className="h-3.5 w-3.5" /> Invoice
-                      </button>
                       <Link
                         href="/orders"
                         className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary/90 transition-colors"

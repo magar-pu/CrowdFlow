@@ -78,6 +78,12 @@ export interface OrganizerEvent {
   image: string;
   /** Whether the organizer has put this approved event on the public listing. */
   published?: boolean;
+  /**
+   * Cap on the TOTAL tickets one order may contain, across every tier
+   * combined. 0 means no limit. Written through setEventMaxTicketsPerOrder,
+   * never through updateOrganizerEvent.
+   */
+  maxTicketsPerOrder?: number;
 }
 
 /** The payload the creation wizard sends: identity + schedule only. */
@@ -109,7 +115,6 @@ export interface OrganizerTicketTier {
   sold: number;
   capacity: number;
   status?: string;
-  maxPerOrder?: number;
   salesStart?: string;
   salesEnd?: string;
   description?: string;
@@ -339,6 +344,23 @@ export async function setEventMapsUrl(
   return apiRequest<void>(`/api/organizer/events/${eventId}/maps-url`, {
     method: "PUT",
     body: JSON.stringify({ google_maps_url: googleMapsUrl }),
+  });
+}
+
+/**
+ * Sets how many tickets one order may contain for this event, counted across
+ * every ticket type together. 0 means no limit.
+ *
+ * Replaces the old per-tier cap: that one applied to each tier separately, so
+ * an event with two tiers capped at 4 each actually allowed 8 in one order.
+ */
+export async function setEventMaxTicketsPerOrder(
+  eventId: number,
+  maxTicketsPerOrder: number
+): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/max-tickets-per-order`, {
+    method: "PUT",
+    body: JSON.stringify({ max_tickets_per_order: maxTicketsPerOrder }),
   });
 }
 

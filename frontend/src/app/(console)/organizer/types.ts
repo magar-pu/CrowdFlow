@@ -67,7 +67,6 @@ export interface TicketTier {
   // so the console must not show it as "On Sale".
   status?: "Selling Fast" | "On Sale" | "Sold Out" | "Scheduled" | "Expired";
   color?: string;
-  maxPerOrder?: number;
   salesStart?: string;
   salesEnd?: string;
   description?: string;

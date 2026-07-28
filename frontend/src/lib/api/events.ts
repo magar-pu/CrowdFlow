@@ -49,7 +49,6 @@ export interface PublicTicketTier {
   description: string;
   price: number;
   quota_remaining: number;
-  max_per_transaction: number;
 }
 
 export async function listTicketTiers(
