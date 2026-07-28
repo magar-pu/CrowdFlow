@@ -12,6 +12,7 @@ import {
   type AccountDocumentReadiness,
   type OrganizerAccountDocument,
 } from "@/lib/api/eorganizer";
+import { ACCEPT, CRITERIA_SINGLE, validateDocument } from "@/lib/documentUpload";
 
 // The organizer's account-level paperwork (KTP, NPWP, NIB, SIUP...), filed once
 // and reused across every event. Distinct from the per-event documents in the
@@ -84,6 +85,17 @@ export default function AccountDocumentsCard() {
 
   const handleFile = async (documentType: string, file: File | undefined) => {
     if (!file) return;
+
+    // Rejected here rather than after the upload. The card has always claimed a
+    // 10MB limit while checking nothing, so an oversized file was transferred in
+    // full before the server refused it — the user waited out the whole upload
+    // to be told no. Same rules as the /business wizard, from one module.
+    const problem = validateDocument(file);
+    if (problem) {
+      setError(`${ACCOUNT_DOCUMENT_LABELS[documentType] ?? documentType}: ${problem}`);
+      return;
+    }
+
     setBusyType(documentType);
     setError(null);
     const res = await uploadAccountDocument(documentType, file);
@@ -204,7 +216,7 @@ export default function AccountDocumentsCard() {
                     inputs.current[type] = el;
                   }}
                   type="file"
-                  accept="application/pdf,image/jpeg,image/png,image/webp"
+                  accept={ACCEPT}
                   className="hidden"
                   onChange={(e) => {
                     handleFile(type, e.target.files?.[0]);
@@ -219,9 +231,12 @@ export default function AccountDocumentsCard() {
         })}
       </ul>
 
+      {/* Criteria come from the shared module, so this line cannot promise a
+          limit the check does not enforce — which is exactly what it did while
+          it was hardcoded. WebP was accepted by the input and the server but
+          went unmentioned here. */}
       <p className="mt-3 text-[10px] leading-relaxed text-text-secondary">
-        PDF, PNG or JPG, up to 10MB each. Previous versions are kept so an auditor can see what
-        changed.
+        {CRITERIA_SINGLE}. Previous versions are kept so an auditor can see what changed.
       </p>
     </div>
   );
