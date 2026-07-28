@@ -325,6 +325,23 @@ export async function setEventVenue(eventId: number, input: SetEventVenueInput):
   });
 }
 
+/**
+ * Sets this event's Google Maps link, used by the buyer page's "Open in Google
+ * Maps" button instead of a name+address search. Pass "" to clear it.
+ *
+ * The backend rejects anything that is not an https link on a Google Maps or
+ * Waze host with a 422 — the value becomes an href on a public page.
+ */
+export async function setEventMapsUrl(
+  eventId: number,
+  googleMapsUrl: string
+): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/maps-url`, {
+    method: "PUT",
+    body: JSON.stringify({ google_maps_url: googleMapsUrl }),
+  });
+}
+
 // Ticket Tier CRUD API calls
 export async function listTicketTiers(eventId: number): Promise<ApiResponse<OrganizerTicketTier[]>> {
   return apiRequest<OrganizerTicketTier[]>(`/api/organizer/events/${eventId}/ticket-tiers`, {

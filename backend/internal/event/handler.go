@@ -221,7 +221,11 @@ func (h *Handler) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		// Non-integer string leaves offset at 0
 	}
 
-	events, err := h.service.ListEvents(limit, offset)
+	// An unknown or absent sort falls back to newest, which is what the
+	// /events browse page has always effectively shown.
+	sort := ParseEventSort(r.URL.Query().Get("sort"))
+
+	events, err := h.service.ListEvents(limit, offset, sort)
 	if err != nil {
 		log.Printf("ListEvents error: %v", err)
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load events")

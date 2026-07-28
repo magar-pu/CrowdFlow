@@ -21,8 +21,8 @@ func NewEventService(repo Repository) *EventService {
 	return &EventService{repo: repo}
 }
 
-func (s *EventService) ListEvents(limit, offset int) ([]*Event, error) {
-	return s.repo.GetAll(limit, offset)
+func (s *EventService) ListEvents(limit, offset int, sort EventSort) ([]*Event, error) {
+	return s.repo.GetAll(limit, offset, sort)
 }
 
 func (s *EventService) GetAllAdminEvents(limit, offset int) ([]*Event, error) {

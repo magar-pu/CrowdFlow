@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -813,6 +814,74 @@ func (s *OrganizerService) UploadEventCover(ctx context.Context, eventID int, or
 		return "", err
 	}
 	return url, nil
+}
+
+// mapsURLHosts is the allowlist for an event's map link: host to required path
+// prefix ("" = any path).
+//
+// The value is rendered as an href on a public event page, so an unrestricted
+// one would turn every event into an open redirect an organizer controls.
+//
+// Hosts are matched exactly rather than by suffix, so no other *.google.com
+// property qualifies. google.com itself carries a path requirement because the
+// bare host is not safe on its own: https://google.com/url?q=... is a
+// redirector that would hand an organizer any destination they liked.
+// maps.google.com needs no such rule — every path on it is already a map — and
+// the short-link hosts exist precisely to serve an opaque path.
+var mapsURLHosts = map[string]string{
+	"google.com":      "/maps",
+	"maps.google.com": "",
+	"goo.gl":          "/maps",
+	"maps.app.goo.gl": "",
+	"waze.com":        "",
+}
+
+// validateMapsURL accepts an empty string (meaning "clear the link") or an
+// https URL on an allowlisted map host.
+func validateMapsURL(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", nil
+	}
+
+	u, err := url.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("%w: that does not look like a valid URL", ErrValidation)
+	}
+	// Scheme first: a bare "google.com/maps" parses with an empty Host, and
+	// javascript: URLs must never reach an href.
+	if u.Scheme != "https" {
+		return "", fmt.Errorf("%w: the link must start with https://", ErrValidation)
+	}
+
+	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
+	prefix, ok := mapsURLHosts[host]
+	if !ok {
+		return "", fmt.Errorf(
+			"%w: only Google Maps and Waze links are accepted (google.com/maps, maps.app.goo.gl, goo.gl/maps, waze.com)",
+			ErrValidation,
+		)
+	}
+	if prefix != "" && !strings.HasPrefix(u.EscapedPath(), prefix) {
+		return "", fmt.Errorf(
+			"%w: that is a %s link but not a Maps one — the path must start with %s",
+			ErrValidation, host, prefix,
+		)
+	}
+	return trimmed, nil
+}
+
+// SetEventMapsURL stores the organizer's own map link for an event, replacing
+// the name+address search the buyer page falls back to.
+func (s *OrganizerService) SetEventMapsURL(ctx context.Context, eventID int, organizerID int, rawURL string) error {
+	if eventID <= 0 {
+		return fmt.Errorf("%w: invalid event ID", ErrValidation)
+	}
+	clean, err := validateMapsURL(rawURL)
+	if err != nil {
+		return err
+	}
+	return s.repo.SetEventMapsURL(ctx, eventID, organizerID, clean)
 }
 
 // SetEventVenue binds the event to a venue from the workspace's Venue tab.

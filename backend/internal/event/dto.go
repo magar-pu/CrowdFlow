@@ -73,9 +73,13 @@ type EventListResponse struct {
 	CoverImageURL string    `json:"cover_image_url"`
 	// StartingPrice is the cheapest ticket tier price, or null when the event
 	// has no tiers configured yet.
-	StartingPrice *float64           `json:"starting_price"`
-	Venue         *VenueResponse     `json:"venue,omitempty"`
-	Organizer     *OrganizerResponse `json:"organizer,omitempty"`
+	StartingPrice *float64 `json:"starting_price"`
+	// RecentSales is tickets sold on paid orders in the last 7 days. Clients
+	// use it to decide whether an event genuinely is selling fast. It is
+	// populated for every sort, not just trending.
+	RecentSales int                `json:"recent_sales"`
+	Venue       *VenueResponse     `json:"venue,omitempty"`
+	Organizer   *OrganizerResponse `json:"organizer,omitempty"`
 }
 
 // EventDetailResponse defines a complete payload returned on single event details query (includes description and tax rate)
@@ -92,6 +96,12 @@ type EventDetailResponse struct {
 	EntertainmentTaxPassedToBuyer bool               `json:"entertainment_tax_passed_to_buyer"`
 	CoverImageURL                 string             `json:"cover_image_url"`
 	LayoutID                      *int               `json:"layout_id"` // bound venue layout; null = none
+	// GoogleMapsURL is the organizer's map link, "" when none is set. Host is
+	// validated on write (Google Maps / Waze only) since it becomes an href.
+	GoogleMapsURL string `json:"google_maps_url"`
+	// RecentSales is tickets sold on paid orders in the last 7 days — the same
+	// figure the listing ranks "trending" by.
+	RecentSales int `json:"recent_sales"`
 	Venue                         *VenueResponse     `json:"venue,omitempty"`
 	Organizer                     *OrganizerResponse `json:"organizer,omitempty"`
 }
@@ -149,6 +159,7 @@ func MapEventToList(e *Event) *EventListResponse {
 		Category:      mapCategory(e.EventTypeID),
 		CoverImageURL: e.CoverImageURL,
 		StartingPrice: e.StartingPrice,
+		RecentSales:   e.RecentSales,
 		Venue:         MapVenue(e.Venue),
 		Organizer:     MapOrganizer(e.Organizer),
 	}
@@ -172,6 +183,8 @@ func MapEventToDetail(e *Event) *EventDetailResponse {
 		EntertainmentTaxPassedToBuyer: e.EntertainmentTaxPassedToBuyer,
 		CoverImageURL:                 e.CoverImageURL,
 		LayoutID:                      e.LayoutID,
+		GoogleMapsURL:                 e.GoogleMapsURL,
+		RecentSales:                   e.RecentSales,
 		Venue:                         MapVenue(e.Venue),
 		Organizer:                     MapOrganizer(e.Organizer),
 	}
