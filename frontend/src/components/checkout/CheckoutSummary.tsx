@@ -30,7 +30,6 @@ interface CheckoutSummaryProps {
   event: Pick<Event, "title" | "cover_image_url" | "starts_at" | "venue">;
   cart_items: CartItem[];
   breadcrumb_steps?: string[];
-  on_apply_promo_code?: (code: string) => void;
   on_confirm: (payment_method: PaymentMethod) => void;
   is_submitting?: boolean;
 }
@@ -65,13 +64,11 @@ export function CheckoutSummary({
   event,
   cart_items,
   breadcrumb_steps = ["Detail", "Seats", "Queue", "Checkout"],
-  on_apply_promo_code,
   on_confirm,
   is_submitting = false,
 }: CheckoutSummaryProps) {
   const [selected_payment_method, set_selected_payment_method] =
     useState<PaymentMethod>("bca_va");
-  const [promo_code, set_promo_code] = useState("");
 
   const breakdown = useMemo(
     () => calculatePriceBreakdown(cart_items, selected_payment_method),
@@ -162,32 +159,6 @@ export function CheckoutSummary({
               </div>
             </div>
 
-            {/* Promo code */}
-            <div className="pt-4 border-t border-border-subtle/50">
-              <label
-                htmlFor="promo"
-                className="mb-2 block text-xs font-semibold text-text-secondary"
-              >
-                Promo Code
-              </label>
-              <div className="flex gap-2">
-                <input
-                  id="promo"
-                  type="text"
-                  placeholder="Enter code"
-                  value={promo_code}
-                  onChange={(e) => set_promo_code(e.target.value)}
-                  className="min-w-0 flex-1 rounded-xl border border-border-subtle bg-surface-white px-3.5 py-2.5 text-sm transition-all focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/20"
-                />
-                <button
-                  type="button"
-                  onClick={() => on_apply_promo_code?.(promo_code)}
-                  className="shrink-0 rounded-xl bg-surface-container-high px-5 py-2.5 text-xs sm:text-sm font-semibold text-primary transition-colors hover:bg-surface-dim cursor-pointer"
-                >
-                  Apply
-                </button>
-              </div>
-            </div>
           </div>
         </div>
 

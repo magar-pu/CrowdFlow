@@ -2041,6 +2041,39 @@ func (r *PostgresRepository) UpdateOrganizerEvent(ctx context.Context, eventID i
 	return tx.Commit()
 }
 
+// SetEventMapsURL stores the organizer's map link for one event.
+//
+// A targeted UPDATE of the single column, deliberately not routed through
+// UpdateOrganizerEvent: that path writes the whole row from its payload and
+// blanks any column the payload omits. The organizer_id predicate is what makes
+// this safe to call for an arbitrary event id.
+//
+// Allowed at any status. The link is display-only — it touches no layout, seat
+// or price — so there is nothing for a pending review to be invalidated by.
+// An empty string clears it and returns the buyer page to its address search.
+func (r *PostgresRepository) SetEventMapsURL(ctx context.Context, eventID int, organizerID int, mapsURL string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE events
+		SET google_maps_url = NULLIF($1, ''), updated_at = now()
+		WHERE id = $2 AND organizer_id = $3
+	`, mapsURL, eventID, organizerID)
+	if err != nil {
+		return err
+	}
+
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("event not found or unauthorized")
+	}
+	return nil
+}
+
 // SetEventVenue binds an event to a venue from the workspace's Venue tab. This
 // is the counterpart to dropping the venue out of the creation wizard: the
 // event exists first, the venue is chosen here.

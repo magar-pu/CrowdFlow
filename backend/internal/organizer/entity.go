@@ -707,6 +707,7 @@ type Repository interface {
 	CreateOrganizerEvent(ctx context.Context, organizerID int, event *OrganizerEvent) error
 	UpdateOrganizerEvent(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
 	SetEventVenue(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
+	SetEventMapsURL(ctx context.Context, eventID int, organizerID int, mapsURL string) error
 	SetEventCoverImage(ctx context.Context, eventID int, organizerID int, url string) error
 	WithdrawEventFromReview(ctx context.Context, eventID int, organizerID int) error
 	SetEventArchived(ctx context.Context, eventID int, organizerID int, archived bool) error
@@ -763,6 +764,7 @@ type Service interface {
 	CreateOrganizerEvent(ctx context.Context, organizerID int, event *OrganizerEvent) error
 	UpdateOrganizerEvent(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
 	SetEventVenue(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
+	SetEventMapsURL(ctx context.Context, eventID int, organizerID int, mapsURL string) error
 	UploadEventCover(ctx context.Context, eventID int, organizerID int, upload *CoverImageUpload) (string, error)
 	WithdrawEventFromReview(ctx context.Context, eventID int, organizerID int) error
 	SetEventArchived(ctx context.Context, eventID int, organizerID int, archived bool) error

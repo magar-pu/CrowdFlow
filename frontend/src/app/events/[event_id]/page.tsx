@@ -3,14 +3,17 @@
 /**
  * app/events/[event_id]/page.tsx
  *
- * Event Detail page — hero banner, About + Venue info (8-col), sticky
- * Ticket Selection + Organizer card (4-col). Matches the
- * event_detail_eras_tour_manila Stitch screen end-to-end.
+ * Event Detail page — hero banner, About + Venue info (8-col), sticky ticket
+ * CTA + Organizer card (4-col).
  *
  * Reads the event from `getEvent(event_id)` and its ticket tiers from
  * `listTicketTiers(event_id)` (both lib/api/events.ts). Neither falls back to
  * mock data: a failed lookup renders the error state, and an event with no
  * tiers on sale renders the card's empty state.
+ *
+ * The page does not choose a tier. It reads tiers only for the "starting from"
+ * price and to tell whether anything is buyable; the seat screen owns tier
+ * selection.
  */
 
 import { useRouter, useParams } from "next/navigation";
@@ -20,13 +23,10 @@ import { HomeFooterV3 } from "@/components/home-v3/HomeFooterV3";
 import { EventHero } from "@/components/event-detail/EventHero";
 import { AboutEventSection } from "@/components/event-detail/AboutEventSection";
 import { VenueInfoSection } from "@/components/event-detail/VenueInfoSection";
-import {
-  TicketSelectionCard,
-  type TicketSelectionOption,
-} from "@/components/event-detail/TicketSelectionCard";
+import { TicketCtaCard } from "@/components/event-detail/TicketCtaCard";
 import { OrganizerInfoCard } from "@/components/event-detail/OrganizerInfoCard";
 import { formatIDR } from "@/lib/pricing";
-import { getEvent, listTicketTiers } from "@/lib/api/events";
+import { getEvent, listTicketTiers, type PublicTicketTier } from "@/lib/api/events";
 import { Event } from "@/types/ticket";
 import { Footer } from "@/components/layout/Footer";
 
@@ -35,7 +35,7 @@ export default function EventDetailPage() {
   const params = useParams();
   const event_id = params?.event_id;
   const [event, setEvent] = useState<Event | null>(null);
-  const [tiers, setTiers] = useState<TicketSelectionOption[]>([]);
+  const [tiers, setTiers] = useState<PublicTicketTier[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,30 +59,17 @@ export default function EventDetailPage() {
       });
   }, [event_id]);
 
-  // Ticket tiers load independently of the event: the endpoint only returns
+  // Ticket tiers load independently of the event. The endpoint only returns
   // tiers currently on sale, so an empty list is a legitimate "no tickets on
   // sale" state rather than an error, and must not fall back to mock tiers.
+  // The page no longer picks a tier — it only needs to know the cheapest price
+  // and whether anything is purchasable at all.
   useEffect(() => {
     if (!event_id) return;
 
     listTicketTiers(event_id as string)
       .then((res) => {
-        if (res.success && res.data) {
-          setTiers(
-            res.data.map((t) => ({
-              ticket_category_id: String(t.ticket_tier_id),
-              name: t.name,
-              description: t.description,
-              face_value: t.price,
-              quota_remaining: t.quota_remaining,
-              // Every tier returned by this endpoint is public and inside its
-              // sales window, so it is on sale by definition.
-              is_active: true,
-            }))
-          );
-        } else {
-          setTiers([]);
-        }
+        setTiers(res.success && res.data ? res.data : []);
       })
       .catch(() => {
         setTiers([]);
@@ -119,20 +106,21 @@ export default function EventDetailPage() {
   }
 
   const currentEvent = event;
-  const categories = tiers;
-  const active_categories = categories.filter((c) => c.is_active);
-  const cheapest_price = Math.min(
-    ...active_categories.map((c) => c.face_value)
-  );
+  // Every tier this endpoint returns is public and inside its sales window, so
+  // remaining quota is the only thing left that can make one unbuyable.
+  const purchasable_tiers = tiers.filter((t) => t.quota_remaining > 0);
   const starting_price_label =
-    active_categories.length > 0 ? formatIDR(cheapest_price) : "—";
+    purchasable_tiers.length > 0
+      ? formatIDR(Math.min(...purchasable_tiers.map((t) => t.price)))
+      : "—";
 
-  function handle_continue(ticket_category_id: string) {
-    const query = `?ticket_category_id=${ticket_category_id}`;
+  // No tier is passed along any more: the seat screen owns tier choice and
+  // defaults to the first available one on its own.
+  function handle_continue() {
     if (currentEvent.is_high_demand) {
-      router.push(`/events/${currentEvent.event_id}/queue${query}`);
+      router.push(`/events/${currentEvent.event_id}/queue`);
     } else {
-      router.push(`/events/${currentEvent.event_id}/seats${query}`);
+      router.push(`/events/${currentEvent.event_id}/seats`);
     }
   }
 
@@ -148,12 +136,17 @@ export default function EventDetailPage() {
               description={currentEvent.description}
               important_info={currentEvent.important_info ?? []}
             />
-            <VenueInfoSection venue={event.venue} event_id={event.event_id} />
+            <VenueInfoSection
+              venue={event.venue}
+              event_id={event.event_id}
+              google_maps_url={event.google_maps_url}
+            />
           </div>
           {/* Right column sticky */}
           <div className="flex flex-col gap-6 lg:sticky lg:top-28 lg:col-span-4">
-            <TicketSelectionCard
-              ticket_categories={categories}
+            <TicketCtaCard
+              starting_price_label={starting_price_label}
+              has_tickets_on_sale={purchasable_tiers.length > 0}
               on_continue={handle_continue}
             />
             {currentEvent.organizer && (

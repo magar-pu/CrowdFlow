@@ -14,28 +14,73 @@ func NewPostgresRepository(db *sql.DB) *PostgresRepository {
 	return &PostgresRepository{db: db}
 }
 
-func (r *PostgresRepository) GetAll(limit, offset int) ([]*Event, error) {
+func (r *PostgresRepository) GetAll(limit, offset int, sort EventSort) ([]*Event, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
+	// Only the upcoming sort hides finished events. The /events browse page
+	// shares this endpoint and still needs to reach past events, so this stays
+	// out of the base WHERE clause. event_end (not event_start) is the cutoff:
+	// an event that has begun but not ended is still attendable.
+	timeFilter := ""
+	if sort == SortUpcoming {
+		timeFilter = "AND e.event_end >= now()"
+	}
+
+	// orderBy is chosen from this fixed set only — never built from user input.
+	// Each ends in e.id so that LIMIT/OFFSET paging cannot duplicate or skip
+	// rows when the leading key ties.
+	var orderBy string
+	switch sort {
+	case SortUpcoming:
+		orderBy = "ORDER BY e.event_start ASC, e.id ASC"
+	case SortTrending:
+		// Events with no recent sales all tie at 0 and fall through to the
+		// soonest-first tiebreak, which is the honest answer on a quiet
+		// catalogue rather than an invented ranking.
+		orderBy = "ORDER BY COALESCE(sales.recent_sold, 0) DESC, e.event_start ASC, e.id ASC"
+	default:
+		orderBy = "ORDER BY e.created_at DESC, e.id ASC"
+	}
+
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT 
-			e.id, e.venue_id, e.organizer_id, e.event_name, COALESCE(e.description, ''), e.event_start, e.event_end, 
-			e.entertainment_tax_rate, e.entertainment_tax_passed_to_buyer, e.status, e.created_at, e.updated_at, 
+		SELECT
+			e.id, e.venue_id, e.organizer_id, e.event_name, COALESCE(e.description, ''), e.event_start, e.event_end,
+			e.entertainment_tax_rate, e.entertainment_tax_passed_to_buyer, e.status, e.created_at, e.updated_at,
 			e.event_type_id, COALESCE(e.cover_image_url, ''),
-			(SELECT MIN(tt.price) FROM ticket_tiers tt WHERE tt.event_id = e.id),
+			-- Mirrors the on-sale filter in booking.ListTicketTiers. Taking a
+			-- bare MIN over every tier quoted "tickets from" prices off private
+			-- or closed tiers that no buyer could actually purchase.
+			(SELECT MIN(tt.price) FROM ticket_tiers tt
+			  WHERE tt.event_id = e.id
+			    AND tt.visibility = 'public'
+			    AND tt.sales_start <= now()
+			    AND tt.sales_end >= now()),
+			COALESCE(sales.recent_sold, 0),
 			v.id, COALESCE(v.name, ''), COALESCE(v.address, ''), COALESCE(v.city, ''), COALESCE(v.province, ''), COALESCE(v.total_capacity, 0),
 			u.id, COALESCE(up.full_name, ''), COALESCE(up.avatar_pic, '')
 		FROM events e
 		LEFT JOIN venues v ON e.venue_id = v.id
 		LEFT JOIN users u ON e.organizer_id = u.id
 		LEFT JOIN user_profiles up ON u.id = up.user_id
+		-- Sales velocity over a rolling 7-day window, from orders -- the same
+		-- source of truth the payout figures use. ticket_tiers.tickets_sold is
+		-- never written by anything in this codebase and must not be used.
+		LEFT JOIN (
+			SELECT event_id, SUM(quantity) AS recent_sold
+			FROM orders
+			WHERE status = 'paid'
+			  AND paid_at >= now() - interval '7 days'
+			GROUP BY event_id
+		) sales ON sales.event_id = e.id
 		-- 'approved' is the auditor's verdict; published_at is the organizer's
 		-- decision to actually go on sale. Both are required to appear here.
 		-- archived_at excludes events the organizer has filed away (0017).
 		WHERE e.status = 'approved'
 		  AND e.published_at IS NOT NULL
 		  AND e.archived_at IS NULL
+		  `+timeFilter+`
+		`+orderBy+`
 		LIMIT $1 OFFSET $2
 	`, limit, offset)
 	if err != nil {
@@ -64,7 +109,7 @@ func (r *PostgresRepository) GetAll(limit, offset int) ([]*Event, error) {
 		err := rows.Scan(
 			&e.ID, &e.VenueID, &e.OrganizerID, &e.EventName, &e.Description, &e.EventStart, &e.EventEnd,
 			&e.EntertainmentTaxRate, &e.EntertainmentTaxPassedToBuyer, &e.Status, &e.CreatedAt, &e.UpdatedAt,
-			&eventTypeID, &coverImageURL, &startingPrice,
+			&eventTypeID, &coverImageURL, &startingPrice, &e.RecentSales,
 			&vID, &vName, &vAddress, &vCity, &vProvince, &vCapacity,
 			&oID, &oName, &oAvatar,
 		)
@@ -202,6 +247,7 @@ func (r *PostgresRepository) GetByID(id int) (*Event, error) {
 	var eventTypeID sql.NullInt64
 	var coverImageURL sql.NullString
 	var layoutID sql.NullInt64
+	var publishedAt sql.NullTime
 
 	var vID sql.NullInt64
 	var vName sql.NullString
@@ -219,12 +265,24 @@ func (r *PostgresRepository) GetByID(id int) (*Event, error) {
 			e.id, e.venue_id, e.organizer_id, e.event_name, COALESCE(e.description, ''), e.event_start, e.event_end,
 			e.entertainment_tax_rate, e.entertainment_tax_passed_to_buyer, e.status, e.created_at, e.updated_at,
 			e.event_type_id, COALESCE(e.cover_image_url, ''), e.layout_id,
+			COALESCE(e.google_maps_url, ''), e.published_at,
+			COALESCE(sales.recent_sold, 0),
 			v.id, COALESCE(v.name, ''), COALESCE(v.address, ''), COALESCE(v.city, ''), COALESCE(v.province, ''), COALESCE(v.total_capacity, 0),
 			u.id, COALESCE(up.full_name, ''), COALESCE(up.avatar_pic, '')
 		FROM events e
 		LEFT JOIN venues v ON e.venue_id = v.id
 		LEFT JOIN users u ON e.organizer_id = u.id
 		LEFT JOIN user_profiles up ON u.id = up.user_id
+		-- Same 7-day sales window as GetAll, so the detail page's "Selling Fast"
+		-- badge is driven by the figure that ranked the event on the homepage.
+		-- The two must not disagree.
+		LEFT JOIN (
+			SELECT event_id, SUM(quantity) AS recent_sold
+			FROM orders
+			WHERE status = 'paid'
+			  AND paid_at >= now() - interval '7 days'
+			GROUP BY event_id
+		) sales ON sales.event_id = e.id
 		-- Archived events are invisible to the public endpoint. The organizer
 		-- console uses GetOrganizerEvent (authenticated, separate route) which
 		-- is intentionally not gated on archived_at so the workspace still
@@ -233,7 +291,7 @@ func (r *PostgresRepository) GetByID(id int) (*Event, error) {
 	`, id).Scan(
 		&e.ID, &e.VenueID, &e.OrganizerID, &e.EventName, &e.Description, &e.EventStart, &e.EventEnd,
 		&e.EntertainmentTaxRate, &e.EntertainmentTaxPassedToBuyer, &e.Status, &e.CreatedAt, &e.UpdatedAt,
-		&eventTypeID, &coverImageURL, &layoutID,
+		&eventTypeID, &coverImageURL, &layoutID, &e.GoogleMapsURL, &publishedAt, &e.RecentSales,
 		&vID, &vName, &vAddress, &vCity, &vProvince, &vCapacity,
 		&oID, &oName, &oAvatar,
 	)
@@ -252,6 +310,10 @@ func (r *PostgresRepository) GetByID(id int) (*Event, error) {
 	if layoutID.Valid {
 		lid := int(layoutID.Int64)
 		e.LayoutID = &lid
+	}
+	if publishedAt.Valid {
+		t := publishedAt.Time
+		e.PublishedAt = &t
 	}
 
 	if vID.Valid {

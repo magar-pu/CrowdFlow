@@ -61,6 +61,7 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /api/organizer/events/{id}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetEvent)))))
 	mux.Handle("PUT /api/organizer/events/{id}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUpdateEvent)))))
 	mux.Handle("PUT /api/organizer/events/{id}/venue", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleSetEventVenue)))))
+	mux.Handle("PUT /api/organizer/events/{id}/maps-url", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleSetEventMapsURL)))))
 	mux.Handle("POST /api/organizer/events/{id}/cover", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUploadEventCover)))))
 	mux.Handle("POST /api/organizer/events/{id}/withdraw", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleWithdrawEvent)))))
 	// "listing" rather than "publish": PATCH .../publish above already means
@@ -642,6 +643,49 @@ func (h *Handler) handleSetEventVenue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Event venue updated successfully"})
+}
+
+// handleSetEventMapsURL stores the organizer's own map link for this event,
+// used by the buyer page's "Open in Google Maps" button in place of the
+// name+address search it otherwise falls back to. An empty string clears it.
+func (h *Handler) handleSetEventMapsURL(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
+		return
+	}
+
+	eventID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+
+	var body struct {
+		GoogleMapsURL string `json:"google_maps_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request payload")
+		return
+	}
+
+	err = h.service.SetEventMapsURL(r.Context(), eventID, userID, body.GoogleMapsURL)
+	if err != nil {
+		if errors.Is(err, ErrValidation) {
+			response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+			return
+		}
+		log.Printf("SetEventMapsURL error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to save the map link")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Map link updated successfully"})
 }
 
 // handleUploadEventCover replaces the event's cover art. Multipart, one file

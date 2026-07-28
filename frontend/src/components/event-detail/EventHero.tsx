@@ -67,7 +67,10 @@ export function EventHero({ event, starting_price_label }: EventHeroProps) {
         <div className="max-w-3xl">
           {/* Badges */}
           <div className="mb-4 flex flex-wrap gap-2">
-            {event.is_high_demand && (
+            {/* Driven by real sales in the last 7 days, the same figure that
+                ranks "Trending Now" on the homepage. It previously read
+                is_high_demand, which the API never sends, so it never showed. */}
+            {(event.recent_sales ?? 0) > 0 && (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-on-primary/10 bg-on-primary/20 px-3 py-1 font-label-sm text-label-sm backdrop-blur-md">
                 <Flame size={12} className="text-tertiary" />
                 Selling Fast

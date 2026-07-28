@@ -85,13 +85,20 @@ export async function getSeatMap(
 
 /**
  * Reserve inventory before checkout. Carries `seat_ids` for assigned seating or
- * `quantity` for general admission — never both, and always for a single tier,
- * which is why the buyer's selection cannot span tiers.
+ * `quantity` for general admission — never both.
+ *
+ * Assigned seating sends NO ticket_tier_id: seats may span tiers in one hold,
+ * and the server resolves each seat's tier from event_seats_matrix. That also
+ * means the client cannot pair a cheap tier with another tier's seats.
+ *
+ * General admission has no seats to derive a tier from, so it names one and
+ * stays one tier per hold.
  */
 export interface HoldRequest {
   event_id: number;
-  ticket_tier_id: number;
   seat_ids?: number[];
+  /** General admission only. */
+  ticket_tier_id?: number;
   quantity?: number;
 }
 
@@ -112,6 +119,49 @@ export async function createHold(req: HoldRequest): Promise<ApiResponse<Hold>> {
   return apiRequest<Hold>("/api/v1/booking/holds", {
     method: "POST",
     body: JSON.stringify(req),
+  });
+}
+
+/** One seat inside a hold, labelled as the buyer saw it on the map. */
+export interface HoldSeat {
+  seat_id: number;
+  row: string;
+  number: string;
+}
+
+/** One tier's worth of a hold. A seated hold may have several. */
+export interface HoldItem {
+  ticket_tier_id: number;
+  tier_name: string;
+  unit_price: number;
+  quantity: number;
+  /** Empty for a general-admission item. */
+  seats: HoldSeat[];
+}
+
+/**
+ * What a hold token resolves to. Checkout renders its cart from this rather
+ * than from the query string, so prices come from the database and cannot be
+ * edited by the buyer.
+ */
+export interface HoldDetail {
+  hold_token: string;
+  event_id: number;
+  event_title: string;
+  /** One entry per ticket tier in the hold. */
+  items: HoldItem[];
+  /** RFC3339. */
+  expires_at: string;
+}
+
+/**
+ * Resolve a hold token. Returns 404 HOLD_EXPIRED once the hold lapses, at
+ * which point the seats are already back on the map and the buyer has to pick
+ * again.
+ */
+export async function getHold(holdToken: string): Promise<ApiResponse<HoldDetail>> {
+  return apiRequest<HoldDetail>(`/api/v1/booking/holds/${holdToken}`, {
+    method: "GET",
   });
 }
 
