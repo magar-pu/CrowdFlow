@@ -14,8 +14,9 @@
  *
  * A seated selection may span ticket tiers: the hold sends seat ids only and
  * the server resolves each seat's tier from event_seats_matrix, so mixing VIP
- * and Regular in one order is a single hold and a single order. Each tier's
- * max_per_transaction is applied to that tier's seats alone.
+ * and Regular in one order is a single hold and a single order. The purchase
+ * cap is one total across every tier (event.max_tickets_per_order), so a limit
+ * of 10 permits 6 VIP and 4 Regular.
  *
  * General admission is the exception. It has no seats to derive a tier from and
  * its inventory is a per-tier counter, so it remains one tier per hold — which
@@ -53,8 +54,12 @@ import { useAuthStore } from "@/lib/store/authStore";
 import type { Event } from "@/types/ticket";
 import { cn } from "@/lib/utils";
 
-/** Used only when a tier omits max_per_transaction. */
-const FALLBACK_MAX_PER_TRANSACTION = 4;
+/**
+ * Used only when the event payload has not arrived yet. 0 would read as
+ * "uncapped" and briefly let the buyer over-select before the real cap loads,
+ * so the placeholder is restrictive rather than permissive.
+ */
+const FALLBACK_MAX_PER_ORDER = 1;
 
 /** Matches the "Unavailable" swatch in MapLegend. */
 const UNAVAILABLE_SEAT_COLOR = "#cbd5e1";
@@ -158,23 +163,17 @@ export default function SeatSelectionPage() {
     mode === "ga" ? tiers.find((t) => t.ticket_tier_id === ga_tier_id) ?? null : null;
 
   /**
-   * Each tier's own per-order cap, which the hook applies per tier. The backend
-   * enforces the same caps; mirrored here so the UI refuses before the round
-   * trip rather than after.
+   * The event's single cap on the whole order, across every tier. The backend
+   * enforces the same number in CreateHold; mirrored here so the UI refuses
+   * before the round trip rather than after.
+   *
+   * 0 from the server genuinely means uncapped, so it is passed through as-is;
+   * only a not-yet-loaded event falls back.
    */
-  const max_per_tier = useMemo(() => {
-    const caps = new Map<number, number>();
-    for (const tier of tiers) {
-      const from_api = public_tiers.find(
-        (t) => t.ticket_tier_id === tier.ticket_tier_id
-      )?.max_per_transaction;
-      caps.set(
-        tier.ticket_tier_id,
-        from_api && from_api > 0 ? from_api : FALLBACK_MAX_PER_TRANSACTION
-      );
-    }
-    return caps;
-  }, [tiers, public_tiers]);
+  // `??` not `||`: 0 is a real value here (uncapped) and must survive, while a
+  // missing field — an event that hasn't loaded, or a backend older than 0030
+  // — falls back to the restrictive placeholder rather than to "no limit".
+  const max_per_order = event?.max_tickets_per_order ?? FALLBACK_MAX_PER_ORDER;
 
   const max_ga_quantity = useMemo(() => {
     if (ga_tier_id === null) return 0;
@@ -182,8 +181,11 @@ export default function SeatSelectionPage() {
       public_tiers.find((t) => t.ticket_tier_id === ga_tier_id)?.quota_remaining ??
       seat_map?.ga_tiers.find((t) => t.ticket_tier_id === ga_tier_id)?.quota_remaining ??
       0;
-    return Math.min(max_per_tier.get(ga_tier_id) ?? FALLBACK_MAX_PER_TRANSACTION, quota);
-  }, [public_tiers, seat_map, ga_tier_id, max_per_tier]);
+    // GA is a single tier per hold, so the order cap and the tier's remaining
+    // stock are the only two bounds. An uncapped event is bounded by quota
+    // alone.
+    return max_per_order > 0 ? Math.min(max_per_order, quota) : quota;
+  }, [public_tiers, seat_map, ga_tier_id, max_per_order]);
 
   const {
     zoom, pan_x, pan_y,
@@ -191,7 +193,7 @@ export default function SeatSelectionPage() {
     start_pan, do_pan, end_pan, handle_wheel_zoom,
     chosen_seats, seat_groups, selected_seat_ids, limit_notice,
     toggle_seat, restore_seats, remove_seat, clear_seats,
-  } = useSeatSelection({ max_per_tier });
+  } = useSeatSelection({ max_total: max_per_order });
 
   /**
    * Rebuild the selection from a hold this buyer still owns. Everything the

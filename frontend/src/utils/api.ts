@@ -129,6 +129,21 @@ export async function apiRequest<T>(
       try {
         return JSON.parse(text) as ApiResponse<T>;
       } catch {
+        // A 413 is the one non-JSON failure with a known cause: nginx rejects
+        // an oversized body at the proxy and answers with its own HTML error
+        // page, so the request never reaches Go and there is no envelope to
+        // parse. Without this branch the user saw a truncated
+        // "<html><head><title>413 Request Entity Too..." in the error slot,
+        // which names neither the problem nor the fix.
+        if (response.status === 413) {
+          return {
+            success: false,
+            error: {
+              code: "PAYLOAD_TOO_LARGE",
+              message: "That upload is too large. Try a smaller or compressed file.",
+            },
+          } as ApiResponse<T>;
+        }
         return {
           success: false,
           error: {

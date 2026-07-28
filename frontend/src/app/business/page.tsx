@@ -9,6 +9,26 @@ import { applyOrganizer, getOrganizerApplication, updateOrganizerApplication, de
 import { getMe } from "@/lib/api/auth";
 import { CheckCircle2, AlertTriangle, Clock, RefreshCw, Trash2, Building, Mail, Phone, Globe, FileText, UploadCloud, AlertCircle } from "lucide-react";
 import { Turnstile } from "@/components/common/Turnstile";
+// Shared with the Business Documents card in organizer Settings, which files
+// the same paperwork against the same server-side caps.
+//
+// MAX_REQUEST_BYTES matters HERE and nowhere else: this form submits up to four
+// documents in one request, so four individually legal files can still be
+// rejected together — and that rejection happens in ParseMultipartForm, before
+// any per-file check runs, so the server can only answer with a generic "too
+// large or malformed" that names no file. Checking the total below is the only
+// place the user can be told which files to trim.
+import {
+  ACCEPT,
+  CRITERIA,
+  MAX_FILE_MB,
+  MAX_REQUEST_BYTES,
+  MAX_REQUEST_MB,
+  formatSize,
+  validateDocument,
+} from "@/lib/documentUpload";
+
+type DocumentSlot = "ktp" | "npwp" | "nib" | "siup";
 
 /**
  * The marketing hero for /business.
@@ -76,7 +96,9 @@ export default function BusinessPage() {
   const [npwp, setNpwp] = useState<File | null>(null);
   const [nib, setNib] = useState<File | null>(null);
   const [siup, setSiup] = useState<File | null>(null);
-  
+  /** Per-slot rejection reason, so the message sits beside the offending file. */
+  const [docErrors, setDocErrors] = useState<Partial<Record<DocumentSlot, string>>>({});
+
   // Error & Success Feedback
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
@@ -129,6 +151,29 @@ export default function BusinessPage() {
     }
   }
 
+  /**
+   * Validates a freshly picked file and stores it only if it passes.
+   *
+   * A rejected file clears the slot rather than keeping the previous
+   * selection: leaving the old file in place while showing an error reads as
+   * "your new file was accepted" on the next glance.
+   */
+  const handlePickDocument = (
+    slot: DocumentSlot,
+    setter: (f: File | null) => void,
+    file: File | null
+  ) => {
+    setErrorMsg("");
+    if (!file) {
+      setter(null);
+      setDocErrors((prev) => ({ ...prev, [slot]: undefined }));
+      return;
+    }
+    const problem = validateDocument(file);
+    setDocErrors((prev) => ({ ...prev, [slot]: problem ?? undefined }));
+    setter(problem ? null : file);
+  };
+
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
@@ -137,6 +182,27 @@ export default function BusinessPage() {
 
     if (!ktp && !application) {
       setErrorMsg("KTP document is required for verification.");
+      setActionLoading(false);
+      return;
+    }
+
+    // The combined cap. Enforced only at submit time because it is a property
+    // of the request, not of any one file — no single pick can be blamed for
+    // it, and the fix is to drop or shrink one of several.
+    const selected: [string, File | null][] = [
+      ["KTP", ktp],
+      ["NPWP", npwp],
+      ["NIB", nib],
+      ["SIUP", siup],
+    ];
+    const attached = selected.filter((entry): entry is [string, File] => entry[1] !== null);
+    const totalBytes = attached.reduce((sum, [, file]) => sum + file.size, 0);
+    if (totalBytes > MAX_REQUEST_BYTES) {
+      const breakdown = attached.map(([label, file]) => `${label} ${formatSize(file.size)}`).join(", ");
+      setErrorMsg(
+        `Your documents total ${formatSize(totalBytes)}, over the ${MAX_REQUEST_MB}MB limit for one submission (${breakdown}). ` +
+          `Each file may be up to ${MAX_FILE_MB}MB, but they are uploaded together. Remove or compress one and try again.`
+      );
       setActionLoading(false);
       return;
     }
@@ -174,6 +240,7 @@ export default function BusinessPage() {
         setNpwp(null);
         setNib(null);
         setSiup(null);
+        setDocErrors({});
       } else {
         setErrorMsg(res.error?.message || "Failed to submit application. Please try again.");
       }
@@ -530,28 +597,31 @@ export default function BusinessPage() {
                   <div className="border-t border-border-subtle pt-6 space-y-4">
                     <h3 className="font-semibold text-text-primary flex items-center gap-1.5"><FileText size={18} /> Document Re-uploads</h3>
                     <p className="text-xs text-text-secondary">Upload new versions of documents only if corrections were requested. Existing files remain in place.</p>
+                    <p className="text-xs text-text-secondary">{CRITERIA}</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {/* Document Item: KTP */}
                       <div className="border border-border-subtle p-4 rounded-lg flex items-center justify-between gap-4">
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-sm font-medium text-text-primary">Identity Card (KTP)</p>
-                          <p className="text-xs text-text-secondary">{ktp ? ktp.name : "Choose a new file to replace"}</p>
+                          <p className="text-xs text-text-secondary truncate">{ktp ? `${ktp.name} · ${formatSize(ktp.size)}` : "Choose a new file to replace"}</p>
+                          {docErrors.ktp && <p className="text-xs text-danger mt-1">{docErrors.ktp}</p>}
                         </div>
-                        <label className="bg-surface-container-low hover:bg-surface-container hover:text-primary text-text-secondary px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border border-border-subtle">
+                        <label className="bg-surface-container-low hover:bg-surface-container hover:text-primary text-text-secondary px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border border-border-subtle shrink-0">
                           Choose File
-                          <input type="file" onChange={(e) => setKtp(e.target.files?.[0] || null)} className="hidden" accept=".pdf,.png,.jpg,.jpeg" />
+                          <input type="file" onChange={(e) => handlePickDocument("ktp", setKtp, e.target.files?.[0] || null)} className="hidden" accept={ACCEPT} />
                         </label>
                       </div>
 
                       {/* Document Item: NPWP */}
                       <div className="border border-border-subtle p-4 rounded-lg flex items-center justify-between gap-4">
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-sm font-medium text-text-primary">Tax ID (NPWP)</p>
-                          <p className="text-xs text-text-secondary">{npwp ? npwp.name : "Choose a new file to replace"}</p>
+                          <p className="text-xs text-text-secondary truncate">{npwp ? `${npwp.name} · ${formatSize(npwp.size)}` : "Choose a new file to replace"}</p>
+                          {docErrors.npwp && <p className="text-xs text-danger mt-1">{docErrors.npwp}</p>}
                         </div>
-                        <label className="bg-surface-container-low hover:bg-surface-container hover:text-primary text-text-secondary px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border border-border-subtle">
+                        <label className="bg-surface-container-low hover:bg-surface-container hover:text-primary text-text-secondary px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border border-border-subtle shrink-0">
                           Choose File
-                          <input type="file" onChange={(e) => setNpwp(e.target.files?.[0] || null)} className="hidden" accept=".pdf,.png,.jpg,.jpeg" />
+                          <input type="file" onChange={(e) => handlePickDocument("npwp", setNpwp, e.target.files?.[0] || null)} className="hidden" accept={ACCEPT} />
                         </label>
                       </div>
                     </div>
@@ -712,53 +782,57 @@ export default function BusinessPage() {
 
               <div className="border-t border-border-subtle pt-6 space-y-4">
                 <h3 className="font-semibold text-text-primary flex items-center gap-1.5"><UploadCloud size={18} /> Legal Verification Documents</h3>
-                <p className="text-xs text-text-secondary">Upload valid PDF, PNG, or JPG document files (Max 10MB per file).</p>
+                <p className="text-xs text-text-secondary">{CRITERIA}</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Document Item: KTP */}
                   <div className="border border-border-subtle p-4 rounded-lg flex items-center justify-between gap-4">
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-sm font-medium text-text-primary">Identity Card (KTP) <span className="text-danger">*</span></p>
-                      <p className="text-xs text-text-secondary">{ktp ? ktp.name : "Not selected (Required)"}</p>
+                      <p className="text-xs text-text-secondary truncate">{ktp ? `${ktp.name} · ${formatSize(ktp.size)}` : "Not selected (Required)"}</p>
+                      {docErrors.ktp && <p className="text-xs text-danger mt-1">{docErrors.ktp}</p>}
                     </div>
-                    <label className="bg-surface-container-low hover:bg-surface-container hover:text-primary text-text-secondary px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border border-border-subtle">
+                    <label className="bg-surface-container-low hover:bg-surface-container hover:text-primary text-text-secondary px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border border-border-subtle shrink-0">
                       Choose File
-                      <input type="file" onChange={(e) => setKtp(e.target.files?.[0] || null)} className="hidden" accept=".pdf,.png,.jpg,.jpeg" required />
+                      <input type="file" onChange={(e) => handlePickDocument("ktp", setKtp, e.target.files?.[0] || null)} className="hidden" accept={ACCEPT} />
                     </label>
                   </div>
 
                   {/* Document Item: NPWP */}
                   <div className="border border-border-subtle p-4 rounded-lg flex items-center justify-between gap-4">
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-sm font-medium text-text-primary">Tax ID (NPWP)</p>
-                      <p className="text-xs text-text-secondary">{npwp ? npwp.name : "Not selected"}</p>
+                      <p className="text-xs text-text-secondary truncate">{npwp ? `${npwp.name} · ${formatSize(npwp.size)}` : "Not selected"}</p>
+                      {docErrors.npwp && <p className="text-xs text-danger mt-1">{docErrors.npwp}</p>}
                     </div>
-                    <label className="bg-surface-container-low hover:bg-surface-container hover:text-primary text-text-secondary px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border border-border-subtle">
+                    <label className="bg-surface-container-low hover:bg-surface-container hover:text-primary text-text-secondary px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border border-border-subtle shrink-0">
                       Choose File
-                      <input type="file" onChange={(e) => setNpwp(e.target.files?.[0] || null)} className="hidden" accept=".pdf,.png,.jpg,.jpeg" />
+                      <input type="file" onChange={(e) => handlePickDocument("npwp", setNpwp, e.target.files?.[0] || null)} className="hidden" accept={ACCEPT} />
                     </label>
                   </div>
 
                   {/* Document Item: NIB */}
                   <div className="border border-border-subtle p-4 rounded-lg flex items-center justify-between gap-4">
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-sm font-medium text-text-primary">Business Registry Number (NIB)</p>
-                      <p className="text-xs text-text-secondary">{nib ? nib.name : "Not selected"}</p>
+                      <p className="text-xs text-text-secondary truncate">{nib ? `${nib.name} · ${formatSize(nib.size)}` : "Not selected"}</p>
+                      {docErrors.nib && <p className="text-xs text-danger mt-1">{docErrors.nib}</p>}
                     </div>
-                    <label className="bg-surface-container-low hover:bg-surface-container hover:text-primary text-text-secondary px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border border-border-subtle">
+                    <label className="bg-surface-container-low hover:bg-surface-container hover:text-primary text-text-secondary px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border border-border-subtle shrink-0">
                       Choose File
-                      <input type="file" onChange={(e) => setNib(e.target.files?.[0] || null)} className="hidden" accept=".pdf,.png,.jpg,.jpeg" />
+                      <input type="file" onChange={(e) => handlePickDocument("nib", setNib, e.target.files?.[0] || null)} className="hidden" accept={ACCEPT} />
                     </label>
                   </div>
 
                   {/* Document Item: SIUP */}
                   <div className="border border-border-subtle p-4 rounded-lg flex items-center justify-between gap-4">
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-sm font-medium text-text-primary">SIUP / Business Permit</p>
-                      <p className="text-xs text-text-secondary">{siup ? siup.name : "Not selected"}</p>
+                      <p className="text-xs text-text-secondary truncate">{siup ? `${siup.name} · ${formatSize(siup.size)}` : "Not selected"}</p>
+                      {docErrors.siup && <p className="text-xs text-danger mt-1">{docErrors.siup}</p>}
                     </div>
-                    <label className="bg-surface-container-low hover:bg-surface-container hover:text-primary text-text-secondary px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border border-border-subtle">
+                    <label className="bg-surface-container-low hover:bg-surface-container hover:text-primary text-text-secondary px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border border-border-subtle shrink-0">
                       Choose File
-                      <input type="file" onChange={(e) => setSiup(e.target.files?.[0] || null)} className="hidden" accept=".pdf,.png,.jpg,.jpeg" />
+                      <input type="file" onChange={(e) => handlePickDocument("siup", setSiup, e.target.files?.[0] || null)} className="hidden" accept={ACCEPT} />
                     </label>
                   </div>
                 </div>

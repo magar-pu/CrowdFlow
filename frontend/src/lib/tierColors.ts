@@ -32,7 +32,15 @@ export function tierColorAt(index: number): string {
  * The tier's own colour when the organizer chose one, otherwise its position in
  * the palette. Position is the fallback rather than the rule because most tiers
  * carry no explicit colour yet.
+ *
+ * "No colour" includes the empty string, not just null. This used to test with
+ * `??`, which passes "" through as if it were a real choice — and the seat map
+ * endpoint sends exactly that, since ticket_tiers has no colour column. Every
+ * seat then resolved to "", which is falsy at the point of use, so the whole
+ * map fell back to the green "available" status colour and every tier looked
+ * identical.
  */
 export function tierColor(explicit: string | null | undefined, index: number): string {
-  return explicit ?? tierColorAt(index);
+  const chosen = explicit?.trim();
+  return chosen ? chosen : tierColorAt(index);
 }

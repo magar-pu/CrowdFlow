@@ -537,9 +537,6 @@ func (s *OrganizerService) SetEventListed(ctx context.Context, eventID int, orga
 	return s.repo.SetEventListed(ctx, eventID, organizerID, listed)
 }
 
-// defaultMaxPerOrder mirrors the ticket_tiers.max_ticket_per_user column default.
-const defaultMaxPerOrder = 4
-
 // salesDateLayout is what the console sends for a tier's sales window: a bare
 // calendar date, no time and no zone.
 const salesDateLayout = "2006-01-02"
@@ -605,7 +602,7 @@ func validateSalesWindow(tier *OrganizerTicketTier) error {
 
 // validateSalesWindowUpdate applies the same rules to an update, where the
 // payload may legitimately be partial: an omitted date means "leave that
-// endpoint of the window alone", matching how maxPerOrder behaves. A date that
+// endpoint of the window alone". A date that
 // IS supplied must still be well-formed.
 //
 // Ordering can only be checked when both arrive together; a partial update that
@@ -643,12 +640,6 @@ func (s *OrganizerService) CreateTicketTier(ctx context.Context, eventID int, or
 	}
 	if tier.Capacity <= 0 {
 		return fmt.Errorf("%w: ticket capacity must be greater than zero", ErrValidation)
-	}
-	// max_ticket_per_user is NOT NULL DEFAULT 4, but an explicit 0 from a caller
-	// that omits the field would override that default with "uncapped". Fall
-	// back to the column default instead.
-	if tier.MaxPerOrder <= 0 {
-		tier.MaxPerOrder = defaultMaxPerOrder
 	}
 	if err := validateSalesWindow(tier); err != nil {
 		return err
@@ -882,6 +873,26 @@ func (s *OrganizerService) SetEventMapsURL(ctx context.Context, eventID int, org
 		return err
 	}
 	return s.repo.SetEventMapsURL(ctx, eventID, organizerID, clean)
+}
+
+// maxTicketsPerOrderCeiling is an upper bound on what an organizer may set, so
+// a typo (100000) cannot quietly become "effectively uncapped" while still
+// reading like a real limit. Uncapped has its own explicit value: 0.
+const maxTicketsPerOrderCeiling = 100
+
+// SetEventMaxTicketsPerOrder stores how many tickets one order may contain for
+// this event, counted across every ticket type together.
+func (s *OrganizerService) SetEventMaxTicketsPerOrder(ctx context.Context, eventID int, organizerID int, maxPerOrder int) error {
+	if eventID <= 0 {
+		return fmt.Errorf("%w: invalid event ID", ErrValidation)
+	}
+	if maxPerOrder < 0 {
+		return fmt.Errorf("%w: the ticket limit cannot be negative (use 0 for no limit)", ErrValidation)
+	}
+	if maxPerOrder > maxTicketsPerOrderCeiling {
+		return fmt.Errorf("%w: the ticket limit cannot exceed %d per order (use 0 for no limit)", ErrValidation, maxTicketsPerOrderCeiling)
+	}
+	return s.repo.SetEventMaxTicketsPerOrder(ctx, eventID, organizerID, maxPerOrder)
 }
 
 // SetEventVenue binds the event to a venue from the workspace's Venue tab.

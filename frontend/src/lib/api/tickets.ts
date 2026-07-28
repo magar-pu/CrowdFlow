@@ -15,6 +15,11 @@ export interface UserTicket {
   ticketStatus: string;
   seatLabel: string;
   unitPrice: number;
+  /** Event start time, ISO 8601. Absent when the event row is missing. */
+  eventStart?: string;
+  venueName?: string;
+  venueCity?: string;
+  coverImageUrl?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -76,8 +81,8 @@ export interface TicketVaultDataResponse {
 /**
  * Request OTP via email for high-friction ticket vault access
  */
-export async function requestTicketOTP(ticketId: string, email?: string): Promise<ApiResponse<{ message: string; debugOtp?: string }>> {
-  return apiRequest<{ message: string; debugOtp?: string }>(`/api/v1/tickets/${ticketId}/request-otp`, {
+export async function requestTicketOTP(ticketId: string, email?: string): Promise<ApiResponse<{ message: string }>> {
+  return apiRequest<{ message: string }>(`/api/v1/tickets/${ticketId}/request-otp`, {
     method: "POST",
     body: JSON.stringify({ email }),
   });

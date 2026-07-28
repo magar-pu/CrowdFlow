@@ -157,7 +157,11 @@ func (s *BookingService) CreateHold(req HoldRequest) (*Hold, error) {
 		}
 	}
 
+	totalTickets := 0
+	// Any one tier of the hold, used to look up the event-level cap below.
+	capTierID := 0
 	for tierID, count := range tierCounts {
+		capTierID = tierID
 		// Checked before anything else: an event the organizer has withdrawn
 		// from public listing, or a tier whose sales window has closed, must
 		// not take new orders — even via a direct link, a stale tab or a
@@ -172,20 +176,29 @@ func (s *BookingService) CreateHold(req HoldRequest) (*Hold, error) {
 				"These tickets are no longer on sale.",
 			)
 		}
+		totalTickets += count
+	}
 
-		// The organizer's per-order cap (Tickets tab), applied per tier — that
-		// is what the field means, so 4 VIP plus 4 Regular is allowed when both
-		// caps are 4. It was previously only reported to the buyer as
-		// max_per_transaction and never checked. Enforced before any inventory
-		// is acquired so a rejected request leaves nothing held. 0 means
-		// uncapped.
-		maxPerOrder, err := s.repo.GetMaxPerOrder(tierID)
+	// The organizer's cap on the whole order (migration 0030), summed across
+	// every tier rather than applied to each one. The cap used to live on the
+	// tier, which meant an event with VIP=4 and Regular=4 let one buyer take 8;
+	// the organizer's intent was a single ceiling for the order, split however
+	// the buyer likes.
+	//
+	// Every tier in a hold belongs to one event — seated tiers are resolved
+	// from that event's seat matrix, and GA is a single tier — so reading the
+	// cap through any one of them is equivalent, and safer than trusting
+	// req.EventID. Enforced before any inventory is acquired, so a rejected
+	// request leaves nothing held. 0 means uncapped.
+	if capTierID != 0 {
+		maxPerOrder, err := s.repo.GetMaxTicketsPerOrderByTier(capTierID)
 		if err != nil {
 			return nil, err
 		}
-		if maxPerOrder > 0 && count > maxPerOrder {
+		if maxPerOrder > 0 && totalTickets > maxPerOrder {
 			return nil, unprocessable("PER_ORDER_LIMIT", fmt.Sprintf(
-				"You can buy up to %d of these tickets per order.", maxPerOrder,
+				"You can buy up to %d tickets per order for this event, across all ticket types. You selected %d.",
+				maxPerOrder, totalTickets,
 			))
 		}
 	}

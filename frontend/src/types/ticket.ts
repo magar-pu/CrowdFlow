@@ -98,7 +98,13 @@ export interface Event {
   ticket_categories: TicketCategory[];
   important_info: string[]; // bullet list shown in the "About This Event" section
   is_high_demand: boolean; // drives whether the queue/waiting room is enforced (FR anti-bot)
-  max_tickets_per_account: number; // FR-010, default 7
+  /**
+   * Cap on the TOTAL tickets one order may contain, across every ticket type
+   * combined (events.max_tickets_per_order, migration 0030). 0 means no limit.
+   * Replaces the per-tier cap, which capped each type separately and so let an
+   * event with two 4-ticket tiers sell 8 in one order.
+   */
+  max_tickets_per_order: number;
   created_at: string;
   updated_at: string;
 }
@@ -117,7 +123,6 @@ export interface TicketCategory {
   currency: Currency;
   quota_total: number;
   quota_remaining: number;
-  max_per_transaction: number; // category-level cap; account-level cap is event.max_tickets_per_account
   benefits: string[]; // e.g. ["Access to VIP lounge", "Merchandise bundle"]
   is_active: boolean;
 }

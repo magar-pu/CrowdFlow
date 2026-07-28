@@ -7,16 +7,13 @@
  * and PDF export are backend/Go concerns, not implemented here yet.
  */
 
-import { Smartphone, Download, Share2, Tag } from "lucide-react";
+import { Smartphone, Download, Share2 } from "lucide-react";
 
 interface TicketActionsProps {
   on_add_to_wallet?: () => void;
   on_add_shortcut?: () => void;
   on_download_pdf: () => void;
   on_share: () => void;
-  on_resell_ticket?: () => void;
-  on_cancel_resale?: () => void;
-  is_listed?: boolean;
 }
 
 export function TicketActions({
@@ -24,9 +21,6 @@ export function TicketActions({
   on_add_shortcut,
   on_download_pdf,
   on_share,
-  on_resell_ticket,
-  on_cancel_resale,
-  is_listed = false,
 }: TicketActionsProps) {
   const handleShortcutClick = on_add_shortcut || on_add_to_wallet || (() => {
     alert("📱 Add Shortcut to Home Screen:\n\n1. Tap your browser menu (3 dots or Share icon).\n2. Tap 'Add to Home Screen'.\n3. Access your CrowdFlow ticket in 1 tap!");

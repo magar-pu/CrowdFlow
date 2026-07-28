@@ -34,7 +34,6 @@ export function HomeFooterV3() {
               <li><Link href="/profile" className="text-sm text-text-secondary hover:text-primary transition-colors">Profile</Link></li>
               <li><Link href="/orders" className="text-sm text-text-secondary hover:text-primary transition-colors">My Orders</Link></li>
               <li><Link href="/profile/history" className="text-sm text-text-secondary hover:text-primary transition-colors">Ticket History</Link></li>
-              <li><Link href="/profile/payments" className="text-sm text-text-secondary hover:text-primary transition-colors">Payment Methods</Link></li>
             </ul>
           </div>
 

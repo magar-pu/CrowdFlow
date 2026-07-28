@@ -18,7 +18,6 @@ import {
   X,
   ChevronDown,
   UserCircle,
-  CreditCard,
   ClockIcon,
   RefreshCw,
   BellRing,
@@ -43,7 +42,6 @@ const PROFILE_MENU: Array<{
   badge?: string;
 }> = [
   { label: "My Profile", href: "/profile", icon: UserCircle },
-  { label: "Payments", href: "/profile/payments", icon: CreditCard },
   { label: "Purchase History", href: "/profile/history", icon: ClockIcon },
   { label: "My Tickets", href: "/orders", icon: Ticket },
 ];

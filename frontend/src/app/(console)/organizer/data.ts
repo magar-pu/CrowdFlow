@@ -75,7 +75,6 @@ export const INITIAL_TICKET_TIERS: TicketTier[] = [
     capacity: 350,
     status: "Selling Fast",
     color: "#D4AF37",
-    maxPerOrder: 4,
     salesStart: "2024-10-01",
     salesEnd: "2024-11-10",
     description: "Includes premium backstage lounge, priority seating, and custom physical badge."
@@ -88,7 +87,6 @@ export const INITIAL_TICKET_TIERS: TicketTier[] = [
     capacity: 1350,
     status: "On Sale",
     color: "#3B82F6",
-    maxPerOrder: 8,
     salesStart: "2024-10-05",
     salesEnd: "2024-11-12",
     description: "Full access to all standard general event stages."
@@ -101,7 +99,6 @@ export const INITIAL_TICKET_TIERS: TicketTier[] = [
     capacity: 300,
     status: "Sold Out",
     color: "#10B981",
-    maxPerOrder: 2,
     salesStart: "2024-10-10",
     salesEnd: "2024-11-12",
     description: "Discounted entry for verified active university students."

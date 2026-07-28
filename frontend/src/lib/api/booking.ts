@@ -59,7 +59,6 @@ export interface GaTier {
   description: string;
   price: number;
   quota_remaining: number;
-  max_per_transaction: number;
 }
 
 /**

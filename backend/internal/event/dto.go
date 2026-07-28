@@ -99,6 +99,9 @@ type EventDetailResponse struct {
 	// GoogleMapsURL is the organizer's map link, "" when none is set. Host is
 	// validated on write (Google Maps only) since it becomes an href.
 	GoogleMapsURL string `json:"google_maps_url"`
+	// MaxTicketsPerOrder caps the total tickets in one order across all tiers.
+	// 0 means uncapped.
+	MaxTicketsPerOrder int `json:"max_tickets_per_order"`
 	// RecentSales is tickets sold on paid orders in the last 7 days — the same
 	// figure the listing ranks "trending" by.
 	RecentSales int `json:"recent_sales"`
@@ -184,6 +187,7 @@ func MapEventToDetail(e *Event) *EventDetailResponse {
 		CoverImageURL:                 e.CoverImageURL,
 		LayoutID:                      e.LayoutID,
 		GoogleMapsURL:                 e.GoogleMapsURL,
+		MaxTicketsPerOrder:            e.MaxTicketsPerOrder,
 		RecentSales:                   e.RecentSales,
 		Venue:                         MapVenue(e.Venue),
 		Organizer:                     MapOrganizer(e.Organizer),

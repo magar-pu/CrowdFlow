@@ -892,14 +892,15 @@ func (r *PostgresRepository) GetOrganizerEvent(ctx context.Context, eventID int,
 		       COALESCE((SELECT SUM(allocation_limit) FROM ticket_tiers WHERE event_id = e.id), 0) as capacity,
 		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = e.id), 0) as sold,
 		       COALESCE((SELECT SUM(gross_amount) FROM orders WHERE event_id = e.id AND status = 'paid'), 0) as revenue,
-		       (e.archived_at IS NOT NULL) as is_archived
+		       (e.archived_at IS NOT NULL) as is_archived,
+		       e.max_tickets_per_order
 		FROM events e
 		-- LEFT: the workspace opens on venue-less drafts; that is where the
 		-- organizer goes to set the venue in the first place.
 		LEFT JOIN venues v ON e.venue_id = v.id
 		JOIN event_types et ON e.event_type_id = et.id
 		WHERE e.id = $1 AND e.organizer_id = $2
-	`, eventID, organizerID).Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue, &isArchived)
+	`, eventID, organizerID).Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue, &isArchived, &e.MaxTicketsPerOrder)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, sql.ErrNoRows
@@ -1134,7 +1135,7 @@ func (r *PostgresRepository) ListTicketTiers(ctx context.Context, eventID int, o
 	defer cancel()
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT tt.id, tt.name, tt.price, tt.tickets_sold, tt.allocation_limit, tt.description, tt.max_ticket_per_user, tt.sales_start, tt.sales_end
+		SELECT tt.id, tt.name, tt.price, tt.tickets_sold, tt.allocation_limit, tt.description, tt.sales_start, tt.sales_end
 		FROM ticket_tiers tt
 		JOIN events e ON tt.event_id = e.id
 		WHERE e.id = $1 AND e.organizer_id = $2
@@ -1151,7 +1152,7 @@ func (r *PostgresRepository) ListTicketTiers(ctx context.Context, eventID int, o
 		var idVal int
 		var descNull sql.NullString
 		var start, end time.Time
-		err = rows.Scan(&idVal, &t.Name, &t.Price, &t.Sold, &t.Capacity, &descNull, &t.MaxPerOrder, &start, &end)
+		err = rows.Scan(&idVal, &t.Name, &t.Price, &t.Sold, &t.Capacity, &descNull, &start, &end)
 		if err == nil {
 			t.ID = strconv.Itoa(idVal)
 			if descNull.Valid {
@@ -1207,10 +1208,10 @@ func (r *PostgresRepository) CreateTicketTier(ctx context.Context, eventID int, 
 	}
 
 	query := `
-		INSERT INTO ticket_tiers (event_id, name, description, price, allocation_limit, sales_start, sales_end, max_ticket_per_user)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO ticket_tiers (event_id, name, description, price, allocation_limit, sales_start, sales_end)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
-	_, err = r.db.ExecContext(ctx, query, eventID, tier.Name, tier.Description, tier.Price, tier.Capacity, start, end, tier.MaxPerOrder)
+	_, err = r.db.ExecContext(ctx, query, eventID, tier.Name, tier.Description, tier.Price, tier.Capacity, start, end)
 	return err
 }
 
@@ -1225,9 +1226,9 @@ func (r *PostgresRepository) UpdateTicketTier(ctx context.Context, eventID int, 
 		return fmt.Errorf("event not found or unauthorized")
 	}
 
-	// An omitted date means "leave that endpoint of the sales window alone",
-	// the same partial-update rule maxPerOrder follows below. NULL is the signal
-	// for that; it is never written to the columns, which are NOT NULL.
+	// An omitted date means "leave that endpoint of the sales window alone".
+	// NULL is the signal for that; it is never written to the columns, which
+	// are NOT NULL.
 	var start, end sql.NullTime
 	if strings.TrimSpace(tier.SalesStart) != "" {
 		t, err := parseSalesStart(tier.SalesStart)
@@ -1244,18 +1245,14 @@ func (r *PostgresRepository) UpdateTicketTier(ctx context.Context, eventID int, 
 		end = sql.NullTime{Time: t, Valid: true}
 	}
 
-	// Callers may send a partial tier that omits maxPerOrder, which arrives as 0.
-	// Treat that as "leave the existing cap alone" rather than writing 0, which
-	// the booking service reads as uncapped.
 	query := `
 		UPDATE ticket_tiers
 		SET name = $1, description = $2, price = $3, allocation_limit = $4,
 		    sales_start = COALESCE($5, sales_start),
-		    sales_end = COALESCE($6, sales_end),
-		    max_ticket_per_user = CASE WHEN $7 > 0 THEN $7 ELSE max_ticket_per_user END
-		WHERE id = $8 AND event_id = $9
+		    sales_end = COALESCE($6, sales_end)
+		WHERE id = $7 AND event_id = $8
 	`
-	_, err = r.db.ExecContext(ctx, query, tier.Name, tier.Description, tier.Price, tier.Capacity, start, end, tier.MaxPerOrder, tierID, eventID)
+	_, err = r.db.ExecContext(ctx, query, tier.Name, tier.Description, tier.Price, tier.Capacity, start, end, tierID, eventID)
 	return err
 }
 
@@ -2039,6 +2036,38 @@ func (r *PostgresRepository) UpdateOrganizerEvent(ctx context.Context, eventID i
 	}
 
 	return tx.Commit()
+}
+
+// SetEventMaxTicketsPerOrder stores the cap on how many tickets one order may
+// contain for this event, across all tiers combined. 0 means uncapped.
+//
+// A targeted UPDATE for the same reason SetEventMapsURL is one:
+// UpdateOrganizerEvent writes the whole row from its payload and blanks any
+// column the payload omits.
+//
+// Allowed at any status. The cap binds at hold time, so lowering it never
+// invalidates a ticket already issued - it only constrains the next order.
+func (r *PostgresRepository) SetEventMaxTicketsPerOrder(ctx context.Context, eventID int, organizerID int, maxPerOrder int) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE events
+		SET max_tickets_per_order = $1, updated_at = now()
+		WHERE id = $2 AND organizer_id = $3
+	`, maxPerOrder, eventID, organizerID)
+	if err != nil {
+		return err
+	}
+
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("event not found or unauthorized")
+	}
+	return nil
 }
 
 // SetEventMapsURL stores the organizer's map link for one event.
