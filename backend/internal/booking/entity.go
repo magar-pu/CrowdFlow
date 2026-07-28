@@ -8,14 +8,18 @@ import (
 // TicketTier is the public-facing ticket tier shape for buyers - only tiers
 // currently on sale (public visibility, within the sales window) are ever
 // returned by Repository.ListTicketTiers.
+//
+// There is no per-tier purchase cap here any more. The limit is one total for
+// the whole order, across every tier, and lives on the event
+// (events.max_tickets_per_order) — see migration 0030. Buyers read it from the
+// event payload, not from each tier.
 type TicketTier struct {
-	ID                int     `json:"ticket_tier_id"`
-	EventID           int     `json:"event_id"`
-	Name              string  `json:"name"`
-	Description       string  `json:"description"`
-	Price             float64 `json:"price"`
-	QuotaRemaining    int     `json:"quota_remaining"`
-	MaxPerTransaction int     `json:"max_per_transaction"`
+	ID             int     `json:"ticket_tier_id"`
+	EventID        int     `json:"event_id"`
+	Name           string  `json:"name"`
+	Description    string  `json:"description"`
+	Price          float64 `json:"price"`
+	QuotaRemaining int     `json:"quota_remaining"`
 }
 
 // Seat is a single seat's live state for one event, derived from
@@ -139,9 +143,15 @@ type Repository interface {
 	// (event_seats_matrix rows exist for it) as opposed to general admission.
 	IsAssignedSeating(ticketTierID int) (bool, error)
 
-	// GetMaxPerOrder returns the tier's per-order ticket cap
-	// (ticket_tiers.max_ticket_per_user). Zero or less means uncapped.
-	GetMaxPerOrder(ticketTierID int) (int, error)
+	// GetMaxTicketsPerOrderByTier returns the cap on the TOTAL number of
+	// tickets one order may contain (events.max_tickets_per_order), across
+	// every tier combined. Zero or less means uncapped.
+	//
+	// Keyed by tier rather than by event id for the same reason
+	// IsTierBookable is: the event id on a hold request is client-supplied and
+	// nothing else cross-checks it, so resolving the limit through the tier
+	// makes it impossible to quote one event's cap while buying another's.
+	GetMaxTicketsPerOrderByTier(ticketTierID int) (int, error)
 
 	// IsEventOnSale reports whether the event itself is visible to buyers:
 	// approved by an auditor, published by its organizer, and not archived.

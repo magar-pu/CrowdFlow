@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { TicketTier } from "../../types";
-import { Plus, Trash2, Layers, CheckCircle2, DollarSign } from "lucide-react";
+import { Plus, Trash2, Layers, CheckCircle2, DollarSign, ShoppingCart } from "lucide-react";
 import type { EventSeating, TierSeating } from "@/lib/api/eorganizer";
 import { formatIDR } from "@/lib/pricing";
 
@@ -9,15 +9,27 @@ interface WorkspaceTicketsProps {
   /** Seat-map figures. null when no layout is bound to this event yet. */
   seating: EventSeating | null;
   seatingLoading?: boolean;
+  /**
+   * Cap on the total tickets in one order, across every tier. 0 = no limit.
+   * Event-level on purpose: a per-tier cap let an event with two tiers capped
+   * at 4 each sell 8 in a single order.
+   */
+  maxTicketsPerOrder: number;
+  onSaveMaxTicketsPerOrder: (value: number) => Promise<void>;
   onCreateTier: (tier: Omit<TicketTier, "id">) => void;
   onUpdateTier: (id: string, updated: Partial<TicketTier>) => void;
   onDeleteTier: (id: string) => void;
 }
 
+/** Mirrors maxTicketsPerOrderCeiling in the organizer service. */
+const MAX_TICKETS_PER_ORDER_CEILING = 100;
+
 export default function WorkspaceTickets({
   ticketTiers,
   seating,
   seatingLoading = false,
+  maxTicketsPerOrder,
+  onSaveMaxTicketsPerOrder,
   onCreateTier,
   onDeleteTier
 }: WorkspaceTicketsProps) {
@@ -27,8 +39,46 @@ export default function WorkspaceTickets({
   const [newTierCapacity, setNewTierCapacity] = useState(500);
   const [newTierSalesEnd, setNewTierSalesEnd] = useState("");
   const [newTierSalesStart, setNewTierSalesStart] = useState("");
-  // Per-order cap (ticket_tiers.max_ticket_per_user). 4 is the column default.
-  const [newTierMaxPerOrder, setNewTierMaxPerOrder] = useState(4);
+
+  // Draft of the event-level order limit. Held locally so typing does not fire
+  // a request per keystroke; committed on Save.
+  const [limitDraft, setLimitDraft] = useState(String(maxTicketsPerOrder));
+  const [limitSaving, setLimitSaving] = useState(false);
+  const [limitError, setLimitError] = useState<string | null>(null);
+  const [limitSaved, setLimitSaved] = useState(false);
+
+  const handleSaveLimit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLimitError(null);
+    setLimitSaved(false);
+
+    const trimmed = limitDraft.trim();
+    const parsed = Number(trimmed);
+    // Number("") is 0, which is a meaningful value here (no limit), so an
+    // empty box must not silently mean "uncapped".
+    if (trimmed === "" || !Number.isInteger(parsed)) {
+      setLimitError("Enter a whole number, or 0 for no limit.");
+      return;
+    }
+    if (parsed < 0) {
+      setLimitError("The limit cannot be negative. Use 0 for no limit.");
+      return;
+    }
+    if (parsed > MAX_TICKETS_PER_ORDER_CEILING) {
+      setLimitError(`The limit cannot exceed ${MAX_TICKETS_PER_ORDER_CEILING}. Use 0 for no limit.`);
+      return;
+    }
+
+    setLimitSaving(true);
+    try {
+      await onSaveMaxTicketsPerOrder(parsed);
+      setLimitSaved(true);
+    } catch {
+      setLimitError("Could not save the limit. Please try again.");
+    } finally {
+      setLimitSaving(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,14 +92,12 @@ export default function WorkspaceTickets({
       // whatever is sent here is discarded.
       status: "On Sale",
       color: "#3B82F6",
-      maxPerOrder: newTierMaxPerOrder,
       salesStart: newTierSalesStart,
       salesEnd: newTierSalesEnd,
     });
     setNewTierName("");
     setNewTierSalesStart("");
     setNewTierSalesEnd("");
-    setNewTierMaxPerOrder(4);
     setShowAddForm(false);
   };
 
@@ -127,6 +175,75 @@ export default function WorkspaceTickets({
         </div>
       </div>
 
+      <form
+        onSubmit={handleSaveLimit}
+        className="p-4 bg-white border border-border-subtle rounded-xl space-y-3"
+      >
+        <div className="flex items-start gap-2">
+          <div className="p-1.5 bg-primary/10 border border-primary/20 text-primary rounded-lg shrink-0">
+            <ShoppingCart className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-text-primary">Order Limit</h3>
+            <p className="text-xs text-text-secondary">
+              The most tickets one buyer can put in a single order, counting every ticket type together.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <label
+              htmlFor="max-tickets-per-order"
+              className="block text-[9px] font-mono font-bold text-text-secondary uppercase"
+            >
+              Max tickets per order
+            </label>
+            <input
+              id="max-tickets-per-order"
+              type="number"
+              min={0}
+              max={MAX_TICKETS_PER_ORDER_CEILING}
+              value={limitDraft}
+              onChange={(e) => {
+                setLimitDraft(e.target.value);
+                setLimitSaved(false);
+                setLimitError(null);
+              }}
+              className="w-28 h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={limitSaving || limitDraft.trim() === String(maxTicketsPerOrder)}
+            className="h-9 bg-secondary hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold px-4 rounded-lg transition-colors cursor-pointer"
+          >
+            {limitSaving ? "Saving..." : "Save"}
+          </button>
+          {limitSaved && (
+            <span className="text-xs font-semibold text-success">Saved</span>
+          )}
+        </div>
+
+        {limitError ? (
+          <p className="text-[10px] font-semibold text-danger">{limitError}</p>
+        ) : (
+          <p className="text-[10px] text-text-secondary">
+            {Number(limitDraft) > 0 ? (
+              <>
+                A buyer can mix ticket types freely up to{" "}
+                <strong>{Number(limitDraft).toLocaleString()}</strong> tickets in one order — for example{" "}
+                {Math.max(1, Number(limitDraft) - 1).toLocaleString()} of one type and 1 of another.
+              </>
+            ) : (
+              <span className="text-amber-600 font-bold">
+                No limit — a buyer can put any number of tickets in one order.
+              </span>
+            )}
+          </p>
+        )}
+      </form>
+
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-base font-bold text-text-primary">Admission Ticket Tiers</h3>
@@ -176,22 +293,6 @@ export default function WorkspaceTickets({
             </div>
             <p className="text-[10px] text-text-secondary">
               Sales run from the start of <strong>Sales Open</strong> through the end of <strong>Sales Close</strong>, Jakarta time. Buyers cannot see this tier outside that window.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Max Per Order</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={newTierMaxPerOrder}
-                  onChange={(e) => setNewTierMaxPerOrder(Number(e.target.value))}
-                  className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none"
-                />
-              </div>
-            </div>
-            <p className="text-[10px] text-text-secondary">
-              Buyers cannot put more than <strong>{newTierMaxPerOrder > 0 ? newTierMaxPerOrder : 4}</strong> of this
-              ticket in a single order.
             </p>
             <button type="submit" className="w-full bg-secondary hover:bg-secondary/90 text-white text-xs font-bold py-2 rounded-lg transition-colors cursor-pointer">Create Tier</button>
           </div>
@@ -248,13 +349,6 @@ export default function WorkspaceTickets({
                     </p>
                   ) : (
                     <p className="text-xs text-on-surface-variant font-mono mt-0.5">Allocation limit: {tier.capacity.toLocaleString()}</p>
-                  )}
-                  {tier.maxPerOrder && tier.maxPerOrder > 0 ? (
-                    <p className="text-xs text-on-surface-variant font-mono mt-0.5">
-                      Max {tier.maxPerOrder.toLocaleString()} per order
-                    </p>
-                  ) : (
-                    <p className="text-xs text-amber-600 font-mono mt-0.5">No per-order limit</p>
                   )}
                 </div>
 

@@ -48,6 +48,10 @@ type Event struct {
 	// GoogleMapsURL is the organizer's own map link for this event (0029).
 	// Empty means none set — clients fall back to a name+address search.
 	GoogleMapsURL string `json:"google_maps_url"`
+	// MaxTicketsPerOrder caps the TOTAL tickets one order may contain across
+	// every tier combined (0030). 0 means uncapped. The buyer UI mirrors it to
+	// refuse before the round trip; booking.CreateHold is what enforces it.
+	MaxTicketsPerOrder int `json:"max_tickets_per_order"`
 	// StartingPrice is the cheapest ticket tier for this event (MIN of
 	// ticket_tiers.price). nil when the event has no tiers yet, which is
 	// distinct from a genuine price of 0 — callers must not conflate them.

@@ -12,8 +12,11 @@
  * Seats may span tiers. A hold no longer names a tier for assigned seating —
  * the server resolves each seat's tier from event_seats_matrix — so the buyer
  * can mix VIP and Regular in one order. Each seat therefore carries its own
- * tier and price here, and the per-order cap is applied per tier, matching what
- * the organizer configured on each one.
+ * tier and price here.
+ *
+ * The purchase cap is ONE TOTAL for the whole selection, across every tier
+ * (events.max_tickets_per_order, migration 0030) — not a cap per tier. Under a
+ * limit of 10 the buyer may take 6 VIP and 4 Regular, or 10 of either.
  */
 
 "use client";
@@ -53,14 +56,13 @@ export interface SeatGroup {
 
 interface UseSeatSelectionOptions {
   /**
-   * Per-order cap keyed by ticket_tier_id, from each tier's
-   * max_per_transaction. A tier absent from the map, or mapped to 0, is
-   * uncapped.
+   * Cap on the total number of seats that may be selected, across all tiers.
+   * 0 (or less) means uncapped.
    */
-  max_per_tier: Map<number, number>;
+  max_total: number;
 }
 
-export function useSeatSelection({ max_per_tier }: UseSeatSelectionOptions) {
+export function useSeatSelection({ max_total }: UseSeatSelectionOptions) {
   const [zoom, set_zoom] = useState(1);
   const [pan_x, set_pan_x] = useState(0);
   const [pan_y, set_pan_y] = useState(0);
@@ -123,15 +125,12 @@ export function useSeatSelection({ max_per_tier }: UseSeatSelectionOptions) {
         const existing = seats.find((s) => s.seat_id === seat.seat_id);
         if (existing) return seats.filter((s) => s.seat_id !== seat.seat_id);
 
-        // The cap belongs to the tier being added to, not to the selection as
-        // a whole: 4 VIP plus 4 Regular is allowed when both caps are 4.
-        const cap = max_per_tier.get(tier.ticket_tier_id) ?? 0;
-        const in_tier = seats.filter(
-          (s) => s.ticket_tier_id === tier.ticket_tier_id
-        ).length;
-        if (cap > 0 && in_tier >= cap) {
+        // One cap for the whole selection, not one per tier. Deselecting a
+        // seat in any category is what frees room, so the message says so
+        // rather than naming the category that happened to be clicked.
+        if (max_total > 0 && seats.length >= max_total) {
           set_limit_notice(
-            `Maximum ${cap} ${tier.name} tickets per order. Seats in other categories can still be added.`
+            `You can select up to ${max_total} tickets per order, across all categories. Remove a seat to choose a different one.`
           );
           return seats;
         }
@@ -149,14 +148,14 @@ export function useSeatSelection({ max_per_tier }: UseSeatSelectionOptions) {
         ];
       });
     },
-    [max_per_tier]
+    [max_total]
   );
 
   /**
    * Replace the selection wholesale, used to rebuild it from a hold the buyer
-   * still owns after navigating back to the map. Bypasses the per-tier caps on
-   * purpose: these seats are already locked to them and were capped when the
-   * hold was taken.
+   * still owns after navigating back to the map. Bypasses the cap on purpose:
+   * these seats are already locked to them and were capped when the hold was
+   * taken.
    */
   const restore_seats = useCallback((seats: ChosenSeat[]) => {
     set_limit_notice(null);

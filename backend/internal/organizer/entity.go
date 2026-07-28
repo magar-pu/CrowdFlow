@@ -471,6 +471,12 @@ type OrganizerEvent struct {
 	// Published reports whether the organizer has put the approved event on the
 	// public listing. Approval alone no longer implies it.
 	Published bool `json:"published"`
+
+	// MaxTicketsPerOrder caps the TOTAL tickets one order may contain across
+	// every tier (migration 0030). 0 means uncapped. Read-only on this struct:
+	// it is written through SetEventMaxTicketsPerOrder, never through
+	// UpdateOrganizerEvent, which blanks columns its payload omits.
+	MaxTicketsPerOrder int `json:"maxTicketsPerOrder"`
 }
 
 // Ticket Tier model
@@ -481,7 +487,6 @@ type OrganizerTicketTier struct {
 	Sold        int     `json:"sold"`
 	Capacity    int     `json:"capacity"`
 	Status      string  `json:"status,omitempty"`
-	MaxPerOrder int     `json:"maxPerOrder,omitempty"`
 	SalesStart  string  `json:"salesStart,omitempty"`
 	SalesEnd    string  `json:"salesEnd,omitempty"`
 	Description string  `json:"description,omitempty"`
@@ -708,6 +713,7 @@ type Repository interface {
 	UpdateOrganizerEvent(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
 	SetEventVenue(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
 	SetEventMapsURL(ctx context.Context, eventID int, organizerID int, mapsURL string) error
+	SetEventMaxTicketsPerOrder(ctx context.Context, eventID int, organizerID int, maxPerOrder int) error
 	SetEventCoverImage(ctx context.Context, eventID int, organizerID int, url string) error
 	WithdrawEventFromReview(ctx context.Context, eventID int, organizerID int) error
 	SetEventArchived(ctx context.Context, eventID int, organizerID int, archived bool) error
@@ -765,6 +771,7 @@ type Service interface {
 	UpdateOrganizerEvent(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
 	SetEventVenue(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
 	SetEventMapsURL(ctx context.Context, eventID int, organizerID int, mapsURL string) error
+	SetEventMaxTicketsPerOrder(ctx context.Context, eventID int, organizerID int, maxPerOrder int) error
 	UploadEventCover(ctx context.Context, eventID int, organizerID int, upload *CoverImageUpload) (string, error)
 	WithdrawEventFromReview(ctx context.Context, eventID int, organizerID int) error
 	SetEventArchived(ctx context.Context, eventID int, organizerID int, archived bool) error

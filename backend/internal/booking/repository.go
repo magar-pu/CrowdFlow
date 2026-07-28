@@ -30,7 +30,7 @@ func (r *PostgresRedisRepository) ListTicketTiers(eventID int) ([]*TicketTier, e
 	defer cancel()
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, event_id, name, COALESCE(description, ''), price, allocation_limit, tickets_sold, max_ticket_per_user
+		SELECT id, event_id, name, COALESCE(description, ''), price, allocation_limit, tickets_sold
 		FROM ticket_tiers
 		WHERE event_id = $1 AND visibility = 'public' AND sales_start <= now() AND sales_end >= now()
 		ORDER BY price ASC
@@ -44,7 +44,7 @@ func (r *PostgresRedisRepository) ListTicketTiers(eventID int) ([]*TicketTier, e
 	for rows.Next() {
 		var t TicketTier
 		var allocationLimit, ticketsSold int
-		if err := rows.Scan(&t.ID, &t.EventID, &t.Name, &t.Description, &t.Price, &allocationLimit, &ticketsSold, &t.MaxPerTransaction); err != nil {
+		if err := rows.Scan(&t.ID, &t.EventID, &t.Name, &t.Description, &t.Price, &allocationLimit, &ticketsSold); err != nil {
 			return nil, err
 		}
 		t.QuotaRemaining = allocationLimit - ticketsSold
@@ -251,16 +251,22 @@ func (r *PostgresRedisRepository) IsAssignedSeating(ticketTierID int) (bool, err
 	return exists, err
 }
 
-// GetMaxPerOrder reads the tier's per-order cap. A missing tier reports 0
-// (uncapped) rather than an error: CreateHold's later inventory calls are what
-// authoritatively reject an unknown tier.
-func (r *PostgresRedisRepository) GetMaxPerOrder(ticketTierID int) (int, error) {
+// GetMaxTicketsPerOrderByTier reads the event's total per-order cap through the
+// tier, so the limit always belongs to the event that actually owns the tickets
+// being bought rather than to a client-supplied event id.
+//
+// A missing tier reports 0 (uncapped) rather than an error: CreateHold's later
+// inventory calls are what authoritatively reject an unknown tier.
+func (r *PostgresRedisRepository) GetMaxTicketsPerOrderByTier(ticketTierID int) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	var max int
 	err := r.db.QueryRowContext(ctx, `
-		SELECT max_ticket_per_user FROM ticket_tiers WHERE id = $1
+		SELECT e.max_tickets_per_order
+		FROM ticket_tiers t
+		JOIN events e ON e.id = t.event_id
+		WHERE t.id = $1
 	`, ticketTierID).Scan(&max)
 	if err == sql.ErrNoRows {
 		return 0, nil
