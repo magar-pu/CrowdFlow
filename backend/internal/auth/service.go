@@ -234,10 +234,7 @@ func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string, red
 			return "", "", nil, err
 		}
 	} else {
-		// Verify that this user account was registered with Google
-		if user.AuthProvider != "google" {
-			return "", "", nil, errors.New("PROVIDER_MISMATCH: native")
-		}
+		// Existing email account: Google has verified identity, allow OAuth login seamlessly
 	}
 
 	access, refresh, err := s.issueTokens(ctx, user)

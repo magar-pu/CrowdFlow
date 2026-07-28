@@ -38,7 +38,38 @@ func (r *PostgresRepository) CreateOrder(ctx context.Context, order *Order) erro
 func (r *PostgresRepository) UpdateOrderStatus(ctx context.Context, orderID string, status string, externalTransactionID string) error {
 	query := `UPDATE orders SET status = $1, external_transaction_id = $2 WHERE id = $3`
 	_, err := r.db.ExecContext(ctx, query, status, externalTransactionID, orderID)
-	return err
+	if err != nil {
+		return err
+	}
+
+	if status == "paid" {
+		// Auto-generate ticket for paid order if missing
+		genQuery := `
+			INSERT INTO tickets (order_id, ticket_tier_id, attendee_full_name, attendee_email, ticket_status, unit_price, secret_key, created_at, updated_at)
+			SELECT 
+				o.id, 
+				COALESCE(
+					(SELECT id FROM ticket_tiers WHERE event_id = o.event_id LIMIT 1),
+					(SELECT id FROM ticket_tiers LIMIT 1),
+					1
+				), 
+				COALESCE(up.full_name, 'Ticket Holder'), 
+				u.email, 
+				'issued'::ticket_status, 
+				o.net_amount, 
+				md5(random()::text), 
+				NOW(), 
+				NOW()
+			FROM orders o 
+			JOIN users u ON o.purchaser_id = u.id 
+			LEFT JOIN user_profiles up ON u.id = up.user_id 
+			WHERE o.id = $1 AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.order_id = o.id)
+			ON CONFLICT DO NOTHING
+		`
+		_, _ = r.db.ExecContext(ctx, genQuery, orderID)
+	}
+
+	return nil
 }
 
 func (r *PostgresRepository) GetOrderByID(ctx context.Context, orderID string) (*Order, error) {
@@ -78,4 +109,19 @@ func (r *PostgresRepository) GetOrderDetailsForMail(ctx context.Context, orderID
 		return nil, err
 	}
 	return details, nil
+}
+
+func (r *PostgresRepository) GetUserForPayment(ctx context.Context, userID int) (string, string, error) {
+	var email, fullName string
+	query := `
+		SELECT u.email, COALESCE(up.full_name, 'Ticket Purchaser')
+		FROM users u
+		LEFT JOIN user_profiles up ON u.id = up.user_id
+		WHERE u.id = $1
+	`
+	err := r.db.QueryRowContext(ctx, query, userID).Scan(&email, &fullName)
+	if err != nil {
+		return "", "", err
+	}
+	return email, fullName, nil
 }

@@ -22,6 +22,7 @@ import { CheckoutSummary } from "@/components/checkout/CheckoutSummary";
 import { mockEvent, mockOrder, mockTicketCategoryById } from "@/mock/eventData";
 import type { CartItem } from "@/types/ticket";
 import { createOrder } from "@/lib/api/payment";
+import { useAuthStore } from "@/lib/store/authStore";
 
 declare global {
   interface Window {
@@ -146,7 +147,11 @@ function CheckoutContent() {
             localStorage.setItem('demo_tickets', JSON.stringify([boughtTicket, ...existing]));
           }
 
-          router.push(`/orders/${res.data?.order_id || mockOrder.order_id}`);
+          const finalOrderId = res.data?.order_id || result?.order_id || mockOrder.order_id;
+          const userEmail = useAuthStore.getState().user?.email || "";
+          const totalAmount = cart_items.reduce((sum, item) => sum + (item.unit_face_value * item.quantity), 0);
+          const ticketTitle = cart_items[0]?.ticket_category_name || "Event Ticket";
+          router.push(`/orders/${finalOrderId}?amount=${totalAmount}&email=${encodeURIComponent(userEmail)}&title=${encodeURIComponent(ticketTitle)}`);
         },
         onPending: function (result: any) {
           console.log("Payment pending:", result);

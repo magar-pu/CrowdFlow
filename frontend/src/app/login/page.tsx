@@ -29,21 +29,14 @@ function SignInPageContent() {
   const [error_message, set_error_message] = useState("");
   const [success_message, set_success_message] = useState("");
 
-  // Redirect away if already authenticated (unless redirected here by middleware via ?from=)
+  // Redirect away if already authenticated (respecting ?from= query param)
   useEffect(() => {
-    const from = searchParams.get("from");
-    if (from) {
-      // User was redirected by server middleware because HTTP cookie was missing -> reset stale state
-      if (is_authenticated) {
-        logout();
-      }
-      return;
-    }
-
     if (is_authenticated && user) {
-      router.replace(getRoleLandingPath(user.role));
+      const from = searchParams.get("from");
+      const validFrom = from && !from.startsWith("/login") && !from.startsWith("/register") ? from : null;
+      router.replace(validFrom || getRoleLandingPath(user.role));
     }
-  }, [is_authenticated, user, router, searchParams, logout]);
+  }, [is_authenticated, user, router, searchParams]);
 
   // Check URL query parameters for Google OAuth callback errors and registration success
   useEffect(() => {
@@ -76,9 +69,10 @@ function SignInPageContent() {
         // Sync user from API response to Zustand
         set_user_from_api(result.data);
 
-        // Redirect dynamically based on user platform role — super_admin →
-        // /admin, verified_organizer → /organizer, auditor → /auditor, else /.
-        router.push(getRoleLandingPath(result.data.role ?? ""));
+        const from = searchParams.get("from");
+        const validFrom = from && !from.startsWith("/login") && !from.startsWith("/register") ? from : null;
+        const targetPath = validFrom || getRoleLandingPath(result.data.role ?? "");
+        router.push(targetPath);
       } else {
         set_error_message(result.error?.message ?? "Login failed.");
         throw new Error(result.error?.message);
@@ -90,7 +84,9 @@ function SignInPageContent() {
         set_error_message(result.message);
         throw new Error(result.message);
       }
-      router.push("/");
+      const from = searchParams.get("from");
+      const validFrom = from && !from.startsWith("/login") && !from.startsWith("/register") ? from : null;
+      router.push(validFrom || "/");
     }
   }
 
@@ -109,8 +105,10 @@ function SignInPageContent() {
       if (result.success) {
         // Sync Google user to Zustand as well
         set_user_from_api(result.data);
-        // Same role-based landing as the password flow.
-        router.push(getRoleLandingPath(result.data?.role ?? ""));
+        const from = searchParams.get("from");
+        const validFrom = from && !from.startsWith("/login") && !from.startsWith("/register") ? from : null;
+        const targetPath = validFrom || getRoleLandingPath(result.data?.role ?? "");
+        router.push(targetPath);
       } else {
         set_error_message(result.error?.message ?? "Google login failed.");
       }

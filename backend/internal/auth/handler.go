@@ -97,11 +97,23 @@ func (h *Handler) setAuthCookies(w http.ResponseWriter, accessToken, refreshToke
 }
 
 // clearAuthCookies expires all three auth cookies. Paths must match those set
+// clearAuthCookies expires all three auth cookies. Paths must match those set
 // in setAuthCookies, or the browser keeps the stale cookie.
 func (h *Handler) clearAuthCookies(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{Name: "access_token", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: h.secure, SameSite: http.SameSiteLaxMode})
-	http.SetCookie(w, &http.Cookie{Name: "refresh_token", Value: "", Path: "/api/v1/auth", MaxAge: -1, HttpOnly: true, Secure: h.secure, SameSite: http.SameSiteLaxMode})
-	http.SetCookie(w, &http.Cookie{Name: "csrf_token", Value: "", Path: "/", MaxAge: -1, HttpOnly: false, Secure: h.secure, SameSite: http.SameSiteLaxMode})
+	expiredTime := time.Unix(0, 0)
+	// Clear with h.secure setting
+	http.SetCookie(w, &http.Cookie{Name: "access_token", Value: "", Path: "/", MaxAge: -1, Expires: expiredTime, HttpOnly: true, Secure: h.secure, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: "refresh_token", Value: "", Path: "/api/v1/auth", MaxAge: -1, Expires: expiredTime, HttpOnly: true, Secure: h.secure, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: "refresh_token", Value: "", Path: "/", MaxAge: -1, Expires: expiredTime, HttpOnly: true, Secure: h.secure, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: "csrf_token", Value: "", Path: "/", MaxAge: -1, Expires: expiredTime, HttpOnly: false, Secure: h.secure, SameSite: http.SameSiteLaxMode})
+
+	// Also clear with Secure: false so HTTP local/docker environments clear the cookie cleanly
+	if h.secure {
+		http.SetCookie(w, &http.Cookie{Name: "access_token", Value: "", Path: "/", MaxAge: -1, Expires: expiredTime, HttpOnly: true, Secure: false, SameSite: http.SameSiteLaxMode})
+		http.SetCookie(w, &http.Cookie{Name: "refresh_token", Value: "", Path: "/api/v1/auth", MaxAge: -1, Expires: expiredTime, HttpOnly: true, Secure: false, SameSite: http.SameSiteLaxMode})
+		http.SetCookie(w, &http.Cookie{Name: "refresh_token", Value: "", Path: "/", MaxAge: -1, Expires: expiredTime, HttpOnly: true, Secure: false, SameSite: http.SameSiteLaxMode})
+		http.SetCookie(w, &http.Cookie{Name: "csrf_token", Value: "", Path: "/", MaxAge: -1, Expires: expiredTime, HttpOnly: false, Secure: false, SameSite: http.SameSiteLaxMode})
+	}
 }
 
 // resolveRoleName returns the user's highest-privilege platform role (roles
@@ -258,16 +270,24 @@ func (h *Handler) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		roleName = h.resolveRoleName(userID)
 	}
 
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "http://localhost:3000"
+	}
+
+	targetPath := "/"
 	switch roleName {
 	case "Super Admin":
-		http.Redirect(w, r, "/admin", http.StatusTemporaryRedirect)
+		targetPath = "/admin"
 	case "Auditor":
-		http.Redirect(w, r, "/auditor", http.StatusTemporaryRedirect)
+		targetPath = "/auditor"
 	case "Event Organizer":
-		http.Redirect(w, r, "/dashboard", http.StatusTemporaryRedirect)
+		targetPath = "/organizer"
 	default:
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		targetPath = "/"
 	}
+
+	http.Redirect(w, r, frontendURL+targetPath, http.StatusTemporaryRedirect)
 }
 
 // handleRefresh rotates the refresh token and issues a new access token. It

@@ -36,7 +36,7 @@ func NewService(apiKey string, fromEmail string) Service {
 }
 
 func (s *resendService) SendOTP(toEmail string, code string, purpose string) error {
-	subject := fmt.Sprintf("[CrowdFlow] Kode OTP Verifikasi (%s)", strings.Title(purpose))
+	subject := fmt.Sprintf("[CrowdFlow] Kode OTP: %s (%s)", code, strings.Title(purpose))
 	html := fmt.Sprintf(`
 <!DOCTYPE html>
 <html>

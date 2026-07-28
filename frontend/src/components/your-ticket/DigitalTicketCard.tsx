@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { RefreshCw, ShieldCheck, Clock, Lock, KeyRound, CheckCircle2, AlertTriangle } from "lucide-react";
+import { RefreshCw, ShieldCheck, Clock, Lock, KeyRound, CheckCircle2, AlertTriangle, Info } from "lucide-react";
 import { getTicketQR, requestTicketOTP, verifyTicketOTP, getTicketVaultData } from "@/lib/api/tickets";
 import {
   importSecretKey,
@@ -15,6 +15,7 @@ import {
   VaultTicketRecord
 } from "@/lib/ticketVault";
 import type { PurchasedTicket } from "@/types/ticket";
+import { useAuthStore } from "@/lib/store/authStore";
 
 interface DigitalTicketCardProps {
   ticket: PurchasedTicket;
@@ -105,7 +106,7 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
   async function handleRequestOTP() {
     setOtpError("");
     try {
-      const targetEmail = "dragonvenomid15@gmail.com";
+      const targetEmail = useAuthStore.getState().user?.email || "dragonvenomid15@gmail.com";
       const res = await requestTicketOTP(ticketId, targetEmail);
       if (res.success) {
         setOtpStep("SENT");
@@ -340,12 +341,15 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
           Ticket Verification (Email OTP)
         </h2>
         <p className="text-xs text-text-secondary leading-relaxed mb-4">
-          To prevent scalping and unauthorized ticket transfers, enter the 6-digit OTP code sent to your email to unlock and vault this ticket locally (*SubtleCrypto Vault*).
+          To prevent scalping and unauthorized ticket transfers, enter the 6-digit OTP code sent to your email to unlock your ticket for offline access.
         </p>
 
-        <div className="mb-4 rounded-lg bg-amber-50 p-2.5 border border-amber-200 text-left text-[11px] text-amber-800">
-          <p className="font-bold mb-0.5">ℹ️ Important Notice:</p>
-          <p className="text-[10.5px]">
+        <div className="mb-4 rounded-lg bg-amber-50 p-3 border border-amber-200 text-left text-amber-800">
+          <div className="flex items-center gap-1.5 font-bold mb-1 text-xs">
+            <Info className="h-4 w-4 text-amber-600 shrink-0" />
+            <span>Important Notice:</span>
+          </div>
+          <p className="text-[11px] leading-relaxed">
             OTP verification is only required once. Afterwards, this ticket is automatically saved offline on your device and can be accessed anytime without internet connection or OTP.
           </p>
         </div>
@@ -376,8 +380,8 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
           disabled={otpStep === "VERIFYING"}
           className="w-full bg-neutral-900 hover:bg-black text-white font-bold text-sm py-3 rounded-xl transition-all shadow-md cursor-pointer mb-2 flex items-center justify-center gap-2"
         >
-          <KeyRound className="w-4 h-4" />
-          <span>{otpStep === "VERIFYING" ? "Verifying..." : "🔓 Unlock & Save Ticket Offline"}</span>
+          <Lock className="w-4 h-4" />
+          <span>{otpStep === "VERIFYING" ? "Verifying..." : "Unlock & Save Ticket Offline"}</span>
         </button>
 
         <button
@@ -503,13 +507,13 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
         {isVaulted && (
           <div className="mt-4 w-full flex flex-col gap-2 pt-3 border-t border-border-subtle">
             <p className="text-[10px] text-emerald-600 font-medium text-center">
-              🔒 SubtleCrypto key securely stored in IndexedDB (Offline ready for venue entry)
+              🔒 Ticket key securely saved on your device (Offline ready for venue entry)
             </p>
             <button
               onClick={handleResetVault}
               className="w-full mt-1 text-[10px] text-gray-400 hover:text-red-600 font-medium text-center py-1 hover:underline cursor-pointer"
             >
-              🔄 Test OTP Re-Authentication (Reset Device Vault)
+              🔄 Reset Local Vault (Test Re-Auth)
             </button>
           </div>
         )}
@@ -533,7 +537,7 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
             </div>
 
             <p className="text-xs text-text-secondary mb-4 leading-relaxed">
-              Untuk mencegah calo dan pembajakan tiket, verifikasi kode OTP yang dikirimkan ke email Anda untuk menyimpan kunci rahasia ke brankas HP (*SubtleCrypto Vault*).
+              Untuk mencegah calo dan pembajakan tiket, verifikasi kode OTP yang dikirimkan ke email Anda untuk menyimpan kunci rahasia ke brankas HP Anda.
             </p>
 
 

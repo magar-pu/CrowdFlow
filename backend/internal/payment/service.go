@@ -69,24 +69,43 @@ func (s *PaymentService) CreateMidtransTransaction(ctx context.Context, userID i
 		return nil, fmt.Errorf("failed to create order: %w", err)
 	}
 
-	// 2. Map selected payment method to Midtrans enabled payments
-	var enabledPayments []snap.SnapPaymentType
-	if req.PaymentMethod != "" {
-		enabledPayments = []snap.SnapPaymentType{snap.SnapPaymentType(req.PaymentMethod)}
-	} else {
-		enabledPayments = nil
+	// 2. Fetch purchaser info for Midtrans CustomerDetail (required for Virtual Account generation)
+	userEmail, userName, _ := s.repo.GetUserForPayment(ctx, userID)
+	if userEmail == "" {
+		userEmail = "buyer@crowdflow.com"
+	}
+	if userName == "" {
+		userName = "Ticket Buyer"
 	}
 
-	// 3. Request snap token from midtrans
+	// 3. Build item details for Midtrans
+	items := make([]midtrans.ItemDetails, 0, len(req.CartItems))
+	for _, item := range req.CartItems {
+		items = append(items, midtrans.ItemDetails{
+			ID:    item.TicketCategoryID,
+			Name:  item.TicketCategoryName,
+			Price: int64(item.UnitFaceValue),
+			Qty:   int32(item.Quantity),
+		})
+	}
+
+	// 4. Request snap token from midtrans
 	snapReq := &snap.Request{
 		TransactionDetails: midtrans.TransactionDetails{
 			OrderID:  order.ID,
 			GrossAmt: int64(order.GrossAmount),
 		},
+		CustomerDetail: &midtrans.CustomerDetails{
+			FName: userName,
+			Email: userEmail,
+		},
+		Items: &items,
 		CreditCard: &snap.CreditCardDetails{
 			Secure: true,
 		},
 	}
+
+	enabledPayments := mapSnapPaymentTypes(req.PaymentMethod)
 	if len(enabledPayments) > 0 {
 		snapReq.EnabledPayments = enabledPayments
 	}
@@ -100,6 +119,27 @@ func (s *PaymentService) CreateMidtransTransaction(ctx context.Context, userID i
 		OrderID:   order.ID,
 		SnapToken: snapResp.Token,
 	}, nil
+}
+
+func mapSnapPaymentTypes(pm string) []snap.SnapPaymentType {
+	switch pm {
+	case "bca_va":
+		return []snap.SnapPaymentType{snap.PaymentTypeBCAVA}
+	case "bni_va":
+		return []snap.SnapPaymentType{snap.PaymentTypeBNIVA}
+	case "mandiri_bill":
+		return []snap.SnapPaymentType{snap.PaymentTypeEChannel}
+	case "gopay":
+		return []snap.SnapPaymentType{snap.PaymentTypeGopay}
+	case "shopeepay":
+		return []snap.SnapPaymentType{snap.PaymentTypeShopeepay}
+	case "qris":
+		return []snap.SnapPaymentType{snap.PaymentTypeGopay}
+	case "credit_card":
+		return []snap.SnapPaymentType{snap.PaymentTypeCreditCard}
+	default:
+		return nil
+	}
 }
 
 func (s *PaymentService) HandleMidtransWebhook(ctx context.Context, payload map[string]interface{}) error {

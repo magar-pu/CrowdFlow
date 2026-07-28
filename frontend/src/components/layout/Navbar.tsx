@@ -90,10 +90,10 @@ export function Navbar({ active_href = "/", is_authenticated: override, isTransp
     return () => window.removeEventListener("scroll", handle_scroll);
   }, [isTransparentOnTop]);
 
-  function handle_logout() {
-    logout();
+  async function handle_logout() {
     set_profile_open(false);
-    router.push("/");
+    await logout();
+    window.location.href = "/";
   }
 
   const initials = display_user.full_name

@@ -16,9 +16,10 @@ func CSRF(next http.Handler) http.Handler {
 			return
 		}
 
-		// Bypass validation for authentication bootstrap, forgot-password, send-otp, reset-password, payment webhooks, tickets, resale, and scanner device endpoints
+		// Bypass validation for authentication bootstrap, forgot-password, send-otp, reset-password, logout, payment webhooks, tickets, resale, and scanner device endpoints
 		path := r.URL.Path
 		if path == "/api/v1/auth/login" || path == "/api/v1/auth/register" || path == "/api/v1/auth/google" ||
+			path == "/api/v1/auth/logout" ||
 			path == "/api/v1/auth/forgot-password" || path == "/api/v1/auth/send-otp" ||
 			path == "/api/v1/auth/reset-password" ||
 			path == "/api/v1/payment/webhook" || strings.HasPrefix(path, "/api/v1/payment/") ||

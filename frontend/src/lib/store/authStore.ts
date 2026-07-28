@@ -152,6 +152,12 @@ export const useAuthStore = create<AuthState>()(
         } catch (e) {
           // ignore session cleanup failure
         }
+        if (typeof document !== "undefined") {
+          document.cookie = "access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT;";
+          document.cookie = "csrf_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT;";
+          document.cookie = "refresh_token=; path=/api/v1/auth; expires=Thu, 01 Jan 1970 00:00:00 GMT;";
+          document.cookie = "refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT;";
+        }
         set({ user: null, is_authenticated: false });
       },
     }),
