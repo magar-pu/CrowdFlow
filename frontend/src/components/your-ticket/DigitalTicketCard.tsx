@@ -259,7 +259,8 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
     }
 
     try {
-      const verifyRes = await verifyTicketOTP(ticketId, codeToVerify);
+      const targetEmail = useAuthStore.getState().user?.email || "dragonvenomid15@gmail.com";
+      const verifyRes = await verifyTicketOTP(ticketId, codeToVerify, targetEmail);
       if (!verifyRes.success || !verifyRes.data?.verified) {
         setOtpError(verifyRes.error?.message || "Invalid OTP code");
         setOtpStep("SENT");

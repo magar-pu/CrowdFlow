@@ -23,7 +23,6 @@ export function HomeFooterV3() {
             <ul className="space-y-3">
               <li><Link href="/" className="text-sm text-text-secondary hover:text-primary transition-colors">Home</Link></li>
               <li><Link href="/events" className="text-sm text-text-secondary hover:text-primary transition-colors">Events</Link></li>
-              <li><Link href="/resale" className="text-sm text-text-secondary hover:text-primary transition-colors">Resale Marketplace</Link></li>
               <li><Link href="/business" className="text-sm text-text-secondary hover:text-primary transition-colors">Business</Link></li>
             </ul>
           </div>

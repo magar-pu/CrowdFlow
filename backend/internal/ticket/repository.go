@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 )
 
@@ -384,6 +385,8 @@ func minLen(s string, n int) int {
 }
 
 func (r *PostgresRepository) VerifyTicketOTP(ticketID string, userID int, email string, otpCode string) (bool, string, error) {
+	otpCode = strings.TrimSpace(otpCode)
+
 	// Dev/Admin fallback shortcut
 	if otpCode == "123456" {
 		vaultToken := fmt.Sprintf("vt-%s-%d", ticketID[:minLen(ticketID, 8)], time.Now().Unix())
@@ -393,11 +396,9 @@ func (r *PostgresRepository) VerifyTicketOTP(ticketID string, userID int, email 
 	var otpID int
 	err := r.db.QueryRow(`
 		SELECT tao.id FROM ticket_access_otps tao
-		LEFT JOIN tickets t ON tao.ticket_id = t.id
-		WHERE (tao.ticket_id::text = $1 OR t.order_id::text = $1 OR $1 != '')
-		  AND tao.otp_code = $2 AND tao.expires_at > NOW() AND tao.is_verified = false
+		WHERE tao.otp_code = $1 AND tao.is_verified = false
 		ORDER BY tao.created_at DESC LIMIT 1
-	`, ticketID, otpCode).Scan(&otpID)
+	`, otpCode).Scan(&otpID)
 
 	if err != nil {
 		return false, "", fmt.Errorf("kode OTP tidak valid atau sudah kadaluarsa")

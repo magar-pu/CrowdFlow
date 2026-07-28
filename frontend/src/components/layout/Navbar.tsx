@@ -33,16 +33,19 @@ import { useAuthStore } from "@/lib/store/authStore";
 const NAV_LINKS = [
   { label: "Home", href: "/" },
   { label: "Events", href: "/events" },
-  { label: "Resale Marketplace", href: "/resale" },
   { label: "Business", href: "/business" },
 ];
 
-const PROFILE_MENU = [
+const PROFILE_MENU: Array<{
+  label: string;
+  href: string;
+  icon: any;
+  badge?: string;
+}> = [
   { label: "My Profile", href: "/profile", icon: UserCircle },
   { label: "Payments", href: "/profile/payments", icon: CreditCard },
   { label: "Purchase History", href: "/profile/history", icon: ClockIcon },
   { label: "My Tickets", href: "/orders", icon: Ticket },
-  { label: "Resale", href: "/resale/my-listings", icon: RefreshCw, badge: "BARU!" },
 ];
 
 interface NavbarProps {

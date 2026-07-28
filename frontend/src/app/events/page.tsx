@@ -368,8 +368,6 @@ function EventsDiscoveryContent() {
             </div>
           </div>
         </section>
-
-        <ResaleMarketplacePromo />
       </main>
 
       <HomeFooterV3 />

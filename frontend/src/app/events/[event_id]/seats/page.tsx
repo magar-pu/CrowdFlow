@@ -140,16 +140,19 @@ export default function SeatSelectionPage() {
     if (active_tier_id !== null || tiers.length === 0) return;
     const from_query = Number(search?.get("ticket_category_id"));
     const requested = tiers.find((t) => t.ticket_tier_id === from_query);
-    set_active_tier_id(
-      (requested ?? tiers.find((t) => t.available) ?? tiers[0]).ticket_tier_id
-    );
+    const chosen = requested ?? tiers.find((t) => t.available) ?? tiers[0];
+    set_active_tier_id(chosen.ticket_tier_id);
+    if (chosen.is_general_admission) {
+      set_quantity(1);
+    }
   }, [tiers, active_tier_id, search]);
 
   function handle_select_tier(next_id: number) {
     if (next_id === active_tier_id) return;
     // A hold covers one tier, so carrying seats across would silently drop them.
     clear_seats();
-    set_quantity(0);
+    const target = tiers.find((t) => t.ticket_tier_id === next_id);
+    set_quantity(target?.is_general_admission ? 1 : 0);
     set_hold_error(null);
     set_active_tier_id(next_id);
   }
@@ -350,9 +353,8 @@ export default function SeatSelectionPage() {
         {/* Right panel (desktop) / bottom sheet (mobile) */}
         <aside
           className={cn(
-            "fixed inset-x-0 bottom-0 z-50 flex h-[85vh] shrink-0 flex-col rounded-t-3xl border-t border-border-subtle bg-white shadow-[0_-8px_30px_rgba(0,0,0,0.12)] transition-transform duration-300",
-            "md:static md:h-full md:w-[360px] md:translate-y-0 md:rounded-none md:border-l md:border-t-0 md:shadow-[-4px_0_24px_rgba(0,0,0,0.04)]",
-            has_selection ? "translate-y-0" : "translate-y-[calc(100%-5rem)] md:translate-y-0"
+            "fixed inset-x-0 bottom-0 z-50 flex max-h-[85vh] shrink-0 flex-col rounded-t-3xl border-t border-border-subtle bg-white shadow-[0_-8px_30px_rgba(0,0,0,0.12)] transition-transform duration-300 translate-y-0",
+            "md:static md:h-full md:w-[360px] md:rounded-none md:border-l md:border-t-0 md:shadow-[-4px_0_24px_rgba(0,0,0,0.04)]"
           )}
         >
           <SelectionPanel

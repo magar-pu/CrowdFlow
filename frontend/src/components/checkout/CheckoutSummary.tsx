@@ -95,91 +95,94 @@ export function CheckoutSummary({
         })}
       </div>
 
-      <div className="grid grid-cols-1 gap-gutter lg:grid-cols-12">
+      {/* Title */}
+      <h1 className="mb-6 font-headline-lg text-headline-lg font-bold text-primary">
+        Checkout
+      </h1>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-stretch">
         {/* Left column — Order summary */}
-        <div className="space-y-stack-lg lg:col-span-7">
-          <h1 className="font-headline-lg text-headline-lg text-primary">
-            Checkout
-          </h1>
+        <div className="lg:col-span-6 flex flex-col">
+          <div className="flex-1 rounded-2xl border border-border-subtle bg-surface-white p-6 sm:p-8 shadow-sm flex flex-col justify-between">
+            <div>
+              <h2 className="mb-6 font-headline-sm text-headline-sm font-bold text-primary">
+                Order Summary
+              </h2>
 
-          <div className="overflow-hidden rounded-xl border border-border-subtle bg-surface-white p-stack-lg shadow-sm">
-            <h2 className="mb-stack-md font-headline-sm text-headline-sm text-primary">
-              Order Summary
-            </h2>
-
-            {/* Event details */}
-            <div className="mb-stack-lg flex flex-col gap-stack-sm border-b border-border-subtle pb-stack-md sm:flex-row sm:gap-stack-md">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={event.cover_image_url}
-                alt={event.title}
-                className="h-24 w-24 shrink-0 rounded-lg object-cover"
-              />
-              <div>
-                <h3 className="font-headline-sm text-headline-sm text-primary">
-                  {event.title}
-                </h3>
-                <p className="mt-1 font-body-sm text-body-sm text-text-secondary">
-                  {formatEventDateTime(event.starts_at)}
-                </p>
-                <p className="font-body-sm text-body-sm text-text-secondary">
-                  {event.venue.name}
-                </p>
-              </div>
-            </div>
-
-            {/* Ticket breakdown */}
-            <div className="mb-stack-lg space-y-stack-sm">
-              {breakdown.lines.map((line) => (
-                <div
-                  key={line.cart_item_id}
-                  className="flex flex-wrap items-baseline justify-between gap-x-2 font-body-md text-body-md text-primary"
-                >
-                  <span>
-                    {line.quantity}x {line.ticket_category_name}
-                  </span>
-                  <span className="font-bold">
-                    {formatIDR(line.subtotal_face_value)}
-                  </span>
+              {/* Event details */}
+              <div className="mb-6 flex flex-col gap-4 border-b border-border-subtle pb-6 sm:flex-row sm:items-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={event.cover_image_url}
+                  alt={event.title}
+                  className="h-20 w-20 shrink-0 rounded-xl object-cover"
+                />
+                <div>
+                  <h3 className="font-headline-sm text-base sm:text-lg font-bold text-primary">
+                    {event.title}
+                  </h3>
+                  <p className="mt-1 font-body-sm text-xs sm:text-sm text-text-secondary">
+                    {formatEventDateTime(event.starts_at)}
+                  </p>
+                  <p className="font-body-sm text-xs sm:text-sm text-text-secondary">
+                    {event.venue.name}
+                  </p>
                 </div>
-              ))}
-              <div className="flex items-center justify-between font-body-sm text-body-sm text-text-secondary">
-                <span>Service Fee</span>
-                <span>{formatIDR(breakdown.total_platform_service_fee)}</span>
               </div>
-              <div className="flex items-center justify-between border-b border-border-subtle pb-stack-md font-body-sm text-body-sm text-text-secondary">
-                <span>
-                  Tax ({(breakdown.ppn_tax_rate * 100).toFixed(0)}%)
-                </span>
-                <span>{formatIDR(breakdown.ppn_tax_amount)}</span>
-              </div>
-              <div className="flex items-center justify-between pt-stack-sm font-headline-sm text-headline-sm text-primary">
-                <span>Total</span>
-                <span>{formatIDR(breakdown.grand_total)}</span>
+
+              {/* Ticket breakdown */}
+              <div className="mb-6 space-y-3">
+                {breakdown.lines.map((line) => (
+                  <div
+                    key={line.cart_item_id}
+                    className="flex flex-wrap items-baseline justify-between gap-x-2 font-body-md text-sm text-primary"
+                  >
+                    <span>
+                      {line.quantity}x {line.ticket_category_name}
+                    </span>
+                    <span className="font-bold">
+                      {formatIDR(line.subtotal_face_value)}
+                    </span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between text-xs sm:text-sm text-text-secondary">
+                  <span>Service Fee</span>
+                  <span>{formatIDR(breakdown.total_platform_service_fee)}</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-border-subtle pb-4 text-xs sm:text-sm text-text-secondary">
+                  <span>
+                    Tax ({(breakdown.ppn_tax_rate * 100).toFixed(0)}%)
+                  </span>
+                  <span>{formatIDR(breakdown.ppn_tax_amount)}</span>
+                </div>
+                <div className="flex items-center justify-between pt-2 text-base sm:text-lg font-bold text-primary">
+                  <span>Total</span>
+                  <span>{formatIDR(breakdown.grand_total)}</span>
+                </div>
               </div>
             </div>
 
             {/* Promo code */}
-            <div>
+            <div className="pt-4 border-t border-border-subtle/50">
               <label
                 htmlFor="promo"
-                className="mb-stack-sm block font-label-sm text-label-sm text-text-secondary"
+                className="mb-2 block text-xs font-semibold text-text-secondary"
               >
                 Promo Code
               </label>
-              <div className="flex gap-stack-sm">
+              <div className="flex gap-2">
                 <input
                   id="promo"
                   type="text"
                   placeholder="Enter code"
                   value={promo_code}
                   onChange={(e) => set_promo_code(e.target.value)}
-                  className="min-w-0 flex-1 rounded-lg border border-border-subtle bg-surface-white px-3 py-2 font-body-md text-body-md transition-all focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/20"
+                  className="min-w-0 flex-1 rounded-xl border border-border-subtle bg-surface-white px-3.5 py-2.5 text-sm transition-all focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/20"
                 />
                 <button
                   type="button"
                   onClick={() => on_apply_promo_code?.(promo_code)}
-                  className="shrink-0 rounded-lg bg-surface-container-high px-4 py-2 font-label-md text-label-md text-primary transition-colors hover:bg-surface-dim sm:px-6"
+                  className="shrink-0 rounded-xl bg-surface-container-high px-5 py-2.5 text-xs sm:text-sm font-semibold text-primary transition-colors hover:bg-surface-dim cursor-pointer"
                 >
                   Apply
                 </button>
@@ -189,68 +192,70 @@ export function CheckoutSummary({
         </div>
 
         {/* Right column — Payment selection */}
-        <div className="space-y-stack-lg lg:col-span-5">
-          <div className="rounded-xl border border-border-subtle bg-surface-white p-stack-lg shadow-sm">
-            <div className="mb-stack-md flex items-center gap-2">
-              <Lock size={20} className="text-success" />
-              <h2 className="font-headline-sm text-headline-sm text-primary">
-                Secure Payment
-              </h2>
-            </div>
-            <p className="mb-stack-lg font-body-sm text-body-sm text-text-secondary">
-              All transactions are secure and encrypted.
-            </p>
+        <div className="lg:col-span-6 flex flex-col">
+          <div className="flex-1 rounded-2xl border border-border-subtle bg-surface-white p-6 sm:p-8 shadow-sm flex flex-col justify-between">
+            <div>
+              <div className="mb-1 flex items-center gap-2">
+                <Lock size={20} className="text-success" />
+                <h2 className="font-headline-sm text-headline-sm font-bold text-primary">
+                  Secure Payment
+                </h2>
+              </div>
+              <p className="mb-6 text-xs sm:text-sm text-text-secondary">
+                All transactions are secure and encrypted.
+              </p>
 
-            {/* Payment methods */}
-            <div className="space-y-stack-md">
-              {PAYMENT_METHOD_OPTIONS.map((option) => {
-                const Icon = option.icon;
-                const is_selected = selected_payment_method === option.value;
-                return (
-                  <label key={option.value} className="relative block cursor-pointer">
-                    <input
-                      type="radio"
-                      name="payment_method"
-                      checked={is_selected}
-                      onChange={() => set_selected_payment_method(option.value)}
-                      className="sr-only"
-                    />
-                    <div
-                      className={cn(
-                        "flex items-center justify-between rounded-lg border p-stack-md transition-all",
-                        is_selected
-                          ? "border-secondary bg-secondary/5"
-                          : "border-border-subtle bg-surface-white hover:border-secondary"
-                      )}
-                    >
-                      <div className="flex items-center gap-stack-md">
-                        <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-border-subtle">
-                          <div
-                            className={cn(
-                              "h-2.5 w-2.5 rounded-full",
-                              is_selected ? "bg-secondary" : "bg-transparent"
-                            )}
-                          />
+              {/* Payment methods (2-column layout) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {PAYMENT_METHOD_OPTIONS.map((option) => {
+                  const Icon = option.icon;
+                  const is_selected = selected_payment_method === option.value;
+                  return (
+                    <label key={option.value} className="relative block cursor-pointer">
+                      <input
+                        type="radio"
+                        name="payment_method"
+                        checked={is_selected}
+                        onChange={() => set_selected_payment_method(option.value)}
+                        className="sr-only"
+                      />
+                      <div
+                        className={cn(
+                          "flex items-center justify-between rounded-xl border p-3.5 transition-all h-full",
+                          is_selected
+                            ? "border-secondary bg-secondary/5 ring-1 ring-secondary shadow-2xs"
+                            : "border-border-subtle bg-surface-white hover:border-secondary/60"
+                        )}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-border-subtle">
+                            <div
+                              className={cn(
+                                "h-2 w-2 rounded-full",
+                                is_selected ? "bg-secondary" : "bg-transparent"
+                              )}
+                            />
+                          </div>
+                          <span className="text-xs sm:text-sm font-semibold text-primary truncate">
+                            {option.label}
+                          </span>
                         </div>
-                        <span className="font-body-md text-body-md font-medium text-primary">
-                          {option.label}
-                        </span>
+                        <Icon size={18} className="text-text-secondary shrink-0 ml-1" />
                       </div>
-                      <Icon size={20} className="text-text-secondary" />
-                    </div>
-                  </label>
-                );
-              })}
+                    </label>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Confirm */}
-            <div className="mt-stack-lg border-t border-border-subtle pt-stack-lg">
+            <div className="mt-6 border-t border-border-subtle pt-6">
               <button
                 type="button"
                 disabled={is_submitting}
                 onClick={() => on_confirm(selected_payment_method)}
                 className={cn(
-                  "flex w-full items-center justify-center gap-2 rounded-lg py-4 font-label-md text-label-md shadow-lg shadow-primary/10 transition-all",
+                  "flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-bold shadow-lg shadow-primary/10 transition-all cursor-pointer",
                   is_submitting
                     ? "cursor-not-allowed bg-primary/60 text-on-primary"
                     : "bg-primary text-on-primary hover:bg-primary/90"
@@ -259,9 +264,9 @@ export function CheckoutSummary({
                 {is_submitting
                   ? "Processing…"
                   : `Pay ${formatIDR(breakdown.grand_total)}`}
-                {!is_submitting && <ArrowRight size={20} />}
+                {!is_submitting && <ArrowRight size={18} />}
               </button>
-              <p className="mt-stack-sm text-center font-body-sm text-body-sm text-text-secondary">
+              <p className="mt-2 text-center text-xs text-text-secondary">
                 By proceeding, you agree to our Terms &amp; Conditions.
               </p>
             </div>

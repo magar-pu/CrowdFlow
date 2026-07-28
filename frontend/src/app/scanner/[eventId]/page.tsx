@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
+// @ts-ignore
 import { Html5Qrcode } from "html5-qrcode";
 import {
   checkInScannerAttendee,
@@ -312,13 +313,13 @@ export default function StandaloneScannerPage() {
         targetCamera,
         {
           fps: 15,
-          qrbox: (width, height) => {
+          qrbox: (width: number, height: number) => {
             const size = Math.min(width, height) * 0.75;
             return { width: size, height: size };
           },
           aspectRatio: 1.0,
         },
-        (decodedText) => {
+        (decodedText: string) => {
           handleCheckInResult(decodedText);
         },
         () => {}
@@ -330,7 +331,7 @@ export default function StandaloneScannerPage() {
           await qrReaderRef.current?.start(
             { facingMode: "environment" },
             { fps: 15, qrbox: { width: 250, height: 250 } },
-            (decodedText) => handleCheckInResult(decodedText),
+            (decodedText: string) => handleCheckInResult(decodedText),
             () => {}
           );
           return;
@@ -351,7 +352,7 @@ export default function StandaloneScannerPage() {
         if (!isMounted) return;
         setCameras(devices || []);
         if (devices && devices.length > 0) {
-          const backCam = devices.find((device) =>
+          const backCam = devices.find((device: any) =>
             device.label.toLowerCase().includes("back") ||
             device.label.toLowerCase().includes("rear") ||
             device.label.toLowerCase().includes("environment") ||

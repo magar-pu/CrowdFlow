@@ -4,6 +4,8 @@ import type { NextRequest } from "next/server";
 // Smart Auto-Redirect map for common URL typos and alias shortcuts
 const SMART_REDIRECT_ALIASES: Record<string, string> = {
   "/event": "/events",
+  "/resale": "/",
+  "/resale-marketplace": "/",
   "/ticket": "/profile",
   "/tickets": "/profile",
   "/order": "/profile",
@@ -24,7 +26,12 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const lowerPath = pathname.toLowerCase().replace(/\/$/, "");
 
-  // 1. Smart Auto-Redirect for common typos & aliases
+  // 1. Resale feature hidden per product decision -> redirect to homepage
+  if (pathname.startsWith("/resale")) {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
+  // 2. Smart Auto-Redirect for common typos & aliases
   if (SMART_REDIRECT_ALIASES[lowerPath]) {
     return NextResponse.redirect(new URL(SMART_REDIRECT_ALIASES[lowerPath], request.url));
   }
