@@ -9,9 +9,11 @@
  * by the numeric `seat_id` the backend uses for holds, not by a synthesised
  * "section-row-number" string.
  *
- * Selection is confined to ONE tier because a hold covers exactly one tier
- * (POST /booking/holds takes a single ticket_tier_id). Switching tier clears
- * the selection rather than silently dropping seats at hold time.
+ * Seats may span tiers. A hold no longer names a tier for assigned seating —
+ * the server resolves each seat's tier from event_seats_matrix — so the buyer
+ * can mix VIP and Regular in one order. Each seat therefore carries its own
+ * tier and price here, and the per-order cap is applied per tier, matching what
+ * the organizer configured on each one.
  */
 
 "use client";
@@ -28,15 +30,37 @@ export interface ChosenSeat {
   seat_id: number;
   row: string;
   number: string;
+  ticket_tier_id: number;
+  tier_name: string;
   unit_face_value: number;
 }
 
-interface UseSeatSelectionOptions {
-  /** Upper bound from the tier's max_per_transaction. */
-  max_seats: number;
+/** The tier a seat belongs to, passed in on click. */
+export interface SeatTierInfo {
+  ticket_tier_id: number;
+  name: string;
+  price: number;
+  color: string;
 }
 
-export function useSeatSelection({ max_seats }: UseSeatSelectionOptions) {
+/** One tier's worth of the current selection, for rendering and for the hold. */
+export interface SeatGroup {
+  ticket_tier_id: number;
+  tier_name: string;
+  unit_face_value: number;
+  seats: ChosenSeat[];
+}
+
+interface UseSeatSelectionOptions {
+  /**
+   * Per-order cap keyed by ticket_tier_id, from each tier's
+   * max_per_transaction. A tier absent from the map, or mapped to 0, is
+   * uncapped.
+   */
+  max_per_tier: Map<number, number>;
+}
+
+export function useSeatSelection({ max_per_tier }: UseSeatSelectionOptions) {
   const [zoom, set_zoom] = useState(1);
   const [pan_x, set_pan_x] = useState(0);
   const [pan_y, set_pan_y] = useState(0);
@@ -87,15 +111,21 @@ export function useSeatSelection({ max_seats }: UseSeatSelectionOptions) {
   );
 
   const toggle_seat = useCallback(
-    (seat: SeatMapSeat, unit_face_value: number) => {
+    (seat: SeatMapSeat, tier: SeatTierInfo) => {
       set_limit_notice(null);
       set_chosen_seats((seats) => {
         const existing = seats.find((s) => s.seat_id === seat.seat_id);
         if (existing) return seats.filter((s) => s.seat_id !== seat.seat_id);
 
-        if (seats.length >= max_seats) {
+        // The cap belongs to the tier being added to, not to the selection as
+        // a whole: 4 VIP plus 4 Regular is allowed when both caps are 4.
+        const cap = max_per_tier.get(tier.ticket_tier_id) ?? 0;
+        const in_tier = seats.filter(
+          (s) => s.ticket_tier_id === tier.ticket_tier_id
+        ).length;
+        if (cap > 0 && in_tier >= cap) {
           set_limit_notice(
-            `Maksimal ${max_seats} tiket per transaksi untuk kategori ini.`
+            `Maximum ${cap} ${tier.name} tickets per order. Seats in other categories can still be added.`
           );
           return seats;
         }
@@ -106,12 +136,14 @@ export function useSeatSelection({ max_seats }: UseSeatSelectionOptions) {
             seat_id: seat.seat_id,
             row: seat.row,
             number: seat.number,
-            unit_face_value,
+            ticket_tier_id: tier.ticket_tier_id,
+            tier_name: tier.name,
+            unit_face_value: tier.price,
           },
         ];
       });
     },
-    [max_seats]
+    [max_per_tier]
   );
 
   const remove_seat = useCallback((seat_id: number) => {
@@ -134,6 +166,28 @@ export function useSeatSelection({ max_seats }: UseSeatSelectionOptions) {
     [chosen_seats]
   );
 
+  /**
+   * The selection grouped by tier, in the order each tier was first picked, so
+   * the panel and the hold agree on what is being bought.
+   */
+  const seat_groups: SeatGroup[] = useMemo(() => {
+    const groups = new Map<number, SeatGroup>();
+    for (const seat of chosen_seats) {
+      const existing = groups.get(seat.ticket_tier_id);
+      if (existing) {
+        existing.seats.push(seat);
+        continue;
+      }
+      groups.set(seat.ticket_tier_id, {
+        ticket_tier_id: seat.ticket_tier_id,
+        tier_name: seat.tier_name,
+        unit_face_value: seat.unit_face_value,
+        seats: [seat],
+      });
+    }
+    return Array.from(groups.values());
+  }, [chosen_seats]);
+
   return {
     // transform
     zoom,
@@ -149,6 +203,7 @@ export function useSeatSelection({ max_seats }: UseSeatSelectionOptions) {
     handle_wheel_zoom,
     // selection
     chosen_seats,
+    seat_groups,
     selected_seat_ids,
     subtotal,
     limit_notice,

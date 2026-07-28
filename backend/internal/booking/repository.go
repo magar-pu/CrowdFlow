@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -139,6 +141,11 @@ func (r *PostgresRedisRepository) applySeatHolds(ctx context.Context, eventID in
 // event, also reporting which tiers are sold as assigned seating. Grouping is
 // per-seat via event_seats_matrix - the venue layout itself is untiered.
 func (r *PostgresRedisRepository) seatMapTiers(ctx context.Context, eventID int) ([]*SeatTier, map[int]bool, error) {
+	// Same on-sale filter as ListTicketTiers. Without it this returned every
+	// tier with seats assigned regardless of visibility or sales window, so a
+	// tier whose sales had closed still rendered on the buyer's map with its
+	// seats clickable — while the GA half of the same screen, which goes
+	// through ListTicketTiers, correctly hid it.
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT tt.id, tt.name, tt.price, tt.color,
 			s.id, s.row_number, s.seat_number, esm.current_state, s.pos_x, s.pos_y
@@ -146,6 +153,9 @@ func (r *PostgresRedisRepository) seatMapTiers(ctx context.Context, eventID int)
 		JOIN ticket_tiers tt ON tt.id = esm.ticket_tier_id
 		JOIN seats s ON s.id = esm.seat_id
 		WHERE esm.event_id = $1
+		  AND tt.visibility = 'public'
+		  AND tt.sales_start <= now()
+		  AND tt.sales_end >= now()
 		ORDER BY tt.price, s.row_number, s.seat_number
 	`, eventID)
 	if err != nil {
@@ -265,6 +275,11 @@ func (r *PostgresRedisRepository) GetMaxPerOrder(ticketTierID int) (int, error) 
 // A withdrawn (unpublished) event still serves its detail page so existing
 // ticket holders keep working links — this is what stops it from taking new
 // orders while it is off the public listing.
+//
+// The tier's own visibility and sales window are checked here as well. Removing
+// closed tiers from the seat map only stops an honest client from offering
+// them; this is what stops a stale tab, a bookmarked link or a hand-rolled
+// request from holding seats on a tier that is no longer for sale.
 func (r *PostgresRedisRepository) IsTierBookable(ticketTierID int) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -274,6 +289,9 @@ func (r *PostgresRedisRepository) IsTierBookable(ticketTierID int) (bool, error)
 		SELECT e.status = 'approved'
 		   AND e.published_at IS NOT NULL
 		   AND e.archived_at IS NULL
+		   AND tt.visibility = 'public'
+		   AND tt.sales_start <= now()
+		   AND tt.sales_end >= now()
 		FROM ticket_tiers tt
 		JOIN events e ON tt.event_id = e.id
 		WHERE tt.id = $1
@@ -282,6 +300,28 @@ func (r *PostgresRedisRepository) IsTierBookable(ticketTierID int) (bool, error)
 		return false, nil
 	}
 	return bookable, err
+}
+
+// intArrayLiteral renders ids as a Postgres array literal ("{1,2,3}") for use
+// with `= ANY($n::int[])`.
+//
+// The project drives pgx through database/sql, where a plain []int is not a
+// valid driver value, and lib/pq (whose pq.Array would do this) is not a
+// dependency. The literal is still bound as a parameter, not interpolated.
+func intArrayLiteral(ids []int) string {
+	if len(ids) == 0 {
+		return "{}"
+	}
+	var b strings.Builder
+	b.WriteByte('{')
+	for i, id := range ids {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.Itoa(id))
+	}
+	b.WriteByte('}')
+	return b.String()
 }
 
 func seatLockKey(eventID, seatID int) string {
@@ -416,4 +456,143 @@ func (r *PostgresRedisRepository) GetHoldMetadata(holdToken string) (*HoldReques
 func (r *PostgresRedisRepository) DeleteHoldMetadata(holdToken string) error {
 	ctx := context.Background()
 	return r.redis.Del(ctx, holdMetadataKey(holdToken)).Err()
+}
+
+// GetHoldTTL reads the metadata key's remaining life. Redis returns a negative
+// duration for a key with no expiry or no key at all; both are reported as
+// expired, since a hold without a deadline is not a state this code creates.
+func (r *PostgresRedisRepository) GetHoldTTL(holdToken string) (time.Duration, error) {
+	ctx := context.Background()
+	ttl, err := r.redis.TTL(ctx, holdMetadataKey(holdToken)).Result()
+	if err != nil {
+		return 0, err
+	}
+	if ttl < 0 {
+		return 0, nil
+	}
+	return ttl, nil
+}
+
+// ResolveSeatTiers maps seats to their tier on this event, from the same table
+// the seat map is drawn from. Scoped to the event so a seat id from another
+// event cannot resolve.
+func (r *PostgresRedisRepository) ResolveSeatTiers(eventID int, seatIDs []int) ([]SeatAssignment, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT seat_id, ticket_tier_id
+		FROM event_seats_matrix
+		WHERE event_id = $1 AND seat_id = ANY($2::int[])
+	`, eventID, intArrayLiteral(seatIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	assignments := make([]SeatAssignment, 0, len(seatIDs))
+	for rows.Next() {
+		var a SeatAssignment
+		if err := rows.Scan(&a.SeatID, &a.TicketTierID); err != nil {
+			return nil, err
+		}
+		assignments = append(assignments, a)
+	}
+	return assignments, rows.Err()
+}
+
+// DescribeHold fills in everything checkout needs to render the hold: each
+// tier's name and CURRENT price, the event title, and the seat labels the buyer
+// saw on the map. A seated hold may span tiers, so this returns one item per
+// tier.
+//
+// Prices are deliberately re-read rather than carried in the hold metadata:
+// they are what the order will be created from, and must come from the same
+// table the organizer edits.
+func (r *PostgresRedisRepository) DescribeHold(req *HoldRequest) (*HoldDetail, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	detail := &HoldDetail{EventID: req.EventID, Items: []HoldItem{}}
+
+	// General admission: one named tier, no seats.
+	if len(req.SeatIDs) == 0 {
+		item := HoldItem{
+			TicketTierID: req.TicketTierID,
+			Quantity:     req.Quantity,
+			Seats:        []HoldSeat{},
+		}
+		// The event is resolved from the tier, not from req.EventID, which is
+		// client-supplied — the same reasoning as IsTierBookable.
+		err := r.db.QueryRowContext(ctx, `
+			SELECT tt.name, tt.price, tt.event_id, e.event_name
+			FROM ticket_tiers tt
+			JOIN events e ON e.id = tt.event_id
+			WHERE tt.id = $1
+		`, req.TicketTierID).Scan(
+			&item.TierName, &item.UnitPrice, &detail.EventID, &detail.EventTitle,
+		)
+		if err == sql.ErrNoRows {
+			return nil, errors.New("ticket tier no longer exists")
+		} else if err != nil {
+			return nil, err
+		}
+		detail.Items = append(detail.Items, item)
+		return detail, nil
+	}
+
+	// Assigned seating: each seat brings its own tier, so this one query
+	// returns the labels and the grouping together. Ordered by price then seat
+	// so the cart reads the same way the legend does.
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT tt.id, tt.name, tt.price, e.event_name,
+		       s.id, s.row_number, s.seat_number
+		FROM event_seats_matrix esm
+		JOIN seats s ON s.id = esm.seat_id
+		JOIN ticket_tiers tt ON tt.id = esm.ticket_tier_id
+		JOIN events e ON e.id = esm.event_id
+		WHERE esm.event_id = $1 AND esm.seat_id = ANY($2::int[])
+		ORDER BY tt.price, tt.id, s.row_number, s.seat_number
+	`, req.EventID, intArrayLiteral(req.SeatIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	byTier := make(map[int]int) // tier id -> index into detail.Items
+	for rows.Next() {
+		var tierID int
+		var tierName, eventName string
+		var price float64
+		var seat HoldSeat
+		if err := rows.Scan(
+			&tierID, &tierName, &price, &eventName,
+			&seat.SeatID, &seat.Row, &seat.Number,
+		); err != nil {
+			return nil, err
+		}
+		detail.EventTitle = eventName
+
+		idx, seen := byTier[tierID]
+		if !seen {
+			detail.Items = append(detail.Items, HoldItem{
+				TicketTierID: tierID,
+				TierName:     tierName,
+				UnitPrice:    price,
+				Seats:        []HoldSeat{},
+			})
+			idx = len(detail.Items) - 1
+			byTier[tierID] = idx
+		}
+		detail.Items[idx].Seats = append(detail.Items[idx].Seats, seat)
+		detail.Items[idx].Quantity++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(detail.Items) == 0 {
+		return nil, errors.New("the held seats no longer exist on this event")
+	}
+	return detail, nil
 }

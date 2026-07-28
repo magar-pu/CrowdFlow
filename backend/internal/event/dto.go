@@ -97,7 +97,7 @@ type EventDetailResponse struct {
 	CoverImageURL                 string             `json:"cover_image_url"`
 	LayoutID                      *int               `json:"layout_id"` // bound venue layout; null = none
 	// GoogleMapsURL is the organizer's map link, "" when none is set. Host is
-	// validated on write (Google Maps / Waze only) since it becomes an href.
+	// validated on write (Google Maps only) since it becomes an href.
 	GoogleMapsURL string `json:"google_maps_url"`
 	// RecentSales is tickets sold on paid orders in the last 7 days — the same
 	// figure the listing ranks "trending" by.

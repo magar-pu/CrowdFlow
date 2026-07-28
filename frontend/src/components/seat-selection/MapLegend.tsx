@@ -17,8 +17,8 @@ import type { SelectableTier } from "./TicketTypeSelector";
 
 /** Kept in step with SEAT_COLOR / SELECTED_SEAT_COLOR in LayoutPreview. */
 const STATE_ITEMS = [
-  { color: "#2563eb", label: "Dipilih" },
-  { color: "#cbd5e1", label: "Tidak tersedia" },
+  { color: "#2563eb", label: "Selected" },
+  { color: "#cbd5e1", label: "Unavailable" },
 ];
 
 interface MapLegendProps {

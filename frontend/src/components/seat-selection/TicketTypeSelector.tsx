@@ -1,17 +1,27 @@
 /**
  * components/seat-selection/TicketTypeSelector.tsx
  *
- * Tier picker across the top of the seat map, built from the event's real
- * tiers. Choosing a tier both filters which seats are clickable and decides
- * which tier the hold is taken against — a hold covers exactly one tier.
+ * Mode picker across the top of the seat map.
  *
- * Previously this listed five invented tiers at USD prices on an IDR platform.
+ * It used to select which single tier the buyer was buying, because a hold
+ * covered exactly one tier. Seated holds now span tiers — clicking a seat
+ * implies its tier — so seated tiers are no longer a choice to make here. The
+ * legend already shows their colours and prices.
+ *
+ * What remains is the one choice that cannot be made on the map: general
+ * admission has no seats to click, so it is picked here, and it stays one tier
+ * per hold. Switching between seats and a GA tier clears the other side of the
+ * selection, since the two cannot share a hold.
+ *
+ * Renders nothing when the event has no GA tiers — there is then only one way
+ * to buy, and a single dead chip would be noise.
  */
 
 "use client";
 
 import { cn } from "@/lib/utils";
 import { formatIDR } from "@/lib/pricing";
+import { Armchair } from "lucide-react";
 
 export interface SelectableTier {
   ticket_tier_id: number;
@@ -25,18 +35,28 @@ export interface SelectableTier {
   is_general_admission: boolean;
 }
 
+export type SelectionMode = "seats" | "ga";
+
 interface TicketTypeSelectorProps {
   tiers: SelectableTier[];
-  active_tier_id: number | null;
-  on_select: (ticket_tier_id: number) => void;
+  mode: SelectionMode;
+  /** Which GA tier is active; null while picking seats. */
+  active_ga_tier_id: number | null;
+  on_choose_seats: () => void;
+  on_choose_ga: (ticket_tier_id: number) => void;
 }
 
 export function TicketTypeSelector({
   tiers,
-  active_tier_id,
-  on_select,
+  mode,
+  active_ga_tier_id,
+  on_choose_seats,
+  on_choose_ga,
 }: TicketTypeSelectorProps) {
-  if (tiers.length === 0) return null;
+  const ga_tiers = tiers.filter((t) => t.is_general_admission);
+  const has_seated = tiers.some((t) => !t.is_general_admission);
+
+  if (ga_tiers.length === 0) return null;
 
   return (
     <div className="border-b border-border-subtle bg-white px-6 py-3">
@@ -48,8 +68,33 @@ export function TicketTypeSelector({
         aria-label="Ticket type"
         className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        {tiers.map((tier) => {
-          const is_active = active_tier_id === tier.ticket_tier_id;
+        {has_seated && (
+          <button
+            type="button"
+            role="radio"
+            aria-checked={mode === "seats"}
+            onClick={on_choose_seats}
+            className={cn(
+              "flex shrink-0 items-center gap-2.5 rounded-xl border px-4 py-2.5 text-left transition-all",
+              mode === "seats"
+                ? "border-secondary bg-secondary/10"
+                : "border-border-subtle bg-white hover:border-outline"
+            )}
+          >
+            <Armchair size={16} className="shrink-0 text-secondary" />
+            <span className="flex flex-col">
+              <span className="font-label-md text-label-md font-bold text-text-primary">
+                Reserved Seats
+              </span>
+              <span className="font-label-sm text-label-sm text-text-secondary">
+                Pick seats on the map
+              </span>
+            </span>
+          </button>
+        )}
+
+        {ga_tiers.map((tier) => {
+          const is_active = mode === "ga" && active_ga_tier_id === tier.ticket_tier_id;
           return (
             <button
               key={tier.ticket_tier_id}
@@ -57,7 +102,7 @@ export function TicketTypeSelector({
               role="radio"
               aria-checked={is_active}
               disabled={!tier.available}
-              onClick={() => on_select(tier.ticket_tier_id)}
+              onClick={() => on_choose_ga(tier.ticket_tier_id)}
               className={cn(
                 "flex shrink-0 items-center gap-2.5 rounded-xl border px-4 py-2.5 text-left transition-all",
                 is_active
@@ -74,14 +119,12 @@ export function TicketTypeSelector({
               <span className="flex flex-col">
                 <span className="font-label-md text-label-md font-bold text-text-primary">
                   {tier.name}
-                  {tier.is_general_admission && (
-                    <span className="ml-1.5 font-label-sm text-label-sm font-normal text-text-secondary">
-                      (bebas tempat)
-                    </span>
-                  )}
+                  <span className="ml-1.5 font-label-sm text-label-sm font-normal text-text-secondary">
+                    (standing)
+                  </span>
                 </span>
                 <span className="font-label-sm text-label-sm text-text-secondary">
-                  {tier.available ? formatIDR(tier.price) : "Habis"}
+                  {tier.available ? formatIDR(tier.price) : "Sold out"}
                 </span>
               </span>
             </button>

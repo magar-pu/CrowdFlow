@@ -817,7 +817,8 @@ func (s *OrganizerService) UploadEventCover(ctx context.Context, eventID int, or
 }
 
 // mapsURLHosts is the allowlist for an event's map link: host to required path
-// prefix ("" = any path).
+// prefix ("" = any path). Google Maps only — the buyer page offers no other
+// map provider.
 //
 // The value is rendered as an href on a public event page, so an unrestricted
 // one would turn every event into an open redirect an organizer controls.
@@ -827,13 +828,12 @@ func (s *OrganizerService) UploadEventCover(ctx context.Context, eventID int, or
 // bare host is not safe on its own: https://google.com/url?q=... is a
 // redirector that would hand an organizer any destination they liked.
 // maps.google.com needs no such rule — every path on it is already a map — and
-// the short-link hosts exist precisely to serve an opaque path.
+// maps.app.goo.gl exists precisely to serve an opaque path.
 var mapsURLHosts = map[string]string{
 	"google.com":      "/maps",
 	"maps.google.com": "",
 	"goo.gl":          "/maps",
 	"maps.app.goo.gl": "",
-	"waze.com":        "",
 }
 
 // validateMapsURL accepts an empty string (meaning "clear the link") or an
@@ -858,7 +858,7 @@ func validateMapsURL(raw string) (string, error) {
 	prefix, ok := mapsURLHosts[host]
 	if !ok {
 		return "", fmt.Errorf(
-			"%w: only Google Maps and Waze links are accepted (google.com/maps, maps.app.goo.gl, goo.gl/maps, waze.com)",
+			"%w: only Google Maps links are accepted (google.com/maps, maps.google.com, maps.app.goo.gl, goo.gl/maps)",
 			ErrValidation,
 		)
 	}

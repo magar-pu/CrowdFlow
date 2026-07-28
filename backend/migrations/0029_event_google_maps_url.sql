@@ -12,9 +12,9 @@
 -- event page. Event scope costs a re-entry per event and owns nothing shared.
 --
 -- NULL and '' both mean "no link set" — the client falls back to the search URL.
--- The host allowlist (google.com/maps, goo.gl, maps.app.goo.gl, waze.com) is
--- enforced in the handler rather than by a CHECK constraint, so the rejection
--- reaches the organizer as a validation message they can act on.
+-- The host allowlist (google.com/maps, maps.google.com, maps.app.goo.gl,
+-- goo.gl/maps) is enforced in the handler rather than by a CHECK constraint, so
+-- the rejection reaches the organizer as a validation message they can act on.
 
 BEGIN;
 

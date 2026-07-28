@@ -115,7 +115,7 @@ export default function WorkspaceEventMapsLink({ eventId }: WorkspaceEventMapsLi
 
           <div className="space-y-1.5">
             <label className={labelClass} htmlFor="event-maps-url">
-              Google Maps or Waze link
+              Google Maps link
             </label>
             <input
               id="event-maps-url"
@@ -132,7 +132,8 @@ export default function WorkspaceEventMapsLink({ eventId }: WorkspaceEventMapsLi
             />
             <p className="text-[10px] text-on-surface-variant">
               Open the venue in Google Maps, tap Share, and paste the link here. Only
-              google.com/maps, maps.app.goo.gl, goo.gl and waze.com links are accepted.
+              Google Maps links are accepted — google.com/maps, maps.google.com,
+              maps.app.goo.gl or goo.gl/maps.
             </p>
           </div>
 

@@ -19,7 +19,7 @@
 "use client";
 
 import { useState } from "react";
-import { Map, Navigation, Car, Copy, Check, Share2 } from "lucide-react";
+import { Map, Navigation, Copy, Check, Share2 } from "lucide-react";
 import type { Venue } from "@/types/ticket";
 import { VenueLayoutPreview } from "@/components/event-detail/VenueLayoutPreview";
 
@@ -47,7 +47,6 @@ export function VenueInfoSection({
   // Name first so the search resolves to the venue itself rather than the
   // street. No geocoding API involved — these are plain search URLs.
   const maps_query = encodeURIComponent(`${venue.name}, ${full_address}`);
-  // Waze has no organizer-supplied equivalent, so it always searches.
   const google_maps_href =
     google_maps_url && google_maps_url.trim() !== ""
       ? google_maps_url
@@ -143,15 +142,6 @@ export function VenueInfoSection({
           >
             <Map size={16} className="text-secondary" />
             Open in Google Maps
-          </a>
-          <a
-            href={`https://waze.com/ul?q=${maps_query}&navigate=yes`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 rounded-xl border border-border-subtle bg-white px-4 py-2.5 font-label-sm text-label-sm font-bold text-text-primary shadow-sm transition-colors hover:bg-surface-container-low focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
-          >
-            <Car size={16} className="text-secondary" />
-            Open in Waze
           </a>
           <button
             type="button"

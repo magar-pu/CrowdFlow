@@ -24,6 +24,7 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /events/{id}/ticket-tiers", http.HandlerFunc(h.handleListTicketTiers))
 	mux.Handle("GET /events/{id}/seatmap", http.HandlerFunc(h.handleGetSeatMap))
 	mux.Handle("POST /booking/holds", authenticate(http.HandlerFunc(h.handleCreateHold)))
+	mux.Handle("GET /booking/holds/{token}", authenticate(http.HandlerFunc(h.handleGetHold)))
 	mux.Handle("DELETE /booking/holds/{token}", authenticate(http.HandlerFunc(h.handleReleaseHold)))
 }
 
@@ -71,6 +72,26 @@ func (h *Handler) handleCreateHold(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.JSON(w, http.StatusCreated, hold)
+}
+
+// handleGetHold lets checkout rebuild the buyer's cart from the hold token,
+// with prices read from the database rather than the query string.
+func (h *Handler) handleGetHold(w http.ResponseWriter, r *http.Request) {
+	token := r.PathValue("token")
+	if token == "" {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Hold token is required")
+		return
+	}
+
+	detail, err := h.service.GetHold(token)
+	if err != nil {
+		// An expired hold is the ordinary case here, not a fault: the seats are
+		// already back on the map by the time this is hit.
+		log.Printf("GetHold failed for token: %v", err)
+		response.Error(w, http.StatusNotFound, "HOLD_EXPIRED", "This seat hold has expired. Please pick your seats again.")
+		return
+	}
+	response.JSON(w, http.StatusOK, detail)
 }
 
 func (h *Handler) handleReleaseHold(w http.ResponseWriter, r *http.Request) {

@@ -26,55 +26,87 @@ func (s *BookingService) GetSeatMap(eventID int) (*SeatMap, error) {
 	return s.repo.GetSeatMap(eventID)
 }
 
+// CreateHold locks inventory for a buyer's selection.
+//
+// Assigned seating may span several tiers in one hold: the seat locks are keyed
+// by seat id and never cared about tiers. Each seat's tier is resolved from
+// event_seats_matrix rather than taken from the request — see HoldRequest for
+// why — and every tier involved is validated independently.
+//
+// General admission remains one tier per hold: there are no seats to derive a
+// tier from, and its inventory is a per-tier counter.
 func (s *BookingService) CreateHold(req HoldRequest) (*Hold, error) {
-	if req.TicketTierID <= 0 {
-		return nil, errors.New("ticket_tier_id is required")
+	assigned := len(req.SeatIDs) > 0
+
+	if assigned && req.Quantity > 0 {
+		return nil, errors.New("quantity must not be set when seat_ids is given")
+	}
+	if !assigned && req.TicketTierID <= 0 {
+		return nil, errors.New("ticket_tier_id is required for general admission")
+	}
+	if !assigned && req.Quantity <= 0 {
+		return nil, errors.New("quantity is required for general admission tiers")
 	}
 
-	// Checked before anything else: an event the organizer has withdrawn from
-	// public listing must not take new orders, even via a direct link or a
-	// hand-rolled API call.
-	bookable, err := s.repo.IsTierBookable(req.TicketTierID)
-	if err != nil {
-		return nil, err
-	}
-	if !bookable {
-		return nil, errors.New("this event is not currently on sale")
-	}
+	// tierCounts is how many tickets this hold takes from each tier, which is
+	// what the per-tier caps and bookability are checked against.
+	tierCounts := map[int]int{}
 
-	assigned, err := s.repo.IsAssignedSeating(req.TicketTierID)
-	if err != nil {
-		return nil, err
-	}
-
-	requested := req.Quantity
 	if assigned {
-		if len(req.SeatIDs) == 0 {
+		assignments, err := s.repo.ResolveSeatTiers(req.EventID, req.SeatIDs)
+		if err != nil {
+			return nil, err
+		}
+		// A seat missing from the result is not on this event, so it has no
+		// tier and no price. Refused rather than silently dropped.
+		if len(assignments) != len(req.SeatIDs) {
+			return nil, errors.New("one or more selected seats are not part of this event")
+		}
+		for _, a := range assignments {
+			tierCounts[a.TicketTierID]++
+		}
+
+		// A tier that sells assigned seats must not also be held by quantity,
+		// and vice versa; resolving from the matrix already guarantees the
+		// former, so only the GA branch needs the explicit check.
+	} else {
+		tierCounts[req.TicketTierID] = req.Quantity
+
+		isAssigned, err := s.repo.IsAssignedSeating(req.TicketTierID)
+		if err != nil {
+			return nil, err
+		}
+		if isAssigned {
 			return nil, errors.New("seat_ids is required for assigned-seating tiers")
 		}
-		if req.Quantity > 0 {
-			return nil, errors.New("quantity must not be set for assigned-seating tiers")
-		}
-		requested = len(req.SeatIDs)
-	} else {
-		if req.Quantity <= 0 {
-			return nil, errors.New("quantity is required for general admission tiers")
-		}
-		if len(req.SeatIDs) > 0 {
-			return nil, errors.New("seat_ids must not be set for general admission tiers")
-		}
 	}
 
-	// The organizer's per-order cap (Tickets tab). It was previously only
-	// reported to the buyer as max_per_transaction and never checked, so the
-	// setting had no effect. Enforced before any inventory is acquired so a
-	// rejected request leaves nothing held. A cap of 0 means uncapped.
-	maxPerOrder, err := s.repo.GetMaxPerOrder(req.TicketTierID)
-	if err != nil {
-		return nil, err
-	}
-	if maxPerOrder > 0 && requested > maxPerOrder {
-		return nil, fmt.Errorf("this ticket type is limited to %d per order", maxPerOrder)
+	for tierID, count := range tierCounts {
+		// Checked before anything else: an event the organizer has withdrawn
+		// from public listing, or a tier whose sales window has closed, must
+		// not take new orders — even via a direct link, a stale tab or a
+		// hand-rolled call.
+		bookable, err := s.repo.IsTierBookable(tierID)
+		if err != nil {
+			return nil, err
+		}
+		if !bookable {
+			return nil, errors.New("these tickets are no longer on sale")
+		}
+
+		// The organizer's per-order cap (Tickets tab), applied per tier — that
+		// is what the field means, so 4 VIP plus 4 Regular is allowed when both
+		// caps are 4. It was previously only reported to the buyer as
+		// max_per_transaction and never checked. Enforced before any inventory
+		// is acquired so a rejected request leaves nothing held. 0 means
+		// uncapped.
+		maxPerOrder, err := s.repo.GetMaxPerOrder(tierID)
+		if err != nil {
+			return nil, err
+		}
+		if maxPerOrder > 0 && count > maxPerOrder {
+			return nil, fmt.Errorf("this ticket type is limited to %d per order", maxPerOrder)
+		}
 	}
 
 	holdToken := generateHoldToken()
@@ -111,18 +143,49 @@ func (s *BookingService) CreateHold(req HoldRequest) (*Hold, error) {
 	return &Hold{HoldToken: holdToken, ExpiresAt: time.Now().Add(holdTTL)}, nil
 }
 
+// GetHold resolves a hold token into what the buyer is about to pay for.
+//
+// Checkout is the only caller. It exists because the token is all that survives
+// the navigation out of seat selection, and rebuilding the cart from the query
+// string would let a buyer choose their own prices.
+//
+// The token is the capability: it is 128 bits of crypto/rand and is not
+// guessable, but the hold carries no purchaser id, so possession is all that is
+// checked here — the same as ReleaseHold.
+func (s *BookingService) GetHold(holdToken string) (*HoldDetail, error) {
+	req, err := s.repo.GetHoldMetadata(holdToken)
+	if err != nil {
+		return nil, err
+	}
+
+	detail, err := s.repo.DescribeHold(req)
+	if err != nil {
+		return nil, err
+	}
+
+	ttl, err := s.repo.GetHoldTTL(holdToken)
+	if err != nil {
+		return nil, err
+	}
+	if ttl <= 0 {
+		return nil, errors.New("hold not found or already expired")
+	}
+
+	detail.HoldToken = holdToken
+	detail.ExpiresAt = time.Now().Add(ttl)
+	return detail, nil
+}
+
 func (s *BookingService) ReleaseHold(holdToken string) error {
 	req, err := s.repo.GetHoldMetadata(holdToken)
 	if err != nil {
 		return err
 	}
 
-	assigned, err := s.repo.IsAssignedSeating(req.TicketTierID)
-	if err != nil {
-		return err
-	}
-
-	if assigned {
+	// Which inventory to hand back is decided by the hold's own shape, not by
+	// re-querying the tier: seat locks are released by seat id and span tiers,
+	// while a GA hold releases a per-tier counter.
+	if len(req.SeatIDs) > 0 {
 		if err := s.repo.ReleaseSeatHolds(req.EventID, req.SeatIDs, holdToken); err != nil {
 			return err
 		}

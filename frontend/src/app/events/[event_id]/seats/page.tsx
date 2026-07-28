@@ -12,9 +12,14 @@
  * The map is the same LayoutPreview the organizer paints with, so buyers see
  * exactly the layout that was designed rather than a stylised approximation.
  *
- * One constraint shapes the whole screen: a hold covers a single ticket tier,
- * so a selection may not span tiers. Seats outside the active tier stay drawn
- * for context but are not clickable, and switching tier clears the selection.
+ * A seated selection may span ticket tiers: the hold sends seat ids only and
+ * the server resolves each seat's tier from event_seats_matrix, so mixing VIP
+ * and Regular in one order is a single hold and a single order. Each tier's
+ * max_per_transaction is applied to that tier's seats alone.
+ *
+ * General admission is the exception. It has no seats to derive a tier from and
+ * its inventory is a per-tier counter, so it remains one tier per hold — which
+ * is why choosing a GA tier clears any seats and vice versa.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -23,6 +28,7 @@ import { SeatMapHeader } from "@/components/seat-selection/SeatMapHeader";
 import {
   TicketTypeSelector,
   type SelectableTier,
+  type SelectionMode,
 } from "@/components/seat-selection/TicketTypeSelector";
 import { MapLegend } from "@/components/seat-selection/MapLegend";
 import { MapBottomToolbar } from "@/components/seat-selection/MapBottomToolbar";
@@ -45,7 +51,7 @@ import { cn } from "@/lib/utils";
 /** Used only when a tier omits max_per_transaction. */
 const FALLBACK_MAX_PER_TRANSACTION = 4;
 
-/** Matches the "Tidak tersedia" swatch in MapLegend. */
+/** Matches the "Unavailable" swatch in MapLegend. */
 const UNAVAILABLE_SEAT_COLOR = "#cbd5e1";
 
 export default function SeatSelectionPage() {
@@ -56,7 +62,11 @@ export default function SeatSelectionPage() {
 
   const [event, set_event] = useState<Event | null>(null);
   const [public_tiers, set_public_tiers] = useState<PublicTicketTier[]>([]);
-  const [active_tier_id, set_active_tier_id] = useState<number | null>(null);
+  // Null means "the buyer hasn't chosen yet, follow the default below".
+  // Derived rather than seeded in an effect, so the first paint is already
+  // correct instead of flipping once tiers arrive.
+  const [chosen_mode, set_chosen_mode] = useState<SelectionMode | null>(null);
+  const [chosen_ga_tier_id, set_chosen_ga_tier_id] = useState<number | null>(null);
   const [quantity, set_quantity] = useState(0);
   const [is_submitting, set_is_submitting] = useState(false);
   const [hold_error, set_hold_error] = useState<string | null>(null);
@@ -105,53 +115,84 @@ export default function SeatSelectionPage() {
     return [...assigned, ...ga];
   }, [seat_map, public_tiers]);
 
-  const active_tier = tiers.find((t) => t.ticket_tier_id === active_tier_id) ?? null;
+  const has_seated = tiers.some((t) => !t.is_general_admission);
 
   /**
-   * The cap the backend will enforce anyway; mirrored here so the UI refuses
-   * before the round trip rather than after.
+   * A tier named in the URL (from an older link, when the event page still
+   * picked one) only decides the starting mode now — seats are no longer
+   * filtered by it, so a seated tier there means nothing.
    */
-  const max_per_transaction = useMemo(() => {
-    const from_api = public_tiers.find(
-      (t) => t.ticket_tier_id === active_tier_id
-    )?.max_per_transaction;
-    return from_api && from_api > 0 ? from_api : FALLBACK_MAX_PER_TRANSACTION;
-  }, [public_tiers, active_tier_id]);
+  const url_ga_tier_id = useMemo(() => {
+    const from_query = Number(search?.get("ticket_category_id"));
+    const requested = tiers.find((t) => t.ticket_tier_id === from_query);
+    return requested?.is_general_admission ? requested.ticket_tier_id : null;
+  }, [tiers, search]);
+
+  // An event with no seated tiers has no map to start on.
+  const mode: SelectionMode =
+    chosen_mode ?? (has_seated && url_ga_tier_id === null ? "seats" : "ga");
+
+  const ga_tier_id =
+    chosen_ga_tier_id ??
+    url_ga_tier_id ??
+    tiers.find((t) => t.is_general_admission && t.available)?.ticket_tier_id ??
+    tiers.find((t) => t.is_general_admission)?.ticket_tier_id ??
+    null;
+
+  const active_ga_tier =
+    mode === "ga" ? tiers.find((t) => t.ticket_tier_id === ga_tier_id) ?? null : null;
+
+  /**
+   * Each tier's own per-order cap, which the hook applies per tier. The backend
+   * enforces the same caps; mirrored here so the UI refuses before the round
+   * trip rather than after.
+   */
+  const max_per_tier = useMemo(() => {
+    const caps = new Map<number, number>();
+    for (const tier of tiers) {
+      const from_api = public_tiers.find(
+        (t) => t.ticket_tier_id === tier.ticket_tier_id
+      )?.max_per_transaction;
+      caps.set(
+        tier.ticket_tier_id,
+        from_api && from_api > 0 ? from_api : FALLBACK_MAX_PER_TRANSACTION
+      );
+    }
+    return caps;
+  }, [tiers, public_tiers]);
 
   const max_ga_quantity = useMemo(() => {
+    if (ga_tier_id === null) return 0;
     const quota =
-      public_tiers.find((t) => t.ticket_tier_id === active_tier_id)?.quota_remaining ??
-      seat_map?.ga_tiers.find((t) => t.ticket_tier_id === active_tier_id)?.quota_remaining ??
+      public_tiers.find((t) => t.ticket_tier_id === ga_tier_id)?.quota_remaining ??
+      seat_map?.ga_tiers.find((t) => t.ticket_tier_id === ga_tier_id)?.quota_remaining ??
       0;
-    return Math.min(max_per_transaction, quota);
-  }, [public_tiers, seat_map, active_tier_id, max_per_transaction]);
+    return Math.min(max_per_tier.get(ga_tier_id) ?? FALLBACK_MAX_PER_TRANSACTION, quota);
+  }, [public_tiers, seat_map, ga_tier_id, max_per_tier]);
 
   const {
     zoom, pan_x, pan_y,
     zoom_in, zoom_out, reset_view,
     start_pan, do_pan, end_pan, handle_wheel_zoom,
-    chosen_seats, selected_seat_ids, limit_notice,
+    chosen_seats, seat_groups, selected_seat_ids, limit_notice,
     toggle_seat, remove_seat, clear_seats,
-  } = useSeatSelection({ max_seats: max_per_transaction });
+  } = useSeatSelection({ max_per_tier });
 
-  // Default to the tier the buyer picked on the event page, else the first one
-  // with anything left. Runs once tiers exist and only while none is chosen.
-  useEffect(() => {
-    if (active_tier_id !== null || tiers.length === 0) return;
-    const from_query = Number(search?.get("ticket_category_id"));
-    const requested = tiers.find((t) => t.ticket_tier_id === from_query);
-    set_active_tier_id(
-      (requested ?? tiers.find((t) => t.available) ?? tiers[0]).ticket_tier_id
-    );
-  }, [tiers, active_tier_id, search]);
+  function handle_choose_seats() {
+    if (mode === "seats") return;
+    // Seats and GA cannot share a hold, so switching drops the other side.
+    set_quantity(0);
+    set_hold_error(null);
+    set_chosen_mode("seats");
+  }
 
-  function handle_select_tier(next_id: number) {
-    if (next_id === active_tier_id) return;
-    // A hold covers one tier, so carrying seats across would silently drop them.
+  function handle_choose_ga(next_id: number) {
+    if (mode === "ga" && next_id === ga_tier_id) return;
     clear_seats();
     set_quantity(0);
     set_hold_error(null);
-    set_active_tier_id(next_id);
+    set_chosen_mode("ga");
+    set_chosen_ga_tier_id(next_id);
   }
 
   const renderable = useMemo(
@@ -170,20 +211,37 @@ export default function SeatSelectionPage() {
     return map;
   }, [seat_map]);
 
-  /** Seats of the active tier — the only ones clickable. */
+  /** The tier each seat belongs to, so a click knows what it is adding. */
+  const tier_by_seat_id = useMemo(() => {
+    const map = new Map<number, SelectableTier>();
+    seat_map?.tiers.forEach((t) => {
+      const tier = tiers.find((x) => x.ticket_tier_id === t.ticket_tier_id);
+      if (!tier) return;
+      t.seats.forEach((s) => map.set(s.seat_id, tier));
+    });
+    return map;
+  }, [seat_map, tiers]);
+
+  /**
+   * Every available seat is clickable, whatever its tier — that is the point of
+   * a mixed selection. Only GA mode takes the map out of play.
+   */
   const selectable_seat_ids = useMemo(() => {
     const ids = new Set<number>();
-    seat_map?.tiers
-      .filter((t) => t.ticket_tier_id === active_tier_id)
-      .forEach((t) => t.seats.forEach((s) => ids.add(s.seat_id)));
+    if (mode !== "seats") return ids;
+    seat_map?.tiers.forEach((t) =>
+      t.seats.forEach((s) => {
+        if (s.status === "available") ids.add(s.seat_id);
+      })
+    );
     return ids;
-  }, [seat_map, active_tier_id]);
+  }, [seat_map, mode]);
 
   /**
    * Tier colour per seat, so the map reads the same as the event page — but
    * only for seats that can actually be bought. Anything sold, held or blocked
    * is greyed instead: seat_colors outranks status inside LayoutPreview, so
-   * colouring those by tier would leave "Tidak tersedia" in the legend matching
+   * colouring those by tier would leave "Unavailable" in the legend matching
    * nothing on the map, and a buyer has no reason to care WHY a seat is gone.
    */
   const seat_colors = useMemo(() => {
@@ -197,14 +255,14 @@ export default function SeatSelectionPage() {
     return colors;
   }, [seat_map]);
 
-  /** Back here, with this tier, after logging in. */
+  /** Back here after logging in. */
   function login_redirect() {
-    const back = `/events/${event_id}/seats?ticket_category_id=${active_tier_id ?? ""}`;
+    const back = `/events/${event_id}/seats`;
     router.push(`/login?from=${encodeURIComponent(back)}`);
   }
 
   async function handle_proceed() {
-    if (!active_tier) return;
+    set_hold_error(null);
 
     // Browsing the map is public but holding is not, and a signed-out browser
     // has no csrf_token cookie either — so the request would be rejected as
@@ -217,15 +275,21 @@ export default function SeatSelectionPage() {
     }
 
     set_is_submitting(true);
-    set_hold_error(null);
 
-    const res = await createHold({
-      event_id: Number(event_id),
-      ticket_tier_id: active_tier.ticket_tier_id,
-      ...(active_tier.is_general_admission
-        ? { quantity }
-        : { seat_ids: chosen_seats.map((s) => s.seat_id) }),
-    });
+    // Seat ids only: the server derives each seat's tier, so a mixed selection
+    // needs no tier from us and cannot be mispriced by us.
+    const res = await createHold(
+      mode === "ga" && active_ga_tier
+        ? {
+            event_id: Number(event_id),
+            ticket_tier_id: active_ga_tier.ticket_tier_id,
+            quantity,
+          }
+        : {
+            event_id: Number(event_id),
+            seat_ids: chosen_seats.map((s) => s.seat_id),
+          }
+    );
 
     set_is_submitting(false);
 
@@ -247,31 +311,29 @@ export default function SeatSelectionPage() {
     // Anything else usually means someone took a seat first. The hold is
     // all-or-nothing, so nothing is locked — refetch and let them pick again.
     set_hold_error(
-      res.error?.message ?? "Kursi yang dipilih baru saja diambil. Silakan pilih ulang."
+      res.error?.message ?? "Those seats were just taken. Please choose again."
     );
     clear_seats();
     reload();
   }
 
   const event_date = event
-    ? new Date(event.starts_at).toLocaleDateString("id-ID", {
+    ? new Date(event.starts_at).toLocaleDateString("en-US", {
         day: "numeric", month: "long", year: "numeric",
       })
     : "";
   const event_time = event
-    ? new Date(event.starts_at).toLocaleTimeString("id-ID", {
+    ? new Date(event.starts_at).toLocaleTimeString("en-US", {
         hour: "2-digit", minute: "2-digit",
       })
     : "";
 
-  const has_selection = active_tier?.is_general_admission
-    ? quantity > 0
-    : chosen_seats.length > 0;
+  const has_selection = mode === "ga" ? quantity > 0 : chosen_seats.length > 0;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#F8F9FA]">
       <SeatMapHeader
-        event_title={event?.title ?? "Pilih Kursi"}
+        event_title={event?.title ?? "Select Seats"}
         event_date={event_date}
         event_time={event_time}
         event_venue={event?.venue?.name ?? ""}
@@ -280,28 +342,36 @@ export default function SeatSelectionPage() {
 
       <TicketTypeSelector
         tiers={tiers}
-        active_tier_id={active_tier_id}
-        on_select={handle_select_tier}
+        mode={mode}
+        active_ga_tier_id={ga_tier_id}
+        on_choose_seats={handle_choose_seats}
+        on_choose_ga={handle_choose_ga}
       />
 
       <main className="relative flex min-h-0 flex-1 overflow-hidden">
         <div className="relative h-full flex-1">
           {map_loading ? (
             <div className="flex h-full items-center justify-center">
-              <p className="font-body-sm text-body-sm text-text-secondary">Memuat denah kursi...</p>
+              <p className="font-body-sm text-body-sm text-text-secondary">Loading the seat map…</p>
             </div>
           ) : map_error ? (
             <div className="flex h-full items-center justify-center px-6 text-center">
               <p className="font-body-sm text-body-sm text-danger">{map_error}</p>
             </div>
-          ) : active_tier?.is_general_admission ? (
+          ) : tiers.length === 0 ? (
+            <div className="flex h-full items-center justify-center px-6 text-center">
+              <p className="font-body-sm text-body-sm text-text-secondary">
+                No tickets are on sale for this event right now.
+              </p>
+            </div>
+          ) : mode === "ga" && active_ga_tier ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
               <p className="font-headline-sm text-headline-sm font-bold text-text-primary">
-                {active_tier.name}
+                {active_ga_tier.name}
               </p>
               <p className="max-w-sm font-body-sm text-body-sm text-text-secondary">
-                Kategori ini bebas memilih tempat. Tentukan jumlah tiket di panel
-                sebelah, lalu lanjut ke pembayaran.
+                This ticket type has no assigned seat. Choose how many you want in the
+                panel, then continue to payment.
               </p>
             </div>
           ) : renderable ? (
@@ -322,19 +392,27 @@ export default function SeatSelectionPage() {
                 transform={{ zoom, pan_x, pan_y }}
                 on_seat_click={(seat_id) => {
                   const seat = seats_by_id.get(seat_id);
-                  if (seat && active_tier) toggle_seat(seat, active_tier.price);
+                  const tier = tier_by_seat_id.get(seat_id);
+                  if (seat && tier) {
+                    toggle_seat(seat, {
+                      ticket_tier_id: tier.ticket_tier_id,
+                      name: tier.name,
+                      price: tier.price,
+                      color: tier.color,
+                    });
+                  }
                 }}
               />
             </div>
           ) : (
             <div className="flex h-full items-center justify-center px-6 text-center">
               <p className="font-body-sm text-body-sm text-text-secondary">
-                Event ini belum memiliki denah kursi.
+                This event doesn&apos;t have a seat map yet.
               </p>
             </div>
           )}
 
-          {!map_loading && !active_tier?.is_general_admission && tiers.length > 0 && (
+          {!map_loading && mode === "seats" && tiers.length > 0 && (
             <>
               <MapLegend tiers={tiers} />
               <MapBottomToolbar
@@ -356,8 +434,8 @@ export default function SeatSelectionPage() {
         >
           <SelectionPanel
             event_id={event_id}
-            active_tier={active_tier}
-            chosen_seats={chosen_seats}
+            active_tier={active_ga_tier}
+            seat_groups={seat_groups}
             quantity={quantity}
             max_quantity={max_ga_quantity}
             notice={hold_error ?? limit_notice}
