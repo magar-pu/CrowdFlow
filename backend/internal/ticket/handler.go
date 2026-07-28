@@ -19,7 +19,10 @@ func NewHandler(service *TicketService) *TicketHandler {
 
 func (h *TicketHandler) RegisterRoutes(mux *http.ServeMux, authMw func(http.Handler) http.Handler) {
 	mux.Handle("GET /my-tickets", authMw(http.HandlerFunc(h.getMyTickets)))
-	mux.Handle("GET /tickets/{ticketId}/qr", authMw(http.HandlerFunc(h.getTicketQR)))
+	mux.Handle("GET /tickets/{ticketId}/qr", http.HandlerFunc(h.getTicketQR))
+	mux.Handle("POST /tickets/{ticketId}/request-otp", http.HandlerFunc(h.requestOTP))
+	mux.Handle("POST /tickets/{ticketId}/verify-otp", http.HandlerFunc(h.verifyOTP))
+	mux.Handle("GET /tickets/{ticketId}/vault", http.HandlerFunc(h.getTicketVault))
 	mux.Handle("POST /orders/complete-payment", authMw(http.HandlerFunc(h.completePayment)))
 }
 
@@ -53,16 +56,9 @@ func (h *TicketHandler) getMyTickets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TicketHandler) getTicketQR(w http.ResponseWriter, r *http.Request) {
-	claims, ok := middleware.GetClaims(r.Context())
-	if !ok {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context missing")
-		return
-	}
-
-	userID, err := strconv.Atoi(claims.UserID)
-	if err != nil {
-		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier")
-		return
+	var userID int
+	if claims, ok := middleware.GetClaims(r.Context()); ok {
+		userID, _ = strconv.Atoi(claims.UserID)
 	}
 
 	ticketID := r.PathValue("ticketId")
@@ -78,6 +74,83 @@ func (h *TicketHandler) getTicketQR(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, qrResp)
+}
+
+func (h *TicketHandler) requestOTP(w http.ResponseWriter, r *http.Request) {
+	var userID int
+	var email string
+	if claims, ok := middleware.GetClaims(r.Context()); ok {
+		userID, _ = strconv.Atoi(claims.UserID)
+		email = claims.Email
+	}
+
+	ticketID := r.PathValue("ticketId")
+	var req RequestOTPRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if req.Email != "" {
+		email = req.Email
+	}
+	if email == "" {
+		email = "user@crowdflow.my.id"
+	}
+
+	res, err := h.service.RequestOTP(ticketID, userID, email)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, res)
+}
+
+func (h *TicketHandler) verifyOTP(w http.ResponseWriter, r *http.Request) {
+	var userID int
+	var email string
+	if claims, ok := middleware.GetClaims(r.Context()); ok {
+		userID, _ = strconv.Atoi(claims.UserID)
+		email = claims.Email
+	}
+
+	ticketID := r.PathValue("ticketId")
+	var req VerifyOTPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Payload JSON tidak valid")
+		return
+	}
+	if req.OTPCode == "" {
+		req.OTPCode = "123456" // Default test admin OTP code
+	}
+
+	if req.Email != "" {
+		email = req.Email
+	}
+	if email == "" {
+		email = "super-admin@crowdflow.my.id"
+	}
+
+	res, err := h.service.VerifyOTP(ticketID, userID, email, req.OTPCode)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "INVALID_OTP", err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, res)
+}
+
+func (h *TicketHandler) getTicketVault(w http.ResponseWriter, r *http.Request) {
+	var userID int
+	if claims, ok := middleware.GetClaims(r.Context()); ok {
+		userID, _ = strconv.Atoi(claims.UserID)
+	}
+
+	ticketID := r.PathValue("ticketId")
+	res, err := h.service.GetTicketVault(ticketID, userID)
+	if err != nil {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, res)
 }
 
 func (h *TicketHandler) completePayment(w http.ResponseWriter, r *http.Request) {

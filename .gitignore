@@ -84,3 +84,4 @@ create_event.sh
 
 # Local test fixtures. Machine-local by request; drop this line to share them.
 tests/seeds/
+.obsidian/

@@ -9,36 +9,42 @@ import { TicketActions } from "@/components/your-ticket/TicketActions";
 import ResellTicketModal from "@/components/your-ticket/ResellTicketModal";
 import { getMyTickets, UserTicket } from "@/lib/api/tickets";
 import { cancelResaleListing } from "@/lib/api/resale";
-import type { PurchasedTicket, Order } from "@/types/ticket";
+import type { PurchasedTicket } from "@/types/ticket";
 
-export default function YourTicketPage() {
-  const params = useParams<{ order_id: string }>();
-  const orderIdParam = params.order_id || "";
+export default function EventTicketSlugPage() {
+  const params = useParams<{ event_slug: string; ticket_id: string }>();
+  const eventSlugParam = params.event_slug || "events-test";
+  const ticketIdParam = params.ticket_id || "a04bb786-f3b2-45a3-af5e-49ea4cef4570";
 
   const [show_resell_modal, set_show_resell_modal] = useState(false);
   const [isListed, setIsListed] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Format readable event title from slug
+  const formattedEventTitle = eventSlugParam
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (l) => l.toUpperCase());
+
   const [currentTicket, setCurrentTicket] = useState<PurchasedTicket>({
-    ticket_id: orderIdParam || "test-ticket-id",
-    order_id: orderIdParam || "test-order-id",
+    ticket_id: ticketIdParam,
+    order_id: "bbf302e9-ee42-4706-87c3-575476d7db5a",
     event_id: "18",
-    event_title: "events test",
-    event_category_label: "VIP Test Tier",
+    event_title: formattedEventTitle || "Events Test",
+    event_category_label: "VIP Pass",
     cover_image_url: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=900&auto=format&fit=crop",
     starts_at: new Date().toISOString(),
-    venue_name: "Jakarta Convention Center",
+    venue_name: "Gelora Bung Karno Stadium",
     venue_city: "Jakarta",
     section: "VIP",
     row: "A",
     seat_number: "General Seating",
-    ticket_code: `CF-${(orderIdParam || "TEST").substring(0, 8).toUpperCase()}`,
+    ticket_code: `CF-${ticketIdParam.substring(0, 8).toUpperCase()}`,
     qr_payload: "",
   });
 
   const [orderAmount, setOrderAmount] = useState<number>(150000);
-  const [userEmail, setUserEmail] = useState<string>("admin@crowdflow.my.id");
+  const [userEmail, setUserEmail] = useState<string>("super-admin@crowdflow.my.id");
 
-  // Load sticky state & fetch dynamic ticket from DB
   useEffect(() => {
     const listed = localStorage.getItem("dummy_is_listed");
     if (listed === "true") {
@@ -51,7 +57,7 @@ export default function YourTicketPage() {
         const res = await getMyTickets();
         if (res.success && res.data?.tickets && res.data.tickets.length > 0) {
           const matched = res.data.tickets.find(
-            (t: UserTicket) => t.orderId === orderIdParam || t.id === orderIdParam
+            (t: UserTicket) => t.id === ticketIdParam || t.orderId === ticketIdParam
           ) || res.data.tickets[0];
 
           if (matched) {
@@ -59,11 +65,11 @@ export default function YourTicketPage() {
               ticket_id: matched.id,
               order_id: matched.orderId,
               event_id: String(matched.eventId),
-              event_title: matched.eventName || "events test",
+              event_title: matched.eventName || formattedEventTitle,
               event_category_label: matched.tierName || "VIP Pass",
               cover_image_url: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=900&auto=format&fit=crop",
               starts_at: matched.createdAt || new Date().toISOString(),
-              venue_name: "Jakarta Convention Center",
+              venue_name: "Gelora Bung Karno Stadium",
               venue_city: "Jakarta",
               section: "VIP",
               row: "A",
@@ -83,7 +89,7 @@ export default function YourTicketPage() {
     }
 
     loadDynamicTicket();
-  }, [orderIdParam]);
+  }, [ticketIdParam, formattedEventTitle]);
 
   function handle_add_to_wallet() {
     console.log("Add to Apple Wallet:", currentTicket.ticket_id);

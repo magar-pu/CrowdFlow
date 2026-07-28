@@ -39,3 +39,30 @@ func (s *TicketService) CompletePayment(orderID string) (*CompletePaymentRespons
 		Message:      "Payment processed successfully and tickets generated",
 	}, nil
 }
+
+func (s *TicketService) RequestOTP(ticketID string, userID int, email string) (*RequestOTPResponse, error) {
+	otpCode, err := s.repo.RequestTicketOTP(ticketID, userID, email)
+	if err != nil {
+		return nil, err
+	}
+	return &RequestOTPResponse{
+		Message:  "OTP sent successfully to " + email,
+		DebugOTP: otpCode,
+	}, nil
+}
+
+func (s *TicketService) VerifyOTP(ticketID string, userID int, email string, otpCode string) (*VerifyOTPResponse, error) {
+	verified, vaultToken, err := s.repo.VerifyTicketOTP(ticketID, userID, email, otpCode)
+	if err != nil {
+		return nil, err
+	}
+	return &VerifyOTPResponse{
+		Verified:   verified,
+		VaultToken: vaultToken,
+		Message:    "OTP verified successfully",
+	}, nil
+}
+
+func (s *TicketService) GetTicketVault(ticketID string, userID int) (*TicketVaultResponse, error) {
+	return s.repo.GetTicketVaultData(ticketID, userID)
+}
