@@ -34,6 +34,18 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("PUT /api/organizer/application", authenticate(http.HandlerFunc(h.handleUpdateApplication)))
 	mux.Handle("DELETE /api/organizer/application", authenticate(http.HandlerFunc(h.handleDeleteApplication)))
 
+	// Account-level documents (KTP/NPWP/NIB/SIUP...), distinct from the
+	// per-event documents mounted under /events/{id}/documents. Authenticated
+	// but NOT behind verifiedOrganizer: an applicant whose documents were
+	// rejected has no verified role yet and is exactly who needs to re-file.
+	mux.Handle("GET /api/organizer/documents", authenticate(http.HandlerFunc(h.handleListAccountDocuments)))
+	mux.Handle("POST /api/organizer/documents", authenticate(http.HandlerFunc(h.handleUploadAccountDocument)))
+	mux.Handle("GET /api/organizer/documents/{docId}/url", authenticate(http.HandlerFunc(h.handleGetAccountDocumentURL)))
+	// Readiness is read by the event workspace to disable Submit with a reason.
+	// Registered before the {docId} route above would ever be consulted, since
+	// ServeMux prefers the more specific literal path.
+	mux.Handle("GET /api/organizer/documents/readiness", authenticate(http.HandlerFunc(h.handleAccountDocumentReadiness)))
+
 	// Guard for verified organizers
 	verifiedOrganizer := requirePlatformRole("Event Organizer")
 
@@ -103,6 +115,125 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /api/organizer/analytics", authenticate(verifiedOrganizer(http.HandlerFunc(h.handleGetAnalytics))))
 }
 
+// userID pulls the caller's id from the JWT claims, writing the 401 itself so
+// each handler is a single early return. The existing handlers inline this;
+// three more copies was not worth it.
+func (h *Handler) userID(w http.ResponseWriter, r *http.Request) (int, bool) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return 0, false
+	}
+	id, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in token claims")
+		return 0, false
+	}
+	return id, true
+}
+
+func (h *Handler) handleListAccountDocuments(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.userID(w, r)
+	if !ok {
+		return
+	}
+	docs, err := h.service.ListAccountDocuments(r.Context(), userID)
+	if err != nil {
+		log.Printf("handleListAccountDocuments: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load documents")
+		return
+	}
+	response.JSON(w, http.StatusOK, docs)
+}
+
+func (h *Handler) handleAccountDocumentReadiness(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.userID(w, r)
+	if !ok {
+		return
+	}
+	readiness, err := h.service.GetAccountDocumentReadiness(r.Context(), userID)
+	if err != nil {
+		log.Printf("handleAccountDocumentReadiness: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to check document status")
+		return
+	}
+	response.JSON(w, http.StatusOK, readiness)
+}
+
+func (h *Handler) handleUploadAccountDocument(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadRequestBytes)
+	if err := r.ParseMultipartForm(maxUploadRequestBytes); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse upload: the document is too large or the form is malformed")
+		return
+	}
+	userID, ok := h.userID(w, r)
+	if !ok {
+		return
+	}
+
+	docType := r.FormValue("document_type")
+	if docType == "" {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "document_type is required")
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "A file is required")
+		return
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to read the uploaded file")
+		return
+	}
+
+	doc, err := h.service.UploadAccountDocument(r.Context(), userID, &DocumentUpload{
+		Type:     docType,
+		Filename: header.Filename,
+		Content:  content,
+	})
+	if err != nil {
+		if errors.Is(err, ErrValidation) {
+			response.Error(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED", err.Error())
+			return
+		}
+		if errors.Is(err, ErrApplicationNotFound) {
+			response.Error(w, http.StatusNotFound, "NOT_FOUND", "No organizer application on file")
+			return
+		}
+		log.Printf("handleUploadAccountDocument: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to upload the document")
+		return
+	}
+	response.JSON(w, http.StatusOK, doc)
+}
+
+func (h *Handler) handleGetAccountDocumentURL(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.userID(w, r)
+	if !ok {
+		return
+	}
+	docID, err := strconv.Atoi(r.PathValue("docId"))
+	if err != nil || docID <= 0 {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Document ID must be a positive integer")
+		return
+	}
+	url, err := h.service.GetAccountDocumentURL(r.Context(), userID, docID)
+	if err != nil {
+		if errors.Is(err, ErrDocumentNotFound) {
+			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Document not found")
+			return
+		}
+		log.Printf("handleGetAccountDocumentURL: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to generate a link")
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"url": url})
+}
+
 func (h *Handler) handleApply(w http.ResponseWriter, r *http.Request) {
 	// 12MB for the whole request, matching the event-document and cover paths
 	// (and nginx's client_max_body_size). Note this is the COMBINED size of
@@ -139,7 +270,7 @@ func (h *Handler) handleApply(w http.ResponseWriter, r *http.Request) {
 		BusinessAddress:   r.FormValue("business_address"),
 	}
 
-	docTypes := []string{"ktp", "npwp", "nib", "siup", "business_license", "venue_agreement", "event_proposal"}
+	docTypes := []string{"ktp", "npwp", "nib", "siup", "business_license"}
 	var uploads []*DocumentUpload
 
 	for _, t := range docTypes {
@@ -242,7 +373,7 @@ func (h *Handler) handleUpdateApplication(w http.ResponseWriter, r *http.Request
 		BusinessAddress:   r.FormValue("business_address"),
 	}
 
-	docTypes := []string{"ktp", "npwp", "nib", "siup", "business_license", "venue_agreement", "event_proposal"}
+	docTypes := []string{"ktp", "npwp", "nib", "siup", "business_license"}
 	var uploads []*DocumentUpload
 
 	for _, t := range docTypes {
@@ -598,6 +729,10 @@ func (h *Handler) handlePublishEvent(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, ErrPayoutDetailsRequired) {
 			response.Error(w, http.StatusUnprocessableEntity, "PAYOUT_DETAILS_REQUIRED", err.Error())
+			return
+		}
+		if errors.Is(err, ErrOrganizerDocumentsRequired) {
+			response.Error(w, http.StatusUnprocessableEntity, "ORGANIZER_DOCUMENTS_REQUIRED", err.Error())
 			return
 		}
 		log.Printf("PublishOrganizerEvent error: %v", err)

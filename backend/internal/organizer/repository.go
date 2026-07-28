@@ -197,6 +197,220 @@ func (r *PostgresRepository) Create(ctx context.Context, app *OrganizerApplicati
 	return tx.Commit()
 }
 
+// ListAccountDocuments returns the current version of each account document.
+//
+// The is_current filter is not optional: organizer_documents keeps superseded
+// rows so a rejected filing stays on the record, so an unfiltered read would
+// show an organizer the document they replaced alongside its replacement.
+func (r *PostgresRepository) ListAccountDocuments(ctx context.Context, userID int) ([]*OrganizerDocument, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT od.id, od.application_id, od.document_type, od.file_path,
+		       od.status::text, od.uploaded_at, od.is_current
+		FROM organizer_documents od
+		JOIN organizer_applications oa ON oa.id = od.application_id
+		WHERE oa.user_id = $1 AND od.is_current
+		ORDER BY od.document_type
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	docs := []*OrganizerDocument{}
+	for rows.Next() {
+		var d OrganizerDocument
+		if err := rows.Scan(&d.ID, &d.ApplicationID, &d.DocumentType, &d.FilePath,
+			&d.Status, &d.UploadedAt, &d.IsCurrent); err != nil {
+			return nil, err
+		}
+		docs = append(docs, &d)
+	}
+	return docs, rows.Err()
+}
+
+// GetAccountDocumentReadiness answers "may this organizer submit an event yet?"
+// without attempting one.
+//
+// The console needs this to disable Submit with a reason. Letting the publish
+// call fail instead would tell the organizer only after they had finished every
+// other part of the workspace, and the fix is days away in an auditor's queue.
+//
+// Deliberately mirrors the gate in PublishOrganizerEvent exactly, including the
+// is_current filter. If the two ever disagree, the button lies.
+func (r *PostgresRepository) GetAccountDocumentReadiness(ctx context.Context, userID int) (*AccountDocumentReadiness, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	out := &AccountDocumentReadiness{Required: RequiredAccountDocumentTypes, Missing: []string{}}
+
+	var appID int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, document_gate_exempt FROM organizer_applications WHERE user_id = $1
+	`, userID).Scan(&appID, &out.Exempt)
+	if err == sql.ErrNoRows {
+		// Nothing on file at all: everything is outstanding. The row is created
+		// on first upload, so this is a normal state, not an error.
+		for _, t := range RequiredAccountDocumentTypes {
+			out.Missing = append(out.Missing, AccountDocumentLabel(t))
+		}
+		return out, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if out.Exempt {
+		out.Ready = true
+		return out, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT document_type FROM organizer_documents
+		WHERE application_id = $1 AND is_current AND status = 'verified'
+	`, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	verified := map[string]bool{}
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		verified[t] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for _, t := range RequiredAccountDocumentTypes {
+		if !verified[t] {
+			out.Missing = append(out.Missing, AccountDocumentLabel(t))
+		}
+	}
+	out.Ready = len(out.Missing) == 0
+	return out, nil
+}
+
+// ReplaceAccountDocument files a new version of one document type.
+//
+// This deliberately does NOT go through UpdateApplication, which refuses once
+// the application is approved. That lock is correct for business details, but
+// applied to documents it meant an approved organizer whose NIB an auditor
+// REJECTED could never file a corrected one — the rejection was unactionable.
+//
+// The supersede and the insert share a transaction because a partial unique
+// index enforces one current row per type: doing them apart would either fail
+// the index or briefly leave the organizer with no current document.
+func (r *PostgresRepository) ReplaceAccountDocument(ctx context.Context, userID int, doc *OrganizerDocument) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var appID int
+	err = tx.QueryRowContext(ctx,
+		`SELECT id FROM organizer_applications WHERE user_id = $1`, userID).Scan(&appID)
+	if err == sql.ErrNoRows {
+		// No application row. Refusing here would be a dead end: an admin can
+		// grant the Event Organizer role straight from the Users screen, which
+		// bypasses organizer_applications entirely, and since migration 0027 an
+		// organizer with no verified documents cannot submit an event. Without a
+		// row there is nowhere to attach a document, so they could never clear
+		// the gate they are now held to.
+		//
+		// Built from data that actually exists, matching UpdatePayoutDetails:
+		// profile name and login email; business_type/business_phone are NOT NULL
+		// with no honest value, so they stay empty and render "Not provided".
+		// status is 'approved' because the role grant WAS the approval, and
+		// reviewed_by stays NULL rather than naming an auditor who never acted.
+		err = tx.QueryRowContext(ctx, `
+			INSERT INTO organizer_applications (
+				user_id, business_name, business_type, business_email, business_phone, status
+			)
+			SELECT
+				u.id,
+				COALESCE(NULLIF(TRIM(up.full_name), ''), u.email),
+				'',
+				u.email,
+				'',
+				'approved'
+			FROM users u
+			LEFT JOIN user_profiles up ON up.user_id = u.id
+			WHERE u.id = $1
+			RETURNING id
+		`, userID).Scan(&appID)
+		if err == sql.ErrNoRows {
+			// No such user at all — the caller is authenticated, so this should be
+			// unreachable, but returning "not found" beats inserting nothing and
+			// carrying on with a zero application id.
+			return ErrApplicationNotFound
+		}
+		if err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE organizer_documents
+		SET is_current = FALSE, superseded_at = now()
+		WHERE application_id = $1 AND document_type = $2 AND is_current
+	`, appID, doc.DocumentType); err != nil {
+		return err
+	}
+
+	// A replaced document always re-enters review: the auditor verified the
+	// file that was there before, not this one.
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO organizer_documents (application_id, document_type, file_path, status, is_current)
+		VALUES ($1, $2, $3, 'pending_verification', TRUE)
+		RETURNING id, uploaded_at, status::text, is_current
+	`, appID, doc.DocumentType, doc.FilePath).Scan(&doc.ID, &doc.UploadedAt, &doc.Status, &doc.IsCurrent)
+	if err != nil {
+		return err
+	}
+	doc.ApplicationID = appID
+
+	return tx.Commit()
+}
+
+// GetAccountDocumentPath resolves a document id to its storage key, scoped to
+// the caller. The ownership check is in the query rather than after it: an id
+// belonging to another organizer must not resolve at all.
+//
+// Superseded rows are readable on purpose — the organizer can still open what
+// they previously filed.
+func (r *PostgresRepository) GetAccountDocumentPath(ctx context.Context, userID, docID int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	var path string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT od.file_path
+		FROM organizer_documents od
+		JOIN organizer_applications oa ON oa.id = od.application_id
+		WHERE od.id = $1 AND oa.user_id = $2
+	`, docID, userID).Scan(&path)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", ErrDocumentNotFound
+		}
+		return "", err
+	}
+	return path, nil
+}
+
 func (r *PostgresRepository) GetByUserID(ctx context.Context, userID int) (*OrganizerApplication, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -2154,11 +2368,73 @@ func (r *PostgresRepository) PublishOrganizerEvent(ctx context.Context, eventID 
 		return nil
 	}
 
+	// Account-document gate: the organizer's own paperwork (KTP, NPWP, NIB) must
+	// have been VERIFIED by an auditor before any event of theirs reaches the
+	// review queue. Uploading is not enough — an unreviewed document tells an
+	// auditor nothing about who they are approving.
+	//
+	// Checked FIRST of all the gates, ahead of even the payout details, because
+	// it is the only one the organizer cannot clear by themselves: it needs an
+	// auditor to act, which takes days. Every other gate is self-service and
+	// takes minutes. Reporting a minutes-long blocker before a days-long one
+	// would have the organizer fix the small thing, resubmit, and only then
+	// discover the wait.
+	//
+	// Organizers grandfathered by migration 0027 skip this: they were already
+	// running approved events when the gate was introduced.
+	var appID int
+	var gateExempt bool
+	err = tx.QueryRowContext(ctx, `
+		SELECT id, document_gate_exempt FROM organizer_applications WHERE user_id = $1
+	`, organizerID).Scan(&appID, &gateExempt)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("%w: upload %s in Settings and wait for verification before submitting",
+			ErrOrganizerDocumentsRequired, accountDocumentLabels(RequiredAccountDocumentTypes))
+	} else if err != nil {
+		return err
+	}
+	if !gateExempt {
+		// is_current matters: migration 0026 made a re-upload APPEND rather than
+		// overwrite, so a superseded row sits beside the current one. Without this
+		// filter a previously-verified document that has since been replaced and
+		// rejected would still satisfy the gate.
+		verified := map[string]bool{}
+		docRows, err := tx.QueryContext(ctx, `
+			SELECT document_type FROM organizer_documents
+			WHERE application_id = $1 AND is_current AND status = 'verified'
+		`, appID)
+		if err != nil {
+			return err
+		}
+		for docRows.Next() {
+			var t string
+			if err := docRows.Scan(&t); err != nil {
+				docRows.Close()
+				return err
+			}
+			verified[t] = true
+		}
+		docRows.Close()
+		if err := docRows.Err(); err != nil {
+			return err
+		}
+
+		var missingAccountDocs []string
+		for _, t := range RequiredAccountDocumentTypes {
+			if !verified[t] {
+				missingAccountDocs = append(missingAccountDocs, AccountDocumentLabel(t))
+			}
+		}
+		if len(missingAccountDocs) > 0 {
+			return fmt.Errorf("%w: %s must be verified by an auditor before you can submit an event",
+				ErrOrganizerDocumentsRequired, strings.Join(missingAccountDocs, ", "))
+		}
+	}
+
 	// Payout gate: an event must not reach an auditor until there is an account
-	// for its revenue to be paid into. Checked first because it is the cheapest
-	// to fix and, unlike the others, is fixed OUTSIDE this event's workspace —
-	// telling the organizer about it before the venue/seating/document work
-	// avoids sending them back to Settings after they think they are done.
+	// for its revenue to be paid into. Fixed OUTSIDE this event's workspace, so
+	// it is reported before the venue/seating/document work — that avoids
+	// sending the organizer back to Settings after they think they are done.
 	//
 	// This is also the point of no return for the account: submitting locks it
 	// (see payoutDetailsLockReason), so the details must be right now.

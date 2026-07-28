@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { OrganizerVerification, OrganizerStatus, ReviewDocument } from '../types';
+import { getAccountDocumentViewURL } from '@/lib/api/auditor';
 import {
   CheckCircle2,
   ArrowLeft, Ban, Send, Save, X, Activity, RefreshCw, FileText, ExternalLink
@@ -14,6 +15,27 @@ interface OrganizerDetailViewProps {
   onUpdateOrganizerChecklist: (id: string, checklist: OrganizerVerification['checklist']) => void;
   onVerifyDocument: (docId: string) => void;
   onRejectDocument: (docId: string) => void;
+}
+
+// doc.fileUrl is the private-bucket OBJECT KEY, not a fetchable link — rendering
+// it in an href gave every document a dead "View Link" button. Mint a signed URL
+// instead.
+//
+// The blank tab is opened SYNCHRONOUSLY, before awaiting, or a popup blocker
+// rejects a window created from an async continuation.
+async function openSignedDocument(docId: string | number | undefined) {
+  if (docId === undefined) {
+    alert("This document has no id on file and cannot be opened.");
+    return;
+  }
+  const tab = window.open("", "_blank");
+  const res = await getAccountDocumentViewURL(docId);
+  if (res.success && res.data?.url) {
+    if (tab) tab.location.href = res.data.url;
+  } else {
+    tab?.close();
+    alert(res.error?.message || "Could not open that document.");
+  }
 }
 
 const statusColors: Record<OrganizerStatus, string> = {
@@ -192,14 +214,12 @@ export default function OrganizerDetailView({
                     </div>
 
                     <div className="flex gap-2 pt-2 border-t border-border-subtle">
-                      <a
-                        href={doc.fileUrl}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        onClick={() => openSignedDocument(doc.id)}
                         className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 border border-border-subtle bg-white hover:bg-surface text-text-secondary hover:text-text-primary rounded-lg text-xs font-bold transition-colors cursor-pointer"
                       >
-                        <ExternalLink className="w-3.5 h-3.5" /> View Link
-                      </a>
+                        <ExternalLink className="w-3.5 h-3.5" /> View Document
+                      </button>
 
                       {doc.status !== "VERIFIED" && doc.status !== "REJECTED" && (
                         <>

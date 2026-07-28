@@ -3,6 +3,7 @@ import { User } from 'lucide-react';
 import { getMe, updateProfile } from '@/lib/api/auth';
 import { useAuthStore } from '@/lib/store/authStore';
 import PayoutDetailsCard from './PayoutDetailsCard';
+import AccountDocumentsCard from './AccountDocumentsCard';
 
 export default function SettingsView() {
   const { set_user_from_api } = useAuthStore();
@@ -164,6 +165,7 @@ export default function SettingsView() {
               were simply unreachable after approval, which is why payout
               records had no account to pay into. */}
           <PayoutDetailsCard />
+          <AccountDocumentsCard />
         </div>
       </div>
     </div>

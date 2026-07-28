@@ -300,6 +300,14 @@ type OrganizerVerification struct {
 	BankName          string               `json:"bankName"`
 	BankAccountHolder string               `json:"bankAccountHolder"`
 	BankAccountNumber string               `json:"bankAccountNumber"`
+	// BankVerificationStatus was missing entirely, so the organizer profile's
+	// mapper fell back to a literal "Pending" and that screen could never show
+	// the real value — not even for an account an auditor had verified. The
+	// payout screen read the same column correctly, which is how the two
+	// disagreed about one organizer.
+	BankVerificationStatus string          `json:"bankVerificationStatus"`
+	BankVerifiedBy    string               `json:"bankVerifiedBy"`
+	BankVerifiedAt    string               `json:"bankVerifiedAt"`
 	Address           string               `json:"address"`
 }
 
@@ -376,26 +384,56 @@ type AuditorPayout struct {
 	OrganizerPhone            string         `json:"organizerPhone"`
 	OrganizerBusinessLicense  string         `json:"organizerBusinessLicense"`
 	OrganizerStatus           string         `json:"organizerStatus"`
+	// OrganizerViolations counts the organizer's rejected events, the same rule
+	// GetEventReview applies for compliance history. It excludes this payout's
+	// own event so a rejection here is not counted as prior history.
+	OrganizerViolations       int            `json:"organizerPreviousViolations"`
+	// OrganizerNotes is shown to the organizer; InternalNotes is not. Both live
+	// on `payouts` — reading them off the organizer's application, as this once
+	// did, meant one note appeared on every payout that organizer requested.
+	OrganizerNotes            string         `json:"financeNotes"`
+	// BankVerifiedBy/At record who authorised the destination of the money.
+	// Empty on accounts grandfathered in by migration 0022.
+	BankVerifiedBy            string         `json:"bankVerifiedBy"`
+	BankVerifiedAt            string         `json:"bankVerifiedAt"`
+	// ApplicationID and EventID let the console deep-link to the organizer
+	// profile and the event review; both screens already exist.
+	ApplicationID             int            `json:"applicationId"`
+	EventID                   int            `json:"eventId"`
+	VenueName                 string         `json:"venueName"`
+	EventStatus               string         `json:"eventStatus"`
+	TicketCapacity            int            `json:"ticketCapacity"`
 	FraudDetection            FraudSignals   `json:"fraudDetection"`
 	InternalNotes             string         `json:"internalNotes"`
 	Timeline                  []Activity     `json:"timeline"`
+	// ReviewChecklist is populated on the detail read only. Before migration
+	// 0028 these eleven booleans lived in React state and were lost on
+	// navigation, while a score derived from them was shown on the approve
+	// modal.
+	ReviewChecklist           PayoutReviewChecklist `json:"reviewChecklist"`
 }
 
+// PayoutSales is derived from `orders`, not from ticket_tiers.tickets_sold —
+// nothing in the codebase ever writes that counter, so every figure computed
+// from it was structurally zero. Each order also carries the fee rates that
+// applied when it was placed, so a historic payout is no longer recomputed at
+// today's percentages.
 type PayoutSales struct {
-	TicketsSold     int     `json:"ticketsSold"`
-	GrossRevenue    float64 `json:"grossRevenue"`
-	PlatformFee     float64 `json:"platformFee"`
-	GatewayFee      float64 `json:"paymentGatewayFee"`
+	TicketsSold      int     `json:"ticketsSold"`
+	GrossRevenue     float64 `json:"grossRevenue"`
+	PlatformFee      float64 `json:"platformFee"`
+	GatewayFee       float64 `json:"paymentGatewayFee"`
+	// PPN is the VAT actually charged on the two fees (platform_fee_ppn +
+	// gateway_fee_ppn). The rate is per-order, so it is never assumed to be 11%.
+	PPN              float64 `json:"ppn"`
 	EntertainmentTax float64 `json:"entertainmentTax"`
-	RefundAmount    float64 `json:"refundAmount"`
-	NetRevenue      float64 `json:"netRevenue"`
+	RefundAmount     float64 `json:"refundAmount"`
+	NetRevenue       float64 `json:"netRevenue"`
 }
 
 type FraudSignals struct {
 	DuplicatePayout     bool   `json:"duplicatePayout"`
 	SuspiciousRevenue   bool   `json:"suspiciousRevenue"`
-	UnusualRefundRate   bool   `json:"unusualRefundRate"`
-	HighChargeback      bool   `json:"highChargeback"`
 	HasAlert            bool   `json:"hasAlert"`
 	AlertMessage        string `json:"alertMessage"`
 }
@@ -405,6 +443,31 @@ type PayoutFilters struct {
 	Search    string
 	Page      int
 	Limit     int
+}
+
+// RevisePayoutRequest sends a payout back to the organizer. Reason is required:
+// a payout returned without saying what to fix leaves the organizer guessing,
+// and the console already collects the text.
+type RevisePayoutRequest struct {
+	Reason        string `json:"reason"`
+	InternalNotes string `json:"internalNotes"`
+}
+
+// UpdatePayoutNotesRequest saves notes without touching status — what the
+// console's "Save Draft" button has always claimed to do.
+type UpdatePayoutNotesRequest struct {
+	InternalNotes  string `json:"internalNotes"`
+	OrganizerNotes string `json:"financeNotes"`
+}
+
+// VerifyBankAccountRequest confirms the bank account a payout will be sent to.
+//
+// AccountNumber is echoed back by the console and checked against what is on
+// file: an auditor verifies the account they were shown, and the organizer may
+// have changed it since the page loaded. A mismatch is refused rather than
+// silently verifying the newer value.
+type VerifyBankAccountRequest struct {
+	AccountNumber string `json:"accountNumber"`
 }
 
 type ApprovePayoutRequest struct {
@@ -419,6 +482,94 @@ type RejectPayoutRequest struct {
 
 type HoldPayoutRequest struct {
 	Reason string `json:"reason"`
+}
+
+// ---- Payout review checklist ----
+
+// PayoutReviewItem is one line of the auditor's verification checklist.
+//
+// Key, Label and Group all come from the server so the console cannot drift
+// from what the database will accept — the same reason the organizer document
+// gate serves its required types rather than duplicating them in the frontend.
+// CheckedBy/CheckedAt are populated for ticked AND unticked rows: withdrawing a
+// tick is itself a reviewer decision worth attributing.
+type PayoutReviewItem struct {
+	Key       string `json:"key"`
+	Label     string `json:"label"`
+	Group     string `json:"group"`
+	Checked   bool   `json:"checked"`
+	CheckedBy string `json:"checkedBy"`
+	CheckedAt string `json:"checkedAt"`
+}
+
+// PayoutReviewChecklist is the whole checklist plus whether it still accepts
+// edits. Frozen is computed from the payout's status rather than stored: the
+// checklist records what was verified BEFORE the money left, so once a payout
+// is terminal that record must stop moving.
+type PayoutReviewChecklist struct {
+	Items        []PayoutReviewItem `json:"items"`
+	Frozen       bool               `json:"frozen"`
+	FrozenReason string             `json:"frozenReason"`
+}
+
+// UpdatePayoutCheckRequest toggles ONE item. Deliberately single-item rather
+// than a whole-checklist write: two auditors on the same payout would otherwise
+// overwrite each other with a stale copy of every other box.
+type UpdatePayoutCheckRequest struct {
+	ItemKey string `json:"itemKey"`
+	Checked bool   `json:"checked"`
+}
+
+// payoutReviewItemDefs is the authoritative whitelist of the eleven checklist
+// items, in display order. Migration 0028 carries the same eleven keys as a
+// CHECK constraint; this list is what rejects an unknown key with a 422 before
+// the database ever sees it.
+var payoutReviewItemDefs = []PayoutReviewItem{
+	{Key: "revenueMatch", Label: "Revenue Matches Gateways", Group: "financial"},
+	{Key: "ticketSalesMatch", Label: "Ticket Sales Logs Verified", Group: "financial"},
+	{Key: "refundCalculated", Label: "Refunds Properly Calculated", Group: "financial"},
+	{Key: "platformFeeCorrect", Label: "Platform Fees Verified", Group: "financial"},
+	{Key: "taxCorrect", Label: "Entertainment/VAT Taxes Match", Group: "financial"},
+	{Key: "netRevenueCorrect", Label: "Net Revenue Allocation Valid", Group: "financial"},
+	{Key: "eventApproved", Label: "Event Approved", Group: "compliance"},
+	{Key: "organizerVerified", Label: "Organizer Verified", Group: "compliance"},
+	{Key: "requiredDocumentsComplete", Label: "Required Documents Complete", Group: "compliance"},
+	{Key: "noActiveInvestigation", Label: "No Active Investigation", Group: "compliance"},
+	{Key: "noPendingRevision", Label: "No Pending Revision", Group: "compliance"},
+}
+
+// isPayoutReviewItemKey reports whether key is one of the eleven.
+func isPayoutReviewItemKey(key string) bool {
+	for _, def := range payoutReviewItemDefs {
+		if def.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// payoutReviewItemLabel renders a key for the activity_log detail written when
+// a payout is approved with items outstanding. A log line naming
+// "requiredDocumentsComplete" is a variable name; naming "Required Documents
+// Complete" is a record someone can read later.
+func payoutReviewItemLabel(key string) string {
+	for _, def := range payoutReviewItemDefs {
+		if def.Key == key {
+			return def.Label
+		}
+	}
+	return key
+}
+
+// terminalPayoutStatuses are the states after which the checklist is a
+// historical record rather than a working document. 'on_hold' and
+// 'need_revision' are absent on purpose — both are still open reviews that a
+// payout comes back from.
+var terminalPayoutStatuses = map[string]string{
+	"approved":  "approved",
+	"rejected":  "rejected",
+	"processed": "paid out",
+	"failed":    "failed",
 }
 
 // ---- Notifications ----
@@ -482,6 +633,10 @@ type Repository interface {
 	ApprovePayout(ctx context.Context, payoutID, actorID int, req ApprovePayoutRequest) error
 	RejectPayout(ctx context.Context, payoutID, actorID int, req RejectPayoutRequest) error
 	HoldPayout(ctx context.Context, payoutID, actorID int, req HoldPayoutRequest) error
+	RevisePayout(ctx context.Context, payoutID, actorID int, req RevisePayoutRequest) error
+	UpdatePayoutCheck(ctx context.Context, payoutID, actorID int, req UpdatePayoutCheckRequest) error
+	UpdatePayoutNotes(ctx context.Context, payoutID, actorID int, req UpdatePayoutNotesRequest) error
+	VerifyPayoutBankAccount(ctx context.Context, payoutID, actorID int, req VerifyBankAccountRequest) error
 
 	// Notifications
 	ListNotifications(ctx context.Context, userID int) ([]*AuditorNotification, error)
@@ -534,6 +689,10 @@ type Service interface {
 	ApprovePayout(ctx context.Context, payoutID, actorID int, req ApprovePayoutRequest) error
 	RejectPayout(ctx context.Context, payoutID, actorID int, req RejectPayoutRequest) error
 	HoldPayout(ctx context.Context, payoutID, actorID int, req HoldPayoutRequest) error
+	RevisePayout(ctx context.Context, payoutID, actorID int, req RevisePayoutRequest) error
+	UpdatePayoutCheck(ctx context.Context, payoutID, actorID int, req UpdatePayoutCheckRequest) error
+	UpdatePayoutNotes(ctx context.Context, payoutID, actorID int, req UpdatePayoutNotesRequest) error
+	VerifyPayoutBankAccount(ctx context.Context, payoutID, actorID int, req VerifyBankAccountRequest) error
 
 	// Notifications
 	ListNotifications(ctx context.Context, userID int) ([]*AuditorNotification, error)

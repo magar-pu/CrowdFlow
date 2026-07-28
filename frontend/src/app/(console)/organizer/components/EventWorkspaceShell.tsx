@@ -9,6 +9,7 @@ import {
   getEventRevisions,
   publishOrganizerEvent,
   getPayoutDetails,
+  getAccountDocumentReadiness,
   listEventPublicly,
   unlistEvent,
   EventRevisionFeedback,
@@ -33,6 +34,10 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
   // null while unknown, so the button is not disabled on a slow/failed lookup —
   // the server gate is authoritative either way.
   const [payoutReady, setPayoutReady] = useState<boolean | null>(null);
+  // Same null-while-unknown rule as payoutReady. Holds the outstanding document
+  // labels so the banner can name them, rather than sending the organizer to
+  // Settings to work out which one an auditor has not cleared.
+  const [docsMissing, setDocsMissing] = useState<string[] | null>(null);
   const [listingBusy, setListingBusy] = useState(false);
   const [listingError, setListingError] = useState<string | null>(null);
 
@@ -58,6 +63,25 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
       // because a secondary request failed would be worse than letting the
       // server gate reject it with the real reason.
       setPayoutReady(res.success && res.data ? res.data.complete : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [event?.id, event?.status]);
+
+  // Account documents are the only submission requirement the organizer cannot
+  // clear themselves — it needs an auditor to verify, which takes days. Checked
+  // up front for the same reason as the payout details, but more urgently.
+  useEffect(() => {
+    const s = event?.status?.toLowerCase() || "";
+    if (!event || !(s === "draft" || s === "")) return;
+    let cancelled = false;
+    getAccountDocumentReadiness().then((res) => {
+      if (cancelled) return;
+      // A failed lookup leaves this null, not blocked: the server gate is
+      // authoritative, and refusing to submit because a secondary request
+      // failed would be worse than a 422 carrying the real reason.
+      setDocsMissing(res.success && res.data && !res.data.ready ? res.data.missing : null);
     });
     return () => {
       cancelled = true;
@@ -168,7 +192,7 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
 
             <button
               onClick={handleResubmit}
-              disabled={isSubmitting || payoutReady === false}
+              disabled={isSubmitting || payoutReady === false || (docsMissing?.length ?? 0) > 0}
               className="flex shrink-0 items-center gap-2 px-4 py-2 bg-secondary hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
             >
               <Send className="w-3.5 h-3.5" />
@@ -179,6 +203,22 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
           {/* Checked up front rather than left to the 422: payout details are
               the one submission requirement fixed OUTSIDE this workspace, so
               failing at the button would send the organizer hunting. */}
+          {/* Shown above the payout notice: this is the blocker with the long
+              lead time, since only an auditor can clear it. */}
+          {(docsMissing?.length ?? 0) > 0 && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
+              <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+              <p className="text-xs font-semibold text-warning">
+                An auditor must verify your account documents before you can submit an
+                event. Outstanding: {docsMissing?.join(", ")}.{" "}
+                <Link href="/organizer/settings" className="underline hover:no-underline">
+                  Go to Settings
+                </Link>
+                .
+              </p>
+            </div>
+          )}
+
           {payoutReady === false && (
             <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
