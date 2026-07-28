@@ -59,7 +59,12 @@ export default function AuditorOrganizerDetailPage() {
             bankName: raw.bankName || "Bank Central Asia (BCA)",
             bankAccountHolder: raw.bankAccountHolder || raw.companyName || "Company Account",
             bankAccountNumber: raw.bankAccountNumber || "5012394012",
-            bankVerificationStatus: raw.bankVerificationStatus || "Pending",
+            // No fallback. GetOrganizer did not return this field at all, so the
+            // old `|| "Pending"` meant the profile showed "Pending" for every
+            // organizer forever — including accounts an auditor had verified,
+            // which the payout screen displayed correctly at the same time.
+            bankVerificationStatus:
+              raw.bankVerificationStatus === "verified" ? "Verified" : "Unverified",
             checklist: raw.checklist || {
               businessLicenseValid: isNibVerified || isSiupVerified,
               npwpValid: isNpwpVerified,
@@ -78,7 +83,11 @@ export default function AuditorOrganizerDetailPage() {
               category: d.category || "Permits & Licenses",
               status: d.status === "verified" ? "VERIFIED" : d.status === "rejected" ? "REJECTED" : "WAITING REVIEW",
               uploadDate: d.uploadDate || raw.registrationDate,
-              fileUrl: d.fileUrl || "/placeholder-document.pdf"
+              // The object key, kept for reference only. Opening a document goes
+              // through the signed-URL endpoint; this is never a usable href.
+              // The old "/placeholder-document.pdf" fallback turned a missing
+              // document into a working link to an unrelated file.
+              fileUrl: d.fileUrl || ""
             }))
           };
           setOrganizer(mapped);

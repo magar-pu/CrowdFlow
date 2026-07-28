@@ -53,7 +53,9 @@ export interface OrganizerVerification {
   bankName: string;
   bankAccountHolder: string;
   bankAccountNumber: string;
-  bankVerificationStatus: 'Verified' | 'Pending' | 'Unverified';
+  /** 'Pending' is gone: it was only ever produced by a mapper fallback covering
+   *  a field the backend never sent. The column holds verified|unverified. */
+  bankVerificationStatus: 'Verified' | 'Unverified';
   
   // Checklists
   checklist: {
@@ -100,10 +102,10 @@ export interface PayoutRequest {
   eventName: string;
   eventDate: string;
   venue: string;
-  // Empty when the payout API does not report the event's completion state,
-  // which it currently never does. Rendered as "Not provided" rather than
-  // being defaulted to 'Completed'.
-  completionStatus: 'Completed' | 'Ongoing' | 'Cancelled' | '';
+  // The event's real lifecycle status (events.status), not a completion state —
+  // there is no column recording whether an event actually took place. Empty
+  // renders as "Not provided".
+  completionStatus: string;
   revenue: number;
   netRevenue: number;
   requestedAmount: number;
@@ -120,18 +122,22 @@ export interface PayoutRequest {
 
   // Event details
   ticketCapacity: number;
+  /** 0 when the organizer holds the role without ever filing an application. */
+  applicationId: number;
+  eventId: number;
 
-  // Sales summary
+  // Sales summary, derived from paid/refunded `orders`.
+  // Chargebacks and manual adjustments were removed: no table records either,
+  // so they could only ever render a fake 0 on a money-release screen.
   salesSummary: {
     ticketsSold: number;
     grossRevenue: number;
     platformFee: number;
     paymentGatewayFee: number;
+    /** VAT actually charged on the two fees. The rate is per-order, not a fixed 11%. */
+    ppn: number;
     entertainmentTax: number;
-    vat: number;
     refundAmount: number;
-    chargebackAmount: number;
-    otherAdjustments: number;
     netRevenue: number;
   };
 
@@ -140,7 +146,6 @@ export interface PayoutRequest {
     revenueMatch: boolean;
     ticketSalesMatch: boolean;
     refundCalculated: boolean;
-    chargebackApplied: boolean;
     platformFeeCorrect: boolean;
     taxCorrect: boolean;
     netRevenueCorrect: boolean;
@@ -158,17 +163,18 @@ export interface PayoutRequest {
   bankName: string;
   bankAccountNumber: string;
   bankAccountHolder: string;
-  swiftCode: string;
   bankVerificationStatus: 'Verified' | 'Pending' | 'Unverified';
+  /** Who confirmed the account, and when. Empty on rows grandfathered in by
+   *  migration 0022 — those were verified by nobody, and naming an actor would
+   *  fabricate an audit trail. */
+  bankVerifiedBy: string;
+  bankVerifiedAt: string;
 
-  // Fraud checks
+  // Fraud checks. Only conditions the backend can actually evaluate:
+  // a second approved payout for the event, and a request exceeding net revenue.
   fraudDetection: {
     duplicatePayout: boolean;
     suspiciousRevenue: boolean;
-    unusualRefundRate: boolean;
-    highChargeback: boolean;
-    multipleBankChanges: boolean;
-    abnormalTicketSales: boolean;
     hasAlert: boolean;
     alertMessage?: string;
   };

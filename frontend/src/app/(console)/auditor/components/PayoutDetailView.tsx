@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { formatIDR } from '@/lib/pricing';
 import { PayoutRequest, PayoutStatus, PAYOUT_REJECTION_REASONS } from '../types';
 import {
@@ -19,9 +20,8 @@ interface PayoutDetailViewProps {
     financialChecklist: PayoutRequest['financialChecklist'],
     complianceChecklist: PayoutRequest['complianceChecklist']
   ) => void;
+  onVerifyBankAccount: (id: string, accountNumber: string) => Promise<boolean>;
 }
-
-const PAYOUT_STAGES = ['Request Submitted', 'Finance Validation', 'Automatic Compliance Check', 'Auditor Review', 'Final Decision', 'Payment Processing', 'Completed'];
 
 const statusColors: Record<PayoutStatus, string> = {
   Pending: 'bg-secondary/10 text-secondary border-secondary/20',
@@ -34,19 +34,14 @@ const statusColors: Record<PayoutStatus, string> = {
   'On Hold': 'bg-amber-100 text-amber-700 border-amber-200',
 };
 
-function stageIndexFor(status: PayoutStatus) {
-  switch (status) {
-    case 'Pending': return 2;
-    case 'Under Review':
-    case 'Need Revision':
-    case 'On Hold': return 3;
-    case 'Approved':
-    case 'Rejected': return 4;
-    case 'Processing': return 5;
-    case 'Paid': return 6;
-    default: return 0;
-  }
-}
+// events.status is an enum; render it the way the rest of the console does.
+const EVENT_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft',
+  pending_review: 'Pending Review',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  needs_revision: 'Needs Revision',
+};
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -62,6 +57,7 @@ export default function PayoutDetailView({
   onBack,
   onUpdatePayoutStatus,
   onUpdatePayoutChecklists,
+  onVerifyBankAccount,
 }: PayoutDetailViewProps) {
   const [notes, setNotes] = useState(payout.internalNotes || '');
   const [financeNotes, setFinanceNotes] = useState(payout.financeNotes || '');
@@ -70,21 +66,34 @@ export default function PayoutDetailView({
 
   const [revDesc, setRevDesc] = useState('');
   const [rejectReason, setRejectReason] = useState<typeof PAYOUT_REJECTION_REASONS[number] | ''>('');
+  const [verifyingBank, setVerifyingBank] = useState(false);
+
+  // The checklists live HERE, not in the shared payouts list.
+  //
+  // They used to be pushed into the context's `payouts` array while this page
+  // rendered its own object from getPayout — two different objects, so a click
+  // updated something nothing on screen was reading and the box never ticked.
+  // The context is still notified so the list view agrees, but this state is
+  // what renders.
+  const [financialChecklist, setFinancialChecklist] = useState(payout.financialChecklist);
+  const [complianceChecklist, setComplianceChecklist] = useState(payout.complianceChecklist);
 
   const handleToggleFinancialChecklist = (field: keyof PayoutRequest['financialChecklist']) => {
-    const updatedFinChecklist = {
-      ...payout.financialChecklist,
-      [field]: !payout.financialChecklist[field]
-    };
-    onUpdatePayoutChecklists(payout.id, updatedFinChecklist, payout.complianceChecklist);
+    const updated = { ...financialChecklist, [field]: !financialChecklist[field] };
+    setFinancialChecklist(updated);
+    onUpdatePayoutChecklists(payout.id, updated, complianceChecklist);
   };
 
   const handleToggleComplianceChecklist = (field: keyof PayoutRequest['complianceChecklist']) => {
-    const updatedCompChecklist = {
-      ...payout.complianceChecklist,
-      [field]: !payout.complianceChecklist[field]
-    };
-    onUpdatePayoutChecklists(payout.id, payout.financialChecklist, updatedCompChecklist);
+    const updated = { ...complianceChecklist, [field]: !complianceChecklist[field] };
+    setComplianceChecklist(updated);
+    onUpdatePayoutChecklists(payout.id, financialChecklist, updated);
+  };
+
+  const handleVerifyBank = async () => {
+    setVerifyingBank(true);
+    await onVerifyBankAccount(payout.id, payout.bankAccountNumber);
+    setVerifyingBank(false);
   };
 
   const handleApprove = () => {
@@ -120,27 +129,27 @@ export default function PayoutDetailView({
   const NOT_PROVIDED = 'Not provided';
   const fieldValue = (value: string) => value?.trim() ? value : NOT_PROVIDED;
   const isMissing = (value: string) => !value?.trim();
-  const allChecklistValues = [...Object.values(payout.financialChecklist), ...Object.values(payout.complianceChecklist)];
+  const allChecklistValues = [...Object.values(financialChecklist), ...Object.values(complianceChecklist)];
   const complianceScore = Math.round((allChecklistValues.filter(Boolean).length / allChecklistValues.length) * 100);
 
-  const bankChecklist = {
-    verified: payout.bankVerificationStatus === 'Verified',
-    accountMatch: payout.bankVerificationStatus !== 'Unverified',
-    accountActive: payout.bankVerificationStatus !== 'Unverified',
-  };
+  const bankVerified = payout.bankVerificationStatus === 'Verified';
 
-  const refundPct = s.grossRevenue ? (s.refundAmount / s.grossRevenue) * 100 : 0;
-  const chargebackPct = s.grossRevenue ? (s.chargebackAmount / s.grossRevenue) * 100 : 0;
+  // Every proportion here divides by gross revenue, which is legitimately 0
+  // before an event sells anything. Unguarded that yields NaN, and NaN in a
+  // width produces invalid CSS rather than an empty bar.
+  const pctOfGross = (value: number) => (s.grossRevenue > 0 ? (value / s.grossRevenue) * 100 : 0);
+  const refundPct = pctOfGross(s.refundAmount);
   const avgTicketPrice = s.ticketsSold ? s.grossRevenue / s.ticketsSold : 0;
   const attendanceRate = payout.ticketCapacity ? (s.ticketsSold / payout.ticketCapacity) * 100 : 0;
 
+  // Only conditions something can actually evaluate. The previous list carried
+  // four signals hardcoded to false, which read as four passing checks.
   const riskIndicators = [
-    { label: 'High Refund Rate', flagged: payout.fraudDetection.unusualRefundRate },
-    { label: 'Chargeback Above Threshold', flagged: payout.fraudDetection.highChargeback },
-    { label: 'Revenue Mismatch', flagged: payout.fraudDetection.suspiciousRevenue },
     { label: 'Duplicate Payout', flagged: payout.fraudDetection.duplicatePayout },
-    { label: 'Multiple Bank Changes', flagged: payout.fraudDetection.multipleBankChanges },
-    { label: 'Suspicious Organizer', flagged: payout.organizerStatus !== 'Verified' || payout.organizerPreviousViolations > 0 },
+    { label: 'Request Exceeds Net Revenue', flagged: payout.fraudDetection.suspiciousRevenue },
+    { label: 'Bank Account Unverified', flagged: !bankVerified },
+    { label: 'Organizer Unverified', flagged: payout.organizerStatus !== 'Verified' },
+    { label: 'Prior Rejected Events', flagged: payout.organizerPreviousViolations > 0 },
   ];
   const flaggedCount = riskIndicators.filter(r => r.flagged).length;
   const recommendation = flaggedCount >= 3
@@ -150,16 +159,6 @@ export default function PayoutDetailView({
     : 'Safe to Approve';
   const recommendationColor = recommendation === 'Safe to Approve' ? 'text-success bg-success/5 border-success/20' : recommendation === 'High Risk' ? 'text-danger bg-danger/5 border-danger/20' : 'text-warning bg-warning/5 border-warning/20';
 
-  const fraudChecks = [
-    { label: 'Duplicate Request', flagged: payout.fraudDetection.duplicatePayout },
-    { label: 'Revenue Manipulation', flagged: payout.fraudDetection.suspiciousRevenue },
-    { label: 'Abnormal Sales Spike', flagged: payout.fraudDetection.abnormalTicketSales },
-    { label: 'Refund Abuse', flagged: payout.fraudDetection.unusualRefundRate },
-    { label: 'Chargeback Abuse', flagged: payout.fraudDetection.highChargeback },
-    { label: 'Multiple Bank Changes', flagged: payout.fraudDetection.multipleBankChanges },
-  ];
-
-  const stageIndex = stageIndexFor(payout.status);
   const canAct = ['Pending', 'Under Review', 'On Hold'].includes(payout.status);
 
   return (
@@ -220,11 +219,17 @@ export default function PayoutDetailView({
                 ))}
                 <div className="flex justify-between items-center pt-1">
                   <span className="text-text-secondary">Organizer Status</span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold border bg-success/10 text-success border-success/20">{payout.organizerStatus}</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                    payout.organizerStatus === 'Verified'
+                      ? 'bg-success/10 text-success border-success/20'
+                      : 'bg-warning/10 text-warning border-warning/20'
+                  }`}>{payout.organizerStatus}</span>
                 </div>
-                <button onClick={() => alert(`Opening full organizer profile for ${payout.organizerName}...`)} className="w-full flex items-center justify-center gap-1.5 mt-2 px-3 py-2 border border-border-subtle text-text-secondary rounded-lg text-[11px] font-bold hover:bg-surface-container-low transition-colors cursor-pointer">
-                  <Briefcase className="w-3.5 h-3.5" /> View Organizer Profile
-                </button>
+                {payout.applicationId > 0 && (
+                  <Link href={`/auditor/organizers/${payout.applicationId}`} className="w-full flex items-center justify-center gap-1.5 mt-2 px-3 py-2 border border-border-subtle text-text-secondary rounded-lg text-[11px] font-bold hover:bg-surface-container-low transition-colors cursor-pointer">
+                    <Briefcase className="w-3.5 h-3.5" /> View Organizer Profile
+                  </Link>
+                )}
               </div>
             </SectionCard>
 
@@ -234,24 +239,43 @@ export default function PayoutDetailView({
                   { label: 'Bank', value: payout.bankName },
                   { label: 'Account Holder', value: payout.bankAccountHolder },
                   { label: 'Account Number', value: payout.bankAccountNumber },
-                  { label: 'SWIFT Code', value: payout.swiftCode },
                 ].map(r => (
                   <div key={r.label} className="flex justify-between border-b border-border-subtle pb-1.5">
                     <span className="text-text-secondary">{r.label}</span>
                     <span className={`font-semibold text-right ${isMissing(r.value) ? 'text-text-secondary italic font-normal' : 'text-text-primary'}`}>{fieldValue(r.value)}</span>
                   </div>
                 ))}
-                <div className="space-y-1.5 pt-1">
-                  {[
-                    { label: 'Bank Verified', done: bankChecklist.verified },
-                    { label: 'Account Match', done: bankChecklist.accountMatch },
-                    { label: 'Account Active', done: bankChecklist.accountActive },
-                  ].map(item => (
-                    <div key={item.label} className={`flex items-center gap-2 text-[11px] px-2.5 py-1.5 rounded-lg ${item.done ? 'bg-success/5 text-success' : 'bg-surface-container-low text-text-secondary'}`}>
-                      <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${item.done ? 'text-success' : 'text-slate-300'}`} />
-                      <span>{item.label}</span>
-                    </div>
-                  ))}
+                {/* One signal, shown once. This used to render as three separate
+                    checks all derived from bankVerificationStatus, so they always
+                    agreed and read as three independent verifications passing. */}
+                <div className="pt-1 space-y-2">
+                  <div className={`flex items-center gap-2 text-[11px] px-2.5 py-1.5 rounded-lg ${bankVerified ? 'bg-success/5 text-success' : 'bg-warning/5 text-warning'}`}>
+                    <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${bankVerified ? 'text-success' : 'text-warning'}`} />
+                    <span>{bankVerified ? 'Account verified by an auditor' : 'Account not yet verified'}</span>
+                  </div>
+
+                  {/* Who verified it, and when. Blank on accounts grandfathered
+                      in by migration 0022, which were verified by nobody —
+                      naming an actor there would fabricate an audit trail. */}
+                  {bankVerified && payout.bankVerifiedBy?.trim() && (
+                    <p className="text-[10px] text-text-secondary">
+                      Verified by {payout.bankVerifiedBy}
+                      {payout.bankVerifiedAt?.trim() ? ` on ${payout.bankVerifiedAt}` : ''}
+                    </p>
+                  )}
+
+                  {/* One-way: an auditor confirms, and only an organizer edit
+                      resets it. Withheld when there is no account to confirm. */}
+                  {!bankVerified && payout.bankAccountNumber?.trim() && (
+                    <button
+                      onClick={handleVerifyBank}
+                      disabled={verifyingBank}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 border border-success/30 bg-success/10 text-success rounded-lg text-[11px] font-bold hover:bg-success hover:text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      {verifyingBank ? 'Verifying...' : 'Mark account verified'}
+                    </button>
+                  )}
                 </div>
               </div>
             </SectionCard>
@@ -265,7 +289,7 @@ export default function PayoutDetailView({
                   { label: 'Event Name', value: payout.eventName },
                   { label: 'Venue', value: payout.venue },
                   { label: 'Event Date', value: payout.eventDate },
-                  { label: 'Event Status', value: payout.completionStatus },
+                  { label: 'Event Status', value: EVENT_STATUS_LABELS[payout.completionStatus] ?? payout.completionStatus },
                 ].map(r => (
                   <div key={r.label} className="flex justify-between border-b border-border-subtle pb-1.5">
                     <span className="text-text-secondary">{r.label}</span>
@@ -283,9 +307,15 @@ export default function PayoutDetailView({
                     <span className={`font-semibold text-right ${isMissing(r.value) ? 'text-text-secondary italic font-normal' : 'text-text-primary'}`}>{fieldValue(r.value)}</span>
                   </div>
                 ))}
-                <button onClick={() => alert(`Opening event detail for "${payout.eventName}"...`)} className="w-full flex items-center justify-center gap-1.5 mt-1 px-3 py-2 border border-border-subtle text-text-secondary rounded-lg text-[11px] font-bold hover:bg-surface-container-low transition-colors cursor-pointer">
-                  Open Event Detail
-                </button>
+                {/* The auditor review route is keyed by EVENT id — GetEventReview
+                    takes an eventID, and AuditorReviewShell passes its route param
+                    straight through. /auditor/events reads no query param, so
+                    linking there would look wired without being wired. */}
+                {payout.eventId > 0 && (
+                  <Link href={`/auditor/reviews/${payout.eventId}`} className="w-full flex items-center justify-center gap-1.5 mt-1 px-3 py-2 border border-border-subtle text-text-secondary rounded-lg text-[11px] font-bold hover:bg-surface-container-low transition-colors cursor-pointer">
+                    Open Event Review
+                  </Link>
+                )}
               </div>
             </div>
           </SectionCard>
@@ -293,26 +323,24 @@ export default function PayoutDetailView({
           {/* Section 4: Revenue Breakdown */}
           <SectionCard title="Revenue Breakdown">
             <div className="flex h-3 rounded-full overflow-hidden border border-border-subtle">
-              <div className="bg-danger/60" style={{ width: `${(s.platformFee / s.grossRevenue) * 100}%` }} title="Platform Fee" />
-              <div className="bg-orange-400" style={{ width: `${(s.paymentGatewayFee / s.grossRevenue) * 100}%` }} title="Gateway Fee" />
-              <div className="bg-warning/70" style={{ width: `${(s.entertainmentTax / s.grossRevenue) * 100}%` }} title="Entertainment Tax" />
-              <div className="bg-purple-300" style={{ width: `${(s.vat / s.grossRevenue) * 100}%` }} title="VAT" />
-              <div className="bg-slate-300" style={{ width: `${((s.refundAmount + s.chargebackAmount) / s.grossRevenue) * 100}%` }} title="Refund + Chargeback" />
+              <div className="bg-danger/60" style={{ width: `${pctOfGross(s.platformFee)}%` }} title="Platform Fee" />
+              <div className="bg-orange-400" style={{ width: `${pctOfGross(s.paymentGatewayFee)}%` }} title="Gateway Fee" />
+              <div className="bg-purple-300" style={{ width: `${pctOfGross(s.ppn)}%` }} title="PPN on fees" />
+              <div className="bg-warning/70" style={{ width: `${pctOfGross(s.entertainmentTax)}%` }} title="Entertainment Tax" />
+              <div className="bg-slate-300" style={{ width: `${pctOfGross(s.refundAmount)}%` }} title="Refunds" />
               <div className="bg-success flex-1" title="Net Revenue" />
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {[
-                { label: 'Gross Revenue', value: formatIDR(s.grossRevenue), sub: 'Standard Fees' },
+                { label: 'Gross Revenue', value: formatIDR(s.grossRevenue), sub: 'Paid Orders' },
                 { label: 'Platform Fee', value: `-${formatIDR(s.platformFee)}`, sub: 'CrowdFlow Cut', isNeg: true },
-                { label: 'Gateway Fee', value: `-${formatIDR(s.paymentGatewayFee)}`, sub: 'Stripe/Midtrans', isNeg: true },
+                { label: 'Gateway Fee', value: `-${formatIDR(s.paymentGatewayFee)}`, sub: 'Payment Provider', isNeg: true },
+                { label: 'VAT / PPN', value: `-${formatIDR(s.ppn)}`, sub: 'PPN Charged On Fees', isNeg: true },
                 { label: 'Entertainment Tax', value: `-${formatIDR(s.entertainmentTax)}`, sub: 'Region Tax Deduct', isNeg: true },
-                { label: 'VAT / PPN', value: `-${formatIDR(s.vat)}`, sub: '11% National Tax', isNeg: true },
-                { label: 'Refund Amount', value: `-${formatIDR(s.refundAmount)}`, sub: 'Approved Returns', isNeg: true },
-                { label: 'Chargeback Deduct', value: `-${formatIDR(s.chargebackAmount)}`, sub: 'Disputes Deducted', isNeg: true, isDis: s.chargebackAmount > 0 },
-                { label: 'Other Adjustments', value: `-${formatIDR(s.otherAdjustments)}`, sub: 'Manual Corrections', isNeg: true },
+                { label: 'Refund Amount', value: `-${formatIDR(s.refundAmount)}`, sub: 'Refunded Orders', isNeg: true },
                 { label: 'Net Organizer Payout', value: formatIDR(s.netRevenue), sub: 'Transfer Amount', highlight: true },
               ].map((item, idx) => (
-                <div key={idx} className={`bg-white border border-border-subtle rounded-xl p-3.5 soft-shadow ${item.highlight ? 'ring-2 ring-success/20 bg-success/5 border-success/30' : item.isDis ? 'ring-2 ring-danger/20 bg-danger/5 border-danger/30' : ''}`}>
+                <div key={idx} className={`bg-white border border-border-subtle rounded-xl p-3.5 soft-shadow ${item.highlight ? 'ring-2 ring-success/20 bg-success/5 border-success/30' : ''}`}>
                   <p className="text-[8px] font-mono text-text-secondary uppercase tracking-wider">{item.label}</p>
                   <p className={`text-sm font-bold mt-0.5 ${item.highlight ? 'text-success' : item.isNeg ? 'text-danger' : 'text-text-primary'}`}>{item.value}</p>
                   <p className="text-[8px] text-text-secondary font-mono mt-0.5">{item.sub}</p>
@@ -328,7 +356,6 @@ export default function PayoutDetailView({
                 { label: 'Tickets Sold', value: s.ticketsSold.toLocaleString() },
                 { label: 'Gross Revenue', value: formatIDR(s.grossRevenue) },
                 { label: 'Refund %', value: `${refundPct.toFixed(1)}%` },
-                { label: 'Chargeback %', value: `${chargebackPct.toFixed(1)}%` },
                 { label: 'Avg. Ticket Price', value: formatIDR(avgTicketPrice) },
                 { label: 'Attendance Rate', value: `${attendanceRate.toFixed(0)}%` },
               ].map((item, idx) => (
@@ -337,29 +364,6 @@ export default function PayoutDetailView({
                   <p className="text-[8px] font-mono text-text-secondary uppercase tracking-wider mt-0.5">{item.label}</p>
                 </div>
               ))}
-            </div>
-          </SectionCard>
-
-          {/* Section 9: Timeline */}
-          <SectionCard title="Payout Timeline">
-            <div className="relative flex justify-between items-start gap-1 overflow-x-auto pb-1">
-              <div className="absolute left-4 right-4 top-4 h-0.5 bg-surface-container -z-10"></div>
-              {PAYOUT_STAGES.map((stage, idx) => {
-                const isCompleted = idx < stageIndex || payout.status === 'Paid';
-                const isCurrent = idx === stageIndex && payout.status !== 'Paid';
-                return (
-                  <div key={stage} className="flex flex-col items-center gap-1.5 flex-1 text-center min-w-[70px]">
-                    <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-[10px] font-bold shrink-0 ${
-                      isCompleted ? 'bg-secondary border-secondary text-white' :
-                      isCurrent ? 'bg-primary border-primary text-on-primary' :
-                      'bg-white border-border-subtle text-on-surface-variant'
-                    }`}>
-                      {isCompleted ? <CheckCircle2 className="w-3.5 h-3.5" /> : idx + 1}
-                    </div>
-                    <span className={`text-[9px] font-bold leading-tight ${isCurrent ? 'text-text-primary' : 'text-on-surface-variant'}`}>{stage}</span>
-                  </div>
-                );
-              })}
             </div>
           </SectionCard>
 
@@ -442,6 +446,12 @@ export default function PayoutDetailView({
 
           {/* Section 6: Compliance Checklist */}
           <SectionCard title="Compliance Checklist">
+            {/* These are the auditor's own working ticks and are NOT stored yet.
+                Saying so beats letting someone tick twelve boxes, navigate away
+                and assume the review was recorded. */}
+            <p className="text-[10px] text-text-secondary -mt-1">
+              Working checklist. Not saved — clears when you leave this page.
+            </p>
             <div className="flex items-center justify-between pb-1">
               <span className="text-xs text-text-secondary">Compliance Score</span>
               <span className={`text-sm font-bold ${complianceScore >= 80 ? 'text-success' : complianceScore >= 50 ? 'text-warning' : 'text-danger'}`}>{complianceScore}%</span>
@@ -454,7 +464,7 @@ export default function PayoutDetailView({
                 { key: 'noActiveInvestigation' as const, label: 'No Active Investigation' },
                 { key: 'noPendingRevision' as const, label: 'No Pending Revision' },
               ].map(item => {
-                const done = payout.complianceChecklist[item.key];
+                const done = complianceChecklist[item.key];
                 return (
                   <button
                     key={item.key}
@@ -491,12 +501,11 @@ export default function PayoutDetailView({
                 { key: 'revenueMatch' as const, label: 'Revenue Matches Gateways' },
                 { key: 'ticketSalesMatch' as const, label: 'Ticket Sales Logs Verified' },
                 { key: 'refundCalculated' as const, label: 'Refunds Properly Calculated' },
-                { key: 'chargebackApplied' as const, label: 'Chargebacks Accounted/Deducted' },
                 { key: 'platformFeeCorrect' as const, label: 'Platform Fees Verified' },
                 { key: 'taxCorrect' as const, label: 'Entertainment/VAT Taxes Match' },
                 { key: 'netRevenueCorrect' as const, label: 'Net Revenue Allocation Valid' },
               ].map(item => {
-                const done = payout.financialChecklist[item.key];
+                const done = financialChecklist[item.key];
                 return (
                   <button
                     key={item.key}
@@ -506,22 +515,6 @@ export default function PayoutDetailView({
                     <CheckCircle2 className={`w-4 h-4 shrink-0 ${done ? 'text-success' : 'text-slate-300'}`} />
                     <span>{item.label}</span>
                   </button>
-                );
-              })}
-            </div>
-          </SectionCard>
-
-          {/* Section 8: Fraud Detection */}
-          <SectionCard title="Fraud Detection">
-            <div className="space-y-2 text-xs">
-              {fraudChecks.map((item, idx) => {
-                const label = item.flagged ? (payout.fraudDetection.hasAlert ? 'CRITICAL' : 'WARNING') : 'PASSED';
-                const color = item.flagged ? (payout.fraudDetection.hasAlert ? 'text-danger' : 'text-warning') : 'text-success';
-                return (
-                  <div key={idx} className="flex justify-between border-b border-border-subtle pb-1.5">
-                    <span className="text-text-secondary">{item.label}</span>
-                    <span className={`font-bold ${color}`}>{label}</span>
-                  </div>
                 );
               })}
             </div>
@@ -668,9 +661,9 @@ export default function PayoutDetailView({
               ))}
               <div className="space-y-1.5 pt-2">
                 {[
-                  { label: 'Revenue verified', done: payout.financialChecklist.revenueMatch },
+                  { label: 'Revenue verified', done: financialChecklist.revenueMatch },
                   { label: 'Bank verified', done: payout.bankVerificationStatus === 'Verified' },
-                  { label: 'Tax verified', done: payout.financialChecklist.taxCorrect },
+                  { label: 'Tax verified', done: financialChecklist.taxCorrect },
                   { label: 'Compliance completed', done: complianceScore === 100 },
                 ].map(item => (
                   <div key={item.label} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg ${item.done ? 'bg-success/5 text-success' : 'bg-warning/5 text-warning'}`}>
