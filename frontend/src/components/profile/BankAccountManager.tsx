@@ -183,7 +183,7 @@ export function BankAccountManager() {
                 No bank accounts added yet.
               </p>
               <p className="mt-1 font-body-sm text-body-sm text-text-secondary/70">
-                You need a verified bank account to receive resale payouts.
+                Organizers need a verified bank account to receive event payouts.
               </p>
             </div>
           ) : (

@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   MapPin,
-  Download,
   Eye,
+  Ticket,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
@@ -32,9 +32,55 @@ interface MyTicketCard {
   tab: TicketTab;
 }
 
-// ── Fallback data ─────────────────────────────────────────────────────────
+/**
+ * Events are LEFT JOINed server-side, so date and venue can legitimately be
+ * absent. Say so rather than inventing a plausible-looking value.
+ */
+function format_event_date(iso?: string): string {
+  if (!iso) return "Date to be announced";
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return "Date to be announced";
+  return parsed.toLocaleString("en-US", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
-const MOCK_TICKETS: MyTicketCard[] = [];
+function format_venue(name?: string, city?: string): string {
+  const parts = [name, city].filter(Boolean);
+  return parts.length > 0 ? parts.join(", ") : "Venue to be announced";
+}
+
+/**
+ * Which tab a ticket belongs under.
+ *
+ * This used to key off ticket_status alone, which meant a ticket only moved out
+ * of "Upcoming" once it was scanned — so an event you simply did not attend sat
+ * under Upcoming forever. Whether an event has happened is a property of its
+ * date, not of the ticket.
+ *
+ * eventStart is optional (events are LEFT JOINed), so status remains the
+ * fallback when there is no date to judge by.
+ */
+function resolve_tab(
+  status: MyTicketCard["status"],
+  event_start?: string
+): TicketTab {
+  if (status === "cancelled") return "cancelled";
+
+  if (event_start) {
+    const starts_at = new Date(event_start);
+    if (!Number.isNaN(starts_at.getTime())) {
+      return starts_at.getTime() < Date.now() ? "past" : "upcoming";
+    }
+  }
+
+  return status === "used" ? "past" : "upcoming";
+}
 
 const TABS: { key: TicketTab; label: string }[] = [
   { key: "upcoming", label: "Upcoming" },
@@ -44,22 +90,51 @@ const TABS: { key: TicketTab; label: string }[] = [
 
 // ── Carousel ──────────────────────────────────────────────────────────────
 
+const EMPTY_STATES: Record<TicketTab, { title: string; description: string }> = {
+  upcoming: {
+    title: "No upcoming tickets",
+    description:
+      "Tickets for events you have not attended yet will appear here.",
+  },
+  past: {
+    title: "No past events",
+    description:
+      "Once an event you hold a ticket for has taken place, it moves here.",
+  },
+  cancelled: {
+    title: "No cancelled tickets",
+    description: "Tickets from cancelled orders will be listed here.",
+  },
+};
+
+function TicketsEmptyState({ tab }: { tab: TicketTab }) {
+  const { title, description } = EMPTY_STATES[tab];
+
+  return (
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border-subtle bg-white px-6 py-16 text-center">
+      <Ticket size={40} className="mb-4 text-text-secondary opacity-40" />
+      <h3 className="font-headline-sm text-headline-sm font-bold text-text-primary">
+        {title}
+      </h3>
+      <p className="mt-1 max-w-sm font-body-md text-body-md text-text-secondary">
+        {description}
+      </p>
+      <Link
+        href="/events"
+        className="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-label-md text-label-md text-white transition-all hover:bg-primary/90"
+      >
+        Browse Events
+      </Link>
+    </div>
+  );
+}
+
 interface CarouselProps {
   tickets: MyTicketCard[];
 }
 
 function TicketCarousel({ tickets }: CarouselProps) {
   const [active, set_active] = useState(0);
-
-  if (tickets.length === 0) {
-    return (
-      <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-border-subtle bg-white">
-        <p className="font-body-md text-body-md text-text-secondary">
-          Tidak ada tiket di kategori ini.
-        </p>
-      </div>
-    );
-  }
 
   const prev = () => set_active((i) => (i - 1 + tickets.length) % tickets.length);
   const next = () => set_active((i) => (i + 1) % tickets.length);
@@ -156,12 +231,16 @@ function TicketCardFull({
     <div className="overflow-hidden rounded-2xl border border-border-subtle bg-white shadow-[0_8px_30px_rgba(15,23,42,0.1)] select-none">
       {/* Cover image */}
       <div className="relative h-52 w-full">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={ticket.cover_image_url}
-          alt={ticket.event_title}
-          className="h-full w-full object-cover"
-        />
+        {ticket.cover_image_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={ticket.cover_image_url}
+            alt={ticket.event_title}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="h-full w-full bg-gradient-to-br from-secondary/30 to-primary/20" />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
 
         {/* Status badge */}
@@ -241,41 +320,60 @@ export default function MyTicketsPage() {
   const [active_tab, set_active_tab] = useState<TicketTab>("upcoming");
   const [tickets, setTickets] = useState<MyTicketCard[]>([]);
   const [loading, setLoading] = useState(true);
+  // A failed request used to fall through to an empty list, so a server error
+  // was indistinguishable from genuinely owning no tickets. It must not read as
+  // "you have none".
+  const [error, set_error] = useState<string | null>(null);
+
+  const load_tickets = useCallback(async () => {
+    try {
+      const res = await getMyTickets();
+      set_error(null);
+      if (!res.success) {
+        set_error(res.error?.message || "We couldn't load your tickets.");
+        setTickets([]);
+        return;
+      }
+      const rows = res.data?.tickets ?? [];
+      const mapped: MyTicketCard[] = rows.map((t: UserTicket) => {
+        const status =
+          t.ticketStatus === "used"
+            ? "used"
+            : t.ticketStatus === "cancelled"
+              ? "cancelled"
+              : "confirmed";
+        return {
+          ticket_id: t.id,
+          order_id: t.orderId,
+          event_title: t.eventName || "CrowdFlow Event",
+          cover_image_url: t.coverImageUrl || "",
+          date_label: format_event_date(t.eventStart),
+          venue_name: format_venue(t.venueName, t.venueCity),
+          section_label: t.seatLabel || "General Admission",
+          ticket_type: t.tierName || "Standard",
+          quantity: 1,
+          status,
+          tab: resolve_tab(status, t.eventStart),
+        };
+      });
+      setTickets(mapped);
+    } catch {
+      set_error("We couldn't reach the server. Check your connection and try again.");
+      setTickets([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function fetchTickets() {
-      try {
-        const res = await getMyTickets();
-        if (res.success && res.data && res.data.tickets && res.data.tickets.length > 0) {
-          const mapped: MyTicketCard[] = res.data.tickets.map((t: UserTicket) => {
-            const status = t.ticketStatus === "used" ? "used" : t.ticketStatus === "cancelled" ? "cancelled" : "confirmed";
-            const tab: TicketTab = status === "cancelled" ? "cancelled" : status === "used" ? "past" : "upcoming";
-            return {
-              ticket_id: t.id,
-              order_id: t.orderId,
-              event_title: t.eventName || "CrowdFlow Event",
-              cover_image_url: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=800&auto=format&fit=crop",
-              date_label: "Sat, Aug 15 • 2:00 PM",
-              venue_name: "Venue Arena",
-              section_label: t.seatLabel || "General Admission",
-              ticket_type: t.tierName || "Standard",
-              quantity: 1,
-              status,
-              tab,
-            };
-          });
-          setTickets(mapped);
-        } else {
-          setTickets(MOCK_TICKETS);
-        }
-      } catch (err) {
-        setTickets(MOCK_TICKETS);
-      } finally {
-        setLoading(false);
-      }
+    // Wrapped rather than called directly: the loader only touches state after
+    // its first await, but react-hooks/set-state-in-effect cannot see that
+    // through a useCallback reference.
+    async function run() {
+      await load_tickets();
     }
-    fetchTickets();
-  }, []);
+    run();
+  }, [load_tickets]);
 
   const filtered = tickets.filter((t) => t.tab === active_tab);
 
@@ -335,88 +433,38 @@ export default function MyTicketsPage() {
           </div>
         </div>
 
-        {/* Payment Status Cards Section (Matching Screenshot 2) */}
-        <div className="mb-12 space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-bold text-text-primary">Payment Status</h2>
-              <p className="text-xs text-text-secondary">Track your current ticket reservations and purchase history.</p>
-            </div>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-2">
-            {/* Card 1: Payment Successful */}
-            <div className="flex flex-col sm:flex-row items-center gap-4 rounded-2xl border border-border-subtle bg-white p-4 shadow-xs">
-              <img
-                src="https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=600&auto=format&fit=crop"
-                alt="Coldplay"
-                className="h-28 w-full sm:w-28 rounded-xl object-cover border border-border-subtle shrink-0"
-              />
-              <div className="flex-1 space-y-2 w-full">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2.5 py-0.5 text-[10px] font-bold text-success">
-                    <span className="h-1.5 w-1.5 rounded-full bg-success"></span> Payment Successful
-                  </span>
-                </div>
-                <h3 className="text-base font-bold text-text-primary leading-tight">
-                  Coldplay: Music of the Spheres
-                </h3>
-                <p className="text-[10px] font-mono text-text-secondary">Order #CF-202700456</p>
-                <div className="flex items-center justify-between pt-1 border-t border-border-subtle/50">
-                  <div className="text-[10px] text-text-secondary">
-                    <span className="block font-bold">DATE &amp; VENUE</span>
-                    <span>Oct 24, 2027 • National Stadium</span>
-                  </div>
-                  <Link
-                    href={`/orders/ORD-89241`}
-                    className="rounded-xl bg-black px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-black/90 transition-all"
-                  >
-                    View Ticket
-                  </Link>
-                </div>
-              </div>
-            </div>
-
-            {/* Card 2: Waiting for Payment */}
-            <div className="flex flex-col sm:flex-row items-center gap-4 rounded-2xl border border-warning/30 bg-warning/5 p-4 shadow-xs relative">
-              <span className="absolute top-3 right-3 rounded-md bg-warning/20 px-2 py-0.5 font-mono text-[10px] font-bold text-warning-700">
-                2:53
-              </span>
-              <img
-                src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=600&auto=format&fit=crop"
-                alt="Java Jazz"
-                className="h-28 w-full sm:w-28 rounded-xl object-cover border border-border-subtle shrink-0"
-              />
-              <div className="flex-1 space-y-2 w-full">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-warning/20 px-2.5 py-0.5 text-[10px] font-bold text-warning-700">
-                    <span className="h-1.5 w-1.5 rounded-full bg-warning animate-ping"></span> Waiting for Payment
-                  </span>
-                </div>
-                <h3 className="text-base font-bold text-text-primary leading-tight">
-                  Java Jazz Festival 2027
-                </h3>
-                <p className="text-[10px] text-text-secondary leading-tight">
-                  Please complete your payment within the time limit to secure your seats.
-                </p>
-                <div className="flex items-center justify-end pt-1">
-                  <button
-                    type="button"
-                    onClick={() => alert("Redirecting to Midtrans Payment Gateway...")}
-                    className="rounded-xl bg-primary px-5 py-2 text-xs font-bold text-white shadow-xs hover:bg-primary/90 transition-all cursor-pointer"
-                  >
-                    Pay Now
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Carousel */}
-        <div className="px-8 md:px-16">
-          <TicketCarousel tickets={filtered} />
-        </div>
+        {loading ? (
+          <div className="mx-auto h-[500px] w-full max-w-[420px] animate-pulse rounded-2xl border border-border-subtle bg-surface-container-low" />
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-danger/20 bg-danger/5 px-6 py-16 text-center">
+            <h3 className="font-headline-sm text-headline-sm font-bold text-text-primary">
+              Couldn&apos;t load your tickets
+            </h3>
+            <p className="mt-1 max-w-sm font-body-md text-body-md text-text-secondary">
+              {error}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setLoading(true);
+                load_tickets();
+              }}
+              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-label-md text-label-md text-white transition-all hover:bg-primary/90 cursor-pointer"
+            >
+              <RefreshCw size={16} />
+              Try Again
+            </button>
+          </div>
+        ) : filtered.length === 0 ? (
+          <TicketsEmptyState tab={active_tab} />
+        ) : (
+          <div className="px-8 md:px-16">
+            {/* Keyed by tab so the carousel's active index resets on switch,
+                rather than pointing past the end of a shorter list. */}
+            <TicketCarousel key={active_tab} tickets={filtered} />
+          </div>
+        )}
       </main>
     </div>
   );

@@ -22,6 +22,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { HomeFooterV3 } from "@/components/home-v3/HomeFooterV3";
 import { EventHero } from "@/components/event-detail/EventHero";
 import { AboutEventSection } from "@/components/event-detail/AboutEventSection";
+import { TicketTiersSection } from "@/components/event-detail/TicketTiersSection";
 import { VenueInfoSection } from "@/components/event-detail/VenueInfoSection";
 import { TicketCtaCard } from "@/components/event-detail/TicketCtaCard";
 import { OrganizerInfoCard } from "@/components/event-detail/OrganizerInfoCard";
@@ -36,6 +37,9 @@ export default function EventDetailPage() {
   const event_id = params?.event_id;
   const [event, setEvent] = useState<Event | null>(null);
   const [tiers, setTiers] = useState<PublicTicketTier[]>([]);
+  // Tracked separately from `loading`, which covers only the event fetch: the
+  // tiers card must not flash "nothing on sale" while its request is inflight.
+  const [tiers_loading, set_tiers_loading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,6 +77,9 @@ export default function EventDetailPage() {
       })
       .catch(() => {
         setTiers([]);
+      })
+      .finally(() => {
+        set_tiers_loading(false);
       });
   }, [event_id]);
 
@@ -136,6 +143,7 @@ export default function EventDetailPage() {
               description={currentEvent.description}
               important_info={currentEvent.important_info ?? []}
             />
+            <TicketTiersSection tiers={tiers} loading={tiers_loading} />
             <VenueInfoSection
               venue={event.venue}
               event_id={event.event_id}
