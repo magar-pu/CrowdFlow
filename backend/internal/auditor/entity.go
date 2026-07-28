@@ -406,6 +406,11 @@ type AuditorPayout struct {
 	FraudDetection            FraudSignals   `json:"fraudDetection"`
 	InternalNotes             string         `json:"internalNotes"`
 	Timeline                  []Activity     `json:"timeline"`
+	// ReviewChecklist is populated on the detail read only. Before migration
+	// 0028 these eleven booleans lived in React state and were lost on
+	// navigation, while a score derived from them was shown on the approve
+	// modal.
+	ReviewChecklist           PayoutReviewChecklist `json:"reviewChecklist"`
 }
 
 // PayoutSales is derived from `orders`, not from ticket_tiers.tickets_sold —
@@ -479,6 +484,94 @@ type HoldPayoutRequest struct {
 	Reason string `json:"reason"`
 }
 
+// ---- Payout review checklist ----
+
+// PayoutReviewItem is one line of the auditor's verification checklist.
+//
+// Key, Label and Group all come from the server so the console cannot drift
+// from what the database will accept — the same reason the organizer document
+// gate serves its required types rather than duplicating them in the frontend.
+// CheckedBy/CheckedAt are populated for ticked AND unticked rows: withdrawing a
+// tick is itself a reviewer decision worth attributing.
+type PayoutReviewItem struct {
+	Key       string `json:"key"`
+	Label     string `json:"label"`
+	Group     string `json:"group"`
+	Checked   bool   `json:"checked"`
+	CheckedBy string `json:"checkedBy"`
+	CheckedAt string `json:"checkedAt"`
+}
+
+// PayoutReviewChecklist is the whole checklist plus whether it still accepts
+// edits. Frozen is computed from the payout's status rather than stored: the
+// checklist records what was verified BEFORE the money left, so once a payout
+// is terminal that record must stop moving.
+type PayoutReviewChecklist struct {
+	Items        []PayoutReviewItem `json:"items"`
+	Frozen       bool               `json:"frozen"`
+	FrozenReason string             `json:"frozenReason"`
+}
+
+// UpdatePayoutCheckRequest toggles ONE item. Deliberately single-item rather
+// than a whole-checklist write: two auditors on the same payout would otherwise
+// overwrite each other with a stale copy of every other box.
+type UpdatePayoutCheckRequest struct {
+	ItemKey string `json:"itemKey"`
+	Checked bool   `json:"checked"`
+}
+
+// payoutReviewItemDefs is the authoritative whitelist of the eleven checklist
+// items, in display order. Migration 0028 carries the same eleven keys as a
+// CHECK constraint; this list is what rejects an unknown key with a 422 before
+// the database ever sees it.
+var payoutReviewItemDefs = []PayoutReviewItem{
+	{Key: "revenueMatch", Label: "Revenue Matches Gateways", Group: "financial"},
+	{Key: "ticketSalesMatch", Label: "Ticket Sales Logs Verified", Group: "financial"},
+	{Key: "refundCalculated", Label: "Refunds Properly Calculated", Group: "financial"},
+	{Key: "platformFeeCorrect", Label: "Platform Fees Verified", Group: "financial"},
+	{Key: "taxCorrect", Label: "Entertainment/VAT Taxes Match", Group: "financial"},
+	{Key: "netRevenueCorrect", Label: "Net Revenue Allocation Valid", Group: "financial"},
+	{Key: "eventApproved", Label: "Event Approved", Group: "compliance"},
+	{Key: "organizerVerified", Label: "Organizer Verified", Group: "compliance"},
+	{Key: "requiredDocumentsComplete", Label: "Required Documents Complete", Group: "compliance"},
+	{Key: "noActiveInvestigation", Label: "No Active Investigation", Group: "compliance"},
+	{Key: "noPendingRevision", Label: "No Pending Revision", Group: "compliance"},
+}
+
+// isPayoutReviewItemKey reports whether key is one of the eleven.
+func isPayoutReviewItemKey(key string) bool {
+	for _, def := range payoutReviewItemDefs {
+		if def.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// payoutReviewItemLabel renders a key for the activity_log detail written when
+// a payout is approved with items outstanding. A log line naming
+// "requiredDocumentsComplete" is a variable name; naming "Required Documents
+// Complete" is a record someone can read later.
+func payoutReviewItemLabel(key string) string {
+	for _, def := range payoutReviewItemDefs {
+		if def.Key == key {
+			return def.Label
+		}
+	}
+	return key
+}
+
+// terminalPayoutStatuses are the states after which the checklist is a
+// historical record rather than a working document. 'on_hold' and
+// 'need_revision' are absent on purpose — both are still open reviews that a
+// payout comes back from.
+var terminalPayoutStatuses = map[string]string{
+	"approved":  "approved",
+	"rejected":  "rejected",
+	"processed": "paid out",
+	"failed":    "failed",
+}
+
 // ---- Notifications ----
 
 type AuditorNotification struct {
@@ -541,6 +634,7 @@ type Repository interface {
 	RejectPayout(ctx context.Context, payoutID, actorID int, req RejectPayoutRequest) error
 	HoldPayout(ctx context.Context, payoutID, actorID int, req HoldPayoutRequest) error
 	RevisePayout(ctx context.Context, payoutID, actorID int, req RevisePayoutRequest) error
+	UpdatePayoutCheck(ctx context.Context, payoutID, actorID int, req UpdatePayoutCheckRequest) error
 	UpdatePayoutNotes(ctx context.Context, payoutID, actorID int, req UpdatePayoutNotesRequest) error
 	VerifyPayoutBankAccount(ctx context.Context, payoutID, actorID int, req VerifyBankAccountRequest) error
 
@@ -596,6 +690,7 @@ type Service interface {
 	RejectPayout(ctx context.Context, payoutID, actorID int, req RejectPayoutRequest) error
 	HoldPayout(ctx context.Context, payoutID, actorID int, req HoldPayoutRequest) error
 	RevisePayout(ctx context.Context, payoutID, actorID int, req RevisePayoutRequest) error
+	UpdatePayoutCheck(ctx context.Context, payoutID, actorID int, req UpdatePayoutCheckRequest) error
 	UpdatePayoutNotes(ctx context.Context, payoutID, actorID int, req UpdatePayoutNotesRequest) error
 	VerifyPayoutBankAccount(ctx context.Context, payoutID, actorID int, req VerifyBankAccountRequest) error
 

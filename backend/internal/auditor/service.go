@@ -354,6 +354,21 @@ func (s *AuditorService) UpdatePayoutNotes(ctx context.Context, payoutID, actorI
 	return s.repo.UpdatePayoutNotes(ctx, payoutID, actorID, req)
 }
 
+// UpdatePayoutCheck toggles one checklist item.
+//
+// The key is validated against the server-side whitelist here rather than being
+// left to the database's CHECK constraint: an unknown key must come back as a
+// 422 naming the problem, not as a generic 500 from a constraint violation.
+func (s *AuditorService) UpdatePayoutCheck(ctx context.Context, payoutID, actorID int, req UpdatePayoutCheckRequest) error {
+	if payoutID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	if !isPayoutReviewItemKey(req.ItemKey) {
+		return fmt.Errorf("%w: unknown checklist item %q", ErrValidation, req.ItemKey)
+	}
+	return s.repo.UpdatePayoutCheck(ctx, payoutID, actorID, req)
+}
+
 func (s *AuditorService) VerifyPayoutBankAccount(ctx context.Context, payoutID, actorID int, req VerifyBankAccountRequest) error {
 	if payoutID <= 0 || actorID <= 0 {
 		return ErrValidation

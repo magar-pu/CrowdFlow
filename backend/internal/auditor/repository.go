@@ -2225,16 +2225,27 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		AlertMessage:      alertMsg,
 	}
 
-	// Fetch timeline logs from activity_log
+	// Fetch timeline logs from activity_log.
+	//
+	// Rows written since migration 0028 carry resource_type/resource_id and are
+	// matched exactly. Older rows have no resource columns, so they keep the
+	// legacy substring match — which is a PREFIX match on a decimal number, so
+	// payout 3 also picks up payouts 30-39. That is the bug being retired; it
+	// cannot be repaired retroactively, because a backfill would have to parse
+	// the same ambiguous strings to decide where each row belongs.
+	//
+	// The `resource_type IS NULL` guard is what stops a row from matching twice
+	// and stops a NEW payout-30 row from leaking into payout 3's timeline.
 	queryTimeline := `
 		SELECT al.id, COALESCE(up.full_name, 'System'), al.action, al.detail, al.created_at
 		FROM activity_log al
 		LEFT JOIN user_profiles up ON up.user_id = al.actor_id
-		WHERE detail ILIKE $1
+		WHERE (al.resource_type = 'payout' AND al.resource_id = $1)
+		   OR (al.resource_type IS NULL AND al.detail ILIKE $2)
 		ORDER BY al.created_at DESC
 	`
 	timelinePattern := fmt.Sprintf("%%payout %d%%", payoutID)
-	rowsTimeline, err := r.db.QueryContext(ctx, queryTimeline, timelinePattern)
+	rowsTimeline, err := r.db.QueryContext(ctx, queryTimeline, payoutID, timelinePattern)
 	p.Timeline = []Activity{}
 	if err == nil {
 		defer rowsTimeline.Close()
@@ -2249,7 +2260,133 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		}
 	}
 
+	checklist, err := r.payoutReviewChecklist(ctx, payoutID, string(dbStatus))
+	if err != nil {
+		return nil, err
+	}
+	p.ReviewChecklist = checklist
+
 	return &p, nil
+}
+
+// payoutReviewChecklist builds the eleven-item checklist for a payout.
+//
+// The item list is always the full eleven, in whitelist order, whether or not a
+// row exists yet — an item nobody has touched must render as an unticked box,
+// not vanish. Stored rows only supply state on top of that skeleton.
+func (r *PostgresAuditorRepository) payoutReviewChecklist(ctx context.Context, payoutID int, dbStatus string) (PayoutReviewChecklist, error) {
+	type storedCheck struct {
+		checked bool
+		by      string
+		at      string
+	}
+	stored := map[string]storedCheck{}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT c.item_key, c.checked, COALESCE(up.full_name, ''), c.checked_at
+		FROM payout_review_checks c
+		LEFT JOIN user_profiles up ON up.user_id = c.checked_by
+		WHERE c.payout_id = $1
+	`, payoutID)
+	if err != nil {
+		return PayoutReviewChecklist{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var key string
+		var sc storedCheck
+		var at time.Time
+		if err := rows.Scan(&key, &sc.checked, &sc.by, &at); err != nil {
+			return PayoutReviewChecklist{}, err
+		}
+		sc.at = formatTime(at)
+		stored[key] = sc
+	}
+	if err := rows.Err(); err != nil {
+		return PayoutReviewChecklist{}, err
+	}
+
+	checklist := PayoutReviewChecklist{Items: make([]PayoutReviewItem, 0, len(payoutReviewItemDefs))}
+	for _, def := range payoutReviewItemDefs {
+		item := def
+		if sc, ok := stored[def.Key]; ok {
+			item.Checked = sc.checked
+			item.CheckedBy = sc.by
+			item.CheckedAt = sc.at
+		}
+		checklist.Items = append(checklist.Items, item)
+	}
+
+	if reason, terminal := terminalPayoutStatuses[dbStatus]; terminal {
+		checklist.Frozen = true
+		checklist.FrozenReason = "This payout was " + reason + ". The checklist records what was verified before that decision and can no longer be changed."
+	}
+
+	return checklist, nil
+}
+
+// UpdatePayoutCheck ticks or unticks ONE checklist item.
+//
+// Single-item by design. A whole-checklist write would carry a stale copy of
+// the other ten boxes, so two auditors reviewing the same payout would silently
+// undo each other's work.
+//
+// The freeze is enforced HERE, not only in the UI: the checklist is the record
+// of what was verified before the money left, so it must stop accepting edits
+// the moment the payout becomes terminal. A frozen payout returns ErrForbidden
+// rather than a silent no-op — an auditor whose click was discarded must be
+// told, or they will believe the box is ticked.
+func (r *PostgresAuditorRepository) UpdatePayoutCheck(ctx context.Context, payoutID, actorID int, req UpdatePayoutCheckRequest) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Locked so the status cannot go terminal between this check and the write.
+	// Without it an approval landing mid-request would leave a check recorded
+	// against a payout that was already paid.
+	var dbStatus string
+	err = tx.QueryRowContext(ctx, `
+		SELECT status::text FROM payouts WHERE id = $1 FOR UPDATE
+	`, payoutID).Scan(&dbStatus)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return err
+	}
+	if _, terminal := terminalPayoutStatuses[dbStatus]; terminal {
+		return ErrForbidden
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO payout_review_checks (payout_id, item_key, checked, checked_by, checked_at)
+		VALUES ($1, $2, $3, $4, now())
+		ON CONFLICT (payout_id, item_key) DO UPDATE
+		SET checked = EXCLUDED.checked,
+		    checked_by = EXCLUDED.checked_by,
+		    checked_at = EXCLUDED.checked_at
+	`, payoutID, req.ItemKey, req.Checked, actorID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// outstandingPayoutChecks lists the labels of items not ticked, in whitelist
+// order. Used to record what was still open at the moment of approval.
+func outstandingPayoutChecks(checked map[string]bool) []string {
+	var out []string
+	for _, def := range payoutReviewItemDefs {
+		if !checked[def.Key] {
+			out = append(out, def.Label)
+		}
+	}
+	return out
 }
 
 // payoutSales derives an event's settlement figures from `orders`.
@@ -2372,8 +2509,8 @@ func (r *PostgresAuditorRepository) RevisePayout(ctx context.Context, payoutID, 
 
 	detail := fmt.Sprintf("Requested revision on payout %d. Reason: %s", payoutID, req.Reason)
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO activity_log (actor_id, action, detail) VALUES ($1, 'Revise Payout', $2)
-	`, actorID, detail); err != nil {
+		INSERT INTO activity_log (actor_id, action, detail, resource_type, resource_id) VALUES ($1, 'Revise Payout', $2, 'payout', $3)
+	`, actorID, detail, payoutID); err != nil {
 		return err
 	}
 
@@ -2467,8 +2604,8 @@ func (r *PostgresAuditorRepository) VerifyPayoutBankAccount(ctx context.Context,
 
 	detail := fmt.Sprintf("Verified the bank account for payout %d.", payoutID)
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO activity_log (actor_id, action, detail) VALUES ($1, 'Verify Bank Account', $2)
-	`, actorID, detail); err != nil {
+		INSERT INTO activity_log (actor_id, action, detail, resource_type, resource_id) VALUES ($1, 'Verify Bank Account', $2, 'payout', $3)
+	`, actorID, detail, payoutID); err != nil {
 		return err
 	}
 
@@ -2498,6 +2635,31 @@ func (r *PostgresAuditorRepository) ApprovePayout(ctx context.Context, payoutID,
 	}
 	defer tx.Rollback()
 
+	// Read the checklist BEFORE the status change, inside the same transaction.
+	// After the UPDATE the payout is terminal and the checklist is frozen; what
+	// gets recorded has to be the state the auditor actually approved from.
+	checkRows, err := tx.QueryContext(ctx, `
+		SELECT item_key, checked FROM payout_review_checks WHERE payout_id = $1
+	`, payoutID)
+	if err != nil {
+		return err
+	}
+	checked := map[string]bool{}
+	for checkRows.Next() {
+		var key string
+		var isChecked bool
+		if err := checkRows.Scan(&key, &isChecked); err != nil {
+			checkRows.Close()
+			return err
+		}
+		checked[key] = isChecked
+	}
+	checkRows.Close()
+	if err := checkRows.Err(); err != nil {
+		return err
+	}
+	outstanding := outstandingPayoutChecks(checked)
+
 	_, err = tx.ExecContext(ctx, `
 		UPDATE payouts
 		SET status = 'approved', processed_at = now(), processed_by = $1, updated_at = now()
@@ -2507,11 +2669,21 @@ func (r *PostgresAuditorRepository) ApprovePayout(ctx context.Context, payoutID,
 		return err
 	}
 
+	// An incomplete checklist WARNS but does not block — the auditor may have
+	// grounds the checklist does not model, and a hard block would just teach
+	// them to tick boxes to get past it. What it must not do is pass silently,
+	// so the outstanding items are named in the permanent record.
 	detail := fmt.Sprintf("Approved payout %d. Notes: %s. Finance Notes: %s", payoutID, req.InternalNotes, req.FinanceNotes)
+	if len(outstanding) > 0 {
+		detail += fmt.Sprintf(" Approved with %d of %d checklist items outstanding: %s.",
+			len(outstanding), len(payoutReviewItemDefs), strings.Join(outstanding, ", "))
+	} else {
+		detail += " All checklist items were verified."
+	}
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO activity_log (actor_id, action, detail)
-		VALUES ($1, 'Approve Payout', $2)
-	`, actorID, detail)
+		INSERT INTO activity_log (actor_id, action, detail, resource_type, resource_id)
+		VALUES ($1, 'Approve Payout', $2, 'payout', $3)
+	`, actorID, detail, payoutID)
 	if err != nil {
 		return err
 	}
@@ -2549,9 +2721,9 @@ func (r *PostgresAuditorRepository) RejectPayout(ctx context.Context, payoutID, 
 
 	detail := fmt.Sprintf("Rejected payout %d. Reason: %s. Notes: %s", payoutID, req.Reason, req.InternalNotes)
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO activity_log (actor_id, action, detail)
-		VALUES ($1, 'Reject Payout', $2)
-	`, actorID, detail)
+		INSERT INTO activity_log (actor_id, action, detail, resource_type, resource_id)
+		VALUES ($1, 'Reject Payout', $2, 'payout', $3)
+	`, actorID, detail, payoutID)
 	if err != nil {
 		return err
 	}
@@ -2589,9 +2761,9 @@ func (r *PostgresAuditorRepository) HoldPayout(ctx context.Context, payoutID, ac
 
 	detail := fmt.Sprintf("Placed payout %d on hold. Reason: %s", payoutID, req.Reason)
 	_, err = tx.ExecContext(ctx2, `
-		INSERT INTO activity_log (actor_id, action, detail)
-		VALUES ($1, 'Hold Payout', $2)
-	`, actorID, detail)
+		INSERT INTO activity_log (actor_id, action, detail, resource_type, resource_id)
+		VALUES ($1, 'Hold Payout', $2, 'payout', $3)
+	`, actorID, detail, payoutID)
 	if err != nil {
 		return err
 	}
