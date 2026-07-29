@@ -21,6 +21,10 @@ export const INITIAL_EVENTS: EventItem[] = [
     revenue: 1240000,
     status: "Live",
     image: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&auto=format&fit=crop&q=80",
+    // Mock seed data predating co-organizer delegation; these are the
+    // viewer's own events by definition.
+    delegated: false,
+    ownerName: "",
   },
   {
     id: "EVT-102",
@@ -42,6 +46,10 @@ export const INITIAL_EVENTS: EventItem[] = [
     revenue: 890000,
     status: "Scheduled",
     image: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&auto=format&fit=crop&q=80",
+    // Mock seed data predating co-organizer delegation; these are the
+    // viewer's own events by definition.
+    delegated: false,
+    ownerName: "",
   },
   {
     id: "EVT-103",
@@ -63,6 +71,10 @@ export const INITIAL_EVENTS: EventItem[] = [
     revenue: 112500,
     status: "Draft",
     image: "https://images.unsplash.com/photo-1511578314322-379afb476865?w=800&auto=format&fit=crop&q=80",
+    // Mock seed data predating co-organizer delegation; these are the
+    // viewer's own events by definition.
+    delegated: false,
+    ownerName: "",
   }
 ];
 

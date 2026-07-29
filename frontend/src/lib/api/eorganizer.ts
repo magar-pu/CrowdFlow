@@ -84,6 +84,14 @@ export interface OrganizerEvent {
    * never through updateOrganizerEvent.
    */
   maxTicketsPerOrder?: number;
+  /**
+   * True when this event reaches you through a co-organizer delegation rather
+   * than because you own it. Computed per request from events.organizer_id, so
+   * the same event is delegated for one user and not for another.
+   */
+  delegated?: boolean;
+  /** Who the event belongs to. Only worth showing when `delegated`. */
+  ownerName?: string;
 }
 
 /** The payload the creation wizard sends: identity + schedule only. */

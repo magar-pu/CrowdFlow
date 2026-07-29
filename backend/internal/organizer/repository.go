@@ -858,6 +858,40 @@ func (r *PostgresRepository) GetDashboardData(ctx context.Context, organizerID i
 	}, nil
 }
 
+// delegatedEventAccess matches events a co-organizer may manage through an
+// active delegation. `$1` is the acting user; `e` must be the events table.
+//
+// A deliberate copy of middleware.eventAccessQuery's delegation half rather than
+// a shared helper: that one answers "may this user touch event X" for a single
+// id, this one filters a set, and the two are naturally shaped differently. They
+// must agree, though — if this is narrower, the console lists an event whose
+// workspace then 403s; if it is wider, it lists one the workspace refuses to
+// open. See docs/co-organizer-delegation-design.md §4.1.
+//
+// Ownership itself is NOT included here: every caller spells out
+// `e.organizer_id = $1 OR <this>` so the owner path stays visible at the call
+// site.
+const delegatedEventAccess = `
+	EXISTS (
+		SELECT 1
+		  FROM organizer_delegations d
+		 WHERE d.delegate_id = $1
+		   AND d.status = 'active'
+		   AND (
+		        (d.scope = 'all'      AND d.owner_id = e.organizer_id)
+		     OR (d.scope = 'specific' AND EXISTS (
+		           SELECT 1 FROM organizer_delegation_events de
+		            WHERE de.delegation_id = d.id AND de.event_id = e.id))
+		   )
+	)`
+
+// ListOrganizerEvents returns the events the caller may manage: their own, plus
+// any an owner has delegated to them as a co-organizer.
+//
+// Delegated events were invisible here until now. RequireEventOwnership has
+// honoured delegations since the feature shipped, so a co-organizer could open a
+// workspace they were handed the URL for, but had no way to FIND one — the whole
+// point of delegating.
 func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerID int, archived bool) ([]*OrganizerEvent, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -868,17 +902,23 @@ func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerI
 		       COALESCE((SELECT SUM(allocation_limit) FROM ticket_tiers WHERE event_id = e.id), 0) as capacity,
 		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = e.id), 0) as sold,
 		       COALESCE((SELECT SUM(gross_amount) FROM orders WHERE event_id = e.id AND status = 'paid'), 0) as revenue,
-		       (e.archived_at IS NOT NULL) as is_archived
+		       (e.archived_at IS NOT NULL) as is_archived,
+		       e.organizer_id, COALESCE(NULLIF(TRIM(op.full_name), ''), ow.email)
 		FROM events e
 		-- LEFT: venue-less drafts must still be listed. VenueID comes back 0.
 		LEFT JOIN venues v ON e.venue_id = v.id
 		JOIN event_types et ON e.event_type_id = et.id
+		-- The owner, for labelling delegated events. INNER on users because
+		-- events.organizer_id is NOT NULL and references it; the profile is the
+		-- optional half.
+		JOIN users ow ON ow.id = e.organizer_id
+		LEFT JOIN user_profiles op ON op.user_id = e.organizer_id
 		-- One list, two views: active by default, archived on request. There is
 		-- no "everything" mode on purpose — an archived event showing up beside
 		-- live ones is exactly what archiving exists to prevent.
 		-- GetOrganizerEvent deliberately does NOT filter, so a direct link to an
 		-- archived event's workspace still opens and can un-archive it.
-		WHERE e.organizer_id = $1
+		WHERE (e.organizer_id = $1 OR `+delegatedEventAccess+`)
 		  AND ($2::boolean = (e.archived_at IS NOT NULL))
 		ORDER BY e.created_at DESC
 	`, organizerID, archived)
@@ -893,8 +933,13 @@ func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerI
 		var start, end time.Time
 		var statusVal string
 		var isArchived bool
-		err = rows.Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue, &isArchived)
+		var ownerID int
+		err = rows.Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue, &isArchived, &ownerID, &e.OwnerName)
 		if err == nil {
+			// Derived from the row rather than trusted from the client: the
+			// console shows whose event this is, and a co-organizer must be able
+			// to tell someone else's portfolio from their own.
+			e.Delegated = ownerID != organizerID
 			e.StartDate = start.Format("2006-01-02")
 			e.StartTime = start.Format("15:04:05")
 			e.EndDate = end.Format("2006-01-02")
@@ -939,6 +984,7 @@ func (r *PostgresRepository) GetOrganizerEvent(ctx context.Context, eventID int,
 	var start, end time.Time
 	var statusVal string
 	var isArchived bool
+	var ownerID int
 	err := r.db.QueryRowContext(ctx, `
 		SELECT e.id, e.event_name, et.event_type, e.description, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''), (e.published_at IS NOT NULL),
 		       COALESCE(v.id, 0), COALESCE(v.name, ''), COALESCE(v.address, ''), COALESCE(v.city, ''),
@@ -946,20 +992,27 @@ func (r *PostgresRepository) GetOrganizerEvent(ctx context.Context, eventID int,
 		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = e.id), 0) as sold,
 		       COALESCE((SELECT SUM(gross_amount) FROM orders WHERE event_id = e.id AND status = 'paid'), 0) as revenue,
 		       (e.archived_at IS NOT NULL) as is_archived,
-		       e.max_tickets_per_order
+		       e.max_tickets_per_order,
+		       e.organizer_id, COALESCE(NULLIF(TRIM(op.full_name), ''), ow.email)
 		FROM events e
 		-- LEFT: the workspace opens on venue-less drafts; that is where the
 		-- organizer goes to set the venue in the first place.
 		LEFT JOIN venues v ON e.venue_id = v.id
 		JOIN event_types et ON e.event_type_id = et.id
-		WHERE e.id = $1 AND e.organizer_id = $2
-	`, eventID, organizerID).Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue, &isArchived, &e.MaxTicketsPerOrder)
+		JOIN users ow ON ow.id = e.organizer_id
+		LEFT JOIN user_profiles op ON op.user_id = e.organizer_id
+		-- Delegated events open too, or the list above would show a co-organizer
+		-- events that 404 the moment they click one. $1 is the acting user and
+		-- $2 the event, matching delegatedEventAccess's placeholder.
+		WHERE e.id = $2 AND (e.organizer_id = $1 OR `+delegatedEventAccess+`)
+	`, organizerID, eventID).Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue, &isArchived, &e.MaxTicketsPerOrder, &ownerID, &e.OwnerName)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, sql.ErrNoRows
 		}
 		return nil, err
 	}
+	e.Delegated = ownerID != organizerID
 
 	e.StartDate = start.Format("2006-01-02")
 	e.StartTime = start.Format("15:04:05")
