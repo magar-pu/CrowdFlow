@@ -1,14 +1,18 @@
 /**
- * Shared rules for organizer document uploads (KTP, NPWP, NIB, SIUP).
+ * Shared rules for every document upload in the console.
  *
- * These files are filed from two places — the /business application wizard and
- * the Business Documents card in organizer Settings — hitting two different
- * backend routes that enforce the SAME limits (organizer/service.go:
- * maxDocumentBytes 10MB per file, maxUploadRequestBytes 12MB per request).
+ * Three surfaces file documents — the /business application wizard, the
+ * Business Documents card in organizer Settings (KTP, NPWP, NIB, SIUP), and the
+ * per-event Documents tab in the event workspace — hitting different backend
+ * routes that all enforce the SAME limits (organizer/service.go:
+ * maxDocumentBytes 10MB per file, maxUploadRequestBytes 12MB per request,
+ * isValidDocumentType for the format set).
+ *
  * The Settings card previously advertised "up to 10MB each" while checking
- * nothing, so an oversized file uploaded in full before being rejected. One
- * module so the hint text, the accept filter and the check cannot disagree
- * with each other or with the server.
+ * nothing, so an oversized file uploaded in full before being rejected, and the
+ * event tab carried its own private copy of the constants. One module so the
+ * hint text, the accept filter and the check cannot disagree with each other or
+ * with the server.
  */
 
 // Mirrors maxDocumentBytes in backend/internal/organizer/service.go.

@@ -179,15 +179,15 @@ func (r *PostgresRepository) Create(ctx context.Context, app *OrganizerApplicati
 
 	queryDoc := `
 		INSERT INTO organizer_documents (
-			application_id, document_type, file_path, status
-		) VALUES ($1, $2, $3, $4)
+			application_id, document_type, file_path, status, file_name, file_size
+		) VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, uploaded_at
 	`
 	for _, doc := range docs {
 		doc.ApplicationID = app.ID
 		err = tx.QueryRowContext(
 			ctx, queryDoc,
-			doc.ApplicationID, doc.DocumentType, doc.FilePath, doc.Status,
+			doc.ApplicationID, doc.DocumentType, doc.FilePath, doc.Status, doc.FileName, doc.FileSize,
 		).Scan(&doc.ID, &doc.UploadedAt)
 		if err != nil {
 			return err
@@ -206,11 +206,25 @@ func (r *PostgresRepository) ListAccountDocuments(ctx context.Context, userID in
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
+	// The lateral pulls the auditor's reason for a rejection, which lives in
+	// auditor_document_reviews rather than on the document. LIMIT 1 on
+	// reviewed_at DESC because a document can be reviewed more than once — only
+	// the decision that produced the CURRENT status is actionable. Restricted to
+	// rejected rows: a note attached to an approval is an internal remark, not
+	// something to put in front of the organizer.
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT od.id, od.application_id, od.document_type, od.file_path,
-		       od.status::text, od.uploaded_at, od.is_current
+		       od.status::text, od.uploaded_at, od.is_current,
+		       od.file_name, od.file_size, rev.notes
 		FROM organizer_documents od
 		JOIN organizer_applications oa ON oa.id = od.application_id
+		LEFT JOIN LATERAL (
+			SELECT adr.notes
+			FROM auditor_document_reviews adr
+			WHERE adr.document_id = od.id AND adr.decision = 'rejected'
+			ORDER BY adr.reviewed_at DESC
+			LIMIT 1
+		) rev ON od.status = 'rejected'
 		WHERE oa.user_id = $1 AND od.is_current
 		ORDER BY od.document_type
 	`, userID)
@@ -222,9 +236,14 @@ func (r *PostgresRepository) ListAccountDocuments(ctx context.Context, userID in
 	docs := []*OrganizerDocument{}
 	for rows.Next() {
 		var d OrganizerDocument
+		var notes sql.NullString
 		if err := rows.Scan(&d.ID, &d.ApplicationID, &d.DocumentType, &d.FilePath,
-			&d.Status, &d.UploadedAt, &d.IsCurrent); err != nil {
+			&d.Status, &d.UploadedAt, &d.IsCurrent, &d.FileName, &d.FileSize, &notes); err != nil {
 			return nil, err
+		}
+		if notes.Valid && strings.TrimSpace(notes.String) != "" {
+			trimmed := strings.TrimSpace(notes.String)
+			d.ReviewNotes = &trimmed
 		}
 		docs = append(docs, &d)
 	}
@@ -373,10 +392,10 @@ func (r *PostgresRepository) ReplaceAccountDocument(ctx context.Context, userID 
 	// A replaced document always re-enters review: the auditor verified the
 	// file that was there before, not this one.
 	err = tx.QueryRowContext(ctx, `
-		INSERT INTO organizer_documents (application_id, document_type, file_path, status, is_current)
-		VALUES ($1, $2, $3, 'pending_verification', TRUE)
+		INSERT INTO organizer_documents (application_id, document_type, file_path, status, is_current, file_name, file_size)
+		VALUES ($1, $2, $3, 'pending_verification', TRUE, $4, $5)
 		RETURNING id, uploaded_at, status::text, is_current
-	`, appID, doc.DocumentType, doc.FilePath).Scan(&doc.ID, &doc.UploadedAt, &doc.Status, &doc.IsCurrent)
+	`, appID, doc.DocumentType, doc.FilePath, doc.FileName, doc.FileSize).Scan(&doc.ID, &doc.UploadedAt, &doc.Status, &doc.IsCurrent)
 	if err != nil {
 		return err
 	}
@@ -409,6 +428,40 @@ func (r *PostgresRepository) GetAccountDocumentPath(ctx context.Context, userID,
 		return "", err
 	}
 	return path, nil
+}
+
+// DeleteAccountDocument removes one document and returns the object key to
+// purge, so the private bucket does not accumulate files nothing references.
+//
+// Two conditions beyond the id, both load-bearing:
+//
+//   - oa.user_id — an id belonging to another organizer must not resolve at all,
+//     the same reason the ownership check sits inside GetAccountDocumentPath's
+//     query rather than after it.
+//   - od.is_current — superseded rows are the record an auditor's earlier
+//     decision was made against. Deleting one rewrites review history, and the
+//     console never offers it: only the current row has a Remove button.
+//
+// No status check. Removing a VERIFIED document is allowed even though KTP/NPWP/
+// NIB gate event submission — the gate re-reads the documents on every submit,
+// so the organizer only blocks themselves, and refusing here would leave someone
+// who uploaded the wrong file to the wrong slot with no way to correct it.
+func (r *PostgresRepository) DeleteAccountDocument(ctx context.Context, userID, docID int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var filePath string
+	err := r.db.QueryRowContext(ctx, `
+		DELETE FROM organizer_documents od
+		USING organizer_applications oa
+		WHERE od.application_id = oa.id
+		  AND od.id = $1 AND oa.user_id = $2 AND od.is_current
+		RETURNING od.file_path
+	`, docID, userID).Scan(&filePath)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrDocumentNotFound
+	}
+	return filePath, err
 }
 
 func (r *PostgresRepository) GetByUserID(ctx context.Context, userID int) (*OrganizerApplication, error) {
