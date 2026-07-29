@@ -108,6 +108,8 @@ func (s *OrganizerService) Apply(ctx context.Context, userID int, req ApplyReque
 			DocumentType: doc.Type,
 			FilePath:     objectKey,
 			Status:       "pending_verification",
+			FileName:     sanitizeDocumentFileName(doc.Filename),
+			FileSize:     int64(len(doc.Content)),
 		})
 	}
 
@@ -182,11 +184,47 @@ func (s *OrganizerService) UploadAccountDocument(ctx context.Context, userID int
 		return nil, fmt.Errorf("failed to upload %s: %w", doc.Type, err)
 	}
 
-	model := &OrganizerDocument{DocumentType: doc.Type, FilePath: objectKey}
+	// The client's filename is recorded as-is for display only. It is never used
+	// to build the object key — that stays derived from the user id, a timestamp
+	// and the document type, so a hostile name cannot reach the bucket path.
+	model := &OrganizerDocument{
+		DocumentType: doc.Type,
+		FilePath:     objectKey,
+		FileName:     sanitizeDocumentFileName(doc.Filename),
+		FileSize:     int64(len(doc.Content)),
+	}
 	if err := s.repo.ReplaceAccountDocument(ctx, userID, model); err != nil {
 		return nil, err
 	}
 	return model, nil
+}
+
+// DeleteAccountDocument removes a document the caller owns, then purges the
+// object. The row goes first: an orphaned object is invisible waste, whereas a
+// row pointing at a deleted object is a broken View button.
+func (s *OrganizerService) DeleteAccountDocument(ctx context.Context, userID, docID int) error {
+	filePath, err := s.repo.DeleteAccountDocument(ctx, userID, docID)
+	if err != nil {
+		return err
+	}
+	if filePath != "" {
+		_ = s.storage.DeletePrivateFile(ctx, filePath)
+	}
+	return nil
+}
+
+// sanitizeDocumentFileName keeps a client filename displayable: basename only,
+// no path segments, and bounded to the column's 255 chars. Browsers send a bare
+// name, but the field is client-controlled and is rendered back into the console.
+func sanitizeDocumentFileName(name string) string {
+	name = strings.TrimSpace(name)
+	if i := strings.LastIndexAny(name, `/\`); i >= 0 {
+		name = name[i+1:]
+	}
+	if len(name) > 255 {
+		name = name[:255]
+	}
+	return name
 }
 
 // GetAccountDocumentURL mints a short-lived link to a document the caller owns.
@@ -281,6 +319,8 @@ func (s *OrganizerService) UpdateApplication(ctx context.Context, userID int, re
 			DocumentType: doc.Type,
 			FilePath:     objectKey,
 			Status:       "pending_verification",
+			FileName:     sanitizeDocumentFileName(doc.Filename),
+			FileSize:     int64(len(doc.Content)),
 		})
 	}
 

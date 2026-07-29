@@ -153,7 +153,8 @@ SELECT v, 'adopted: artifact already present' FROM (VALUES
     ('0027_organizer_document_gate.sql',                  pg_temp.col('organizer_applications', 'document_gate_exempt')),
     ('0028_payout_review_checks.sql',                     pg_temp.tbl('public.payout_review_checks')),
     ('0029_event_google_maps_url.sql',                    pg_temp.col('events', 'google_maps_url')),
-    ('0030_event_max_tickets_per_order.sql',              pg_temp.col('events', 'max_tickets_per_order'))
+    ('0030_event_max_tickets_per_order.sql',              pg_temp.col('events', 'max_tickets_per_order')),
+    ('0031_organizer_document_file_metadata.sql',         pg_temp.col('organizer_documents', 'file_name'))
 ) AS probe(v, present)
 WHERE present
 ON CONFLICT (version) DO NOTHING;
@@ -436,6 +437,15 @@ SELECT NOT EXISTS (SELECT 1 FROM crowdflow_migrations WHERE version = :'f') AS r
 \if :run_it
 \echo '  applying 0030_event_max_tickets_per_order.sql (backfills data)'
 \ir 0030_event_max_tickets_per_order.sql
+INSERT INTO crowdflow_migrations (version) VALUES (:'f');
+\endif
+
+-- 0031 backfills organizer_documents.file_name from the object key's basename.
+\set f '0031_organizer_document_file_metadata.sql'
+SELECT NOT EXISTS (SELECT 1 FROM crowdflow_migrations WHERE version = :'f') AS run_it \gset
+\if :run_it
+\echo '  applying 0031_organizer_document_file_metadata.sql (backfills data)'
+\ir 0031_organizer_document_file_metadata.sql
 INSERT INTO crowdflow_migrations (version) VALUES (:'f');
 \endif
 

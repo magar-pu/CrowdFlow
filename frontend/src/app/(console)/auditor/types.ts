@@ -16,6 +16,24 @@ export type AuditorView =
 
 export type OrganizerStatus = 'Pending' | 'Verified' | 'Need Revision' | 'Rejected' | 'Suspended';
 
+/**
+ * An organizer application as the auditor console renders it.
+ *
+ * Fields removed rather than kept optional, because nothing anywhere produces
+ * them — not the application form, not organizer_applications, not
+ * GetOrganizer:
+ *
+ *   companyType, businessLicense, npwp, registrationNumber,
+ *   picPosition, picNationalId, picSelfieUrl,
+ *   industry, eventCategory, yearsInBusiness, previousEventsCount,
+ *   estimatedAnnualRevenue
+ *
+ * Each was rendered from a hardcoded fallback in the detail page's mapper, so
+ * every organizer showed the same invented NIB, NPWP, NIK and revenue figure.
+ * Leaving them declared would let that come back; a compile error is the point.
+ * If any of them is ever genuinely collected, add it back with the column that
+ * backs it.
+ */
 export interface OrganizerVerification {
   id: string;
   name: string;
@@ -26,29 +44,15 @@ export interface OrganizerVerification {
   lastActivity: string;
   province: string;
   businessType: string;
-  
+
   // Company details
-  companyType: string;
-  businessLicense: string;
-  npwp: string;
   address: string;
-  registrationNumber: string;
-  
+
   // PIC Info
   picName: string;
-  picPosition: string;
   picEmail: string;
   picPhone: string;
-  picNationalId: string;
-  picSelfieUrl: string;
-  
-  // Business info
-  industry: string;
-  eventCategory: string;
-  yearsInBusiness: number;
-  previousEventsCount: number;
-  estimatedAnnualRevenue: number;
-  
+
   // Bank details
   bankName: string;
   bankAccountHolder: string;
