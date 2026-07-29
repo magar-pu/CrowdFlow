@@ -2,11 +2,27 @@ import { apiRequest } from "@/utils/api";
 import { ApiResponse } from "@/types/api";
 import { Event } from "@/types/ticket";
 
-export async function listEvents(limit?: number, offset?: number): Promise<ApiResponse<Event[]>> {
+/**
+ * Ordering for the public event listing.
+ *
+ * - `newest`   — by creation time. The default, and what the browse page shows.
+ * - `upcoming` — soonest first, with finished events excluded.
+ * - `trending` — by tickets sold in the last 7 days.
+ *
+ * Only `upcoming` hides past events; the other two return the full catalogue.
+ */
+export type EventSort = "newest" | "upcoming" | "trending";
+
+export async function listEvents(
+  limit?: number,
+  offset?: number,
+  sort?: EventSort
+): Promise<ApiResponse<Event[]>> {
   let query = "";
   const params = [];
   if (limit !== undefined) params.push(`limit=${limit}`);
   if (offset !== undefined) params.push(`offset=${offset}`);
+  if (sort !== undefined) params.push(`sort=${sort}`);
   if (params.length > 0) {
     query = "?" + params.join("&");
   }
@@ -33,7 +49,6 @@ export interface PublicTicketTier {
   description: string;
   price: number;
   quota_remaining: number;
-  max_per_transaction: number;
 }
 
 export async function listTicketTiers(

@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { Plus, X, ShieldPlus, Loader2 } from 'lucide-react';
 import { ApiResponse, Event, RoleAssignment, User } from '@/types/admin';
 import RoleBadge from './RoleBadge';
+import Select from '@/components/ui/Select';
 
 // The platform roles a Super Admin can grant, with their DB roles.id and
 // whether the role binds to a specific event. Auditor / Gate Scanner are
@@ -141,14 +142,13 @@ export default function UserRolesManager({ user, events, onGrantRole, onRevokeRo
             <span>Grant a role</span>
           </div>
 
-          <select
+          <Select
             value={roleId}
             onChange={(e) => {
               setRoleId(Number(e.target.value));
               setEventId('');
               setError(null);
             }}
-            className="h-10 w-full rounded-lg border border-border-subtle bg-surface-white px-2.5 text-xs text-text-primary outline-none focus:border-secondary focus:ring-2 focus:ring-secondary/20"
           >
             {GRANTABLE_ROLES.map((r) => (
               <option key={r.roleId} value={r.roleId}>
@@ -156,16 +156,15 @@ export default function UserRolesManager({ user, events, onGrantRole, onRevokeRo
                 {r.eventScoped ? ' (event-scoped)' : ' (platform-wide)'}
               </option>
             ))}
-          </select>
+          </Select>
 
           {selectedRole.eventScoped && (
-            <select
+            <Select
               value={eventId}
               onChange={(e) => {
                 setEventId(e.target.value);
                 setError(null);
               }}
-              className="h-10 w-full rounded-lg border border-border-subtle bg-surface-white px-2.5 text-xs text-text-primary outline-none focus:border-secondary focus:ring-2 focus:ring-secondary/20"
             >
               <option value="">Select an event…</option>
               {events.map((ev) => (
@@ -173,7 +172,7 @@ export default function UserRolesManager({ user, events, onGrantRole, onRevokeRo
                   {ev.name}
                 </option>
               ))}
-            </select>
+            </Select>
           )}
 
           {error && (

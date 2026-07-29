@@ -7,11 +7,13 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/response"
+	"crowdflow-backend/pkg/turnstile"
 )
 
 // rolePriority defines the privilege hierarchy for platform-level roles.
@@ -44,6 +46,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, authenticate func(http.Hand
 	mux.Handle("POST /auth/logout-all", authenticate(http.HandlerFunc(h.handleLogoutAll)))
 	mux.Handle("GET /auth/me", authenticate(http.HandlerFunc(h.handleMe)))
 	mux.Handle("PUT /auth/me", authenticate(http.HandlerFunc(h.handleUpdateProfile)))
+	mux.HandleFunc("POST /auth/forgot-password", h.handleForgotPassword)
+	mux.HandleFunc("POST /auth/reset-password", h.handleResetPassword)
+	mux.HandleFunc("POST /auth/send-otp", h.handleSendOTP)
 }
 
 func generateCSRFToken() string {
@@ -93,11 +98,44 @@ func (h *Handler) setAuthCookies(w http.ResponseWriter, accessToken, refreshToke
 }
 
 // clearAuthCookies expires all three auth cookies. Paths must match those set
+// clearAuthCookies expires all three auth cookies. Paths must match those set
 // in setAuthCookies, or the browser keeps the stale cookie.
 func (h *Handler) clearAuthCookies(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{Name: "access_token", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: h.secure, SameSite: http.SameSiteLaxMode})
-	http.SetCookie(w, &http.Cookie{Name: "refresh_token", Value: "", Path: "/api/v1/auth", MaxAge: -1, HttpOnly: true, Secure: h.secure, SameSite: http.SameSiteLaxMode})
-	http.SetCookie(w, &http.Cookie{Name: "csrf_token", Value: "", Path: "/", MaxAge: -1, HttpOnly: false, Secure: h.secure, SameSite: http.SameSiteLaxMode})
+	expiredTime := time.Unix(0, 0)
+	// Clear with h.secure setting
+	http.SetCookie(w, &http.Cookie{Name: "access_token", Value: "", Path: "/", MaxAge: -1, Expires: expiredTime, HttpOnly: true, Secure: h.secure, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: "refresh_token", Value: "", Path: "/api/v1/auth", MaxAge: -1, Expires: expiredTime, HttpOnly: true, Secure: h.secure, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: "refresh_token", Value: "", Path: "/", MaxAge: -1, Expires: expiredTime, HttpOnly: true, Secure: h.secure, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: "csrf_token", Value: "", Path: "/", MaxAge: -1, Expires: expiredTime, HttpOnly: false, Secure: h.secure, SameSite: http.SameSiteLaxMode})
+
+	// Also clear with Secure: false so HTTP local/docker environments clear the cookie cleanly
+	if h.secure {
+		http.SetCookie(w, &http.Cookie{Name: "access_token", Value: "", Path: "/", MaxAge: -1, Expires: expiredTime, HttpOnly: true, Secure: false, SameSite: http.SameSiteLaxMode})
+		http.SetCookie(w, &http.Cookie{Name: "refresh_token", Value: "", Path: "/api/v1/auth", MaxAge: -1, Expires: expiredTime, HttpOnly: true, Secure: false, SameSite: http.SameSiteLaxMode})
+		http.SetCookie(w, &http.Cookie{Name: "refresh_token", Value: "", Path: "/", MaxAge: -1, Expires: expiredTime, HttpOnly: true, Secure: false, SameSite: http.SameSiteLaxMode})
+		http.SetCookie(w, &http.Cookie{Name: "csrf_token", Value: "", Path: "/", MaxAge: -1, Expires: expiredTime, HttpOnly: false, Secure: false, SameSite: http.SameSiteLaxMode})
+	}
+}
+
+func resolveFrontendURL(r *http.Request) string {
+	if envURL := os.Getenv("FRONTEND_URL"); envURL != "" {
+		return envURL
+	}
+	if origin := r.Header.Get("Origin"); origin != "" {
+		return origin
+	}
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	host := r.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = r.Host
+	}
+	if host != "" && host != "localhost" && host != "127.0.0.1" && host != "backend:8080" {
+		return scheme + "://" + host
+	}
+	return "http://localhost:3000"
 }
 
 // resolveRoleName returns the user's highest-privilege platform role (roles
@@ -129,6 +167,11 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if valid, err := turnstile.VerifyToken(req.TurnstileToken, r.RemoteAddr); !valid {
+		response.Error(w, http.StatusBadRequest, "INVALID_TURNSTILE", "CAPTCHA verification failed: "+err.Error())
+		return
+	}
+
 	if err := h.service.Register(req); err != nil {
 		if err.Error() == "email is already registered" {
 			response.Error(w, http.StatusConflict, "EMAIL_ALREADY_REGISTERED", "This email address is already registered.")
@@ -150,6 +193,11 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body or payload too large")
+		return
+	}
+
+	if valid, err := turnstile.VerifyToken(req.TurnstileToken, r.RemoteAddr); !valid {
+		response.Error(w, http.StatusBadRequest, "INVALID_TURNSTILE", "CAPTCHA verification failed: "+err.Error())
 		return
 	}
 
@@ -175,6 +223,13 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) getRedirectURI(r *http.Request) string {
+	if envURI := os.Getenv("GOOGLE_REDIRECT_URI"); envURI != "" {
+		return envURI
+	}
+	return "http://localhost/api/v1/auth/google/callback"
+}
+
 func (h *Handler) handleGoogleRedirect(w http.ResponseWriter, r *http.Request) {
 	state := generateCSRFToken()
 
@@ -189,7 +244,8 @@ func (h *Handler) handleGoogleRedirect(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	authURL := h.service.GetGoogleAuthURL(state)
+	redirectURI := h.getRedirectURI(r)
+	authURL := h.service.GetGoogleAuthURLWithRedirect(state, redirectURI)
 	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
 }
 
@@ -226,7 +282,8 @@ func (h *Handler) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Exchange code for JWT session token
-	accessToken, refreshToken, user, err := h.service.HandleGoogleCallback(r.Context(), code)
+	redirectURI := h.getRedirectURI(r)
+	accessToken, refreshToken, user, err := h.service.HandleGoogleCallback(r.Context(), code, redirectURI)
 	if err != nil {
 		if err.Error() == "PROVIDER_MISMATCH: native" {
 			http.Redirect(w, r, "/login?error=PROVIDER_MISMATCH&provider=native", http.StatusTemporaryRedirect)
@@ -245,16 +302,21 @@ func (h *Handler) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		roleName = h.resolveRoleName(userID)
 	}
 
+	frontendURL := resolveFrontendURL(r)
+
+	targetPath := "/"
 	switch roleName {
 	case "Super Admin":
-		http.Redirect(w, r, "/admin", http.StatusTemporaryRedirect)
+		targetPath = "/admin"
 	case "Auditor":
-		http.Redirect(w, r, "/auditor", http.StatusTemporaryRedirect)
+		targetPath = "/auditor"
 	case "Event Organizer":
-		http.Redirect(w, r, "/dashboard", http.StatusTemporaryRedirect)
+		targetPath = "/organizer"
 	default:
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		targetPath = "/"
 	}
+
+	http.Redirect(w, r, frontendURL+targetPath, http.StatusTemporaryRedirect)
 }
 
 // handleRefresh rotates the refresh token and issues a new access token. It
@@ -447,5 +509,75 @@ func (h *Handler) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "Profile updated successfully",
+	})
+}
+
+func (h *Handler) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Email is required")
+		return
+	}
+
+	resetBaseURL := resolveFrontendURL(r)
+
+	_ = h.service.RequestPasswordReset(req.Email, resetBaseURL)
+
+	response.JSON(w, http.StatusOK, map[string]string{
+		"message": "Jika email terdaftar, instruksi reset password telah dikirim ke email Anda.",
+	})
+}
+
+func (h *Handler) handleSendOTP(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email   string `json:"email"`
+		Purpose string `json:"purpose"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Email is required")
+		return
+	}
+
+	if req.Purpose == "" {
+		req.Purpose = "verifikasi"
+	}
+
+	otpCode, err := h.service.SendOTP(req.Email, req.Purpose)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]interface{}{
+		"message": "Kode OTP telah dikirim ke email Anda.",
+		"otp":     otpCode,
+	})
+}
+
+func (h *Handler) handleResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token       string `json:"token"`
+		Email       string `json:"email"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+		return
+	}
+
+	if req.Token == "" || req.Email == "" || req.NewPassword == "" {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Token, email, and new password are required")
+		return
+	}
+
+	if err := h.service.ResetPassword(req.Token, req.Email, req.NewPassword); err != nil {
+		response.Error(w, http.StatusBadRequest, "RESET_FAILED", err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{
+		"message": "Password berhasil direset. Silakan login dengan password baru Anda.",
 	})
 }

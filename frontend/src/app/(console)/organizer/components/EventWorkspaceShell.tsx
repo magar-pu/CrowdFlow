@@ -2,10 +2,19 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import EventWorkspaceHeader from "./EventWorkspaceHeader";
 import { useOrganizerData } from "../OrganizerDataContext";
-import { getEventRevisions, publishOrganizerEvent, EventRevisionFeedback } from "@/lib/api/eorganizer";
-import { AlertTriangle, XCircle, Send, CheckCircle2, Clock, ShieldAlert } from "lucide-react";
+import {
+  getEventRevisions,
+  publishOrganizerEvent,
+  getPayoutDetails,
+  getAccountDocumentReadiness,
+  listEventPublicly,
+  unlistEvent,
+  EventRevisionFeedback,
+} from "@/lib/api/eorganizer";
+import { AlertTriangle, XCircle, Send, CheckCircle2, Clock, ShieldAlert, Globe, EyeOff } from "lucide-react";
 
 interface EventWorkspaceShellProps {
   eventId: string;
@@ -22,6 +31,15 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resubmitSuccess, setResubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // null while unknown, so the button is not disabled on a slow/failed lookup —
+  // the server gate is authoritative either way.
+  const [payoutReady, setPayoutReady] = useState<boolean | null>(null);
+  // Same null-while-unknown rule as payoutReady. Holds the outstanding document
+  // labels so the banner can name them, rather than sending the organizer to
+  // Settings to work out which one an auditor has not cleared.
+  const [docsMissing, setDocsMissing] = useState<string[] | null>(null);
+  const [listingBusy, setListingBusy] = useState(false);
+  const [listingError, setListingError] = useState<string | null>(null);
 
   useEffect(() => {
     const s = event?.status?.toLowerCase() || "";
@@ -33,6 +51,52 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
       });
     }
   }, [event?.id, event?.status]);
+
+  // Only drafts can be submitted, so only drafts need the payout pre-check.
+  useEffect(() => {
+    const s = event?.status?.toLowerCase() || "";
+    if (!event || !(s === "draft" || s === "")) return;
+    let cancelled = false;
+    getPayoutDetails().then((res) => {
+      if (cancelled) return;
+      // A failed lookup leaves this null rather than false: blocking submission
+      // because a secondary request failed would be worse than letting the
+      // server gate reject it with the real reason.
+      setPayoutReady(res.success && res.data ? res.data.complete : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [event?.id, event?.status]);
+
+  // Account documents are the only submission requirement the organizer cannot
+  // clear themselves — it needs an auditor to verify, which takes days. Checked
+  // up front for the same reason as the payout details, but more urgently.
+  useEffect(() => {
+    const s = event?.status?.toLowerCase() || "";
+    if (!event || !(s === "draft" || s === "")) return;
+    let cancelled = false;
+    getAccountDocumentReadiness().then((res) => {
+      if (cancelled) return;
+      // A failed lookup leaves this null, not blocked: the server gate is
+      // authoritative, and refusing to submit because a secondary request
+      // failed would be worse than a 422 carrying the real reason.
+      setDocsMissing(res.success && res.data && !res.data.ready ? res.data.missing : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [event?.id, event?.status]);
+
+  /**
+   * Revision points the organizer still has to act on. Excludes the states the
+   * auditor has closed out — a Resolved/Verified point is settled, and listing
+   * it under "Action Required" makes finished work look outstanding.
+   */
+  const CLOSED_REVISION_STATUSES = ["resolved", "verified"];
+  const openRevisions = (revisionFeedback?.revisions ?? []).filter(
+    (rev) => !CLOSED_REVISION_STATUSES.includes((rev.status ?? "").toLowerCase())
+  );
 
   const handleResubmit = async () => {
     setIsSubmitting(true);
@@ -55,6 +119,27 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // The organizer's own go-live switch, separate from the auditor's approval.
+  const handleSetListed = async (listed: boolean) => {
+    if (!listed && !confirm(
+      "Withdraw this event from public listing?\n\n" +
+      "It will disappear from browse and search, and no new tickets can be sold. " +
+      "Tickets already sold stay valid. You can publish it again at any time."
+    )) return;
+
+    setListingBusy(true);
+    setListingError(null);
+    const res = listed
+      ? await listEventPublicly(Number(eventId))
+      : await unlistEvent(Number(eventId));
+    if (res.success) {
+      await fetchData();
+    } else {
+      setListingError(res.error?.message ?? "Failed to update the public listing.");
+    }
+    setListingBusy(false);
   };
 
   if (!event) {
@@ -80,6 +165,9 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
   // submitted at all.
   const isDraft = sLower === "draft" || sLower === "";
   const isPendingReview = sLower === "pending_review" || sLower === "pending review";
+  // Approved by an auditor but not yet put on sale — the organizer's call.
+  const isApprovedUnlisted = sLower === "approved";
+  const isLive = sLower === "live";
 
   return (
     <>
@@ -104,18 +192,118 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
 
             <button
               onClick={handleResubmit}
-              disabled={isSubmitting}
-              className="flex shrink-0 items-center gap-2 px-4 py-2 bg-secondary hover:bg-secondary/90 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
+              disabled={isSubmitting || payoutReady === false || (docsMissing?.length ?? 0) > 0}
+              className="flex shrink-0 items-center gap-2 px-4 py-2 bg-secondary hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
             >
               <Send className="w-3.5 h-3.5" />
               <span>{isSubmitting ? "Submitting..." : "Submit Event to Auditor"}</span>
             </button>
           </div>
 
+          {/* Checked up front rather than left to the 422: payout details are
+              the one submission requirement fixed OUTSIDE this workspace, so
+              failing at the button would send the organizer hunting. */}
+          {/* Shown above the payout notice: this is the blocker with the long
+              lead time, since only an auditor can clear it. */}
+          {(docsMissing?.length ?? 0) > 0 && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
+              <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+              <p className="text-xs font-semibold text-warning">
+                An auditor must verify your account documents before you can submit an
+                event. Outstanding: {docsMissing?.join(", ")}.{" "}
+                <Link href="/organizer/settings" className="underline hover:no-underline">
+                  Go to Settings
+                </Link>
+                .
+              </p>
+            </div>
+          )}
+
+          {payoutReady === false && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+              <p className="text-xs font-semibold text-warning">
+                Add your payout bank details before submitting.{" "}
+                <Link href="/organizer/settings" className="underline hover:no-underline">
+                  Go to Settings
+                </Link>
+                . Submitting locks the account for this event.
+              </p>
+            </div>
+          )}
+
           {submitError && (
             <div className="mt-3 flex items-start gap-2 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
               <p className="text-xs font-semibold text-danger">{submitError}</p>
+            </div>
+          )}
+
+          {resubmitSuccess && (
+            <div className="mt-3 flex items-center gap-2 rounded-lg border border-success/30 bg-success/20 px-3 py-2 text-xs font-bold text-success">
+              <CheckCircle2 className="h-4 w-4" />
+              <span>Submitted to the auditor. This event is now in review.</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Approved by the auditor, but the organizer decides when it goes on sale. */}
+      {isApprovedUnlisted && (
+        <div className="mt-4 p-5 rounded-xl border border-success/30 bg-success/5 shadow-sm text-left animate-fade-in">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
+                <h4 className="text-sm font-bold text-text-primary">Approved — ready to go live</h4>
+              </div>
+              <p className="text-xs text-text-secondary">
+                An auditor has approved this event. It is <strong>not visible to buyers yet</strong> —
+                publish it when you&apos;re ready to start selling.
+              </p>
+            </div>
+
+            <button
+              onClick={() => handleSetListed(true)}
+              disabled={listingBusy}
+              className="flex shrink-0 items-center gap-2 px-4 py-2 bg-success hover:bg-success/90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>{listingBusy ? "Publishing…" : "Publish Event"}</span>
+            </button>
+          </div>
+
+          {listingError && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+              <p className="text-xs font-semibold text-danger">{listingError}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Live to the public — the organizer can pull it back at any time. */}
+      {isLive && (
+        <div className="mt-4 rounded-xl border border-border-subtle bg-white shadow-sm px-5 py-3 text-left animate-fade-in">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <p className="flex items-center gap-2 text-xs font-semibold text-text-secondary">
+              <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse shrink-0" />
+              This event is live and on sale to the public.
+            </p>
+            <button
+              onClick={() => handleSetListed(false)}
+              disabled={listingBusy}
+              className="flex shrink-0 items-center gap-1.5 px-3 py-1.5 border border-border-subtle hover:bg-surface-container-low disabled:opacity-50 disabled:cursor-not-allowed text-text-primary text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+              <span>{listingBusy ? "Withdrawing…" : "Withdraw from public"}</span>
+            </button>
+          </div>
+
+          {listingError && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+              <p className="text-xs font-semibold text-danger">{listingError}</p>
             </div>
           )}
         </div>
@@ -157,32 +345,20 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
               </p>
             </div>
 
+            {/* Resubmission happens per revision point on the Revisions page
+                ("Send Revision to Auditor"), which also records the document
+                changelog. A blanket resubmit here bypassed that and raced the
+                per-point flow. */}
             <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => router.push(`/organizer/events/${eventId}/revisions`)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-white border border-border-subtle hover:bg-surface-container text-text-primary text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
+                className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
               >
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                <AlertTriangle className="w-3.5 h-3.5" />
                 <span>View Revision Details</span>
-              </button>
-
-              <button
-                onClick={handleResubmit}
-                disabled={isSubmitting}
-                className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>{isSubmitting ? "Submitting..." : "Resubmit Event to Auditor"}</span>
               </button>
             </div>
           </div>
-
-          {submitError && (
-            <div className="mt-3 flex items-start gap-2 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
-              <p className="text-xs font-semibold text-danger">{submitError}</p>
-            </div>
-          )}
 
           {/* Detailed Auditor Feedback Notes */}
           {revisionFeedback?.auditorNotes && (
@@ -196,27 +372,30 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
             </div>
           )}
 
-          {/* List of Specific Required Actions */}
-          {revisionFeedback?.revisions && revisionFeedback.revisions.length > 0 && (
+          {/* List of Specific Required Actions.
+              Only points that still need the organizer's attention belong in an
+              "Action Required" banner — an item the auditor has already accepted
+              is history, and leaving it here reads as outstanding work. */}
+          {openRevisions.length > 0 && (
             <div className="mt-3 space-y-2">
               <span className="text-[10px] font-mono font-bold text-text-secondary uppercase block">
-                Required Revision Items (Klik item untuk merespons)
+                Required Revision Items (click an item to respond)
               </span>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {revisionFeedback.revisions.map((rev) => (
+                {openRevisions.map((rev) => (
                   <div
                     key={rev.id}
                     onClick={() => router.push(`/organizer/events/${eventId}/revisions?revId=${rev.id}`)}
-                    className="p-3 bg-white border border-border-subtle hover:border-secondary rounded-lg text-xs space-y-1 shadow-2xs cursor-pointer transition-all hover:shadow-xs"
+                    className="p-3 bg-white border border-amber-500/40 hover:border-amber-600 rounded-lg text-xs space-y-1 shadow-2xs cursor-pointer transition-all hover:shadow-xs"
                   >
                     <div className="flex justify-between items-center">
-                      <span className="font-bold text-text-primary">{rev.title}</span>
-                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-surface-container text-text-secondary">
+                      <span className="font-bold text-amber-900">{rev.title}</span>
+                      <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-800 border border-amber-500/25">
                         {rev.category}
                       </span>
                     </div>
                     <p className="text-[11px] text-text-secondary leading-snug">{rev.description}</p>
-                    <div className="pt-1 text-[10px] font-mono text-primary font-bold">
+                    <div className="pt-1 text-[10px] font-mono text-amber-700 font-bold">
                       Action: {rev.requiredAction}
                     </div>
                   </div>
@@ -225,12 +404,6 @@ export default function EventWorkspaceShell({ eventId, activeTab, children }: Ev
             </div>
           )}
 
-          {resubmitSuccess && (
-            <div className="mt-3 p-2 bg-success/20 border border-success/30 rounded-lg text-xs font-bold text-success flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Event successfully resubmitted to auditor portal! Status changed to In Review.</span>
-            </div>
-          )}
         </div>
       )}
 

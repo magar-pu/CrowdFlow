@@ -6,6 +6,8 @@ export interface ScannerCheckInResult {
   attendeeName?: string;
   ticketType?: string;
   seatNumber?: string;
+  ticketId?: string;
+  orderId?: string;
   message: string;
   checkInTime?: string;
   gateName?: string;

@@ -2,8 +2,9 @@
 
 import React, { useState } from 'react';
 import { OrganizerVerification, OrganizerStatus, ReviewDocument } from '../types';
+import { getAccountDocumentViewURL } from '@/lib/api/auditor';
 import {
-  Shield, CheckCircle2,
+  CheckCircle2,
   ArrowLeft, Ban, Send, Save, X, Activity, RefreshCw, FileText, ExternalLink
 } from 'lucide-react';
 
@@ -16,19 +17,33 @@ interface OrganizerDetailViewProps {
   onRejectDocument: (docId: string) => void;
 }
 
+// doc.fileUrl is the private-bucket OBJECT KEY, not a fetchable link — rendering
+// it in an href gave every document a dead "View Link" button. Mint a signed URL
+// instead.
+//
+// The blank tab is opened SYNCHRONOUSLY, before awaiting, or a popup blocker
+// rejects a window created from an async continuation.
+async function openSignedDocument(docId: string | number | undefined) {
+  if (docId === undefined) {
+    alert("This document has no id on file and cannot be opened.");
+    return;
+  }
+  const tab = window.open("", "_blank");
+  const res = await getAccountDocumentViewURL(docId);
+  if (res.success && res.data?.url) {
+    if (tab) tab.location.href = res.data.url;
+  } else {
+    tab?.close();
+    alert(res.error?.message || "Could not open that document.");
+  }
+}
+
 const statusColors: Record<OrganizerStatus, string> = {
   Pending: 'bg-secondary/10 text-secondary border-secondary/20',
   Verified: 'bg-success/10 text-success border-success/20',
   'Need Revision': 'bg-warning/10 text-warning border-warning/20',
   Rejected: 'bg-danger/10 text-danger border-danger/20',
   Suspended: 'bg-slate-200 text-slate-700 border-slate-300',
-};
-
-const riskColors = {
-  Low: 'bg-success/10 text-success border-success/20',
-  Medium: 'bg-warning/10 text-warning border-warning/20',
-  High: 'bg-orange-100 text-orange-600 border-orange-200',
-  Critical: 'bg-danger/10 text-danger border-danger/20',
 };
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -38,6 +53,19 @@ function SectionCard({ title, children }: { title: string; children: React.React
       {children}
     </div>
   );
+}
+
+/**
+ * Drops rows the application never supplied.
+ *
+ * An auditor decides whether a business is real. A field rendered with an
+ * invented placeholder — this page used to show a fabricated NIK, NPWP, NIB and
+ * bank account for every organizer, from mapper fallbacks — is worse than an
+ * absent one: it can be ticked off the checklist as if it had been seen. If the
+ * organizer did not provide it, it does not appear.
+ */
+function present(rows: { label: string; value?: string | null; full?: boolean }[]) {
+  return rows.filter((r) => typeof r.value === "string" && r.value.trim() !== "");
 }
 
 export default function OrganizerDetailView({
@@ -120,17 +148,23 @@ export default function OrganizerDetailView({
             <div className="flex items-center gap-3 border-b border-border-subtle pb-3">
               <div>
                 <h3 className="text-sm font-bold text-text-primary">{organizer.companyName}</h3>
-                <p className="text-[10px] text-text-secondary font-mono">{organizer.businessType}</p>
+                {/* business_type is NOT NULL but empty for organizers an admin
+                    granted the role directly, who never filled in a form. */}
+                {organizer.businessType?.trim() && (
+                  <p className="text-[10px] text-text-secondary font-mono">{organizer.businessType}</p>
+                )}
               </div>
             </div>
+            {/* NIB, NPWP and Registration Number used to sit here. The
+                application form never collects them and GetOrganizer never
+                returned them — every organizer showed the same invented
+                numbers. The NIB and NPWP an auditor actually checks are the
+                uploaded documents below. */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs mt-3">
-              {[
+              {present([
                 { label: 'Company Name', value: organizer.companyName },
-                { label: 'Business License (NIB)', value: organizer.businessLicense },
-                { label: 'NPWP', value: organizer.npwp },
-                { label: 'Registration Number', value: organizer.registrationNumber },
                 { label: 'Company Address', value: organizer.address, full: true },
-              ].map(r => (
+              ]).map(r => (
                 <div key={r.label} className={r.full ? 'sm:col-span-2' : ''}>
                   <p className="text-[9px] font-mono text-text-secondary uppercase">{r.label}</p>
                   <p className="text-text-primary font-medium mt-0.5">{r.value}</p>
@@ -139,16 +173,18 @@ export default function OrganizerDetailView({
             </div>
           </SectionCard>
 
-          {/* PIC Information */}
+          {/* PIC Information.
+              Position and National ID (NIK) are gone for the same reason as the
+              company registration numbers: nothing collects them, so both were
+              pure mapper inventions — and a fabricated NIK next to a KTP an
+              auditor is about to verify is the most dangerous of the lot. */}
           <SectionCard title="PIC Information">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              {[
+              {present([
                 { label: 'Full Name', value: organizer.picName },
-                { label: 'Position', value: organizer.picPosition },
                 { label: 'Email Address', value: organizer.picEmail },
                 { label: 'Phone Number', value: organizer.picPhone },
-                { label: 'National ID (NIK)', value: organizer.picNationalId },
-              ].map(r => (
+              ]).map(r => (
                 <div key={r.label}>
                   <p className="text-[9px] font-mono text-text-secondary uppercase">{r.label}</p>
                   <p className="text-text-primary font-medium mt-0.5">{r.value}</p>
@@ -199,14 +235,12 @@ export default function OrganizerDetailView({
                     </div>
 
                     <div className="flex gap-2 pt-2 border-t border-border-subtle">
-                      <a
-                        href={doc.fileUrl}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        onClick={() => openSignedDocument(doc.id)}
                         className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 border border-border-subtle bg-white hover:bg-surface text-text-secondary hover:text-text-primary rounded-lg text-xs font-bold transition-colors cursor-pointer"
                       >
-                        <ExternalLink className="w-3.5 h-3.5" /> View Link
-                      </a>
+                        <ExternalLink className="w-3.5 h-3.5" /> View Document
+                      </button>
 
                       {doc.status !== "VERIFIED" && doc.status !== "REJECTED" && (
                         <>
@@ -235,49 +269,43 @@ export default function OrganizerDetailView({
             </div>
           </SectionCard>
 
-          {/* Business & Bank Details */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-
-            {/* Business info */}
-            <SectionCard title="Business Details">
-              <div className="space-y-2.5 text-xs">
-                {[
-                  { label: 'Industry', value: organizer.industry },
-                  { label: 'Event Category', value: organizer.eventCategory },
-                  { label: 'Years In Business', value: `${organizer.yearsInBusiness} Years` },
-                  { label: 'Previous Events', value: `${organizer.previousEventsCount} Events` },
-                  { label: 'Est. Annual Revenue', value: `Rp ${organizer.estimatedAnnualRevenue.toLocaleString()}` },
-                ].map(r => (
-                  <div key={r.label} className="flex justify-between border-b border-border-subtle pb-1">
-                    <span className="text-text-secondary">{r.label}</span>
-                    <span className="font-semibold text-text-primary">{r.value}</span>
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
-
-            {/* Bank details */}
-            <SectionCard title="Bank Details">
-              <div className="space-y-2.5 text-xs">
-                {[
-                  { label: 'Bank Name', value: organizer.bankName },
-                  { label: 'Account Holder', value: organizer.bankAccountHolder },
-                  { label: 'Account Number', value: organizer.bankAccountNumber },
-                ].map(r => (
-                  <div key={r.label} className="flex justify-between border-b border-border-subtle pb-1">
-                    <span className="text-text-secondary">{r.label}</span>
-                    <span className="font-semibold text-text-primary">{r.value}</span>
-                  </div>
-                ))}
-                <div className="flex justify-between items-center pt-2">
-                  <span className="text-text-secondary">Verification Status</span>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${organizer.bankVerificationStatus === 'Verified' ? 'bg-success/10 text-success border-success/20' : 'bg-warning/10 text-warning border-warning/20'}`}>
-                    {organizer.bankVerificationStatus}
-                  </span>
+          {/* A "Business Details" card sat beside this one showing Industry,
+              Event Category, Years In Business, Previous Events and Est. Annual
+              Revenue. Not one of those five is collected by the application
+              form, stored in organizer_applications, or returned by
+              GetOrganizer — every organizer displayed the same five constants
+              from the page's mapper ("Creative Industries", "2 Years",
+              "Rp 150,000,000"...). There is nothing to show, so it is gone
+              rather than emptied: an empty card invites someone to go looking
+              for the data behind it. */}
+          <SectionCard title="Bank Details">
+            {/* Bank details ARE real (organizer_applications.bank_*) but are
+                filled in later, from the organizer's own Payout Details screen.
+                Blank means "not submitted yet", which an auditor needs to be
+                able to tell apart from a value. */}
+            <div className="space-y-2.5 text-xs">
+              {[
+                { label: 'Bank Name', value: organizer.bankName },
+                { label: 'Account Holder', value: organizer.bankAccountHolder },
+                { label: 'Account Number', value: organizer.bankAccountNumber },
+              ].map(r => (
+                <div key={r.label} className="flex justify-between gap-3 border-b border-border-subtle pb-1">
+                  <span className="text-text-secondary shrink-0">{r.label}</span>
+                  {r.value?.trim() ? (
+                    <span className="font-semibold text-text-primary text-right break-all">{r.value}</span>
+                  ) : (
+                    <span className="italic text-text-secondary">Not provided</span>
+                  )}
                 </div>
+              ))}
+              <div className="flex justify-between items-center pt-2">
+                <span className="text-text-secondary">Verification Status</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${organizer.bankVerificationStatus === 'Verified' ? 'bg-success/10 text-success border-success/20' : 'bg-warning/10 text-warning border-warning/20'}`}>
+                  {organizer.bankVerificationStatus}
+                </span>
               </div>
-            </SectionCard>
-          </div>
+            </div>
+          </SectionCard>
 
           {/* History */}
           <SectionCard title="History Log">
@@ -328,35 +356,6 @@ export default function OrganizerDetailView({
                   </button>
                 );
               })}
-            </div>
-          </SectionCard>
-
-          {/* Risk Assessment */}
-          <SectionCard title="Risk Assessment">
-            <div className="flex justify-between items-center">
-              <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${riskColors[organizer.riskCategory]}`}>{organizer.riskCategory} Risk</span>
-            </div>
-            <div className="flex items-center gap-4 bg-surface-container-low border border-border-subtle rounded-xl p-3.5">
-              <Shield className="w-7 h-7 text-secondary shrink-0" />
-              <div>
-                <p className="text-xs text-text-secondary">System Risk Score</p>
-                <p className="text-xl font-bold text-text-primary mt-0.5">{organizer.riskScore}%</p>
-              </div>
-            </div>
-            <div className="space-y-2 text-xs">
-              <p className="text-[9px] font-mono font-bold text-text-secondary uppercase">Risk Check Results</p>
-              {[
-                { label: 'Identity Match', status: organizer.riskAssessment.identityMatch },
-                { label: 'Company Validation', status: organizer.riskAssessment.companyValidation },
-                { label: 'Fraud History', status: !organizer.riskAssessment.fraudHistory },
-                { label: 'Duplicate Account', status: !organizer.riskAssessment.duplicateAccount },
-                { label: 'Suspicious Activity', status: !organizer.riskAssessment.suspiciousActivity },
-              ].map((item, idx) => (
-                <div key={idx} className="flex justify-between border-b border-border-subtle pb-1.5">
-                  <span className="text-text-secondary">{item.label}</span>
-                  <span className={`font-bold ${item.status ? 'text-success' : 'text-danger'}`}>{item.status ? 'CLEAR' : 'FLAGGED'}</span>
-                </div>
-              ))}
             </div>
           </SectionCard>
 

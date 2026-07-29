@@ -15,14 +15,9 @@ import {
   CalendarCheck,
   Bookmark,
   ShoppingBag,
-  CreditCard,
-  Bell,
-  LogOut,
   ChevronRight,
   BadgeCheck,
   Pencil,
-  Settings,
-  RefreshCw,
 } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { getMe, updateProfile, UserProfileResponse } from "@/lib/api/auth";
@@ -173,13 +168,6 @@ export default function ProfilePage() {
             >
               {editing ? "Cancel" : "Edit Profile"}
             </button>
-            <button
-              type="button"
-              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 font-label-md text-label-md text-white transition-all hover:bg-primary/90"
-            >
-              <Settings size={16} />
-              Account Settings
-            </button>
           </div>
         </div>
 
@@ -231,17 +219,6 @@ export default function ProfilePage() {
                 <div className="flex items-center gap-3">
                   <Ticket size={18} className="text-text-secondary" />
                   <span className="font-body-md text-body-md text-text-primary">Purchase History &amp; Tickets</span>
-                </div>
-                <ChevronRight size={16} className="text-text-secondary" />
-              </Link>
-              <div className="border-t border-border-subtle" />
-              <Link
-                href="/resale/my-listings"
-                className="flex items-center justify-between px-4 py-3.5 transition-colors hover:bg-surface-container-low"
-              >
-                <div className="flex items-center gap-3">
-                  <RefreshCw size={18} className="text-text-secondary" />
-                  <span className="font-body-md text-body-md text-text-primary">My Resale Listings</span>
                 </div>
                 <ChevronRight size={16} className="text-text-secondary" />
               </Link>

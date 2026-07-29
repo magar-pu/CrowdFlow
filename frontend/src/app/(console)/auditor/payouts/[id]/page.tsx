@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import PayoutDetailView from "../../components/PayoutDetailView";
 import { useAuditorData } from "../../AuditorDataContext";
-import { getPayout } from "@/lib/api/auditor";
+import { getPayout, verifyPayoutBankAccount } from "@/lib/api/auditor";
 import { PayoutRequest } from "../../types";
+import { mapPayoutStatus } from "../../payoutMapping";
 
 export default function AuditorPayoutDetailPage() {
   const params = useParams<{ id: string }>();
@@ -21,74 +22,87 @@ export default function AuditorPayoutDetailPage() {
       const res = await getPayout(params.id);
       if (res.success && res.data) {
         const raw = res.data;
+        // This screen authorises the release of money. Any field the API does
+        // not supply is left EMPTY so the console can render "Not provided" —
+        // a plausible-looking default (a bank account, a licence number, a
+        // reviewer's name) would be indistinguishable from verified fact to the
+        // auditor approving the payout.
         const mappedPayout: PayoutRequest = {
           id: String(raw.id),
-          invoiceNumber: `INV-2026-${1000 + raw.id}`,
-          organizerName: raw.organizerName || "Unknown Organizer",
-          organizerEmail: raw.organizerEmail || "org@crowdflow.com",
-          eventName: raw.eventName || "Event Name",
-          eventDate: raw.eventDate || "2026-10-10",
-          venue: "Default Venue",
-          completionStatus: "Completed",
+          invoiceNumber: "",
+          organizerName: raw.organizerName || "",
+          organizerEmail: raw.organizerEmail || "",
+          eventName: raw.eventName || "",
+          eventDate: raw.eventDate || "",
+          venue: raw.venueName || "",
+          completionStatus: raw.eventStatus || "",
           revenue: raw.salesSummary?.grossRevenue || 0,
           netRevenue: raw.salesSummary?.netRevenue || 0,
           requestedAmount: raw.requestedAmount || 0,
-          requestDate: raw.requestDate || "Just now",
-          status: (raw.status === "processed" || raw.status === "Processed" ? "Paid" : raw.status === "failed" || raw.status === "Failed" ? "Rejected" : raw.status === "on_hold" || raw.status === "On Hold" ? "On Hold" : "Pending") as any,
-          riskLevel: (raw.riskLevel || "Low") as any,
-          riskScore: raw.riskScore || 20,
-          currentAuditor: "Priya Nair",
-          organizerCompany: raw.organizerName || "Organizer Company",
-          organizerPhone: (raw as any).organizerPhone || "+62 812-3456-7890",
-          organizerBusinessLicense: (raw as any).organizerBusinessLicense || "BL-2026-ID-00123",
-          organizerStatus: ((raw as any).organizerStatus === "approved" || (raw as any).organizerStatus === "Approved" || (raw as any).organizerStatus === "verified" || (raw as any).organizerStatus === "Verified" ? "Verified" : "Pending") as any,
-          organizerPreviousViolations: 0,
-          ticketCapacity: 1000,
+          requestDate: raw.requestDate || "",
+          status: mapPayoutStatus(raw.status),
+          currentAuditor: "",
+          organizerCompany: raw.organizerName || "",
+          organizerPhone: raw.organizerPhone || "",
+          organizerBusinessLicense: raw.organizerBusinessLicense || "",
+          organizerStatus: (raw.organizerStatus === "approved" || raw.organizerStatus === "Approved" || raw.organizerStatus === "verified" || raw.organizerStatus === "Verified" ? "Verified" : "Pending") as any,
+          // Real: rejected events by the same organizer, this one excluded.
+          organizerPreviousViolations: raw.organizerPreviousViolations || 0,
+          ticketCapacity: raw.ticketCapacity || 0,
+          // 0 when the organizer was granted the role directly and never filed
+          // an application; the profile link is hidden in that case.
+          applicationId: raw.applicationId || 0,
+          eventId: raw.eventId || 0,
           salesSummary: {
             ticketsSold: raw.salesSummary?.ticketsSold || 0,
             grossRevenue: raw.salesSummary?.grossRevenue || 0,
             platformFee: raw.salesSummary?.platformFee || 0,
             paymentGatewayFee: raw.salesSummary?.paymentGatewayFee || 0,
+            ppn: raw.salesSummary?.ppn || 0,
             entertainmentTax: raw.salesSummary?.entertainmentTax || 0,
-            vat: 0.0,
             refundAmount: raw.salesSummary?.refundAmount || 0,
-            chargebackAmount: 0.0,
-            otherAdjustments: 0.0,
             netRevenue: raw.salesSummary?.netRevenue || 0,
           },
+          // Unticked by default. These are the auditor's OWN verification
+          // steps; shipping them pre-ticked meant the work appeared done
+          // before anyone had looked. They are local-only state today (see
+          // handleUpdatePayoutChecklists) and are not persisted.
           financialChecklist: {
-            revenueMatch: true,
-            ticketSalesMatch: true,
-            refundCalculated: true,
-            chargebackApplied: true,
-            platformFeeCorrect: true,
-            taxCorrect: true,
-            netRevenueCorrect: true,
+            revenueMatch: false,
+            ticketSalesMatch: false,
+            refundCalculated: false,
+            platformFeeCorrect: false,
+            taxCorrect: false,
+            netRevenueCorrect: false,
           },
           complianceChecklist: {
-            eventApproved: true,
-            organizerVerified: true,
-            requiredDocumentsComplete: true,
-            noActiveInvestigation: true,
-            noPendingRevision: true,
+            eventApproved: false,
+            organizerVerified: false,
+            requiredDocumentsComplete: false,
+            noActiveInvestigation: false,
+            noPendingRevision: false,
           },
-          bankName: raw.bankName || "Bank Central Asia (BCA)",
-          bankAccountNumber: raw.bankAccountNumber || "8024927501",
-          bankAccountHolder: raw.bankAccountHolder || raw.organizerName || "",
-          swiftCode: "CENIDJA",
-          bankVerificationStatus: "Verified",
+          bankName: raw.bankName || "",
+          bankAccountNumber: raw.bankAccountNumber || "",
+          bankAccountHolder: raw.bankAccountHolder || "",
+          // Real, from organizer_applications.bank_verification_status. Resets
+          // to unverified whenever the organizer edits the account, so a
+          // destination that moved since the last check shows as unverified.
+          bankVerificationStatus:
+            raw.bankVerificationStatus === "verified" ? "Verified" : "Unverified",
+          bankVerifiedBy: raw.bankVerifiedBy || "",
+          bankVerifiedAt: raw.bankVerifiedAt || "",
           fraudDetection: {
             duplicatePayout: raw.fraudDetection?.duplicatePayout || false,
             suspiciousRevenue: raw.fraudDetection?.suspiciousRevenue || false,
-            unusualRefundRate: raw.fraudDetection?.unusualRefundRate || false,
-            highChargeback: raw.fraudDetection?.highChargeback || false,
-            multipleBankChanges: false,
-            abnormalTicketSales: false,
             hasAlert: raw.fraudDetection?.hasAlert || false,
             alertMessage: raw.fraudDetection?.alertMessage || "",
           },
           internalNotes: raw.internalNotes || "",
-          financeNotes: "",
+          // Real now: `payouts.organizer_notes`. This used to be hardcoded ""
+          // while internalNotes came off the ORGANIZER APPLICATION, so the same
+          // text appeared on every payout that organizer ever requested.
+          financeNotes: raw.financeNotes || "",
           timeline: (raw.timeline || []).map((t: any) => ({
             stage: t.action || "Verification",
             actor: t.actor || "System",
@@ -96,10 +110,9 @@ export default function AuditorPayoutDetailPage() {
             details: t.detail || "",
           })),
           revisionHistory: [],
-          attachments: [
-            { name: "invoice.pdf", type: "Invoice" },
-            { name: "revenue-report.xlsx", type: "Revenue Report" },
-          ],
+          // No payout attachment storage exists yet; the two entries that used
+          // to sit here were filenames that resolved to nothing.
+          attachments: [],
         };
         setPayout(mappedPayout);
       }
@@ -122,6 +135,21 @@ export default function AuditorPayoutDetailPage() {
   const handleUpdatePayoutStatusAction = async (id: string, status: any, notes: string, financeNotes: string) => {
     await handleUpdatePayoutStatus(id, status, notes, financeNotes);
     await loadDetail();
+  };
+
+  // Verification is one-way: an auditor confirms the account, and only an
+  // organizer editing their details resets it. The account number displayed on
+  // screen is echoed back so the server can refuse if the organizer changed it
+  // after this page loaded — otherwise the auditor would be confirming an
+  // account they never saw.
+  const handleVerifyBankAccount = async (id: string, accountNumber: string) => {
+    const res = await verifyPayoutBankAccount(id, accountNumber);
+    if (!res.success) {
+      alert(res.error?.message || "Could not verify the bank account. It may have changed since this page loaded — reload and check the details again.");
+      return false;
+    }
+    await loadDetail();
+    return true;
   };
 
   if (loading) {
@@ -153,6 +181,7 @@ export default function AuditorPayoutDetailPage() {
       onBack={() => router.push('/auditor/payouts')}
       onUpdatePayoutStatus={handleUpdatePayoutStatusAction}
       onUpdatePayoutChecklists={handleUpdatePayoutChecklists}
+      onVerifyBankAccount={handleVerifyBankAccount}
     />
   );
 }

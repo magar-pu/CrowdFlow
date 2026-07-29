@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { PasswordStrengthMeter } from "./PasswordStrengthMeter";
 import GoogleLogin from "./GoogleLogin";
+import { Turnstile } from "@/components/common/Turnstile";
 
 type SubmitState = "idle" | "loading" | "success";
 
@@ -51,6 +52,7 @@ export interface SignUpFormValues {
   country_code: string;
   phone_number: string;
   password: string;
+  turnstile_token?: string;
 }
 
 interface SignUpFormProps {
@@ -70,6 +72,7 @@ export function SignUpForm({ on_submit, on_google_success, on_google_error }: Si
   const [agreed_to_terms, set_agreed_to_terms] = useState(false);
   const [submit_state, set_submit_state] = useState<SubmitState>("idle");
   const [confirm_error, set_confirm_error] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
 
   async function handle_submit(e: React.FormEvent) {
     e.preventDefault();
@@ -83,7 +86,7 @@ export function SignUpForm({ on_submit, on_google_success, on_google_error }: Si
 
     set_submit_state("loading");
     try {
-      await on_submit({ full_name, email, country_code, phone_number, password });
+      await on_submit({ full_name, email, country_code, phone_number, password, turnstile_token: turnstileToken });
       set_submit_state("success");
       setTimeout(() => set_submit_state("idle"), 1500);
     } catch (err) {
@@ -299,6 +302,9 @@ export function SignUpForm({ on_submit, on_google_success, on_google_error }: Si
             .
           </label>
         </div>
+
+        {/* Turnstile CAPTCHA */}
+        <Turnstile onVerify={(token) => setTurnstileToken(token)} />
 
         {/* Submit */}
         <button

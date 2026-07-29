@@ -28,7 +28,7 @@ export function PurchaseSuccessHeader({
         You&apos;re going to {event_title}!
       </h1>
       <p className="font-body-md text-body-md text-text-secondary">
-        Your payment of {formatIDR(amount_paid)} was successful. We&apos;ve
+        Your payment of {formatIDR(amount_paid)}{" "}was successful. We&apos;ve
         emailed the receipt to {user_email}.
       </p>
     </div>

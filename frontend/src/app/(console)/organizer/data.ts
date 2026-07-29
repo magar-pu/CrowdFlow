@@ -11,15 +11,20 @@ export const INITIAL_EVENTS: EventItem[] = [
     startTime: "09:00 AM",
     endDate: "2024-10-15",
     endTime: "05:00 PM",
-    locationType: "physical",
-    location: "Moscone Center, SF",
-    locationAddress: "Moscone Center, SF",
-    venueName: "Moscone Center, SF",
+    venueId: 1,
+    location: "Moscone Center, San Francisco",
+    locationAddress: "747 Howard St",
+    venueName: "Moscone Center",
+    venueCity: "San Francisco",
     capacity: 5000,
     sold: 4850,
     revenue: 1240000,
     status: "Live",
     image: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&auto=format&fit=crop&q=80",
+    // Mock seed data predating co-organizer delegation; these are the
+    // viewer's own events by definition.
+    delegated: false,
+    ownerName: "",
   },
   {
     id: "EVT-102",
@@ -31,15 +36,20 @@ export const INITIAL_EVENTS: EventItem[] = [
     startTime: "04:00 PM",
     endDate: "2024-11-07",
     endTime: "11:00 PM",
-    locationType: "physical",
-    location: "Zilker Park, ATX",
-    locationAddress: "Zilker Park, ATX",
-    venueName: "Zilker Park, ATX",
+    venueId: 2,
+    location: "Zilker Park, Austin",
+    locationAddress: "2100 Barton Springs Rd",
+    venueName: "Zilker Park",
+    venueCity: "Austin",
     capacity: 15000,
     sold: 12200,
     revenue: 890000,
     status: "Scheduled",
     image: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&auto=format&fit=crop&q=80",
+    // Mock seed data predating co-organizer delegation; these are the
+    // viewer's own events by definition.
+    delegated: false,
+    ownerName: "",
   },
   {
     id: "EVT-103",
@@ -51,15 +61,20 @@ export const INITIAL_EVENTS: EventItem[] = [
     startTime: "08:00 AM",
     endDate: "2024-12-03",
     endTime: "03:00 PM",
-    locationType: "physical",
+    venueId: 3,
     location: "The Ritz-Carlton, Maui",
-    locationAddress: "The Ritz-Carlton, Maui",
-    venueName: "The Ritz-Carlton, Maui",
+    locationAddress: "1 Ritz Carlton Dr",
+    venueName: "The Ritz-Carlton",
+    venueCity: "Maui",
     capacity: 100,
     sold: 45,
     revenue: 112500,
     status: "Draft",
     image: "https://images.unsplash.com/photo-1511578314322-379afb476865?w=800&auto=format&fit=crop&q=80",
+    // Mock seed data predating co-organizer delegation; these are the
+    // viewer's own events by definition.
+    delegated: false,
+    ownerName: "",
   }
 ];
 
@@ -72,7 +87,6 @@ export const INITIAL_TICKET_TIERS: TicketTier[] = [
     capacity: 350,
     status: "Selling Fast",
     color: "#D4AF37",
-    maxPerOrder: 4,
     salesStart: "2024-10-01",
     salesEnd: "2024-11-10",
     description: "Includes premium backstage lounge, priority seating, and custom physical badge."
@@ -85,7 +99,6 @@ export const INITIAL_TICKET_TIERS: TicketTier[] = [
     capacity: 1350,
     status: "On Sale",
     color: "#3B82F6",
-    maxPerOrder: 8,
     salesStart: "2024-10-05",
     salesEnd: "2024-11-12",
     description: "Full access to all standard general event stages."
@@ -98,7 +111,6 @@ export const INITIAL_TICKET_TIERS: TicketTier[] = [
     capacity: 300,
     status: "Sold Out",
     color: "#10B981",
-    maxPerOrder: 2,
     salesStart: "2024-10-10",
     salesEnd: "2024-11-12",
     description: "Discounted entry for verified active university students."

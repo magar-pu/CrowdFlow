@@ -4,9 +4,11 @@
  * Right panel of the seat map: what the buyer has chosen, the itemised price,
  * and the CTA into checkout.
  *
- * Two modes, decided by the active tier:
- *   - assigned seating — chips for each chosen seat, removable
- *   - general admission — a quantity stepper, no seats involved
+ * Two modes:
+ *   - assigned seating — chips per chosen seat, grouped by tier. A selection
+ *     may span tiers, so this renders one block per tier rather than assuming
+ *     a single active one.
+ *   - general admission — a quantity stepper for one tier, no seats involved.
  *
  * The price breakdown comes from lib/pricing's calculatePriceBreakdown rather
  * than fees invented here, so this agrees with checkout. The gateway fee is
@@ -16,32 +18,37 @@
 
 "use client";
 
-import { ArrowRight, Lock, Minus, Plus, X } from "lucide-react";
+import { ArrowRight, ChevronDown, Lock, Minus, Plus, X } from "lucide-react";
 import { formatIDR, calculatePriceBreakdown } from "@/lib/pricing";
+import { cn } from "@/lib/utils";
 import type { CartItem } from "@/types/ticket";
-import type { ChosenSeat } from "@/lib/hooks/useSeatSelection";
+import type { SeatGroup } from "@/lib/hooks/useSeatSelection";
 import type { SelectableTier } from "./TicketTypeSelector";
 
 interface SelectionPanelProps {
   event_id: string;
+  /** General admission only; null while picking seats. */
   active_tier: SelectableTier | null;
-  /** Assigned seating only; empty in general-admission mode. */
-  chosen_seats: ChosenSeat[];
+  /** Assigned seating only, grouped by tier; empty in general-admission mode. */
+  seat_groups: SeatGroup[];
   /** General admission only. */
   quantity: number;
   max_quantity: number;
-  /** Shown when a click was refused, e.g. the per-transaction cap. */
+  /** Shown when a click was refused, e.g. a tier's per-order cap. */
   notice: string | null;
   is_submitting: boolean;
   on_remove_seat: (seat_id: number) => void;
   on_change_quantity: (next: number) => void;
   on_proceed: () => void;
+  /** Mobile bottom-sheet state. Ignored from md up, where this is a fixed column. */
+  is_sheet_open: boolean;
+  on_toggle_sheet: () => void;
 }
 
 export function SelectionPanel({
   event_id,
   active_tier,
-  chosen_seats,
+  seat_groups,
   quantity,
   max_quantity,
   notice,
@@ -49,13 +56,17 @@ export function SelectionPanel({
   on_remove_seat,
   on_change_quantity,
   on_proceed,
+  is_sheet_open,
+  on_toggle_sheet,
 }: SelectionPanelProps) {
   const is_ga = active_tier?.is_general_admission ?? false;
-  const ticket_count = is_ga ? quantity : chosen_seats.length;
+  const seat_count = seat_groups.reduce((n, g) => n + g.seats.length, 0);
+  const ticket_count = is_ga ? quantity : seat_count;
 
-  // One line: a hold, and therefore this whole screen, covers a single tier.
-  const cart_items: CartItem[] =
-    active_tier && ticket_count > 0
+  // One cart line per tier. calculatePriceBreakdown already sums across lines,
+  // so a mixed selection is priced without special-casing here.
+  const cart_items: CartItem[] = is_ga
+    ? active_tier && quantity > 0
       ? [
           {
             cart_item_id: `tier-${active_tier.ticket_tier_id}`,
@@ -64,25 +75,85 @@ export function SelectionPanel({
             ticket_category_name: active_tier.name,
             sale_channel: "primary",
             unit_face_value: active_tier.price,
-            quantity: ticket_count,
+            quantity,
             currency: "IDR",
           },
         ]
-      : [];
+      : []
+    : seat_groups.map((group) => ({
+        cart_item_id: `tier-${group.ticket_tier_id}`,
+        event_id,
+        ticket_category_id: String(group.ticket_tier_id),
+        ticket_category_name: group.tier_name,
+        sale_channel: "primary" as const,
+        unit_face_value: group.unit_face_value,
+        quantity: group.seats.length,
+        currency: "IDR",
+      }));
 
   const breakdown = calculatePriceBreakdown(cart_items, null);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="border-b border-border-subtle px-5 py-4">
-        <h2 className="font-headline-sm text-headline-sm font-bold text-text-primary">
-          Your Selection
-        </h2>
+      {/* Grab handle — affordance that the sheet moves. Mobile only. */}
+      <div aria-hidden className="flex justify-center pt-2 md:hidden">
+        <span className="h-1 w-10 rounded-full bg-border-subtle" />
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        {/* Active tier */}
-        {active_tier && (
+      {/*
+        The header doubles as the sheet toggle on mobile. The sheet used to be
+        driven purely by whether anything was selected, so the first seat click
+        threw it open over the map and the only way back was emptying the
+        selection. Inert from md up, where the panel is a static column.
+      */}
+      <button
+        type="button"
+        onClick={on_toggle_sheet}
+        aria-expanded={is_sheet_open}
+        aria-controls="selection-panel-body"
+        className="flex w-full items-center justify-between gap-3 border-b border-border-subtle px-5 py-4 text-left md:pointer-events-none"
+      >
+        <div className="min-w-0">
+          <h2 className="font-headline-sm text-headline-sm font-bold text-text-primary">
+            Your Selection
+          </h2>
+          {/*
+            Collapsed, this line is the only feedback that a click registered.
+            A refused click (a tier's per-order cap) has to surface here too:
+            the notice further down is inside the hidden body, so without this
+            the seat simply would not appear and nothing would say why.
+          */}
+          {notice ? (
+            <p role="status" className="truncate font-body-sm text-body-sm text-danger md:hidden">
+              {notice}
+            </p>
+          ) : (
+            ticket_count > 0 && (
+              <p className="truncate font-body-sm text-body-sm text-text-secondary md:hidden">
+                {ticket_count} {ticket_count === 1 ? "ticket" : "tickets"} ·{" "}
+                {formatIDR(breakdown.grand_total)}
+              </p>
+            )
+          )}
+        </div>
+        <span className="flex items-center gap-2 md:hidden">
+          <span className="font-label-sm text-label-sm text-secondary">
+            {is_sheet_open ? "Hide" : "View"}
+          </span>
+          <ChevronDown
+            size={18}
+            className={cn(
+              "shrink-0 text-text-secondary transition-transform duration-200",
+              is_sheet_open && "rotate-180"
+            )}
+          />
+        </span>
+      </button>
+
+      <div id="selection-panel-body" className="flex-1 overflow-y-auto">
+        {/* Active tier — general admission only; seated selections show their
+            tiers as groups below, since there may be several. */}
+        {is_ga && active_tier && (
           <div className="border-b border-border-subtle p-5">
             <div className="flex items-center justify-between rounded-xl border border-border-subtle p-3">
               <div className="flex items-center gap-3">
@@ -111,7 +182,7 @@ export function SelectionPanel({
         <div className="border-b border-border-subtle p-5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="font-label-md text-label-md font-bold text-text-primary">
-              {is_ga ? "Jumlah Tiket" : "Kursi Dipilih"}
+              {is_ga ? "Ticket Quantity" : "Selected Seats"}
             </h3>
             <p className="font-headline-sm text-headline-sm font-bold text-text-primary">
               {formatIDR(breakdown.subtotal_face_value)}
@@ -122,7 +193,7 @@ export function SelectionPanel({
             <div className="flex items-center justify-between rounded-xl border border-border-subtle p-3">
               <button
                 type="button"
-                aria-label="Kurangi jumlah tiket"
+                aria-label="Decrease ticket quantity"
                 disabled={quantity <= 0}
                 onClick={() => on_change_quantity(quantity - 1)}
                 className="flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle text-text-primary transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-40"
@@ -134,7 +205,7 @@ export function SelectionPanel({
               </span>
               <button
                 type="button"
-                aria-label="Tambah jumlah tiket"
+                aria-label="Increase ticket quantity"
                 disabled={quantity >= max_quantity}
                 onClick={() => on_change_quantity(quantity + 1)}
                 className="flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle text-text-primary transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-40"
@@ -142,7 +213,7 @@ export function SelectionPanel({
                 <Plus size={16} />
               </button>
             </div>
-          ) : chosen_seats.length === 0 ? (
+          ) : seat_groups.length === 0 ? (
             <div className="flex flex-col items-center py-8 text-center">
               <div className="mb-3 flex gap-2">
                 {[0, 1, 2].map((i) => (
@@ -159,28 +230,46 @@ export function SelectionPanel({
                 ))}
               </div>
               <p className="font-body-sm text-body-sm text-text-secondary">
-                Klik kursi pada denah untuk memilih.
+                Click any seat on the map to select it. You can mix ticket types.
               </p>
             </div>
           ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {chosen_seats.map((seat) => (
-                <div
-                  key={seat.seat_id}
-                  className="flex items-center gap-1.5 rounded-full border border-secondary/30 bg-secondary/10 px-2.5 py-1"
-                >
-                  <span className="font-label-sm text-label-sm text-secondary">
-                    {seat.row}
-                    {seat.number}
-                  </span>
-                  <button
-                    type="button"
-                    aria-label={`Hapus kursi ${seat.row}${seat.number}`}
-                    onClick={() => on_remove_seat(seat.seat_id)}
-                    className="text-secondary/60 transition-colors hover:text-danger"
-                  >
-                    <X size={12} />
-                  </button>
+            /* One block per tier — a selection may span several. */
+            <div className="space-y-4">
+              {seat_groups.map((group) => (
+                <div key={group.ticket_tier_id}>
+                  <div className="mb-2 flex items-baseline justify-between gap-2">
+                    <p className="font-label-sm text-label-sm font-bold text-text-primary">
+                      {group.tier_name}
+                      <span className="ml-1.5 font-normal text-text-secondary">
+                        × {group.seats.length}
+                      </span>
+                    </p>
+                    <p className="font-label-sm text-label-sm text-text-secondary">
+                      {formatIDR(group.unit_face_value * group.seats.length)}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {group.seats.map((seat) => (
+                      <div
+                        key={seat.seat_id}
+                        className="flex items-center gap-1.5 rounded-full border border-secondary/30 bg-secondary/10 px-2.5 py-1"
+                      >
+                        <span className="font-label-sm text-label-sm text-secondary">
+                          {seat.row}
+                          {seat.number}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Remove seat ${seat.row}${seat.number}`}
+                          onClick={() => on_remove_seat(seat.seat_id)}
+                          className="text-secondary/60 transition-colors hover:text-danger"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -199,16 +288,20 @@ export function SelectionPanel({
             Order Summary
           </h3>
           <div className="space-y-2.5">
+            {/* One row per tier so a mixed selection shows what it is made of,
+                rather than a single opaque "tickets" line. */}
+            {cart_items.map((item) => (
+              <div key={item.cart_item_id} className="flex items-center justify-between">
+                <span className="font-body-sm text-body-sm text-text-secondary">
+                  {item.ticket_category_name} ({item.quantity})
+                </span>
+                <span className="font-body-sm text-body-sm text-text-primary">
+                  {formatIDR(item.unit_face_value * item.quantity)}
+                </span>
+              </div>
+            ))}
             <div className="flex items-center justify-between">
-              <span className="font-body-sm text-body-sm text-text-secondary">
-                Harga Tiket ({ticket_count})
-              </span>
-              <span className="font-body-sm text-body-sm text-text-primary">
-                {formatIDR(breakdown.subtotal_face_value)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="font-body-sm text-body-sm text-text-secondary">Biaya Layanan</span>
+              <span className="font-body-sm text-body-sm text-text-secondary">Service Fee</span>
               <span className="font-body-sm text-body-sm text-text-primary">
                 {formatIDR(breakdown.total_platform_service_fee)}
               </span>
@@ -229,7 +322,7 @@ export function SelectionPanel({
                 </span>
               </div>
               <p className="mt-1 font-body-sm text-body-sm text-text-secondary">
-                Biaya pembayaran dihitung setelah metode dipilih.
+                Payment fees are calculated once you choose a method.
               </p>
             </div>
           </div>
@@ -244,12 +337,12 @@ export function SelectionPanel({
           onClick={on_proceed}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 font-label-md text-label-md text-white transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {is_submitting ? "Mengamankan kursi..." : "Proceed to Checkout"}
+          {is_submitting ? "Securing your seats…" : "Proceed to Checkout"}
           {!is_submitting && <ArrowRight size={16} />}
         </button>
         <div className="mt-2.5 flex items-center justify-center gap-1.5 font-body-sm text-body-sm text-text-secondary">
           <Lock size={12} />
-          Kursi ditahan sementara setelah Anda lanjut
+          Your seats are held for 10 minutes once you continue
         </div>
       </div>
     </div>

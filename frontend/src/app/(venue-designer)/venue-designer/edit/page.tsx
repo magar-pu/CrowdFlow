@@ -15,7 +15,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { X } from "lucide-react";
 import { EditorSidebar } from "@/components/venue-editor/EditorSidebar";
 import { HierarchyPanel } from "@/components/venue-editor/HierarchyPanel";
-import { FacilityIconsPanel } from "@/components/venue-editor/FacilityIconsPanel";
 import { FloatingToolbar } from "@/components/venue-editor/FloatingToolbar";
 import { SeatMapperCanvas } from "@/components/venue-editor/SeatMapperCanvas";
 import { SeatPropertiesPanel } from "@/components/venue-editor/SeatPropertiesPanel";
@@ -42,8 +41,6 @@ function VenueDesignerEditor() {
   const layoutId = Number(searchParams.get("layoutId"));
 
   const {
-    active_tool,
-    set_active_tool,
     sections,
     renumber_seats,
     selected_seat,
@@ -62,6 +59,9 @@ function VenueDesignerEditor() {
   >(null);
   const [hydrating, set_hydrating] = useState(true);
   const [load_error, set_load_error] = useState<string | null>(null);
+  // Owned here rather than in EditorSidebar: the canvas margin below has to
+  // follow the same value, and the sidebar is position:fixed.
+  const [sidebar_collapsed, set_sidebar_collapsed] = useState(false);
 
   const persistence = useVenueLayoutPersistence();
 
@@ -109,8 +109,6 @@ function VenueDesignerEditor() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-surface">
       <EditorSidebar
-        active_tool={active_tool}
-        on_tool_change={set_active_tool}
         on_save={async () => {
           // Labels drift while a plan is being built (each seat array restarts
           // at row A). Normalise from final geometry before the plan is saved.
@@ -125,9 +123,25 @@ function VenueDesignerEditor() {
           }
         }}
         mode="admin"
-      />
+        is_collapsed={sidebar_collapsed}
+        on_toggle_collapse={() => set_sidebar_collapsed((v) => !v)}
+      >
+        {/* The hierarchy lives INSIDE the sidebar now. It used to be a second
+            fixed column beside it, which cost ~256px of canvas and gave the
+            editor two separate collapse controls. */}
+        <HierarchyPanel
+          sections={sections}
+          selected_section_id={selected_hierarchy_section}
+          on_section_select={set_selected_hierarchy_section}
+        />
+      </EditorSidebar>
 
-      <div className="ml-64 flex flex-1 flex-col overflow-hidden">
+      {/* Must track EditorSidebar's width exactly — the sidebar is fixed, so
+          this margin is the only thing keeping content clear of it, and it has
+          to follow the collapse toggle too. */}
+      <div
+        className={`${sidebar_collapsed ? "ml-[88px]" : "ml-[280px]"} flex flex-1 flex-col overflow-hidden transition-all duration-300`}
+      >
         {/* Context header: which venue + layout is being edited, and the exit. */}
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-subtle bg-surface-container-low px-4">
           <div className="flex items-center gap-2 min-w-0">
@@ -152,71 +166,23 @@ function VenueDesignerEditor() {
         </header>
 
         <main className="flex flex-1 overflow-hidden">
-          {active_tool === "section_zone" && (
-            <div className="flex h-full w-full overflow-hidden">
-              <div className="relative h-full flex-1 overflow-hidden">
-                <SeatMapperCanvas
-                  sections={sections}
-                  selected_seat={selected_seat}
-                  on_seat_click={select_seat}
-                  zoom_level={zoom_level}
-                  is_locked_mode={true}
-                />
-                <FloatingToolbar />
-              </div>
-              {/* Ticket pricing is deliberately absent here. A venue layout is
-                  an untiered, reusable template; tiers are painted onto seats
-                  per event in the organizer workspace (WorkspaceSeatingAssign). */}
-            </div>
-          )}
+          {/* Canvas, then seat properties/arrange on the right. The hierarchy
+              is in the sidebar. */}
+          <div className="relative h-full flex-1 overflow-hidden">
+            <FloatingToolbar />
+            <SeatMapperCanvas
+              sections={sections}
+              selected_seat={selected_seat}
+              on_seat_click={select_seat}
+              zoom_level={zoom_level}
+            />
+          </div>
 
-          {(active_tool === "seat_mapper" || active_tool === "facility_icons") && (
-            <>
-              {active_tool === "seat_mapper" && (
-                <HierarchyPanel
-                  sections={sections}
-                  selected_section_id={selected_hierarchy_section}
-                  on_section_select={set_selected_hierarchy_section}
-                />
-              )}
-
-              {active_tool === "facility_icons" && <FacilityIconsPanel />}
-
-              <div className="relative h-full flex-1 overflow-hidden">
-                <FloatingToolbar />
-                <SeatMapperCanvas
-                  sections={sections}
-                  selected_seat={selected_seat}
-                  on_seat_click={select_seat}
-                  zoom_level={zoom_level}
-                />
-              </div>
-
-              {active_tool === "seat_mapper" && (
-                <>
-                  {/* Multi-seat selection takes over the right sidebar; a single
-                      selected seat falls back to its properties. */}
-                  <SeatArrangePanel />
-                  {multi_selected_seat_ids.length < 2 && (
-                    <SeatPropertiesPanel seat={selected_seat} on_update={update_seat} />
-                  )}
-                </>
-              )}
-            </>
-          )}
-
-          {active_tool !== "section_zone" && active_tool !== "seat_mapper" && active_tool !== "facility_icons" && (
-            <div className="flex flex-1 items-center justify-center bg-background">
-              <div className="text-center">
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-container-low">
-                  <span className="text-2xl">🚧</span>
-                </div>
-                <h2 className="text-lg font-semibold text-primary">
-                  {active_tool.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}
-                </h2>
-                <p className="mt-1 text-sm text-text-secondary">This tool is coming soon.</p>
-              </div>
-            </div>
+          {/* Multi-seat selection takes over the right sidebar; a single
+              selected seat falls back to its properties. */}
+          <SeatArrangePanel />
+          {multi_selected_seat_ids.length < 2 && (
+            <SeatPropertiesPanel seat={selected_seat} on_update={update_seat} />
           )}
         </main>
       </div>

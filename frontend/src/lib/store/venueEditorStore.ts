@@ -9,8 +9,8 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { parse_layout_import, type ImportResult } from "@/lib/venueLayout/importLayout";
 import type {
-  VenueEditorTool,
   VenueSection,
   VenueSeat,
   VenueFacility,
@@ -227,7 +227,6 @@ function compute_seat_labels(
 
 interface VenueEditorStore {
   // ── Editor state ──────────────────────────────────────────────────────
-  active_tool: VenueEditorTool;
   drawing_mode: CanvasDrawingMode;
   /** Flat list of every seat in the venue. Seats are physical and exist
    *  independently of sections, which are event-level grouping tags. */
@@ -280,7 +279,6 @@ interface VenueEditorStore {
   layout_name: string;
 
   // ── Actions ───────────────────────────────────────────────────────────
-  set_active_tool: (tool: VenueEditorTool) => void;
   set_drawing_mode: (mode: CanvasDrawingMode) => void;
   select_seat: (seat: VenueSeat | null) => void;
   set_multi_selected_seats: (ids: string[]) => void;
@@ -358,7 +356,7 @@ interface VenueEditorStore {
   set_snap_threshold: (value: number) => void;
   snap_position: (value: number, axis?: "x" | "y") => number;
   export_layout_json: () => void;
-  import_layout_json: (json_string: string) => void;
+  import_layout_json: (json_string: string) => ImportResult;
   reset_layout: () => void;
   validate_for_publish: () => ValidationError[];
 
@@ -390,7 +388,6 @@ export const useVenueEditorStore = create<VenueEditorStore>()(
   persist(
     (set, get) => ({
   // ── Initial state (from mock data) ────────────────────────────────────
-  active_tool: "seat_mapper",
   drawing_mode: "pan",
   seats: mockVenueSeats,
   sections: mockVenueSections,
@@ -427,7 +424,6 @@ export const useVenueEditorStore = create<VenueEditorStore>()(
   blueprint: undefined,
 
   // ── Actions ───────────────────────────────────────────────────────────
-  set_active_tool: (tool) => set({ active_tool: tool }),
   set_drawing_mode: (mode) => set({ drawing_mode: mode }),
 
   set_blueprint: (blueprint) => set({ blueprint }),
@@ -1064,30 +1060,39 @@ export const useVenueEditorStore = create<VenueEditorStore>()(
     document.body.removeChild(a);
   },
 
+  /**
+   * Replaces the whole layout from a user-supplied file.
+   *
+   * Everything here has already been rebuilt field-by-field by
+   * parse_layout_import — the parsed object is never spread into state. Only
+   * ids that survived sanitisation are written, so callers must go through
+   * parse_layout_import rather than handing raw JSON.parse output to `set`.
+   *
+   * Returns a result instead of throwing so the UI can render the reason.
+   */
   import_layout_json: (json_string: string) => {
-    try {
-      const data = JSON.parse(json_string);
-      if (!data.sections || !data.stage_shape) {
-        throw new Error("Invalid layout file format");
-      }
-      set({
-        seats: data.seats || [],
-        sections: data.sections,
-        facilities: data.facilities || [],
-        stage_shape: data.stage_shape,
-        pricing_tiers: data.pricing_tiers || [],
-        event_title: data.event_title || "Imported Event",
-        venue_name: data.venue_name || "Imported Venue",
-        base_currency: data.base_currency || "IDR",
-        tax_rate: data.tax_rate || 0,
-        past: [],
-        future: [],
-      });
-      get().save_history();
-    } catch (e) {
-      console.error("Failed to import layout:", e);
-      throw e;
-    }
+    const result = parse_layout_import(json_string);
+    if (!result.ok || !result.data) return result;
+
+    const d = result.data;
+    set({
+      seats: d.seats,
+      sections: d.sections,
+      facilities: d.facilities,
+      stage_shape: d.stage_shape,
+      pricing_tiers: d.pricing_tiers,
+      event_title: d.event_title,
+      venue_name: d.venue_name,
+      base_currency: d.base_currency,
+      tax_rate: d.tax_rate,
+      // Selection and history refer to the layout that was just replaced.
+      selected_seat: null,
+      multi_selected_seat_ids: [],
+      past: [],
+      future: [],
+    });
+    get().save_history();
+    return result;
   },
 
   reset_layout: () => {

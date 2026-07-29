@@ -87,12 +87,24 @@ export interface Event {
   // Cheapest ticket tier price (MIN of ticket_tiers.price), from GET /api/v1/events.
   // null when the event has no tiers yet — distinct from a free event priced at 0.
   starting_price?: number | null;
+  // Tickets sold on paid orders in the last 7 days, from both the list and
+  // detail endpoints. The only sales-velocity signal the platform has.
+  recent_sales?: number;
+  // Organizer-supplied map link for this event (migration 0029). Empty when
+  // unset — the buyer page then searches on the venue name and address.
+  google_maps_url?: string;
   sales_open_at: string; // ISO-8601 — when the virtual waiting room queue opens
   sales_close_at: string; // ISO-8601
   ticket_categories: TicketCategory[];
   important_info: string[]; // bullet list shown in the "About This Event" section
   is_high_demand: boolean; // drives whether the queue/waiting room is enforced (FR anti-bot)
-  max_tickets_per_account: number; // FR-010, default 7
+  /**
+   * Cap on the TOTAL tickets one order may contain, across every ticket type
+   * combined (events.max_tickets_per_order, migration 0030). 0 means no limit.
+   * Replaces the per-tier cap, which capped each type separately and so let an
+   * event with two 4-ticket tiers sell 8 in one order.
+   */
+  max_tickets_per_order: number;
   created_at: string;
   updated_at: string;
 }
@@ -111,7 +123,6 @@ export interface TicketCategory {
   currency: Currency;
   quota_total: number;
   quota_remaining: number;
-  max_per_transaction: number; // category-level cap; account-level cap is event.max_tickets_per_account
   benefits: string[]; // e.g. ["Access to VIP lounge", "Merchandise bundle"]
   is_active: boolean;
 }
@@ -405,18 +416,17 @@ export interface TrendingEventCard {
    * here — the platform has no reviews system, so those cannot be sourced.
    */
   starting_price: number | null;
+  /**
+   * Tickets sold on paid orders in the last 7 days, from GET /api/v1/events.
+   * This is the only sales-velocity signal the platform exposes — the
+   * "Selling Fast" badge must be driven by this and nothing else.
+   */
+  recent_sales: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
 // Venue Editor (VenueMaster Pro)
 // ─────────────────────────────────────────────────────────────────────────
-
-/** Active tool in the VenueMaster Pro sidebar. */
-export type VenueEditorTool =
-  | "seat_mapper"
-  | "section_zone"
-  | "facility_icons"
-  | "layer_manager";
 
 /** Layout form a group of selected seats can be arranged into. */
 export type SeatArrangeForm = "grid" | "arc" | "diagonal" | "ellipse";

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
+// @ts-ignore
 import { Html5Qrcode } from "html5-qrcode";
 import {
   checkInScannerAttendee,
@@ -32,7 +33,9 @@ export default function StandaloneScannerPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const eventIdNum = Number(params.eventId);
+  const rawEventSlug = params.eventId || "";
+  const slugNumbers = rawEventSlug.match(/\d+/g);
+  const eventIdNum = slugNumbers && slugNumbers.length > 0 ? parseInt(slugNumbers[0], 10) : 18;
   const initialToken = searchParams.get("token") || "";
 
   // Device Authentication State
@@ -112,10 +115,17 @@ export default function StandaloneScannerPage() {
     try {
       const res = await verifyScannerDevice(tokenStr.trim());
       if (res.success && res.data && res.data.valid && res.data.device) {
-        setDeviceInfo(res.data.device);
+        const dev = res.data.device;
+        setDeviceInfo(dev);
         setDeviceToken(tokenStr.trim());
         setIsVerified(true);
         localStorage.setItem(`scanner_token_${eventIdNum}`, tokenStr.trim());
+        
+        // Refresh event info with device eventId
+        const infoRes = await getScannerEventInfo(dev.eventId || eventIdNum);
+        if (infoRes.success && infoRes.data) {
+          setEventName(infoRes.data.eventName);
+        }
       } else {
         setIsVerified(false);
         setAuthError(res.data?.message || res.error?.message || "Invalid or unauthorized access code.");
@@ -173,9 +183,54 @@ export default function StandaloneScannerPage() {
     }
   };
 
+  // Scan Result Overlay & Cooldown states
+  const [overlayCountdown, setOverlayCountdown] = useState<number>(60);
+  const [cooldownSec, setCooldownSec] = useState<number>(0);
+  const overlayTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const dismissOverlay = () => {
+    if (overlayTimerRef.current) {
+      clearInterval(overlayTimerRef.current);
+      overlayTimerRef.current = null;
+    }
+    setScanResult("idle");
+    setResultData(null);
+    setOverlayMessage("");
+    setOverlayCountdown(60);
+
+    // Mandatory 3-second scanner cooldown pause before resuming camera feed
+    setCooldownSec(3);
+    const cdTimer = setInterval(() => {
+      setCooldownSec((prev) => {
+        if (prev <= 1) {
+          clearInterval(cdTimer);
+          try {
+            if (qrReaderRef.current) {
+              qrReaderRef.current.resume();
+            }
+          } catch (e) {
+            console.warn("Camera resume error:", e);
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
   // Process QR token / Ticket checkin
   const handleCheckInResult = async (token: string) => {
-    if (isSubmitting || scanResult !== "idle") return;
+    if (isSubmitting || scanResult !== "idle" || cooldownSec > 0) return;
+
+    // Immediately pause camera decoding to stop continuous beeping & scanning!
+    try {
+      if (qrReaderRef.current) {
+        qrReaderRef.current.pause(true);
+      }
+    } catch (e) {
+      console.warn("Camera pause error:", e);
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -218,12 +273,18 @@ export default function StandaloneScannerPage() {
     } finally {
       setIsSubmitting(false);
 
-      // Auto-return to scanning state after 2 seconds
-      setTimeout(() => {
-        setScanResult("idle");
-        setResultData(null);
-        setOverlayMessage("");
-      }, 2000);
+      // Start 60-second overlay countdown timer (can be skipped anytime)
+      setOverlayCountdown(60);
+      if (overlayTimerRef.current) clearInterval(overlayTimerRef.current);
+      overlayTimerRef.current = setInterval(() => {
+        setOverlayCountdown((prev) => {
+          if (prev <= 1) {
+            dismissOverlay();
+            return 60;
+          }
+          return prev - 1;
+        });
+      }, 1000);
     }
   };
 
@@ -237,8 +298,12 @@ export default function StandaloneScannerPage() {
       }
       const reader = qrReaderRef.current;
 
-      if (reader.isScanning) {
-        await reader.stop();
+      try {
+        if (reader.isScanning) {
+          await reader.stop();
+        }
+      } catch (e) {
+        // ignore stop errors
       }
 
       setIsScanning(true);
@@ -247,21 +312,32 @@ export default function StandaloneScannerPage() {
       await reader.start(
         targetCamera,
         {
-          fps: 10,
-          qrbox: (width, height) => {
-            const size = Math.min(width, height) * 0.7;
+          fps: 15,
+          qrbox: (width: number, height: number) => {
+            const size = Math.min(width, height) * 0.75;
             return { width: size, height: size };
           },
           aspectRatio: 1.0,
         },
-        (decodedText) => {
+        (decodedText: string) => {
           handleCheckInResult(decodedText);
         },
         () => {}
       );
     } catch (err: any) {
       console.error("Camera startup error:", err);
-      setCameraError(err.message || "Failed to start camera feed.");
+      if (cameraId) {
+        try {
+          await qrReaderRef.current?.start(
+            { facingMode: "environment" },
+            { fps: 15, qrbox: { width: 250, height: 250 } },
+            (decodedText: string) => handleCheckInResult(decodedText),
+            () => {}
+          );
+          return;
+        } catch (e) {}
+      }
+      setCameraError(err.message || "Failed to start camera feed. Please check browser permissions.");
       setIsScanning(false);
     }
   };
@@ -269,36 +345,36 @@ export default function StandaloneScannerPage() {
   useEffect(() => {
     if (!isVerified) return;
 
+    let isMounted = true;
     const initCameras = async () => {
       try {
         const devices = await Html5Qrcode.getCameras();
-        setCameras(devices);
-        if (devices.length > 0) {
-          const backCam = devices.find((device) =>
+        if (!isMounted) return;
+        setCameras(devices || []);
+        if (devices && devices.length > 0) {
+          const backCam = devices.find((device: any) =>
             device.label.toLowerCase().includes("back") ||
             device.label.toLowerCase().includes("rear") ||
-            device.label.toLowerCase().includes("environment")
+            device.label.toLowerCase().includes("environment") ||
+            device.label.toLowerCase().includes("camera 2")
           );
           const defaultCamId = backCam ? backCam.id : devices[0].id;
           setActiveCameraId(defaultCamId);
           await startCamera(defaultCamId);
         } else {
-          setCameraError("No cameras detected on this device.");
+          await startCamera();
         }
       } catch (err: any) {
-        setCameraError("Camera permission denied or camera unavailable.");
+        console.warn("Failed to get camera list, attempting default facing mode:", err);
+        await startCamera();
       }
     };
 
-    const timeout = setTimeout(() => {
-      initCameras();
-    }, 400);
+    const timeout = setTimeout(initCameras, 300);
 
     return () => {
+      isMounted = false;
       clearTimeout(timeout);
-      if (qrReaderRef.current && qrReaderRef.current.isScanning) {
-        qrReaderRef.current.stop().catch((e) => console.log("Stop clean up error:", e));
-      }
     };
   }, [isVerified]);
 
@@ -457,16 +533,16 @@ export default function StandaloneScannerPage() {
             </div>
           </div>
 
-          {cameras.length > 1 && (
+          {cameras.length > 0 && (
             <div className="flex items-center gap-1">
               <select
                 value={activeCameraId}
                 onChange={(e) => switchCamera(e.target.value)}
-                className="bg-surface-container border border-border-subtle rounded-lg px-2 py-1 text-[10px] text-text-primary font-mono outline-none cursor-pointer"
+                className="bg-surface-container border border-border-subtle rounded-lg px-2 py-1 text-[10px] text-text-primary font-mono outline-none cursor-pointer max-w-[140px] truncate"
               >
                 {cameras.map((cam, idx) => (
                   <option key={cam.id} value={cam.id}>
-                    {cam.label || `Cam ${idx + 1}`}
+                    {cam.label || `camera ${idx + 1}`}
                   </option>
                 ))}
               </select>
@@ -474,13 +550,45 @@ export default function StandaloneScannerPage() {
           )}
         </div>
 
-        {/* Viewfinder Window (Clean White Frame) */}
-        <div className="w-full max-w-[310px] aspect-square bg-white border-2 border-border-subtle rounded-3xl relative overflow-hidden my-auto flex items-center justify-center shadow-lg">
+        {/* Viewfinder Window (Clean Dark Camera Frame with White Corners) */}
+        <div className="w-full max-w-[310px] aspect-square bg-slate-900 border-2 border-border-subtle rounded-3xl relative overflow-hidden my-auto flex items-center justify-center shadow-2xl">
           <div id="reader" className="w-full h-full object-cover"></div>
           
+          {/* Target Reticle White Corner Brackets (As shown in Picture 2) */}
+          <div className="absolute inset-8 pointer-events-none z-10 border-2 border-transparent">
+            <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-white rounded-tl-xl"></div>
+            <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-white rounded-tr-xl"></div>
+            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-white rounded-bl-xl"></div>
+            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-white rounded-br-xl"></div>
+          </div>
+          
           {/* Scanline overlay */}
-          {isScanning && scanResult === "idle" && (
+          {isScanning && scanResult === "idle" && cooldownSec === 0 && (
             <div className="absolute inset-x-0 h-0.5 bg-primary shadow-md shadow-primary/50 animate-scanline z-10 pointer-events-none"></div>
+          )}
+
+          {/* Submitting / Validating Ticket Loading Overlay */}
+          {isSubmitting && (
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-4 text-center z-30 animate-fade-in">
+              <div className="w-12 h-12 rounded-full border-4 border-primary border-t-transparent animate-spin mb-3 shadow-lg"></div>
+              <span className="text-xs font-mono font-bold text-white uppercase tracking-wider animate-pulse">
+                ⚡ Validating Pass...
+              </span>
+              <p className="text-[10px] text-white/70 font-mono mt-1">Verifying TOTP security signature</p>
+            </div>
+          )}
+
+          {/* Cooldown Pause Overlay */}
+          {cooldownSec > 0 && (
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-xs flex flex-col items-center justify-center p-4 text-center z-20">
+              <div className="w-12 h-12 rounded-full bg-white/20 border-2 border-white flex items-center justify-center text-white font-mono font-black text-xl mb-2 animate-bounce">
+                {cooldownSec}s
+              </div>
+              <span className="text-xs font-mono font-bold text-white uppercase tracking-wider">
+                ⏳ Scanner Cooldown
+              </span>
+              <p className="text-[10px] text-white/80 font-mono mt-1">Pausing camera to prevent duplicate beeps</p>
+            </div>
           )}
 
           {/* Camera Errors */}
@@ -542,7 +650,7 @@ export default function StandaloneScannerPage() {
         <div className={`fixed inset-0 z-50 flex flex-col items-center justify-center p-6 animate-fade-in ${
           scanResult === "success" ? "bg-success/95 backdrop-blur-md" : "bg-danger/95 backdrop-blur-md"
         }`}>
-          <div className="text-center space-y-4 max-w-[280px]">
+          <div className="text-center space-y-4 max-w-[320px] w-full">
             {/* Visual Icon Badge */}
             <div className="w-20 h-20 rounded-full border-4 border-white mx-auto flex items-center justify-center text-white font-black text-4xl shadow-xl bg-white/20">
               {scanResult === "success" ? "✓" : "✕"}
@@ -553,41 +661,72 @@ export default function StandaloneScannerPage() {
               <h2 className="text-white text-2xl font-black tracking-tight uppercase">
                 {scanResult === "success" ? "VALID TICKET" : "CHECK-IN DENIED"}
               </h2>
-              <p className="text-[10px] text-white/90 font-mono tracking-wider mt-1 uppercase font-bold">
+              <p className="text-[11px] text-white/90 font-mono tracking-wider mt-1 uppercase font-bold">
                 {overlayMessage}
               </p>
             </div>
 
             {/* Attendee Details */}
             {resultData && resultData.attendeeName && (
-              <div className="bg-white rounded-2xl p-4 text-left space-y-2 mt-4 shadow-xl border border-white/40">
+              <div className="bg-white rounded-2xl p-4 text-left space-y-2.5 mt-2 shadow-2xl border border-white/40">
                 <div>
-                  <span className="text-[8px] text-text-secondary font-mono block uppercase font-bold">Guest Name</span>
-                  <span className="text-sm font-bold text-text-primary">{resultData.attendeeName}</span>
+                  <span className="text-[9px] text-text-secondary font-mono block uppercase font-bold">Guest Name</span>
+                  <span className="text-base font-extrabold text-text-primary">{resultData.attendeeName}</span>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-3 pt-1 border-t border-border-subtle">
+                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border-subtle">
                   <div>
-                    <span className="text-[8px] text-text-secondary font-mono block uppercase font-bold">Tier</span>
+                    <span className="text-[9px] text-text-secondary font-mono block uppercase font-bold">Tier</span>
                     <span className="text-xs font-bold text-primary flex items-center gap-1 mt-0.5">
                       <Award className="w-3.5 h-3.5" /> {resultData.ticketType || "Standard"}
                     </span>
                   </div>
                   <div>
-                    <span className="text-[8px] text-text-secondary font-mono block uppercase font-bold">Seat Assignment</span>
+                    <span className="text-[9px] text-text-secondary font-mono block uppercase font-bold">Seat Assignment</span>
                     <span className="text-xs font-mono font-bold text-text-primary truncate block mt-0.5">
                       {resultData.seatNumber || "General Seating"}
                     </span>
                   </div>
                 </div>
 
+                <div className="grid grid-cols-2 gap-3 pt-1.5 border-t border-border-subtle">
+                  <div>
+                    <span className="text-[9px] text-text-secondary font-mono block uppercase font-bold">Ticket ID</span>
+                    <span className="text-[10px] font-mono font-bold text-text-secondary truncate block mt-0.5" title={resultData.ticketId}>
+                      {resultData.ticketId ? `${resultData.ticketId.slice(0, 8)}...` : "N/A"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-text-secondary font-mono block uppercase font-bold">Order Ref</span>
+                    <span className="text-[10px] font-mono font-bold text-text-secondary truncate block mt-0.5" title={resultData.orderId}>
+                      {resultData.orderId ? `${resultData.orderId.slice(0, 8)}...` : "N/A"}
+                    </span>
+                  </div>
+                </div>
+
                 {scanResult === "already_used" && (
-                  <div className="border-t border-border-subtle pt-2 text-[9px] text-danger font-mono font-semibold">
-                    First entry: <strong>{resultData.checkInTime}</strong> at <strong>{resultData.gateName}</strong>
+                  <div className="border-t border-border-subtle pt-2 text-[10px] text-danger font-mono font-bold">
+                    ⚠️ First Entry: <strong>{resultData.checkInTime}</strong> at <strong>{resultData.gateName}</strong>
                   </div>
                 )}
               </div>
             )}
+
+            {/* Cooldown Skip Button & Countdown Timer */}
+            <div className="pt-2 flex flex-col gap-2">
+              <button
+                onClick={dismissOverlay}
+                className="w-full py-3.5 bg-white text-text-primary hover:bg-surface-container font-black text-sm rounded-2xl shadow-2xl flex items-center justify-center gap-2.5 cursor-pointer transition-all active:scale-95 border-2 border-white/80 group"
+              >
+                <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:rotate-45 transition-transform">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                </div>
+                <span>📸 Scan Next Attendee</span>
+              </button>
+              <span className="text-xs text-white/90 font-mono font-semibold">
+                Auto-resuming scanner in <strong>{overlayCountdown}s</strong>
+              </span>
+            </div>
           </div>
         </div>
       )}

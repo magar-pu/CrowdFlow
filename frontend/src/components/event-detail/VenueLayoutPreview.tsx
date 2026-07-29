@@ -13,11 +13,8 @@
 
 "use client";
 
-import Link from "next/link";
 import { useMemo } from "react";
-// Aliased: an unqualified `Map` here would shadow the global Map constructor
-// used to build the seat-colour lookup below.
-import { Map as MapIcon, Ticket } from "lucide-react";
+import { Ticket } from "lucide-react";
 import { LayoutPreview } from "@/components/venue-editor/LayoutPreview";
 import { useEventSeatMap } from "@/lib/hooks/useEventSeatMap";
 import { seatMapToRenderableLayout } from "@/lib/api/booking";
@@ -89,12 +86,12 @@ export function VenueLayoutPreview({ event_id }: VenueLayoutPreviewProps) {
             <Ticket size={20} className="text-secondary" />
           </div>
           <p className="font-label-md text-label-md font-bold text-text-primary">
-            Tiket bebas pilih tempat
+            Open seating
           </p>
           <p className="max-w-sm font-body-sm text-body-sm text-text-secondary">
             {ga_tiers.length > 0
-              ? "Event ini tidak menggunakan nomor kursi. Pilih jumlah tiket saat checkout."
-              : "Denah kursi untuk event ini belum tersedia."}
+              ? "This event has no assigned seat numbers. Choose how many tickets you want at checkout."
+              : "A seat map isn't available for this event yet."}
           </p>
         </div>
       </PreviewFrame>
@@ -131,19 +128,16 @@ export function VenueLayoutPreview({ event_id }: VenueLayoutPreviewProps) {
           </div>
         )}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle bg-white px-4 py-3">
+        {/* No "View Full Venue Layout" link: this preview IS the full layout,
+            drawn from the event's real bound seat map. The page it pointed at
+            rendered a hand-drawn SVG stadium for a hardcoded mock venue,
+            ignoring the event id entirely, and has been deleted. */}
+        <div className="border-t border-border-subtle bg-white px-4 py-3">
           <p className="font-label-sm text-label-sm text-text-secondary">
             {seat_count > 0
-              ? `${seat_count.toLocaleString("id-ID")} kursi tersedia di denah`
-              : "Denah venue"}
+              ? `${seat_count.toLocaleString("en-US")} seats on this map`
+              : "Venue layout"}
           </p>
-          <Link
-            href={`/events/${event_id}/venue`}
-            className="flex items-center gap-2 rounded-xl border border-border-subtle bg-white px-4 py-2 font-label-md text-label-md text-text-primary transition-colors hover:bg-surface-container-low"
-          >
-            <MapIcon size={16} className="text-secondary" />
-            View Full Venue Layout
-          </Link>
         </div>
       </div>
     </PreviewFrame>

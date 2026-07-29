@@ -16,6 +16,24 @@ export type AuditorView =
 
 export type OrganizerStatus = 'Pending' | 'Verified' | 'Need Revision' | 'Rejected' | 'Suspended';
 
+/**
+ * An organizer application as the auditor console renders it.
+ *
+ * Fields removed rather than kept optional, because nothing anywhere produces
+ * them — not the application form, not organizer_applications, not
+ * GetOrganizer:
+ *
+ *   companyType, businessLicense, npwp, registrationNumber,
+ *   picPosition, picNationalId, picSelfieUrl,
+ *   industry, eventCategory, yearsInBusiness, previousEventsCount,
+ *   estimatedAnnualRevenue
+ *
+ * Each was rendered from a hardcoded fallback in the detail page's mapper, so
+ * every organizer showed the same invented NIB, NPWP, NIK and revenue figure.
+ * Leaving them declared would let that come back; a compile error is the point.
+ * If any of them is ever genuinely collected, add it back with the column that
+ * backs it.
+ */
 export interface OrganizerVerification {
   id: string;
   name: string;
@@ -26,36 +44,22 @@ export interface OrganizerVerification {
   lastActivity: string;
   province: string;
   businessType: string;
-  riskScore: number; // 0-100
-  riskCategory: 'Low' | 'Medium' | 'High' | 'Critical';
-  
+
   // Company details
-  companyType: string;
-  businessLicense: string;
-  npwp: string;
   address: string;
-  registrationNumber: string;
-  
+
   // PIC Info
   picName: string;
-  picPosition: string;
   picEmail: string;
   picPhone: string;
-  picNationalId: string;
-  picSelfieUrl: string;
-  
-  // Business info
-  industry: string;
-  eventCategory: string;
-  yearsInBusiness: number;
-  previousEventsCount: number;
-  estimatedAnnualRevenue: number;
-  
+
   // Bank details
   bankName: string;
   bankAccountHolder: string;
   bankAccountNumber: string;
-  bankVerificationStatus: 'Verified' | 'Pending' | 'Unverified';
+  /** 'Pending' is gone: it was only ever produced by a mapper fallback covering
+   *  a field the backend never sent. The column holds verified|unverified. */
+  bankVerificationStatus: 'Verified' | 'Unverified';
   
   // Checklists
   checklist: {
@@ -66,15 +70,6 @@ export interface OrganizerVerification {
     addressVerified: boolean;
     emailVerified: boolean;
     phoneVerified: boolean;
-  };
-  
-  // Risk assessment parameters
-  riskAssessment: {
-    identityMatch: boolean;
-    companyValidation: boolean;
-    fraudHistory: boolean;
-    duplicateAccount: boolean;
-    suspiciousActivity: boolean;
   };
   
   // Notes
@@ -111,14 +106,15 @@ export interface PayoutRequest {
   eventName: string;
   eventDate: string;
   venue: string;
-  completionStatus: 'Completed' | 'Ongoing' | 'Cancelled';
+  // The event's real lifecycle status (events.status), not a completion state —
+  // there is no column recording whether an event actually took place. Empty
+  // renders as "Not provided".
+  completionStatus: string;
   revenue: number;
   netRevenue: number;
   requestedAmount: number;
   requestDate: string;
   status: PayoutStatus;
-  riskLevel: RiskLevel;
-  riskScore: number; // 0-100
   currentAuditor: string;
 
   // Organizer profile (denormalized from Organizer Verification module)
@@ -130,18 +126,22 @@ export interface PayoutRequest {
 
   // Event details
   ticketCapacity: number;
+  /** 0 when the organizer holds the role without ever filing an application. */
+  applicationId: number;
+  eventId: number;
 
-  // Sales summary
+  // Sales summary, derived from paid/refunded `orders`.
+  // Chargebacks and manual adjustments were removed: no table records either,
+  // so they could only ever render a fake 0 on a money-release screen.
   salesSummary: {
     ticketsSold: number;
     grossRevenue: number;
     platformFee: number;
     paymentGatewayFee: number;
+    /** VAT actually charged on the two fees. The rate is per-order, not a fixed 11%. */
+    ppn: number;
     entertainmentTax: number;
-    vat: number;
     refundAmount: number;
-    chargebackAmount: number;
-    otherAdjustments: number;
     netRevenue: number;
   };
 
@@ -150,7 +150,6 @@ export interface PayoutRequest {
     revenueMatch: boolean;
     ticketSalesMatch: boolean;
     refundCalculated: boolean;
-    chargebackApplied: boolean;
     platformFeeCorrect: boolean;
     taxCorrect: boolean;
     netRevenueCorrect: boolean;
@@ -168,17 +167,18 @@ export interface PayoutRequest {
   bankName: string;
   bankAccountNumber: string;
   bankAccountHolder: string;
-  swiftCode: string;
   bankVerificationStatus: 'Verified' | 'Pending' | 'Unverified';
+  /** Who confirmed the account, and when. Empty on rows grandfathered in by
+   *  migration 0022 — those were verified by nobody, and naming an actor would
+   *  fabricate an audit trail. */
+  bankVerifiedBy: string;
+  bankVerifiedAt: string;
 
-  // Fraud checks
+  // Fraud checks. Only conditions the backend can actually evaluate:
+  // a second approved payout for the event, and a request exceeding net revenue.
   fraudDetection: {
     duplicatePayout: boolean;
     suspiciousRevenue: boolean;
-    unusualRefundRate: boolean;
-    highChargeback: boolean;
-    multipleBankChanges: boolean;
-    abnormalTicketSales: boolean;
     hasAlert: boolean;
     alertMessage?: string;
   };
@@ -219,15 +219,33 @@ export const PAYOUT_REJECTION_REASONS = [
 
 export type ReviewStage = 'Submitted' | 'Document Verification' | 'Event Validation' | 'Final Approval';
 
-export type RiskLevel = 'Low' | 'Medium' | 'High' | 'Critical';
-
 export interface ChecklistItem {
   label: string;
   done: boolean;
 }
 
+/**
+ * Which table a review document came from. IDs are unique only WITHIN a source —
+ * organizer_documents and event_documents are separate SERIAL sequences — so an
+ * id on its own does not identify a document. Always pair it with the source.
+ */
+export type ReviewDocumentSource = 'organizer' | 'event';
+
+/**
+ * Stable identity for a review document. An id alone is NOT unique — both tables
+ * can hold an id of 5 — so every lookup, mutation and optimistic update keys on
+ * the source/id pair.
+ */
+export function docKey(doc: { id?: string | number; source?: ReviewDocumentSource }): string {
+  return `${doc.source ?? 'organizer'}:${doc.id}`;
+}
+
 export interface ReviewDocument {
   id?: string | number;
+  /** Absent on legacy payloads; treated as 'organizer'. */
+  source?: ReviewDocumentSource;
+  /** Auditor's rejection reason (per-event documents only). */
+  reviewNotes?: string;
   name: string;
   category: 'Permits & Licenses' | 'Vendor & Venue Contracts' | 'Artist & Talent Agreements' | 'Supporting Documents' | 'Business License' | 'Insurance' | 'Tax Document' | 'Emergency Plan';
   status: 'VERIFIED' | 'WAITING REVIEW' | 'READY' | 'REJECTED' | 'MISSING';
@@ -238,7 +256,13 @@ export interface ReviewDocument {
 }
 
 export interface OrganizerDetail {
+  /** organizer_applications.id — 0 when the organizer has no application row. */
+  applicationId: number;
   companyName: string;
+  /**
+   * Not a licence number: no such column exists. The backend reports the
+   * verification state of the organizer's NIB/SIUP document here.
+   */
   businessLicense: string;
   pic: string;
   email: string;
@@ -258,27 +282,16 @@ export interface VenueDetail {
   checklist: ChecklistItem[];
 }
 
-export interface Vendor {
-  name: string;
-  category: 'Stage' | 'Lighting' | 'Sound' | 'Food' | 'Merchandise' | 'Cleaning' | 'Security';
-  status: 'Verified' | 'Pending' | 'Rejected';
-  contact: string;
-}
-
-export interface LogisticsDetail {
-  vendorCount: number;
-  securityCount: number;
-  medicalTeam: number;
-  emergencyTeam: number;
-  vendors: Vendor[];
-  emergencyPlan: ChecklistItem[];
-}
-
 export interface TicketTier {
-  category: 'VVIP' | 'VIP' | 'Festival' | 'Regular';
+  /** Free-text tier name from ticket_tiers, not a fixed vocabulary. */
+  category: string;
   price: number;
+  /** Real sellable capacity: painted seats for a seated tier, else allocation_limit. */
   seats: number;
-  status: 'Active' | 'Sold Out' | 'Pending';
+  sold: number;
+  /** True when stock comes from event_seats_matrix rather than allocation_limit. */
+  assignedSeating: boolean;
+  status: 'Active' | 'Sold Out' | 'Pending' | 'Available';
 }
 
 export interface FinanceDetail {
@@ -287,24 +300,18 @@ export interface FinanceDetail {
   gatewayFee: number;
   taxAmount: number;
   netPayout: number;
+  /** events.entertainment_tax_rate — the only per-event tax figure stored. */
+  taxRate: number;
   ticketTiers: TicketTier[];
-  taxConfig: {
-    entertainmentTax: number;
-    ppn: number;
-    region: string;
-    taxPercentage: number;
-    regionMatch: boolean;
-    taxApplied: boolean;
-    ppnApplied: boolean;
-  };
   payout: {
     bank: string;
     accountName: string;
     accountNumber: string;
     verified: boolean;
     estimatedPayout: number;
+    /** False when the organizer has provided no bank details at all. */
+    hasAccount: boolean;
   };
-  complianceChecklist: ChecklistItem[];
 }
 
 export interface ActivityEntry {
@@ -367,18 +374,20 @@ export const LOGISTICS_SECTIONS = [
   'Vendor', 'Security', 'Medical Team', 'Emergency Plan', 'Equipment', 'Stage', 'Lighting', 'Sound',
 ] as const;
 
+// These strings are sent to the organizer verbatim as the rejection reason, so
+// they must match the language of the rest of the console.
 export const DOCUMENT_REJECTION_REASONS = [
-  'Dokumen buram',
-  'Dokumen kadaluarsa',
-  'Dokumen tidak lengkap',
-  'Informasi tidak sesuai',
-  'Nama perusahaan berbeda',
-  'Tanggal tidak valid',
-  'Tidak ada tanda tangan',
-  'Tidak ada stempel resmi',
-  'Format salah',
-  'Dokumen palsu / mencurigakan',
-  'Lainnya',
+  'Document is blurry',
+  'Document has expired',
+  'Document is incomplete',
+  'Information does not match',
+  'Company name differs',
+  'Invalid date',
+  'Missing signature',
+  'Missing official stamp',
+  'Wrong file format',
+  'Document appears forged or suspicious',
+  'Other',
 ] as const;
 
 export interface RevisionTimelineEntry {
@@ -389,9 +398,20 @@ export interface RevisionTimelineEntry {
   timestamp: string;
 }
 
+export interface RevisionDocumentChange {
+  documentType: string;
+  label: string;
+  uploadedAt: string;
+}
+
 export interface OrganizerRevisionResponse {
   comment: string;
-  uploadedFiles: string[];
+  /**
+   * Event documents the organizer re-uploaded in response to this point,
+   * snapshotted when they replied. Empty means they answered without changing
+   * any paperwork — a meaningful answer, not missing data.
+   */
+  documentsChanged: RevisionDocumentChange[];
   respondedAt: string;
 }
 
@@ -432,20 +452,20 @@ export interface EventSubmission {
   lastUpdated: string;
   stage: ReviewStage;
   status: 'Pending' | 'Approved' | 'Rejected' | 'Changes Requested';
-  riskLevel: RiskLevel;
   complianceScore: number;
   missingDocs: number;
   assignedAuditor: string;
   checklist: ChecklistItem[];
   documents: ReviewDocument[];
   venue: string;
+  /** Flat venue address from the review payload; mapped into venueDetail.address. */
+  venueAddress?: string;
   date: string;
   capacity: number;
   ticketSold: number;
   notes?: string;
   organizerDetail: OrganizerDetail;
   venueDetail: VenueDetail;
-  logistics: LogisticsDetail;
   finance: FinanceDetail;
   history: HistoryDetail;
   revisions: RevisionEntry[];

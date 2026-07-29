@@ -21,8 +21,30 @@ type S3Storage struct {
 	publicBucket  string
 	privateBucket string
 	publicBase    string
+	// publicEndpoint is the host a BROWSER can reach. See NewS3Storage.
+	publicEndpoint string
 }
 
+// NewS3Storage builds the storage client.
+//
+// Two endpoints are deliberately kept apart:
+//
+//   - S3_ENDPOINT is where the BACKEND talks to object storage. Under docker
+//     compose that is the compose service name (http://minio:9000) — inside the
+//     backend container "localhost" is the container itself, so a localhost
+//     endpoint makes every PutObject fail with "connection refused".
+//   - S3_PUBLIC_ENDPOINT is the host a BROWSER can reach (http://localhost:9000
+//     in local dev). Presigned URLs are handed to the browser, so they must be
+//     signed for this host.
+//
+// They cannot be reconciled after the fact: SigV4 signs the Host header, so
+// string-replacing the host in a finished presigned URL invalidates it. The
+// only correct fix is to sign against the public host from the start, which is
+// why there is a second client below. Presigning performs no network call, so
+// that client never needs to reach the address it signs for.
+//
+// With a real S3/R2 endpoint both values are the same, and S3_PUBLIC_ENDPOINT
+// can simply be omitted.
 func NewS3Storage() (*S3Storage, error) {
 	endpoint := os.Getenv("S3_ENDPOINT")
 	accessKey := os.Getenv("S3_ACCESS_KEY_ID")
@@ -35,35 +57,54 @@ func NewS3Storage() (*S3Storage, error) {
 	}
 	publicBase := os.Getenv("S3_PUBLIC_BASE_URL")
 
-	// 1. Configure custom resolver to point to MinIO or R2 endpoint
-	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, reg string, options ...interface{}) (aws.Endpoint, error) {
-		return aws.Endpoint{
-			URL:           endpoint,
-			SigningRegion: region,
-		}, nil
-	})
+	publicEndpoint := os.Getenv("S3_PUBLIC_ENDPOINT")
+	if publicEndpoint == "" {
+		publicEndpoint = endpoint
+	}
 
-	// 2. Load AWS Config with custom credentials & custom resolver
-	cfg, err := config.LoadDefaultConfig(context.TODO(),
-		config.WithRegion(region),
-		config.WithEndpointResolverWithOptions(customResolver),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
-	)
+	newClient := func(url string) (*s3.Client, error) {
+		resolver := aws.EndpointResolverWithOptionsFunc(func(service, reg string, options ...interface{}) (aws.Endpoint, error) {
+			return aws.Endpoint{
+				URL:           url,
+				SigningRegion: region,
+			}, nil
+		})
+
+		cfg, err := config.LoadDefaultConfig(context.TODO(),
+			config.WithRegion(region),
+			config.WithEndpointResolverWithOptions(resolver),
+			config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Path-style addressing for R2 and MinIO compatibility.
+		return s3.NewFromConfig(cfg, func(o *s3.Options) {
+			o.UsePathStyle = true
+		}), nil
+	}
+
+	client, err := newClient(endpoint)
 	if err != nil {
 		return nil, err
 	}
 
-	// 3. Instantiate S3 Client (force path-style for R2 and MinIO compatibility)
-	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.UsePathStyle = true
-	})
+	presignSource := client
+	if publicEndpoint != endpoint {
+		presignSource, err = newClient(publicEndpoint)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return &S3Storage{
-		client:        client,
-		presignClient: s3.NewPresignClient(client),
-		publicBucket:  publicBucket,
-		privateBucket: privateBucket,
-		publicBase:    publicBase,
+		client:         client,
+		presignClient:  s3.NewPresignClient(presignSource),
+		publicBucket:   publicBucket,
+		privateBucket:  privateBucket,
+		publicBase:     publicBase,
+		publicEndpoint: publicEndpoint,
 	}, nil
 }
 
@@ -129,14 +170,26 @@ func (s *S3Storage) UploadPrivateFile(ctx context.Context, key string, file io.R
 	return err
 }
 
+// DeletePrivateFile removes an object from the private bucket. Used when a document
+// is replaced or deleted, so the superseded file does not linger in storage after
+// the row that pointed at it is gone.
+func (s *S3Storage) DeletePrivateFile(ctx context.Context, key string) error {
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.privateBucket),
+		Key:    aws.String(key),
+	})
+	return err
+}
+
 // GetPublicURL returns the accessible edge CDN URL for a given object key in the public bucket
 func (s *S3Storage) GetPublicURL(key string) string {
 	if s.publicBase != "" {
 		base := strings.TrimSuffix(s.publicBase, "/")
 		return base + "/" + strings.TrimPrefix(key, "/")
 	}
-	// Fallback/Dev URL path style
-	endpoint := strings.TrimSuffix(os.Getenv("S3_ENDPOINT"), "/")
+	// Fallback/Dev URL path style. Must use the browser-reachable host, not the
+	// container-internal one, since this URL is rendered in a page.
+	endpoint := strings.TrimSuffix(s.publicEndpoint, "/")
 	return endpoint + "/" + s.publicBucket + "/" + strings.TrimPrefix(key, "/")
 }
 

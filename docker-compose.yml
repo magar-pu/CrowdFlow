@@ -9,6 +9,8 @@ services:
     restart: always
     networks:
       - crowdflow-net
+    env_file:
+      - ./frontend/.env
     environment:
       - NODE_ENV=production
       - BACKEND_URL=http://backend:8080
@@ -31,8 +33,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - GOOGLE_CLIENT_ID=91716845059-1l96nahbcu7nb39k1sa9r4ev8p2nitdu.apps.googleusercontent.com
-      - DEV_MODE=false
+      - DEV_MODE=true
       - REDIS_ADDR=redis:6379
       # No DB_DSN here on purpose. It belongs to backend/.env, and an entry in
       # this block would silently win over it — compose `environment:` overrides

@@ -2,10 +2,16 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"log"
 	"strconv"
 	"time"
+
+	"crowdflow-backend/internal/mail"
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -19,15 +25,17 @@ type AuthService struct {
 	oauthConfig *oauth2.Config
 	sessions    *SessionStore
 	accessTTL   time.Duration
+	mailService mail.Service
 }
 
-func NewAuthService(repo Repository, jwtSecret string, oauthConfig *oauth2.Config, sessions *SessionStore, accessTTL time.Duration) *AuthService {
+func NewAuthService(repo Repository, jwtSecret string, oauthConfig *oauth2.Config, sessions *SessionStore, accessTTL time.Duration, mailService mail.Service) *AuthService {
 	return &AuthService{
 		repo:        repo,
 		jwtSecret:   []byte(jwtSecret),
 		oauthConfig: oauthConfig,
 		sessions:    sessions,
 		accessTTL:   accessTTL,
+		mailService: mailService,
 	}
 }
 
@@ -174,9 +182,21 @@ func (s *AuthService) GetGoogleAuthURL(state string) string {
 	return s.oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
 }
 
-func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (string, string, *User, error) {
+func (s *AuthService) GetGoogleAuthURLWithRedirect(state string, redirectURI string) string {
+	cfg := *s.oauthConfig
+	if redirectURI != "" {
+		cfg.RedirectURL = redirectURI
+	}
+	return cfg.AuthCodeURL(state, oauth2.AccessTypeOffline)
+}
+
+func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string, redirectURI ...string) (string, string, *User, error) {
+	cfg := *s.oauthConfig
+	if len(redirectURI) > 0 && redirectURI[0] != "" {
+		cfg.RedirectURL = redirectURI[0]
+	}
 	// Exchange authorization code for token
-	token, err := s.oauthConfig.Exchange(ctx, code)
+	token, err := cfg.Exchange(ctx, code)
 	if err != nil {
 		return "", "", nil, errors.New("failed to exchange authorization code: " + err.Error())
 	}
@@ -214,10 +234,7 @@ func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (st
 			return "", "", nil, err
 		}
 	} else {
-		// Verify that this user account was registered with Google
-		if user.AuthProvider != "google" {
-			return "", "", nil, errors.New("PROVIDER_MISMATCH: native")
-		}
+		// Existing email account: Google has verified identity, allow OAuth login seamlessly
 	}
 
 	access, refresh, err := s.issueTokens(ctx, user)
@@ -226,4 +243,108 @@ func (s *AuthService) HandleGoogleCallback(ctx context.Context, code string) (st
 	}
 
 	return access, refresh, user, nil
+}
+
+func (s *AuthService) SendOTP(email string, purpose string) (string, error) {
+	if email == "" {
+		return "", errors.New("email is required")
+	}
+
+	// Generate 6-digit numeric OTP
+	b := make([]byte, 3)
+	_, _ = rand.Read(b)
+	otp := fmt.Sprintf("%06d", (int(b[0])<<16|int(b[1])<<8|int(b[2]))%1000000)
+
+	if s.mailService != nil {
+		go func() {
+			if err := s.mailService.SendOTP(email, otp, purpose); err != nil {
+				log.Printf("[AUTH MAIL ERROR] Failed to send OTP to %s: %v", email, err)
+			}
+		}()
+	}
+
+	return otp, nil
+}
+
+func (s *AuthService) RequestPasswordReset(email string, resetBaseURL string) error {
+	if email == "" {
+		return errors.New("email is required")
+	}
+
+	// Check if user exists
+	_, err := s.repo.GetByEmail(email)
+	if err != nil {
+		// Silent success to prevent account enumeration
+		log.Printf("[AUTH RESET] Password reset requested for non-existent email: %s", email)
+		return nil
+	}
+
+	// Generate random 32-byte reset token
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	token := hex.EncodeToString(b)
+
+	// Store token in Redis with 1-hour TTL (key: "pwd_reset:<token>", value: email)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	s.sessions.redis.Set(ctx, "pwd_reset:"+token, email, 1*time.Hour)
+
+	resetURL := fmt.Sprintf("%s/forgot-password?token=%s&email=%s", resetBaseURL, token, email)
+
+	if s.mailService != nil {
+		go func() {
+			if err := s.mailService.SendPasswordReset(email, resetURL); err != nil {
+				log.Printf("[AUTH MAIL ERROR] Failed to send password reset email to %s: %v", email, err)
+			}
+		}()
+	}
+
+	return nil
+}
+
+func (s *AuthService) ResetPassword(token, email, newPassword string) error {
+	if token == "" || email == "" || newPassword == "" {
+		return errors.New("token, email, and new password are required")
+	}
+
+	if len(newPassword) < 8 {
+		return errors.New("password must be at least 8 characters")
+	}
+
+	// Verify token from Redis
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	storedEmail, err := s.sessions.redis.Get(ctx, "pwd_reset:"+token).Result()
+	if err != nil {
+		return errors.New("reset token is invalid or has expired")
+	}
+
+	if storedEmail != email {
+		return errors.New("reset token is invalid or has expired")
+	}
+
+	// Look up the user
+	user, err := s.repo.GetByEmail(email)
+	if err != nil {
+		return errors.New("user not found")
+	}
+
+	// Hash the new password
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	// Update password in DB
+	userID, _ := strconv.Atoi(user.ID)
+	if err := s.repo.UpdatePasswordHash(userID, string(hash)); err != nil {
+		return fmt.Errorf("failed to update password: %w", err)
+	}
+
+	// Delete the used token from Redis (one-time use)
+	s.sessions.redis.Del(ctx, "pwd_reset:"+token)
+
+	log.Printf("[AUTH RESET] Password successfully reset for user %s", email)
+	return nil
 }

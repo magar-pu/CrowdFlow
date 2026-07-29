@@ -30,38 +30,41 @@ export default function AuditorOrganizerDetailPage() {
           const isNibVerified = docs.some((d: any) => d.name === "NIB" && d.status === "verified");
           const isSiupVerified = docs.some((d: any) => d.name === "SIUP" && d.status === "verified");
 
+          // Absent fields stay absent. Every `|| "<plausible value>"` below was
+          // a fabrication the auditor could not tell from a real answer — a
+          // fake NIK, a fake NPWP, a fake NIB, a fake BCA account number and a
+          // stock photo as the applicant's logo, identical for every organizer
+          // on the platform. The view now drops empty rows, so "" renders as
+          // nothing rather than as a lie.
+          //
+          // Fields the backend does not return AT ALL (npwp, businessLicense,
+          // registrationNumber, picPosition, picNationalId, industry,
+          // eventCategory, yearsInBusiness, previousEventsCount,
+          // estimatedAnnualRevenue) are simply not mapped — they were removed
+          // from the view and from OrganizerVerification.
           const mapped: OrganizerVerification = {
             id: String(raw.id),
             name: raw.name || "Unknown applicant",
             companyName: raw.companyName || "Unknown company",
-            logo: raw.logo || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80",
+            logo: raw.logo || "",
             status: raw.status || "Pending",
-            registrationDate: raw.registrationDate || new Date().toISOString().split('T')[0],
-            lastActivity: raw.lastActivity || new Date().toISOString().split('T')[0],
-            province: raw.province || "DKI Jakarta",
-            businessType: raw.businessType || "PT / Limited Liability",
-            riskScore: raw.riskScore || 15,
-            riskCategory: raw.riskCategory || "Low",
-            companyType: raw.companyType || "Event Organizer",
-            businessLicense: raw.businessLicense || "NIB-2024-91283",
-            npwp: raw.npwp || "01.234.567.8-012.000",
-            address: raw.address || "Sudirman Central Business District, Jakarta",
-            registrationNumber: raw.registrationNumber || "AHU-001239-AH.01.01",
-            picName: raw.picName || raw.name || "PIC Name",
-            picPosition: raw.picPosition || "Director",
-            picEmail: raw.picEmail || raw.picEmail || "pic@company.com",
-            picPhone: raw.picPhone || raw.picPhone || "+62 812-3456-7890",
-            picNationalId: raw.picNationalId || "3174091234560002",
-            picSelfieUrl: raw.picSelfieUrl || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100",
-            industry: raw.industry || "Creative Industries",
-            eventCategory: raw.eventCategory || "Concerts & Festivals",
-            yearsInBusiness: raw.yearsInBusiness || 2,
-            previousEventsCount: raw.previousEventsCount || 5,
-            estimatedAnnualRevenue: raw.estimatedAnnualRevenue || 150000000,
-            bankName: raw.bankName || "Bank Central Asia (BCA)",
-            bankAccountHolder: raw.bankAccountHolder || raw.companyName || "Company Account",
-            bankAccountNumber: raw.bankAccountNumber || "5012394012",
-            bankVerificationStatus: raw.bankVerificationStatus || "Pending",
+            registrationDate: raw.registrationDate || "",
+            lastActivity: raw.lastActivity || "",
+            province: raw.province || "",
+            businessType: raw.businessType || "",
+            address: raw.address || "",
+            picName: raw.picName || raw.name || "",
+            picEmail: raw.picEmail || "",
+            picPhone: raw.picPhone || "",
+            bankName: raw.bankName || "",
+            bankAccountHolder: raw.bankAccountHolder || "",
+            bankAccountNumber: raw.bankAccountNumber || "",
+            // No fallback. GetOrganizer did not return this field at all, so the
+            // old `|| "Pending"` meant the profile showed "Pending" for every
+            // organizer forever — including accounts an auditor had verified,
+            // which the payout screen displayed correctly at the same time.
+            bankVerificationStatus:
+              raw.bankVerificationStatus === "verified" ? "Verified" : "Unverified",
             checklist: raw.checklist || {
               businessLicenseValid: isNibVerified || isSiupVerified,
               npwpValid: isNpwpVerified,
@@ -70,13 +73,6 @@ export default function AuditorOrganizerDetailPage() {
               addressVerified: false,
               emailVerified: true,
               phoneVerified: true,
-            },
-            riskAssessment: raw.riskAssessment || {
-              identityMatch: true,
-              companyValidation: true,
-              fraudHistory: false,
-              duplicateAccount: false,
-              suspiciousActivity: false,
             },
             internalNotes: raw.internalNotes || "",
             organizerFeedback: raw.organizerFeedback || "",
@@ -87,7 +83,11 @@ export default function AuditorOrganizerDetailPage() {
               category: d.category || "Permits & Licenses",
               status: d.status === "verified" ? "VERIFIED" : d.status === "rejected" ? "REJECTED" : "WAITING REVIEW",
               uploadDate: d.uploadDate || raw.registrationDate,
-              fileUrl: d.fileUrl || "/placeholder-document.pdf"
+              // The object key, kept for reference only. Opening a document goes
+              // through the signed-URL endpoint; this is never a usable href.
+              // The old "/placeholder-document.pdf" fallback turned a missing
+              // document into a working link to an unrelated file.
+              fileUrl: d.fileUrl || ""
             }))
           };
           setOrganizer(mapped);

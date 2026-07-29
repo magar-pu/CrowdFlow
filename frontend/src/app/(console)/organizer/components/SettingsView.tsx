@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { User, Shield, Info, Landmark, HelpCircle } from 'lucide-react';
+import { User } from 'lucide-react';
 import { getMe, updateProfile } from '@/lib/api/auth';
 import { useAuthStore } from '@/lib/store/authStore';
+import PayoutDetailsCard from './PayoutDetailsCard';
+import AccountDocumentsCard from './AccountDocumentsCard';
 
 export default function SettingsView() {
   const { set_user_from_api } = useAuthStore();
@@ -158,26 +160,12 @@ export default function SettingsView() {
         </div>
 
         <div className="lg:col-span-5 space-y-6">
-          <div className="bg-white border border-border-subtle rounded-xl p-6 soft-shadow space-y-4">
-            <h3 className="text-sm font-bold text-text-primary border-b border-border-subtle pb-3 flex items-center gap-2">
-              <Shield className="w-4 h-4 text-secondary" />
-              Security Credentials
-            </h3>
-            <p className="text-xs text-text-secondary leading-relaxed flex items-start gap-2.5">
-              <Info className="w-4 h-4 text-secondary shrink-0 mt-0.5" />
-              This portal uses OAuth 2.0 and Turnstile captcha validation parameters on the live backend endpoint to safeguard organizer transactions and data.
-            </p>
-          </div>
-
-          <div className="bg-white border border-border-subtle rounded-xl p-6 soft-shadow space-y-4">
-            <h3 className="text-sm font-bold text-text-primary border-b border-border-subtle pb-3 flex items-center gap-2">
-              <Landmark className="w-4 h-4 text-secondary" />
-              Payout Settlement Info
-            </h3>
-            <p className="text-xs text-text-secondary leading-relaxed">
-              To update your company bank details or tax registration forms, please contact support at <a href="mailto:compliance@crowdflow.my.id" className="text-primary hover:underline font-semibold">compliance@crowdflow.my.id</a>.
-            </p>
-          </div>
+          {/* Replaces a panel that told organizers to email compliance@ to
+              change their bank details. There was no such flow — the details
+              were simply unreachable after approval, which is why payout
+              records had no account to pay into. */}
+          <PayoutDetailsCard />
+          <AccountDocumentsCard />
         </div>
       </div>
     </div>

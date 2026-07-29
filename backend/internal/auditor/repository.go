@@ -3,6 +3,8 @@ package auditor
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -224,16 +226,6 @@ func (r *PostgresAuditorRepository) ListReviewQueue(ctx context.Context, limit i
 		rev.Status = mapEventReviewStatus(dbStatus)
 		rev.BannerURL = formatBannerURL(rev.BannerURL)
 
-		// Calculate Risk Level based on compliance score and missing docs
-		score := rev.ComplianceScore
-		if rev.MissingDocs > 0 {
-			score -= rev.MissingDocs * 10
-		}
-		if score < 0 {
-			score = 0
-		}
-		rev.RiskLevel = computeRiskLevel(score)
-
 		reviews = append(reviews, &rev)
 	}
 
@@ -360,21 +352,6 @@ func (r *PostgresAuditorRepository) ListEventReviews(ctx context.Context, filter
 		rev.Status = mapEventReviewStatus(dbStatus)
 		rev.BannerURL = formatBannerURL(rev.BannerURL)
 
-		// Calculate Risk Level based on compliance score and missing docs
-		score := rev.ComplianceScore
-		if rev.MissingDocs > 0 {
-			score -= rev.MissingDocs * 10
-		}
-		if score < 0 {
-			score = 0
-		}
-		rev.RiskLevel = computeRiskLevel(score)
-
-		// Filter riskLevel client-side if risk level filter is specified
-		if filters.RiskLevel != "" && string(rev.RiskLevel) != filters.RiskLevel {
-			continue
-		}
-
 		reviews = append(reviews, &rev)
 	}
 
@@ -411,19 +388,33 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 			COALESCE(ear.assigned_auditor_name, ''),
 			COALESCE(v.name, 'No Venue'),
 			e.event_start,
-			COALESCE(v.address || ', ' || v.city || ', ' || v.province, 'No Address'),
+			COALESCE(v.address || ', ' || v.city || ', ' || v.province, ''),
 			COALESCE(v.total_capacity, 0),
-			e.entertainment_tax_rate
+			e.entertainment_tax_rate,
+			e.organizer_id,
+			COALESCE(oa.id, 0),
+			COALESCE(oa.business_name, ''),
+			COALESCE(oa.business_email, ''),
+			COALESCE(oa.business_phone, ''),
+			COALESCE(oa.business_address, ''),
+			COALESCE(oa.status::text, ''),
+			COALESCE(e.description, ''),
+			e.layout_id,
+			e.venue_id
 		FROM events e
 		LEFT JOIN user_profiles up ON up.user_id = e.organizer_id
 		LEFT JOIN event_types et ON et.id = e.event_type_id
 		LEFT JOIN venues v ON v.id = e.venue_id
 		LEFT JOIN auditor_event_reviews ear ON ear.event_id = e.id
+		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
 		WHERE e.id = $1
 	`
 	var submittedAt, lastUpdated, eventStart time.Time
-	var dbStatus, stageStr, addressStr string
+	var dbStatus, stageStr string
 	var taxRate float64
+	var organizerID int
+	var applicationStatus, description string
+	var layoutID, venueID sql.NullInt64
 
 	err := r.db.QueryRowContext(ctx, queryEvent, eventID).Scan(
 		&rev.ID,
@@ -440,9 +431,19 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 		&rev.AssignedAuditor,
 		&rev.Venue,
 		&eventStart,
-		&addressStr,
+		&rev.VenueAddress,
 		&rev.Capacity,
 		&taxRate,
+		&organizerID,
+		&rev.OrganizerDetail.ApplicationID,
+		&rev.OrganizerDetail.CompanyName,
+		&rev.OrganizerDetail.Email,
+		&rev.OrganizerDetail.Phone,
+		&rev.OrganizerDetail.Address,
+		&applicationStatus,
+		&description,
+		&layoutID,
+		&venueID,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -457,19 +458,51 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 	rev.Stage = ReviewStage(stageStr)
 	rev.Status = mapEventReviewStatus(dbStatus)
 	rev.BannerURL = formatBannerURL(rev.BannerURL)
+	// The PIC is the person who owns the account; the company name comes from
+	// their application. Fall back to the account name when no application row
+	// exists so the card never renders blank.
+	rev.OrganizerDetail.Pic = rev.OrganizerName
+	if rev.OrganizerDetail.CompanyName == "" {
+		rev.OrganizerDetail.CompanyName = rev.OrganizerName
+	}
 
-	// 2. Fetch Organizer application documents
+	// 2. Fetch the documents backing this review, from BOTH sources:
+	//   - organizer_documents: the organizer's account-level paperwork (KTP, NPWP,
+	//     NIB), submitted once when they applied and reused for every event.
+	//   - event_documents: submitted for THIS event specifically (proposal, crowd
+	//     permit, PIC id, venue permit).
+	//
+	// The two tables have independent SERIAL sequences, so `source` is carried
+	// through to the client — an id on its own does not identify a document, and
+	// verify/reject route on the pair.
 	queryDocs := `
-		SELECT 
+		SELECT
 			od.id,
+			'` + DocSourceOrganizer + `' AS source,
 			od.document_type,
 			od.file_path,
-			od.status,
-			od.uploaded_at
+			od.status::text,
+			od.uploaded_at,
+			NULL::text AS review_notes
 		FROM organizer_documents od
 		JOIN organizer_applications oa ON oa.id = od.application_id
 		JOIN events e ON e.organizer_id = oa.user_id
 		WHERE e.id = $1
+
+		UNION ALL
+
+		SELECT
+			ed.id,
+			'` + DocSourceEvent + `' AS source,
+			ed.document_type,
+			ed.file_path,
+			ed.status::text,
+			ed.uploaded_at,
+			ed.review_notes
+		FROM event_documents ed
+		WHERE ed.event_id = $1
+
+		ORDER BY source DESC, uploaded_at DESC
 	`
 	rowsDocs, err := r.db.QueryContext(ctx, queryDocs, eventID)
 	if err != nil {
@@ -481,24 +514,48 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 	var missingCount int
 	var verifiedCount int
 	var totalDocs int
+	var licenseStatus string
+	// Which required per-event documents actually arrived, so a genuinely absent
+	// one can be reported rather than silently omitted.
+	presentEventDocs := map[string]bool{}
 
 	for rowsDocs.Next() {
 		var doc ReviewDoc
 		var docStatus string
 		var uploadedAt time.Time
-		err = rowsDocs.Scan(&doc.ID, &doc.DocumentType, &doc.FileURL, &docStatus, &uploadedAt)
+		var reviewNotes sql.NullString
+		err = rowsDocs.Scan(&doc.ID, &doc.Source, &doc.DocumentType, &doc.FileURL, &docStatus, &uploadedAt, &reviewNotes)
 		if err != nil {
 			return nil, err
 		}
 		doc.Status = mapVerificationStatus(docStatus)
 		doc.UploadedAt = formatTime(uploadedAt)
+		if reviewNotes.Valid {
+			doc.ReviewNotes = reviewNotes.String
+		}
 
-		// Map category dynamically
-		switch strings.ToUpper(doc.DocumentType) {
-		case "KTP", "NPWP", "SIUP", "NIB":
-			doc.Category = "Permits & Licenses"
-		default:
-			doc.Category = "Supporting Documents"
+		if doc.Source == DocSourceEvent {
+			presentEventDocs[doc.DocumentType] = true
+			doc.Category = eventDocCategory(doc.DocumentType)
+			doc.DocumentType = eventDocLabel(doc.DocumentType)
+		} else {
+			// Map category dynamically
+			switch strings.ToUpper(doc.DocumentType) {
+			case "KTP", "NPWP", "SIUP", "NIB":
+				doc.Category = "Permits & Licenses"
+			default:
+				doc.Category = "Supporting Documents"
+			}
+			// There is no licence-number column anywhere in the schema. The
+			// closest real signal is whether the organizer's registration
+			// document has been verified, so report that instead of a number.
+			if t := strings.ToUpper(doc.DocumentType); t == "NIB" || t == "SIUP" {
+				// A verified licence wins over a pending one when the organizer
+				// uploaded both NIB and SIUP.
+				if licenseStatus == "" || doc.Status == "verified" {
+					licenseStatus = t + " — " + licenseStatusLabel(doc.Status)
+				}
+			}
 		}
 
 		if doc.Status == "pending" {
@@ -509,19 +566,58 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 		totalDocs++
 		rev.Documents = append(rev.Documents, doc)
 	}
+	if err = rowsDocs.Err(); err != nil {
+		return nil, err
+	}
+
+	// A required event document that was never uploaded is a MISSING row rather
+	// than an absence. Without this the auditor sees three documents and no
+	// indication that a fourth was required — the publish gate blocks this in
+	// normal flow, but an event submitted before the gate existed can reach here.
+	for _, t := range requiredEventDocTypes {
+		if presentEventDocs[t] {
+			continue
+		}
+		rev.Documents = append(rev.Documents, ReviewDoc{
+			Source:       DocSourceEvent,
+			DocumentType: eventDocLabel(t),
+			Category:     eventDocCategory(t),
+			Status:       "missing",
+		})
+		missingCount++
+		totalDocs++
+	}
 	rev.MissingDocs = missingCount
 	if totalDocs == 0 {
 		rev.ComplianceScore = 100
 	} else {
 		rev.ComplianceScore = (verifiedCount * 100) / totalDocs
 	}
-	rev.RiskLevel = computeRiskLevel(rev.ComplianceScore - rev.MissingDocs*10)
 
-	// 3. Fetch Ticket Tiers & Financial metrics
+	if licenseStatus == "" {
+		licenseStatus = "No NIB/SIUP on file"
+	}
+	rev.OrganizerDetail.BusinessLicense = licenseStatus
+
+	// 3. Fetch Ticket Tiers & Financial metrics.
+	//
+	// A tier's real capacity depends on how it sells. Once seats are painted
+	// with a tier, stock comes from event_seats_matrix and allocation_limit is
+	// never consulted again — so pricing a seated event off allocation_limit
+	// produced a projected revenue derived from a number the booking system
+	// ignores (and 0 whenever the organizer left the field alone).
 	queryTiers := `
-		SELECT name, price, allocation_limit, tickets_sold
-		FROM ticket_tiers
-		WHERE event_id = $1
+		SELECT
+			t.name,
+			t.price,
+			t.allocation_limit,
+			t.tickets_sold,
+			COALESCE((
+				SELECT COUNT(*) FROM event_seats_matrix m
+				WHERE m.event_id = $1 AND m.ticket_tier_id = t.id
+			), 0) AS seat_count
+		FROM ticket_tiers t
+		WHERE t.event_id = $1
 	`
 	rowsTiers, err := r.db.QueryContext(ctx, queryTiers, eventID)
 	if err != nil {
@@ -531,34 +627,84 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 
 	tiers := []ReviewTicketTier{}
 	var projectedRev float64
+	var totalSold int
 	for rowsTiers.Next() {
 		var tier ReviewTicketTier
 		var name string
 		var price float64
 		var capLimit int
 		var sold int
+		var seatCount int
 
-		err = rowsTiers.Scan(&name, &price, &capLimit, &sold)
+		err = rowsTiers.Scan(&name, &price, &capLimit, &sold, &seatCount)
 		if err != nil {
 			return nil, err
 		}
 
+		// Seats painted with this tier win over allocation_limit; that is the
+		// rule booking/service.go applies via IsAssignedSeating.
+		capacity := capLimit
+		tier.AssignedSeating = seatCount > 0
+		if tier.AssignedSeating {
+			capacity = seatCount
+		}
+
 		tier.Category = name
 		tier.Price = price
-		tier.Seats = capLimit
-		if sold >= capLimit {
+		tier.Seats = capacity
+		tier.Sold = sold
+		if capacity > 0 && sold >= capacity {
 			tier.Status = "Sold Out"
 		} else {
 			tier.Status = "Available"
 		}
-		projectedRev += price * float64(capLimit)
+		projectedRev += price * float64(capacity)
+		totalSold += sold
 		tiers = append(tiers, tier)
 	}
+	rev.TicketSold = totalSold
 
 	platformFee := projectedRev * 0.05
 	gatewayFee := projectedRev * 0.02
 	taxAmount := projectedRev * (taxRate / 100)
 	netPayout := projectedRev - platformFee - gatewayFee - taxAmount
+
+	// The organizer's real payout destination. user_bank_accounts is preferred
+	// because it is the only source carrying a verification flag; the bank
+	// columns on organizer_applications (migration 0006) are the fallback for
+	// organizers who only ever filled in their application.
+	payout := ReviewPayout{EstimatedPayout: netPayout}
+	var bankName, bankNumber, bankHolder sql.NullString
+	var bankVerified sql.NullBool
+	err = r.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(uba.bank_name, oa.bank_name),
+			COALESCE(uba.account_number, oa.bank_account_number),
+			COALESCE(uba.account_holder_name, oa.bank_account_holder),
+			uba.is_verified
+		FROM events e
+		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
+		LEFT JOIN LATERAL (
+			SELECT bank_name, account_number, account_holder_name, is_verified
+			FROM user_bank_accounts
+			WHERE user_id = e.organizer_id
+			ORDER BY is_verified DESC, created_at DESC
+			LIMIT 1
+		) uba ON TRUE
+		WHERE e.id = $1
+	`, eventID).Scan(&bankName, &bankNumber, &bankHolder, &bankVerified)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+	if bankName.Valid || bankNumber.Valid {
+		payout.HasAccount = true
+		payout.Bank = bankName.String
+		payout.AccountNumber = bankNumber.String
+		payout.AccountName = bankHolder.String
+		// Only user_bank_accounts can attest verification. An account known
+		// solely from the application row is unverified by definition.
+		payout.Verified = bankVerified.Valid && bankVerified.Bool
+	}
 
 	rev.Finance = ReviewFinance{
 		ProjectedRevenue: projectedRev,
@@ -566,23 +712,9 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 		GatewayFee:       gatewayFee,
 		TaxAmount:        taxAmount,
 		NetPayout:        netPayout,
+		TaxRate:          taxRate,
 		TicketTiers:      tiers,
-		TaxConfig: ReviewTaxConfig{
-			EntertainmentTax: taxRate,
-			Ppn:              11.0,
-			Region:           "DKI Jakarta",
-			TaxPercentage:    taxRate + 11.0,
-			RegionMatch:      true,
-			TaxApplied:       true,
-			PpnApplied:       true,
-		},
-		Payout: ReviewPayout{
-			Bank:            "Bank Central Asia (BCA)",
-			AccountName:     rev.OrganizerName,
-			AccountNumber:   "8024927501",
-			EstimatedPayout: netPayout,
-			Verified:        true,
-		},
+		Payout:           payout,
 	}
 
 	// 4. Fetch status history
@@ -624,7 +756,7 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 		       COALESCE(priority, 'Medium'),
 		       COALESCE(organizer_comment, ''),
 		       COALESCE(organizer_action_taken, ''),
-		       COALESCE(organizer_file, ''),
+		       COALESCE(organizer_documents_changed, '[]'::jsonb)::text,
 		       COALESCE(responded_at::text, '')
 		FROM auditor_revisions
 		WHERE event_id = $1
@@ -641,6 +773,7 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 		var revItem Revision
 		var createdAt time.Time
 		var respondedAtStr string
+		var changedJSON string
 		err = rowsRevisions.Scan(
 			&revItem.ID,
 			&revItem.Category,
@@ -652,12 +785,14 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 			&revItem.Priority,
 			&revItem.OrganizerComment,
 			&revItem.OrganizerActionTaken,
-			&revItem.OrganizerFile,
+			&changedJSON,
 			&respondedAtStr,
 		)
 		if err != nil {
 			return nil, err
 		}
+		revItem.DocumentsChanged = []RevisionDocumentChange{}
+		_ = json.Unmarshal([]byte(changedJSON), &revItem.DocumentsChanged)
 		if respondedAtStr != "" {
 			if tResp, errParse := time.Parse(time.RFC3339, respondedAtStr); errParse == nil {
 				revItem.RespondedAt = formatTime(tResp)
@@ -670,7 +805,119 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 		rev.Revisions = append(rev.Revisions, revItem)
 	}
 
+	// 6. Verification checklist — every item is derived from real state. These
+	// mirror the organizer's own publish gates, so a green checklist means the
+	// submission genuinely cleared them rather than that nobody looked.
+	//
+	// Seating is only a gate for events with a bound layout: a general-admission
+	// event has no seats to price and must not be marked incomplete for it.
+	seatingComplete := true
+	if layoutID.Valid {
+		var untiered int
+		err = r.db.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM seats s
+			WHERE s.layout_id = $1
+			  AND NOT EXISTS (
+				SELECT 1 FROM event_seats_matrix m WHERE m.event_id = $2 AND m.seat_id = s.id
+			  )
+		`, layoutID.Int64, eventID).Scan(&untiered)
+		if err != nil {
+			return nil, err
+		}
+		seatingComplete = untiered == 0
+	}
+
+	rev.Checklist = []ChecklistItem{
+		{Label: "Event Info", Done: rev.EventName != "" && description != "" && !eventStart.IsZero()},
+		{Label: "Venue & Seating", Done: venueID.Valid && seatingComplete},
+		{Label: "Organizer Profile", Done: applicationStatus == "approved"},
+		{Label: "Ticket Configuration", Done: len(tiers) > 0},
+	}
+
+	// 7. Compliance history — the organizer's record across their OTHER events.
+	// The current event is excluded everywhere so an auditor is never shown this
+	// submission as evidence about itself.
+	err = r.db.QueryRowContext(ctx, `
+		SELECT
+			(SELECT COUNT(DISTINCT esl.event_id)
+			   FROM event_status_log esl
+			   JOIN events pe ON pe.id = esl.event_id
+			  WHERE pe.organizer_id = $1 AND pe.id <> $2
+			    AND esl.to_status = 'pending_review'),
+			(SELECT COUNT(*) FROM events
+			  WHERE organizer_id = $1 AND id <> $2 AND status = 'rejected'),
+			(SELECT COUNT(*)
+			   FROM auditor_revisions ar
+			   JOIN events pe ON pe.id = ar.event_id
+			  WHERE pe.organizer_id = $1 AND pe.id <> $2),
+			(SELECT COUNT(*) FROM events
+			  WHERE organizer_id = $1 AND id <> $2 AND status = 'approved')
+	`, organizerID, eventID).Scan(
+		&rev.ComplianceHistory.PreviousAudits,
+		&rev.ComplianceHistory.PreviousViolations,
+		&rev.ComplianceHistory.PreviousRevisions,
+		&rev.ComplianceHistory.PreviousApprovedEvents,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return &rev, nil
+}
+
+// licenseStatusLabel renders a document verification status for display next to
+// a licence type. Statuses arrive lowercase from mapVerificationStatus.
+func licenseStatusLabel(status string) string {
+	switch status {
+	case "verified":
+		return "Verified"
+	case "rejected":
+		return "Rejected"
+	case "missing":
+		return "Not uploaded"
+	default:
+		return "Pending review"
+	}
+}
+
+// organizerLicenceStatus reports the verification state of an organizer's
+// business-registration document (NIB or SIUP). The schema stores no licence
+// NUMBER, so the auditor-facing "Business License" field carries this status
+// string instead.
+//
+// A verified licence wins over a pending one when the organizer uploaded both.
+// Errors are folded into the "no licence" result on purpose: this is one
+// display field on a payout, and failing the whole payout load because a
+// secondary lookup broke would hide the payout entirely.
+func (r *PostgresAuditorRepository) organizerLicenceStatus(ctx context.Context, organizerID int) string {
+	const q = `
+		SELECT od.document_type, od.status::text
+		FROM organizer_documents od
+		JOIN organizer_applications oa ON oa.id = od.application_id
+		WHERE oa.user_id = $1
+		  AND UPPER(od.document_type) IN ('NIB', 'SIUP')
+	`
+	rows, err := r.db.QueryContext(ctx, q, organizerID)
+	if err != nil {
+		return "No NIB/SIUP on file"
+	}
+	defer rows.Close()
+
+	var status string
+	for rows.Next() {
+		var docType, dbStatus string
+		if err := rows.Scan(&docType, &dbStatus); err != nil {
+			return "No NIB/SIUP on file"
+		}
+		mapped := mapVerificationStatus(dbStatus)
+		if status == "" || mapped == "verified" {
+			status = strings.ToUpper(docType) + " — " + licenseStatusLabel(mapped)
+		}
+	}
+	if err := rows.Err(); err != nil || status == "" {
+		return "No NIB/SIUP on file"
+	}
+	return status
 }
 
 func (r *PostgresAuditorRepository) ApproveEventReview(ctx context.Context, eventID, actorID int, notes string) error {
@@ -745,11 +992,11 @@ func (r *PostgresAuditorRepository) ApproveEventReview(ctx context.Context, even
 	// do what it looked like it did - it silently poisoned the tx and the
 	// approval came back as "commit unexpectedly resulted in rollback".
 	go func() {
-		msg := fmt.Sprintf("Event %q telah disetujui oleh auditor.", eventName)
+		msg := fmt.Sprintf("Event %q has been approved by an auditor.", eventName)
 		if organizerUserID > 0 {
-			_ = r.CreateNotification(context.Background(), organizerUserID, "✅ Event Disetujui!", msg, "event", strconv.Itoa(eventID))
+			_ = r.CreateNotification(context.Background(), organizerUserID, "✅ Event Approved!", msg, "event", strconv.Itoa(eventID))
 		}
-		_ = r.CreateNotificationForAuditors(context.Background(), "✅ Event Disetujui", msg, "event", strconv.Itoa(eventID))
+		_ = r.CreateNotificationForAuditors(context.Background(), "✅ Event Approved", msg, "event", strconv.Itoa(eventID))
 	}()
 
 	return nil
@@ -810,10 +1057,10 @@ func (r *PostgresAuditorRepository) RejectEventReview(ctx context.Context, event
 	// After the commit - see the note in ApproveEventReview.
 	go func() {
 		if organizerUserID > 0 {
-			_ = r.CreateNotification(context.Background(), organizerUserID, "❌ Event Ditolak",
-				fmt.Sprintf("Event %q ditolak oleh Auditor. Alasan: %s. Catatan: %s", eventName, reason, notes), "event", strconv.Itoa(eventID))
+			_ = r.CreateNotification(context.Background(), organizerUserID, "❌ Event Rejected",
+				fmt.Sprintf("Event %q was rejected by an auditor. Reason: %s. Notes: %s", eventName, reason, notes), "event", strconv.Itoa(eventID))
 		}
-		_ = r.CreateNotificationForAuditors(context.Background(), "❌ Event Ditolak", fmt.Sprintf("Event %q telah ditolak. Alasan: %s", eventName, reason), "event", strconv.Itoa(eventID))
+		_ = r.CreateNotificationForAuditors(context.Background(), "❌ Event Rejected", fmt.Sprintf("Event %q has been rejected. Reason: %s", eventName, reason), "event", strconv.Itoa(eventID))
 	}()
 
 	return nil
@@ -877,8 +1124,8 @@ func (r *PostgresAuditorRepository) RequestEventChanges(ctx context.Context, eve
 	// After the commit - see the note in ApproveEventReview.
 	go func() {
 		if organizerUserID > 0 {
-			_ = r.CreateNotification(context.Background(), organizerUserID, "⚠️ Perlu Revisi Event",
-				fmt.Sprintf("Event %q memerlukan revisi. Catatan Auditor: %s", eventName, notes), "event", strconv.Itoa(eventID))
+			_ = r.CreateNotification(context.Background(), organizerUserID, "⚠️ Event Revision Required",
+				fmt.Sprintf("Event %q requires revision. Auditor notes: %s", eventName, notes), "event", strconv.Itoa(eventID))
 		}
 	}()
 
@@ -943,7 +1190,7 @@ func (r *PostgresAuditorRepository) AddEventRevision(ctx context.Context, eventI
 		_, _ = r.db.ExecContext(ctx, `
 			INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
 			VALUES ($1, $2, $3, 'event', $4, FALSE, now())
-		`, organizerUserID, fmt.Sprintf("⚠️ Perlu Revisi: %s", req.Title), fmt.Sprintf("Event %q memerlukan tindakan: %s (%s)", eventName, req.RequiredAction, req.Description), strconv.Itoa(eventID))
+		`, organizerUserID, fmt.Sprintf("⚠️ Revision Required: %s", req.Title), fmt.Sprintf("Event %q requires action: %s (%s)", eventName, req.RequiredAction, req.Description), strconv.Itoa(eventID))
 	}
 
 	return nil
@@ -979,7 +1226,7 @@ func (r *PostgresAuditorRepository) UpdateRevisionStatus(ctx context.Context, re
 			_, _ = r.db.ExecContext(ctx, `
 				INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
 				VALUES ($1, $2, $3, 'event', $4, FALSE, now())
-			`, organizerUserID, fmt.Sprintf("✅ Revisi Disetujui: %s", title), fmt.Sprintf("Auditor telah menyetujui perbaikan revisi untuk event %q.", eventName), strconv.Itoa(eventID))
+			`, organizerUserID, fmt.Sprintf("✅ Revision Approved: %s", title), fmt.Sprintf("An auditor approved the revision fix for event %q.", eventName), strconv.Itoa(eventID))
 		}
 	} else if status == "Sent" || status == "Draft" {
 		_, _ = r.db.ExecContext(ctx, `UPDATE events SET status = 'needs_revision', updated_at = now() WHERE id = $1`, eventID)
@@ -987,7 +1234,7 @@ func (r *PostgresAuditorRepository) UpdateRevisionStatus(ctx context.Context, re
 			_, _ = r.db.ExecContext(ctx, `
 				INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
 				VALUES ($1, $2, $3, 'event', $4, FALSE, now())
-			`, organizerUserID, fmt.Sprintf("⚠️ Perlu Revisi Tambahan: %s", title), fmt.Sprintf("Auditor meminta perbaikan tambahan untuk event %q.", eventName), strconv.Itoa(eventID))
+			`, organizerUserID, fmt.Sprintf("⚠️ Further Revision Required: %s", title), fmt.Sprintf("An auditor requested further changes for event %q.", eventName), strconv.Itoa(eventID))
 		}
 	} else if status == "Rejected" {
 		_, _ = r.db.ExecContext(ctx, `UPDATE events SET status = 'rejected', updated_at = now() WHERE id = $1`, eventID)
@@ -995,7 +1242,7 @@ func (r *PostgresAuditorRepository) UpdateRevisionStatus(ctx context.Context, re
 			_, _ = r.db.ExecContext(ctx, `
 				INSERT INTO notifications (user_id, title, detail, resource_type, resource_id, is_read, created_at)
 				VALUES ($1, $2, $3, 'event', $4, FALSE, now())
-			`, organizerUserID, fmt.Sprintf("❌ Perbaikan Ditolak: %s", title), fmt.Sprintf("Auditor menolak hasil perbaikan revisi untuk event %q.", eventName), strconv.Itoa(eventID))
+			`, organizerUserID, fmt.Sprintf("❌ Revision Rejected: %s", title), fmt.Sprintf("An auditor rejected the submitted revision for event %q.", eventName), strconv.Itoa(eventID))
 		}
 	}
 
@@ -1396,9 +1643,13 @@ func (r *PostgresAuditorRepository) GetOrganizer(ctx context.Context, appID int)
 			COALESCE(oa.bank_name, ''),
 			COALESCE(oa.bank_account_holder, ''),
 			COALESCE(oa.bank_account_number, ''),
+			COALESCE(oa.bank_verification_status, 'unverified'),
+			COALESCE(vb.full_name, ''),
+			COALESCE(to_char(oa.bank_verified_at, 'YYYY-MM-DD HH24:MI'), ''),
 			COALESCE(oa.business_address, '')
 		FROM organizer_applications oa
 		LEFT JOIN user_profiles up ON up.user_id = oa.user_id
+		LEFT JOIN user_profiles vb ON vb.user_id = oa.bank_verified_by
 		WHERE oa.id = $1
 	`
 	var org OrganizerVerification
@@ -1421,6 +1672,9 @@ func (r *PostgresAuditorRepository) GetOrganizer(ctx context.Context, appID int)
 		&org.BankName,
 		&org.BankAccountHolder,
 		&org.BankAccountNumber,
+		&org.BankVerificationStatus,
+		&org.BankVerifiedBy,
+		&org.BankVerifiedAt,
 		&org.Address,
 	)
 	if err != nil {
@@ -1670,6 +1924,33 @@ func (r *PostgresAuditorRepository) UpdateOrganizerStatus(ctx context.Context, a
 
 // ---- Payout Verification ----
 
+// payoutStatusFilter maps a console filter label onto a payout_status value.
+//
+// The console's filter row carries labels the enum has never had ("Processing",
+// "Paid", "Under Review"). Returning ok=false for those is deliberate: the
+// alternative the previous code chose was to substitute 'pending', which
+// answered a question nobody asked and looked like a real result.
+func payoutStatusFilter(label string) (string, bool) {
+	switch strings.ToLower(strings.ReplaceAll(label, " ", "_")) {
+	case "pending":
+		return "pending", true
+	case "approved":
+		return "approved", true
+	case "rejected":
+		return "rejected", true
+	case "on_hold":
+		return "on_hold", true
+	case "need_revision":
+		return "need_revision", true
+	case "processed", "paid":
+		return "processed", true
+	case "failed":
+		return "failed", true
+	default:
+		return "", false
+	}
+}
+
 func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters PayoutFilters) ([]*AuditorPayout, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -1682,6 +1963,14 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 	}
 	offset := (filters.Page - 1) * filters.Limit
 
+	// Gross and net are selected here because the payouts TABLE shows both
+	// columns. They previously came from nowhere, so the console read an absent
+	// field and crashed on the first rendered row.
+	//
+	// The source is `orders`, matching payoutSales() — the two must not disagree
+	// about the same payout. The old sub-select summed ticket_tiers.tickets_sold,
+	// a counter nothing in the codebase writes, and then applied hardcoded 5%/2%
+	// rates instead of the per-order rates actually charged.
 	query := `
 		SELECT
 			p.id,
@@ -1691,26 +1980,42 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 			e.event_name,
 			e.event_start,
 			COALESCE(up.full_name, 'Unknown Organizer'),
-			COALESCE(oa.business_email, 'org@crowdflow.com')
+			COALESCE(oa.business_email, ''),
+			COALESCE(sales.tickets_sold, 0) AS tickets_sold,
+			COALESCE(sales.gross, 0)::float8 AS gross_revenue,
+			(COALESCE(sales.net, 0)
+				- COALESCE(sales.organizer_borne_tax, 0)
+				- COALESCE(sales.refunded, 0))::float8 AS net_revenue
 		FROM payouts p
 		JOIN events e ON e.id = p.event_id
 		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
 		LEFT JOIN user_profiles up ON up.user_id = e.organizer_id
+		LEFT JOIN (
+			SELECT event_id,
+			       SUM(quantity)     FILTER (WHERE status = 'paid') AS tickets_sold,
+			       SUM(gross_amount) FILTER (WHERE status = 'paid') AS gross,
+			       SUM(net_amount)   FILTER (WHERE status = 'paid') AS net,
+			       SUM(entertainment_tax_amount)
+			         FILTER (WHERE status = 'paid' AND NOT entertainment_tax_passed_to_buyer)
+			         AS organizer_borne_tax,
+			       SUM(gross_amount) FILTER (WHERE status = 'refunded') AS refunded
+			FROM orders
+			GROUP BY event_id
+		) sales ON sales.event_id = p.event_id
 		WHERE 1=1
 	`
 	args := []interface{}{}
 	argIndex := 1
 
+	// The console offers more filter labels than the enum has values, and the
+	// previous mapping sent everything it did not recognise to 'pending'. So
+	// filtering by "Paid" or "Under Review" quietly returned the pending rows
+	// instead — a wrong answer presented as a real one. An unmappable filter now
+	// returns nothing, which is at least honest about matching no payout.
 	if filters.Status != "" {
-		dbStatus := strings.ToLower(filters.Status)
-		if dbStatus == "approved" {
-			dbStatus = "approved"
-		} else if dbStatus == "rejected" {
-			dbStatus = "rejected"
-		} else if dbStatus == "on hold" || dbStatus == "on_hold" {
-			dbStatus = "on_hold"
-		} else {
-			dbStatus = "pending"
+		dbStatus, ok := payoutStatusFilter(filters.Status)
+		if !ok {
+			return []*AuditorPayout{}, nil
 		}
 		query += fmt.Sprintf(" AND p.status = $%d::payout_status", argIndex)
 		args = append(args, dbStatus)
@@ -1738,6 +2043,9 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 		var reqTime, eventTime time.Time
 		var dbStatus string
 
+		var ticketsSold int
+		var gross, net float64
+
 		err = rows.Scan(
 			&p.ID,
 			&p.RequestedAmount,
@@ -1747,6 +2055,9 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 			&eventTime,
 			&p.OrganizerName,
 			&p.OrganizerEmail,
+			&ticketsSold,
+			&gross,
+			&net,
 		)
 		if err != nil {
 			return nil, err
@@ -1755,13 +2066,13 @@ func (r *PostgresAuditorRepository) ListPayouts(ctx context.Context, filters Pay
 		p.Status = string(dbStatus)
 		p.RequestDate = formatTime(reqTime)
 		p.EventDate = eventTime.Format("2006-01-02 15:04")
-
-		riskScore := 20
-		if p.RequestedAmount > 1000000.0 {
-			riskScore = 40
+		// Only the figures this query actually computes. The rest of
+		// PayoutSales is detail-only and stays zero rather than being guessed.
+		p.SalesSummary = PayoutSales{
+			TicketsSold:  ticketsSold,
+			GrossRevenue: gross,
+			NetRevenue:   net,
 		}
-		p.RiskScore = riskScore
-		p.RiskLevel = computeRiskLevel(100 - riskScore)
 
 		list = append(list, &p)
 	}
@@ -1777,6 +2088,12 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
+	// Every column here is read by an auditor deciding whether to release money.
+	// A COALESCE default would therefore be a fabricated bank account rendered as
+	// fact — this query returns empty strings for absent data instead, and the
+	// console shows "Not provided" so the auditor knows to withhold approval.
+	// oa.business_license is deliberately absent: no such column exists (see the
+	// licence-status query below).
 	query := `
 		SELECT
 			p.id,
@@ -1784,28 +2101,40 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 			p.status,
 			p.requested_at,
 			e.id AS event_id,
+			e.organizer_id,
 			e.event_name,
 			e.event_start,
-			COALESCE(up.full_name, 'Unknown Organizer'),
-			COALESCE(oa.business_email, 'org@crowdflow.com'),
-			COALESCE(oa.notes, ''),
+			COALESCE(up.full_name, ''),
+			COALESCE(oa.business_email, ''),
+			-- Was COALESCE(oa.notes, ''), the ORGANIZER APPLICATION's review
+			-- notes: the same text surfaced on every payout that organizer ever
+			-- requested. These two belong to this payout.
+			p.internal_notes,
+			p.organizer_notes,
 			e.entertainment_tax_rate,
-			COALESCE(oa.bank_name, 'Bank Central Asia (BCA)'),
-			COALESCE(oa.bank_account_number, '8024927501'),
-			COALESCE(oa.bank_account_holder, up.full_name, 'Unknown Organizer'),
-			COALESCE(oa.business_phone, '+62 812-3456-7890'),
-			COALESCE(oa.business_license, 'BL-2026-ID-00123'),
-			COALESCE(oa.status::text, 'Verified')
+			COALESCE(oa.bank_name, ''),
+			COALESCE(oa.bank_account_number, ''),
+			COALESCE(oa.bank_account_holder, ''),
+			COALESCE(oa.business_phone, ''),
+			COALESCE(oa.status::text, ''),
+			COALESCE(oa.bank_verification_status, 'unverified'),
+			COALESCE(vb.full_name, ''),
+			COALESCE(to_char(oa.bank_verified_at, 'YYYY-MM-DD HH24:MI'), ''),
+			COALESCE(oa.id, 0),
+			COALESCE(v.name, ''),
+			e.status::text
 		FROM payouts p
 		JOIN events e ON e.id = p.event_id
 		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
 		LEFT JOIN user_profiles up ON up.user_id = e.organizer_id
+		LEFT JOIN venues v ON v.id = e.venue_id
+		LEFT JOIN user_profiles vb ON vb.user_id = oa.bank_verified_by
 		WHERE p.id = $1
 	`
 	var p AuditorPayout
 	var reqTime, eventTime time.Time
 	var dbStatus string
-	var eventID int
+	var eventID, organizerID int
 	var taxRate float64
 
 	err := r.db.QueryRowContext(ctx, query, payoutID).Scan(
@@ -1814,18 +2143,25 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		&dbStatus,
 		&reqTime,
 		&eventID,
+		&organizerID,
 		&p.EventName,
 		&eventTime,
 		&p.OrganizerName,
 		&p.OrganizerEmail,
 		&p.InternalNotes,
+		&p.OrganizerNotes,
 		&taxRate,
 		&p.BankName,
 		&p.BankAccountNum,
 		&p.BankHolder,
 		&p.OrganizerPhone,
-		&p.OrganizerBusinessLicense,
 		&p.OrganizerStatus,
+		&p.BankVerificationStatus,
+		&p.BankVerifiedBy,
+		&p.BankVerifiedAt,
+		&p.ApplicationID,
+		&p.VenueName,
+		&p.EventStatus,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -1834,75 +2170,82 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		return nil, err
 	}
 
+	// There is no licence-number column anywhere in the schema. Report the
+	// verification state of the organizer's NIB/SIUP instead — the same signal
+	// GetEventReview surfaces, so the two consoles agree.
+	p.OrganizerBusinessLicense = r.organizerLicenceStatus(ctx, organizerID)
+
 	p.Status = string(dbStatus)
 	p.RequestDate = formatTime(reqTime)
 	p.EventDate = eventTime.Format("2006-01-02 15:04")
 
-	// Calculate Sales summary dynamically
-	querySales := `
-		SELECT 
-			COALESCE(SUM(tickets_sold), 0),
-			COALESCE(SUM(tickets_sold * price), 0.0)
-		FROM ticket_tiers
-		WHERE event_id = $1
-	`
-	var ticketsSold int
-	var grossRevenue float64
-	_ = r.db.QueryRowContext(ctx, querySales, eventID).Scan(&ticketsSold, &grossRevenue)
+	p.SalesSummary = r.payoutSales(ctx, eventID)
+	p.TicketCapacity = r.eventCapacity(ctx, eventID)
+	p.OrganizerViolations = r.organizerViolations(ctx, organizerID, eventID)
+	p.EventID = eventID
+	_ = taxRate // the per-order rate is authoritative; see payoutSales
 
-	platformFee := grossRevenue * 0.05
-	gatewayFee := grossRevenue * 0.02
-	taxAmount := grossRevenue * (taxRate / 100)
-	netRevenue := grossRevenue - platformFee - gatewayFee - taxAmount
-
-	p.SalesSummary = PayoutSales{
-		TicketsSold:      ticketsSold,
-		GrossRevenue:     grossRevenue,
-		PlatformFee:      platformFee,
-		GatewayFee:       gatewayFee,
-		EntertainmentTax: taxAmount,
-		RefundAmount:     0.0,
-		NetRevenue:       netRevenue,
-	}
-
-	// Calculate Risk Score & Level
-	riskScore := 20
+	// A duplicate approved payout is a real, checkable condition — unlike the
+	// old risk score, which was a hardcoded 20/40 that mapped to "High" for
+	// every payout that ever existed.
 	hasAlert := false
 	alertMsg := ""
 
-	if netRevenue > 100000.0 {
-		riskScore = 45
-	}
+	// `id <> $2` excludes the payout being viewed. Without it an approved payout
+	// counts itself and reports that an approved payout already exists for the
+	// event — announcing itself as its own duplicate. Harmless while the
+	// 'approved' label did not exist (migration 0023 added it), and a false
+	// fraud alert on a money-release screen the moment it did.
 	var dupCount int
-	_ = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM payouts WHERE event_id = $1 AND status = 'approved'`, eventID).Scan(&dupCount)
+	_ = r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM payouts
+		WHERE event_id = $1 AND id <> $2 AND status = 'approved'
+	`, eventID, payoutID).Scan(&dupCount)
 	if dupCount > 0 {
-		riskScore += 40
 		hasAlert = true
 		alertMsg = "Warning: Approved payout request already exists for this event!"
 	}
 
-	p.RiskScore = riskScore
-	p.RiskLevel = computeRiskLevel(100 - riskScore)
+	// A payout asking for more than the event actually netted is checkable and
+	// worth flagging. The previous rule (gross > 250000 && sold < 100) was a
+	// USD-era threshold — as rupiah that is about two tickets, so once revenue
+	// became real it would have flagged essentially every event.
+	if p.RequestedAmount > p.SalesSummary.NetRevenue {
+		hasAlert = true
+		if alertMsg != "" {
+			alertMsg += " "
+		}
+		alertMsg += "Requested amount exceeds the event's net revenue."
+	}
 
 	p.FraudDetection = FraudSignals{
 		DuplicatePayout:   dupCount > 0,
-		SuspiciousRevenue: grossRevenue > 250000.0 && ticketsSold < 100,
-		UnusualRefundRate: false,
-		HighChargeback:    false,
+		SuspiciousRevenue: p.RequestedAmount > p.SalesSummary.NetRevenue,
 		HasAlert:          hasAlert,
 		AlertMessage:      alertMsg,
 	}
 
-	// Fetch timeline logs from activity_log
+	// Fetch timeline logs from activity_log.
+	//
+	// Rows written since migration 0028 carry resource_type/resource_id and are
+	// matched exactly. Older rows have no resource columns, so they keep the
+	// legacy substring match — which is a PREFIX match on a decimal number, so
+	// payout 3 also picks up payouts 30-39. That is the bug being retired; it
+	// cannot be repaired retroactively, because a backfill would have to parse
+	// the same ambiguous strings to decide where each row belongs.
+	//
+	// The `resource_type IS NULL` guard is what stops a row from matching twice
+	// and stops a NEW payout-30 row from leaking into payout 3's timeline.
 	queryTimeline := `
 		SELECT al.id, COALESCE(up.full_name, 'System'), al.action, al.detail, al.created_at
 		FROM activity_log al
 		LEFT JOIN user_profiles up ON up.user_id = al.actor_id
-		WHERE detail ILIKE $1
+		WHERE (al.resource_type = 'payout' AND al.resource_id = $1)
+		   OR (al.resource_type IS NULL AND al.detail ILIKE $2)
 		ORDER BY al.created_at DESC
 	`
 	timelinePattern := fmt.Sprintf("%%payout %d%%", payoutID)
-	rowsTimeline, err := r.db.QueryContext(ctx, queryTimeline, timelinePattern)
+	rowsTimeline, err := r.db.QueryContext(ctx, queryTimeline, payoutID, timelinePattern)
 	p.Timeline = []Activity{}
 	if err == nil {
 		defer rowsTimeline.Close()
@@ -1917,7 +2260,369 @@ func (r *PostgresAuditorRepository) GetPayout(ctx context.Context, payoutID int)
 		}
 	}
 
+	checklist, err := r.payoutReviewChecklist(ctx, payoutID, string(dbStatus))
+	if err != nil {
+		return nil, err
+	}
+	p.ReviewChecklist = checklist
+
 	return &p, nil
+}
+
+// payoutReviewChecklist builds the eleven-item checklist for a payout.
+//
+// The item list is always the full eleven, in whitelist order, whether or not a
+// row exists yet — an item nobody has touched must render as an unticked box,
+// not vanish. Stored rows only supply state on top of that skeleton.
+func (r *PostgresAuditorRepository) payoutReviewChecklist(ctx context.Context, payoutID int, dbStatus string) (PayoutReviewChecklist, error) {
+	type storedCheck struct {
+		checked bool
+		by      string
+		at      string
+	}
+	stored := map[string]storedCheck{}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT c.item_key, c.checked, COALESCE(up.full_name, ''), c.checked_at
+		FROM payout_review_checks c
+		LEFT JOIN user_profiles up ON up.user_id = c.checked_by
+		WHERE c.payout_id = $1
+	`, payoutID)
+	if err != nil {
+		return PayoutReviewChecklist{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var key string
+		var sc storedCheck
+		var at time.Time
+		if err := rows.Scan(&key, &sc.checked, &sc.by, &at); err != nil {
+			return PayoutReviewChecklist{}, err
+		}
+		sc.at = formatTime(at)
+		stored[key] = sc
+	}
+	if err := rows.Err(); err != nil {
+		return PayoutReviewChecklist{}, err
+	}
+
+	checklist := PayoutReviewChecklist{Items: make([]PayoutReviewItem, 0, len(payoutReviewItemDefs))}
+	for _, def := range payoutReviewItemDefs {
+		item := def
+		if sc, ok := stored[def.Key]; ok {
+			item.Checked = sc.checked
+			item.CheckedBy = sc.by
+			item.CheckedAt = sc.at
+		}
+		checklist.Items = append(checklist.Items, item)
+	}
+
+	if reason, terminal := terminalPayoutStatuses[dbStatus]; terminal {
+		checklist.Frozen = true
+		checklist.FrozenReason = "This payout was " + reason + ". The checklist records what was verified before that decision and can no longer be changed."
+	}
+
+	return checklist, nil
+}
+
+// UpdatePayoutCheck ticks or unticks ONE checklist item.
+//
+// Single-item by design. A whole-checklist write would carry a stale copy of
+// the other ten boxes, so two auditors reviewing the same payout would silently
+// undo each other's work.
+//
+// The freeze is enforced HERE, not only in the UI: the checklist is the record
+// of what was verified before the money left, so it must stop accepting edits
+// the moment the payout becomes terminal. A frozen payout returns ErrForbidden
+// rather than a silent no-op — an auditor whose click was discarded must be
+// told, or they will believe the box is ticked.
+func (r *PostgresAuditorRepository) UpdatePayoutCheck(ctx context.Context, payoutID, actorID int, req UpdatePayoutCheckRequest) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Locked so the status cannot go terminal between this check and the write.
+	// Without it an approval landing mid-request would leave a check recorded
+	// against a payout that was already paid.
+	var dbStatus string
+	err = tx.QueryRowContext(ctx, `
+		SELECT status::text FROM payouts WHERE id = $1 FOR UPDATE
+	`, payoutID).Scan(&dbStatus)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return err
+	}
+	if _, terminal := terminalPayoutStatuses[dbStatus]; terminal {
+		return ErrForbidden
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO payout_review_checks (payout_id, item_key, checked, checked_by, checked_at)
+		VALUES ($1, $2, $3, $4, now())
+		ON CONFLICT (payout_id, item_key) DO UPDATE
+		SET checked = EXCLUDED.checked,
+		    checked_by = EXCLUDED.checked_by,
+		    checked_at = EXCLUDED.checked_at
+	`, payoutID, req.ItemKey, req.Checked, actorID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// outstandingPayoutChecks lists the labels of items not ticked, in whitelist
+// order. Used to record what was still open at the moment of approval.
+func outstandingPayoutChecks(checked map[string]bool) []string {
+	var out []string
+	for _, def := range payoutReviewItemDefs {
+		if !checked[def.Key] {
+			out = append(out, def.Label)
+		}
+	}
+	return out
+}
+
+// payoutSales derives an event's settlement figures from `orders`.
+//
+// It replaces a query over ticket_tiers.tickets_sold * price. Nothing in the
+// codebase ever writes tickets_sold — every reference is a read — so that
+// computation returned zero for every event that has ever existed, on the
+// screen that authorises payment.
+//
+// Fees come from the per-order columns rather than being recomputed at today's
+// rates, so a payout for a past event settles at the rates its buyers were
+// actually charged.
+//
+// Net follows chk_net_amount (gross - platform_fee - platform_fee_ppn -
+// gateway_fee - gateway_fee_ppn) and then deducts entertainment tax ONLY where
+// the buyer did not already bear it: when entertainment_tax_passed_to_buyer is
+// true the tax was added on top of the ticket price, so deducting it from the
+// organizer as well would charge it twice.
+func (r *PostgresAuditorRepository) payoutSales(ctx context.Context, eventID int) PayoutSales {
+	const q = `
+		SELECT
+			COALESCE(SUM(quantity)                       FILTER (WHERE status = 'paid'), 0),
+			COALESCE(SUM(gross_amount)                   FILTER (WHERE status = 'paid'), 0),
+			COALESCE(SUM(platform_fee)                   FILTER (WHERE status = 'paid'), 0),
+			COALESCE(SUM(gateway_fee)                    FILTER (WHERE status = 'paid'), 0),
+			COALESCE(SUM(platform_fee_ppn + gateway_fee_ppn) FILTER (WHERE status = 'paid'), 0),
+			COALESCE(SUM(entertainment_tax_amount)       FILTER (WHERE status = 'paid'), 0),
+			COALESCE(SUM(net_amount)                     FILTER (WHERE status = 'paid'), 0),
+			COALESCE(SUM(entertainment_tax_amount) FILTER (WHERE status = 'paid' AND NOT entertainment_tax_passed_to_buyer), 0),
+			COALESCE(SUM(gross_amount)                   FILTER (WHERE status = 'refunded'), 0)
+		FROM orders
+		WHERE event_id = $1
+	`
+	var s PayoutSales
+	var netBeforeTax, organizerBorneTax float64
+	if err := r.db.QueryRowContext(ctx, q, eventID).Scan(
+		&s.TicketsSold,
+		&s.GrossRevenue,
+		&s.PlatformFee,
+		&s.GatewayFee,
+		&s.PPN,
+		&s.EntertainmentTax,
+		&netBeforeTax,
+		&organizerBorneTax,
+		&s.RefundAmount,
+	); err != nil {
+		return PayoutSales{}
+	}
+
+	s.NetRevenue = netBeforeTax - organizerBorneTax - s.RefundAmount
+	return s
+}
+
+// eventCapacity resolves how many tickets the event can sell. Seated-vs-GA is
+// per TIER: a tier with painted seats is bounded by its rows in
+// event_seats_matrix, and allocation_limit is simply unused for it. Mixing the
+// two would double-count, so each tier contributes whichever applies to it.
+func (r *PostgresAuditorRepository) eventCapacity(ctx context.Context, eventID int) int {
+	const q = `
+		SELECT COALESCE(SUM(
+			CASE WHEN seats.painted > 0 THEN seats.painted ELSE t.allocation_limit END
+		), 0)
+		FROM ticket_tiers t
+		LEFT JOIN LATERAL (
+			SELECT COUNT(*) AS painted
+			FROM event_seats_matrix m
+			WHERE m.event_id = t.event_id AND m.ticket_tier_id = t.id
+		) seats ON TRUE
+		WHERE t.event_id = $1
+	`
+	var capacity int
+	if err := r.db.QueryRowContext(ctx, q, eventID).Scan(&capacity); err != nil {
+		return 0
+	}
+	return capacity
+}
+
+// organizerViolations counts the organizer's rejected events — the same rule
+// GetEventReview uses for compliance history. The event this payout belongs to
+// is excluded so its own outcome never reads as prior history.
+func (r *PostgresAuditorRepository) organizerViolations(ctx context.Context, organizerID, excludeEventID int) int {
+	const q = `SELECT COUNT(*) FROM events WHERE organizer_id = $1 AND id <> $2 AND status = 'rejected'`
+	var n int
+	if err := r.db.QueryRowContext(ctx, q, organizerID, excludeEventID).Scan(&n); err != nil {
+		return 0
+	}
+	return n
+}
+
+// RevisePayout sends a payout back to the organizer with an explanation.
+//
+// Distinct from HoldPayout: a hold means the auditor is investigating, a
+// revision means the organizer has something to do. The console has always
+// offered them as separate actions, and the payouts list needs to tell them
+// apart, so they are separate statuses rather than one status plus free text.
+func (r *PostgresAuditorRepository) RevisePayout(ctx context.Context, payoutID, actorID int, req RevisePayoutRequest) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE payouts
+		SET status = 'need_revision',
+		    organizer_notes = $1,
+		    internal_notes = CASE WHEN $2 = '' THEN internal_notes ELSE $2 END,
+		    updated_at = now()
+		WHERE id = $3
+	`, req.Reason, req.InternalNotes, payoutID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+
+	detail := fmt.Sprintf("Requested revision on payout %d. Reason: %s", payoutID, req.Reason)
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO activity_log (actor_id, action, detail, resource_type, resource_id) VALUES ($1, 'Revise Payout', $2, 'payout', $3)
+	`, actorID, detail, payoutID); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	go func() {
+		_ = r.CreateNotificationForAuditors(context.Background(), "✏️ Payout Revision Requested",
+			fmt.Sprintf("Payout #%d was sent back to the organizer.", payoutID), "payout", strconv.Itoa(payoutID))
+	}()
+	return nil
+}
+
+// UpdatePayoutNotes saves notes without touching status.
+//
+// The console's "Save Draft" has always called the status handler with the
+// payout's CURRENT status, which matched no branch and reported a failure while
+// sending nothing. Notes previously had nowhere to go at all: approve and
+// reject stitched them into an activity_log string.
+func (r *PostgresAuditorRepository) UpdatePayoutNotes(ctx context.Context, payoutID, actorID int, req UpdatePayoutNotesRequest) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE payouts
+		SET internal_notes = $1, organizer_notes = $2, updated_at = now()
+		WHERE id = $3
+	`, req.InternalNotes, req.OrganizerNotes, payoutID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// VerifyPayoutBankAccount marks the organizer's account confirmed.
+//
+// One-way by design: an auditor can verify, and only an organizer edit resets
+// it (organizer/repository.go sets 'unverified' on any change). An auditor
+// un-verifying mid-flight would leave a payout in a state nobody asked for.
+//
+// The account number the console displayed is echoed back and compared inside
+// the transaction. Without that, an organizer editing their details between
+// page load and click would have the NEW account verified by an auditor who
+// never saw it — the exact substitution this flag exists to prevent.
+func (r *PostgresAuditorRepository) VerifyPayoutBankAccount(ctx context.Context, payoutID, actorID int, req VerifyBankAccountRequest) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var appID int
+	var onFile string
+	err = tx.QueryRowContext(ctx, `
+		SELECT oa.id, COALESCE(oa.bank_account_number, '')
+		FROM payouts p
+		JOIN events e ON e.id = p.event_id
+		JOIN organizer_applications oa ON oa.user_id = e.organizer_id
+		WHERE p.id = $1
+	`, payoutID).Scan(&appID, &onFile)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	if strings.TrimSpace(onFile) == "" {
+		return ErrValidation
+	}
+	if digitsOnly(req.AccountNumber) != digitsOnly(onFile) {
+		return ErrValidation
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE organizer_applications
+		SET bank_verification_status = 'verified',
+		    bank_verified_by = $1,
+		    bank_verified_at = now()
+		WHERE id = $2
+	`, actorID, appID); err != nil {
+		return err
+	}
+
+	detail := fmt.Sprintf("Verified the bank account for payout %d.", payoutID)
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO activity_log (actor_id, action, detail, resource_type, resource_id) VALUES ($1, 'Verify Bank Account', $2, 'payout', $3)
+	`, actorID, detail, payoutID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// digitsOnly normalises an account number for comparison. The organizer form
+// strips spaces and dashes before storing, but a value that predates that rule
+// may still carry them.
+func digitsOnly(v string) string {
+	var b strings.Builder
+	for _, r := range v {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func (r *PostgresAuditorRepository) ApprovePayout(ctx context.Context, payoutID, actorID int, req ApprovePayoutRequest) error {
@@ -1930,6 +2635,31 @@ func (r *PostgresAuditorRepository) ApprovePayout(ctx context.Context, payoutID,
 	}
 	defer tx.Rollback()
 
+	// Read the checklist BEFORE the status change, inside the same transaction.
+	// After the UPDATE the payout is terminal and the checklist is frozen; what
+	// gets recorded has to be the state the auditor actually approved from.
+	checkRows, err := tx.QueryContext(ctx, `
+		SELECT item_key, checked FROM payout_review_checks WHERE payout_id = $1
+	`, payoutID)
+	if err != nil {
+		return err
+	}
+	checked := map[string]bool{}
+	for checkRows.Next() {
+		var key string
+		var isChecked bool
+		if err := checkRows.Scan(&key, &isChecked); err != nil {
+			checkRows.Close()
+			return err
+		}
+		checked[key] = isChecked
+	}
+	checkRows.Close()
+	if err := checkRows.Err(); err != nil {
+		return err
+	}
+	outstanding := outstandingPayoutChecks(checked)
+
 	_, err = tx.ExecContext(ctx, `
 		UPDATE payouts
 		SET status = 'approved', processed_at = now(), processed_by = $1, updated_at = now()
@@ -1939,11 +2669,21 @@ func (r *PostgresAuditorRepository) ApprovePayout(ctx context.Context, payoutID,
 		return err
 	}
 
+	// An incomplete checklist WARNS but does not block — the auditor may have
+	// grounds the checklist does not model, and a hard block would just teach
+	// them to tick boxes to get past it. What it must not do is pass silently,
+	// so the outstanding items are named in the permanent record.
 	detail := fmt.Sprintf("Approved payout %d. Notes: %s. Finance Notes: %s", payoutID, req.InternalNotes, req.FinanceNotes)
+	if len(outstanding) > 0 {
+		detail += fmt.Sprintf(" Approved with %d of %d checklist items outstanding: %s.",
+			len(outstanding), len(payoutReviewItemDefs), strings.Join(outstanding, ", "))
+	} else {
+		detail += " All checklist items were verified."
+	}
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO activity_log (actor_id, action, detail)
-		VALUES ($1, 'Approve Payout', $2)
-	`, actorID, detail)
+		INSERT INTO activity_log (actor_id, action, detail, resource_type, resource_id)
+		VALUES ($1, 'Approve Payout', $2, 'payout', $3)
+	`, actorID, detail, payoutID)
 	if err != nil {
 		return err
 	}
@@ -1954,7 +2694,7 @@ func (r *PostgresAuditorRepository) ApprovePayout(ctx context.Context, payoutID,
 	}
 
 	go func() {
-		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Disetujui", fmt.Sprintf("Payout #%d telah disetujui.", payoutID), "payout", strconv.Itoa(payoutID))
+		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Approved", fmt.Sprintf("Payout #%d has been approved.", payoutID), "payout", strconv.Itoa(payoutID))
 	}()
 
 	return nil
@@ -1981,9 +2721,9 @@ func (r *PostgresAuditorRepository) RejectPayout(ctx context.Context, payoutID, 
 
 	detail := fmt.Sprintf("Rejected payout %d. Reason: %s. Notes: %s", payoutID, req.Reason, req.InternalNotes)
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO activity_log (actor_id, action, detail)
-		VALUES ($1, 'Reject Payout', $2)
-	`, actorID, detail)
+		INSERT INTO activity_log (actor_id, action, detail, resource_type, resource_id)
+		VALUES ($1, 'Reject Payout', $2, 'payout', $3)
+	`, actorID, detail, payoutID)
 	if err != nil {
 		return err
 	}
@@ -1994,7 +2734,7 @@ func (r *PostgresAuditorRepository) RejectPayout(ctx context.Context, payoutID, 
 	}
 
 	go func() {
-		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Ditolak", fmt.Sprintf("Payout #%d telah ditolak. Alasan: %s", payoutID, req.Reason), "payout", strconv.Itoa(payoutID))
+		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Rejected", fmt.Sprintf("Payout #%d was rejected. Reason: %s", payoutID, req.Reason), "payout", strconv.Itoa(payoutID))
 	}()
 
 	return nil
@@ -2021,9 +2761,9 @@ func (r *PostgresAuditorRepository) HoldPayout(ctx context.Context, payoutID, ac
 
 	detail := fmt.Sprintf("Placed payout %d on hold. Reason: %s", payoutID, req.Reason)
 	_, err = tx.ExecContext(ctx2, `
-		INSERT INTO activity_log (actor_id, action, detail)
-		VALUES ($1, 'Hold Payout', $2)
-	`, actorID, detail)
+		INSERT INTO activity_log (actor_id, action, detail, resource_type, resource_id)
+		VALUES ($1, 'Hold Payout', $2, 'payout', $3)
+	`, actorID, detail, payoutID)
 	if err != nil {
 		return err
 	}
@@ -2034,7 +2774,7 @@ func (r *PostgresAuditorRepository) HoldPayout(ctx context.Context, payoutID, ac
 	}
 
 	go func() {
-		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout Ditahan", fmt.Sprintf("Payout #%d telah ditahan. Alasan: %s", payoutID, req.Reason), "payout", strconv.Itoa(payoutID))
+		_ = r.CreateNotificationForAuditors(context.Background(), "💰 Payout On Hold", fmt.Sprintf("Payout #%d has been put on hold. Reason: %s", payoutID, req.Reason), "payout", strconv.Itoa(payoutID))
 	}()
 
 	return nil
@@ -2128,8 +2868,8 @@ func formatBannerURL(rawURL string) string {
 		return ""
 	}
 	if strings.Contains(rawURL, "localhost:9000") || strings.Contains(rawURL, "minio:9000") {
-		rawURL = strings.ReplaceAll(rawURL, "localhost:9000", "localhost:9001")
-		rawURL = strings.ReplaceAll(rawURL, "minio:9000", "localhost:9001")
+		rawURL = strings.ReplaceAll(rawURL, "localhost:9000", "localhost:9000")
+		rawURL = strings.ReplaceAll(rawURL, "minio:9000", "localhost:9000")
 		rawURL = strings.ReplaceAll(rawURL, "crowdflow-uploads", "crowdflow-public")
 		return rawURL
 	}
@@ -2138,7 +2878,7 @@ func formatBannerURL(rawURL string) string {
 	}
 	base := os.Getenv("S3_PUBLIC_BASE_URL")
 	if base == "" {
-		base = "http://localhost:9001/crowdflow-public"
+		base = "http://localhost:9000/crowdflow-public"
 	}
 	base = strings.TrimSuffix(base, "/")
 	cleaned := strings.TrimPrefix(rawURL, "/")
@@ -2146,4 +2886,80 @@ func formatBannerURL(rawURL string) string {
 		cleaned = "events/covers/" + cleaned
 	}
 	return base + "/" + cleaned
+}
+
+// ============================================================================
+// Per-event documents
+//
+// These live in event_documents, NOT organizer_documents, so they cannot go
+// through VerifyReviewDocument/RejectReviewDocument: auditor_document_reviews
+// has an FK to organizer_documents(id), and the two id sequences overlap.
+// The decision is recorded on the row itself (migration 0016 carries
+// review_notes / reviewed_at / reviewed_by for exactly this).
+// ============================================================================
+
+func (r *PostgresAuditorRepository) VerifyEventDocument(ctx context.Context, docID, actorID int) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE event_documents
+		SET status = 'verified', review_notes = NULL, reviewed_at = now(), reviewed_by = $2
+		WHERE id = $1
+	`, docID, actorID)
+	if err != nil {
+		return err
+	}
+	return checkAffected(res)
+}
+
+func (r *PostgresAuditorRepository) RejectEventDocument(ctx context.Context, docID, actorID int, reason string) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE event_documents
+		SET status = 'rejected', review_notes = $3, reviewed_at = now(), reviewed_by = $2
+		WHERE id = $1
+	`, docID, actorID, reason)
+	if err != nil {
+		return err
+	}
+	return checkAffected(res)
+}
+
+// GetDocumentPath resolves a (source, id) pair to its private-bucket object key.
+// The source discriminator is what makes the id unambiguous.
+func (r *PostgresAuditorRepository) GetDocumentPath(ctx context.Context, source string, docID int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	var query string
+	switch source {
+	case DocSourceEvent:
+		query = `SELECT file_path FROM event_documents WHERE id = $1`
+	case DocSourceOrganizer:
+		query = `SELECT file_path FROM organizer_documents WHERE id = $1`
+	default:
+		return "", ErrValidation
+	}
+
+	var path string
+	err := r.db.QueryRowContext(ctx, query, docID).Scan(&path)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return path, err
+}
+
+// checkAffected turns a no-op UPDATE into a not-found rather than a silent success.
+func checkAffected(res sql.Result) error {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

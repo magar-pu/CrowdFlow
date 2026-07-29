@@ -2,13 +2,48 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
-  EventItem, TicketTier, Gate, ScannerDevice, Staff, VenueSection, Transaction, LogEntry,
+  EventItem, CreateEventDraft, TicketTier, Gate, ScannerDevice, Staff, VenueSection, Transaction, LogEntry,
 } from "./types";
 import {
   INITIAL_EVENTS, INITIAL_TICKET_TIERS, INITIAL_GATES, INITIAL_DEVICES,
   STAFF_MEMBERS, INITIAL_VENUE_SECTIONS, RECENT_TRANSACTIONS, ACTIVITY_LOGS,
 } from "./data";
-import { listOrganizerEvents, getDashboardData, DashboardResponse, createOrganizerEvent, publishOrganizerEvent, updateOrganizerEvent } from "@/lib/api/eorganizer";
+import { listOrganizerEvents, getDashboardData, DashboardResponse, createOrganizerEvent, publishOrganizerEvent, updateOrganizerEvent, uploadEventCover, type OrganizerEvent } from "@/lib/api/eorganizer";
+
+/**
+ * API event -> console event.
+ *
+ * This mapping existed four times over — twice in fetchData and twice in the
+ * mount effect, active and archived each. Adding `delegated`/`ownerName` to four
+ * copies is exactly how the fifth one ends up missing a field.
+ */
+function toEventItem(e: OrganizerEvent): EventItem {
+  return {
+    id: e.id,
+    name: e.name,
+    category: e.category,
+    description: e.description,
+    date: e.date,
+    startDate: e.startDate,
+    startTime: e.startTime,
+    endDate: e.endDate,
+    endTime: e.endTime,
+    venueId: e.venueId,
+    location: e.location,
+    locationAddress: e.locationAddress,
+    venueName: e.venueName,
+    venueCity: e.venueCity,
+    capacity: e.capacity,
+    sold: e.sold,
+    revenue: e.revenue,
+    status: e.status as EventItem["status"],
+    image: e.image,
+    // Whose event this is. The server decides — it is derived per request from
+    // events.organizer_id against the caller, never sent up by the client.
+    delegated: e.delegated ?? false,
+    ownerName: e.ownerName ?? "",
+  };
+}
 
 interface Toast {
   message: string;
@@ -34,7 +69,7 @@ interface OrganizerDataValue {
   toast: Toast | null;
   pushToast: (message: string, type?: Toast['type']) => void;
 
-  handleCreateEvent: (wizardEvent: Omit<EventItem, "id" | "sold" | "revenue">) => void;
+  handleCreateEvent: (wizardEvent: CreateEventDraft, coverFile?: File | null) => Promise<string | null>;
   handleUpdateEventName: (eventId: string, newName: string) => void;
   handleResetData: () => void;
   handleTriggerLiveScan: () => void;
@@ -65,34 +100,17 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
 
   const fetchData = async () => {
     setIsLoading(true);
-    const [eventsRes, dashRes] = await Promise.all([
-      listOrganizerEvents(),
+    const [eventsRes, archivedRes, dashRes] = await Promise.all([
+      listOrganizerEvents(false),
+      listOrganizerEvents(true),
       getDashboardData(),
     ]);
 
-    if (eventsRes.success && eventsRes.data) {
-      const mappedEvents: EventItem[] = eventsRes.data.map(e => ({
-        id: e.id,
-        name: e.name,
-        category: e.category,
-        description: e.description,
-        date: e.date,
-        startDate: e.startDate,
-        startTime: e.startTime,
-        endDate: e.endDate,
-        endTime: e.endTime,
-        locationType: e.locationType === "virtual" ? "virtual" : "physical",
-        location: e.location,
-        locationAddress: e.locationAddress,
-        venueName: e.venueName,
-        capacity: e.capacity,
-        sold: e.sold,
-        revenue: e.revenue,
-        status: e.status as "Live" | "Scheduled" | "Draft",
-        image: e.image,
-      }));
-      setEvents(mappedEvents);
-    }
+    const activeList = eventsRes.success && eventsRes.data ? eventsRes.data.map(toEventItem) : [];
+
+    const archivedList = archivedRes.success && archivedRes.data ? archivedRes.data.map(toEventItem) : [];
+
+    setEvents([...activeList, ...archivedList]);
 
     if (dashRes.success && dashRes.data) {
       setDashboardData(dashRes.data);
@@ -101,7 +119,28 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
   };
 
   useEffect(() => {
-    fetchData();
+    let isMounted = true;
+    Promise.all([
+      listOrganizerEvents(false),
+      listOrganizerEvents(true),
+      getDashboardData(),
+    ]).then(([eventsRes, archivedRes, dashRes]) => {
+      if (!isMounted) return;
+
+      const activeList = eventsRes.success && eventsRes.data ? eventsRes.data.map(toEventItem) : [];
+
+      const archivedList = archivedRes.success && archivedRes.data ? archivedRes.data.map(toEventItem) : [];
+
+      setEvents([...activeList, ...archivedList]);
+      if (dashRes.success && dashRes.data) {
+        setDashboardData(dashRes.data);
+      }
+      setIsLoading(false);
+    });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const [ticketTiers, setTicketTiers] = useState<TicketTier[]>(() => {
@@ -163,7 +202,17 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
 
   const pushToast = (message: string, type: Toast['type'] = 'info') => setToast({ message, type });
 
-  const handleCreateEvent = async (wizardEvent: Omit<EventItem, "id" | "sold" | "revenue">) => {
+  // No venue here on purpose: a draft is created without one and the organizer
+  // picks it in the workspace's Venue tab. Publishing is gated on it being set.
+  // coverFile is uploaded AFTER the event row exists, because the upload
+  // endpoint is scoped to an event id. A failed upload does not fail the
+  // creation: the draft is already saved, so stranding the organizer on the
+  // wizard would be worse than landing them in the workspace where the Settings
+  // tab can set the cover.
+  const handleCreateEvent = async (
+    wizardEvent: CreateEventDraft,
+    coverFile?: File | null
+  ): Promise<string | null> => {
     const res = await createOrganizerEvent({
       name: wizardEvent.name,
       category: wizardEvent.category,
@@ -173,23 +222,34 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
       startTime: wizardEvent.startTime,
       endDate: wizardEvent.endDate,
       endTime: wizardEvent.endTime,
-      locationType: wizardEvent.locationType,
-      location: wizardEvent.location,
-      locationAddress: wizardEvent.locationAddress,
-      venueName: wizardEvent.venueName,
       capacity: wizardEvent.capacity,
       status: wizardEvent.status,
       image: wizardEvent.image,
-    } as any);
+    });
 
     if (res.success && res.data) {
       pushToast(`Successfully deployed event: ${wizardEvent.name}`, 'success');
+
+      // Before any publish: an event submitted for review should carry the
+      // cover the organizer picked, not go up without one.
+      if (coverFile) {
+        const cover = await uploadEventCover(Number(res.data.id), coverFile);
+        if (!cover.success) {
+          pushToast(
+            `Event saved, but the cover image failed to upload: ${cover.error?.message ?? "Unknown error"}. You can add it from the Settings tab.`,
+            'warning'
+          );
+        }
+      }
+
       if (wizardEvent.status === "Scheduled") {
         await publishOrganizerEvent(Number(res.data.id));
       }
       await fetchData();
+      return String(res.data.id);
     } else {
       pushToast(`Failed to deploy event: ${res.error?.message || "Unknown error"}`, 'warning');
+      return null;
     }
   };
 

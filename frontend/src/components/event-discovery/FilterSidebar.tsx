@@ -1,15 +1,10 @@
-/**
- * components/event-discovery/FilterSidebar.tsx
- *
- * Sticky advanced-filter sidebar: city checkboxes, price-range slider,
- * availability radios, "Clear All Filters" button. Matches Stitch markup
- * exactly. State is fully controlled — parent page owns the actual
- * filtering logic against mockEventListingCards.
- */
+"use client";
 
-import { Filter } from "lucide-react";
+import { useState } from "react";
+import { Filter, ChevronDown, SlidersHorizontal } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-const CITIES = ["Jakarta", "Bandung", "Surabaya"];
+const CITIES = ["Jakarta", "Bandung", "Surabaya", "Tangerang", "Sleman", "Badung"];
 
 interface FilterSidebarProps {
   selected_cities: string[];
@@ -30,9 +25,46 @@ export function FilterSidebar({
   on_availability_change,
   on_clear_filters,
 }: FilterSidebarProps) {
+  const [isOpenMobile, setIsOpenMobile] = useState(false);
+
+  const activeFilterCount =
+    selected_cities.length + (max_price < 5_000_000 ? 1 : 0);
+
   return (
     <aside className="w-full shrink-0 lg:w-72">
-      <div className="sticky top-24 rounded-xl border border-border-subtle bg-surface-white p-6">
+      {/* Mobile Toggle Trigger Button */}
+      <div className="lg:hidden mb-4">
+        <button
+          type="button"
+          onClick={() => setIsOpenMobile((prev) => !prev)}
+          className="w-full flex items-center justify-between p-4 rounded-xl border border-border-subtle bg-surface-white font-bold text-sm text-text-primary shadow-2xs active:scale-[0.99] transition-all cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal size={18} className="text-secondary" />
+            <span>Filter Events</span>
+            {activeFilterCount > 0 && (
+              <span className="ml-1 rounded-full bg-secondary px-2 py-0.5 text-xs font-bold text-white">
+                {activeFilterCount}
+              </span>
+            )}
+          </div>
+          <ChevronDown
+            size={18}
+            className={cn(
+              "text-text-secondary transition-transform duration-300",
+              isOpenMobile && "rotate-180"
+            )}
+          />
+        </button>
+      </div>
+
+      {/* Filter Sidebar Box - Collapsible on Mobile, Sticky on Desktop */}
+      <div
+        className={cn(
+          "rounded-xl border border-border-subtle bg-surface-white p-5 sm:p-6 lg:sticky lg:top-24 shadow-sm transition-all duration-300",
+          !isOpenMobile && "hidden lg:block"
+        )}
+      >
         <h3 className="mb-6 flex items-center justify-between font-headline-sm text-headline-sm text-text-primary">
           Filter
           <Filter size={18} className="text-text-secondary" />

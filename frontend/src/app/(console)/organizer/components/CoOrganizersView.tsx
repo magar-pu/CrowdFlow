@@ -126,7 +126,9 @@ export default function CoOrganizersView() {
             <Users className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-text-primary">Co-organizers</h1>
+            {/* Matches every other top-level organizer view (Orders, Finance,
+                Reports, Attendees); this page was the only one at text-lg. */}
+            <h1 className="text-2xl font-bold text-text-primary tracking-tight">Co-organizers</h1>
             <p className="text-sm text-text-secondary">
               Delegate management of your events to other verified organizers, or request access to theirs.
             </p>
@@ -345,7 +347,7 @@ function ReceivedList({ items }: { items: Delegation[] }) {
             <ScopeSummary delegation={d} />
           </div>
           {d.status === "pending" && (
-            <p className="mt-2 text-[11px] text-warning">Awaiting the owner's approval.</p>
+            <p className="mt-2 text-xs text-warning">Awaiting the owner&apos;s approval.</p>
           )}
         </div>
       ))}
@@ -440,7 +442,7 @@ function DelegationFormModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
       <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-border-subtle bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-border-subtle p-5">
-          <h3 className="text-sm font-bold text-text-primary">{title}</h3>
+          <h3 className="text-base font-bold text-text-primary">{title}</h3>
           <button
             onClick={onClose}
             className="cursor-pointer rounded p-1 text-on-surface-variant transition-colors hover:text-text-primary"
@@ -479,7 +481,7 @@ function DelegationFormModal({
                     key={s}
                     type="button"
                     onClick={() => setScope(s)}
-                    className={`flex-1 cursor-pointer rounded-md px-2 py-1.5 text-[10px] font-semibold transition-colors ${
+                    className={`flex-1 cursor-pointer rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
                       scope === s ? "bg-primary text-on-primary shadow-sm" : "text-text-secondary hover:text-text-primary"
                     }`}
                   >
@@ -495,7 +497,7 @@ function DelegationFormModal({
               <label className="text-[9px] font-mono font-bold uppercase text-text-secondary">Events</label>
               <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-border-subtle p-1">
                 {events.length === 0 ? (
-                  <p className="p-2 text-[11px] text-on-surface-variant">No events found.</p>
+                  <p className="p-2 text-xs text-on-surface-variant">No events found.</p>
                 ) : (
                   events.map((ev) => {
                     const id = parseInt(ev.id, 10);
@@ -533,7 +535,7 @@ function DelegationFormModal({
           )}
 
           {formError && (
-            <div className="flex items-center gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[11px] font-medium text-danger">
+            <div className="flex items-center gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs font-medium text-danger">
               <AlertCircle className="h-3.5 w-3.5 shrink-0" />
               {formError}
             </div>

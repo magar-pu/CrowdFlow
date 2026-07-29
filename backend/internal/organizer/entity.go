@@ -3,6 +3,8 @@ package organizer
 import (
 	"context"
 	"errors"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -17,7 +19,157 @@ var (
 	ErrSeatNotInLayout   = errors.New("seat does not belong to the event's layout")
 	ErrTierNotInEvent    = errors.New("ticket tier does not belong to this event")
 	ErrSeatingIncomplete = errors.New("event seating is incomplete")
+
+	// ErrVenueRequired guards the publish step. Drafts may carry no venue at all
+	// (it is picked in the workspace, not the creation wizard), but an event
+	// cannot be submitted for review without one.
+	ErrVenueRequired = errors.New("event has no venue")
+
+	// ErrDocumentsIncomplete guards the publish step alongside the venue and
+	// seating gates: an auditor cannot evaluate an event without its proposal,
+	// crowd permit and PIC identification.
+	ErrDocumentsIncomplete = errors.New("required event documents are missing")
+
+	ErrDocumentNotFound = errors.New("event document not found")
+
+	// ErrNotDraft is returned when an operation restricted to drafts is
+	// attempted on an event that has already been submitted. Distinct from
+	// "not found" so the organizer is told WHY rather than that their event
+	// vanished — the usual cause is a status change in another tab.
+	ErrNotDraft = errors.New("only a draft event can be deleted")
+
+	// ErrNotUnderReview guards withdrawal: only an event actually sitting in
+	// pending_review can be pulled back.
+	ErrNotUnderReview = errors.New("event is not awaiting review")
+
+	// ErrReviewInProgress blocks withdrawal once an auditor has picked the
+	// event up. Yanking it mid-review would discard their work and leave the
+	// auditor console pointing at an event that silently became a draft.
+	ErrReviewInProgress = errors.New("an auditor has already started reviewing this event")
+
+	// ErrCannotArchive blocks archiving an event that is still live or in the
+	// middle of review — archiving is for terminal events.
+	ErrCannotArchive = errors.New("this event cannot be archived in its current status")
+
+	// ErrNotApproved guards the public listing: only an event an auditor has
+	// approved may be put on sale.
+	ErrNotApproved = errors.New("event has not been approved yet")
+
+	// ErrEventArchived blocks publishing an archived event — it would be live
+	// publicly while hidden from the organizer's own list.
+	ErrEventArchived = errors.New("event is archived")
+
+	ErrEventNotFound = errors.New("event not found")
+
+	// ErrOrganizerDocumentsRequired blocks submitting an event while the
+	// organizer's own ACCOUNT paperwork has not been verified by an auditor.
+	// Distinct from ErrDocumentsIncomplete, which is about the event's own
+	// documents: this one is fixed in Settings, not in the event workspace.
+	ErrOrganizerDocumentsRequired = errors.New("organizer account documents are not verified")
 )
+
+// Per-event document types. These are distinct from the ACCOUNT-level documents
+// in organizer_documents (KTP/NPWP/NIB), which an organizer submits once when
+// applying and which are reused across every event they run.
+const (
+	DocTypeEventProposal = "EVENT_PROPOSAL" // Proposal Kegiatan
+	DocTypeCrowdPermit   = "CROWD_PERMIT"   // Izin Keramaian
+	DocTypePICID         = "PIC_ID"         // Fotokopi KTP Penanggung Jawab
+	DocTypeVenuePermit   = "VENUE_PERMIT"   // Izin Penggunaan Tempat
+)
+
+// RequiredEventDocumentTypes must all be present before an event may be submitted
+// for review. VENUE_PERMIT is deliberately excluded — it only applies when the
+// organizer does not own the venue, which nothing in the schema can determine.
+var RequiredEventDocumentTypes = []string{
+	DocTypeEventProposal,
+	DocTypeCrowdPermit,
+	DocTypePICID,
+}
+
+// AllEventDocumentTypes is the closed set the API accepts.
+var AllEventDocumentTypes = []string{
+	DocTypeEventProposal,
+	DocTypeCrowdPermit,
+	DocTypePICID,
+	DocTypeVenuePermit,
+}
+
+func IsValidEventDocumentType(t string) bool {
+	return slices.Contains(AllEventDocumentTypes, t)
+}
+
+// EventDocumentLabel renders a document type for humans. Error messages reach the
+// organizer verbatim via the publish banner, so they cannot read EVENT_PROPOSAL.
+func EventDocumentLabel(t string) string {
+	switch t {
+	case DocTypeEventProposal:
+		return "Event Proposal"
+	case DocTypeCrowdPermit:
+		return "Crowd Permit (Izin Keramaian)"
+	case DocTypePICID:
+		return "PIC Identification (KTP)"
+	case DocTypeVenuePermit:
+		return "Venue Usage Permit"
+	default:
+		return t
+	}
+}
+
+// EventDocument is one row of event_documents. FilePath is a private-bucket
+// object key and is never serialised; readers get a short-lived PresignedURL.
+type EventDocument struct {
+	ID           int       `json:"id"`
+	EventID      int       `json:"event_id"`
+	DocumentType string    `json:"document_type"`
+	FilePath     string    `json:"-"`
+	FileName     string    `json:"file_name"`
+	FileSize     int64     `json:"file_size"`
+	ContentType  string    `json:"content_type"`
+	Status      string    `json:"status"`
+	ReviewNotes *string   `json:"review_notes,omitempty"`
+	UploadedAt  time.Time `json:"uploaded_at"`
+}
+
+// EventDocumentURL is a freshly minted view link. Never embedded in a list
+// response — a presigned URL is a bearer credential, so one is created only when
+// a specific document is explicitly opened.
+type EventDocumentURL struct {
+	URL string `json:"url"`
+	// Seconds until the link stops working, so the UI can say so.
+	ExpiresIn int `json:"expires_in"`
+}
+
+// EventDocumentUpload carries a single file from the multipart handler to the
+// service, which is what actually writes it to the private bucket.
+type EventDocumentUpload struct {
+	Type     string
+	Filename string
+	Content  []byte
+}
+
+// CoverImageUpload is one event cover-art file on its way to the PUBLIC bucket.
+// Unlike EventDocumentUpload this is deliberately world-readable: the URL is
+// rendered on the public event page.
+type CoverImageUpload struct {
+	Filename string
+	Content  []byte
+}
+
+// CoverImageResponse returns the resolved public URL so the workspace can swap
+// its local blob: preview for the persisted image.
+type CoverImageResponse struct {
+	ImageURL string `json:"imageUrl"`
+}
+
+// EventDocumentsResponse is the Documents tab payload: every slot the UI can
+// render, whether filled or not, plus the derived submission readiness.
+type EventDocumentsResponse struct {
+	Documents []*EventDocument `json:"documents"`
+	Required  []string         `json:"required"`
+	Missing   []string         `json:"missing"`
+	Complete  bool             `json:"complete"`
+}
 
 type OrganizerApplication struct {
 	ID                int                  `json:"id"`
@@ -48,6 +200,96 @@ type OrganizerDocument struct {
 	PresignedURL  string    `json:"url,omitempty"` // populated dynamically at runtime
 	Status        string    `json:"status"`        // 'pending_verification', 'verified', 'rejected'
 	UploadedAt    time.Time `json:"uploaded_at"`
+	// FileName and FileSize mirror event_documents so both document surfaces can
+	// render from one component. Added in migration 0031; rows filed before it
+	// carry the object key's basename and a zero size, which the UI reads as
+	// "unknown" rather than printing "0 B".
+	FileName string `json:"file_name"`
+	FileSize int64  `json:"file_size"`
+	// ReviewNotes is the auditor's reason on the most recent decision for this
+	// document, from auditor_document_reviews. Only worth showing on a rejection
+	// — that is the one case where the organizer must act on it — so the list
+	// query populates it for rejected rows only.
+	ReviewNotes *string `json:"review_notes,omitempty"`
+	// IsCurrent is false on superseded uploads. The organizer console only ever
+	// shows current rows; the history exists so an auditor can see that an
+	// earlier version was rejected.
+	IsCurrent     bool      `json:"is_current"`
+}
+
+// AccountDocumentTypes are the account-level documents an organizer can file.
+// Mirrors the multipart field names accepted by POST /api/organizer/apply, so
+// the two paths cannot drift into accepting different sets.
+//
+// VENUE_AGREEMENT and EVENT_PROPOSAL used to sit here and were removed: both are
+// per-EVENT artifacts, signed and written once per event rather than once per
+// organizer. EVENT_PROPOSAL was worse than merely misplaced — it is also a
+// REQUIRED event document type (see DocTypeEventProposal above), so the same
+// document was being collected in two places and reviewed through two separate
+// flows. The event-side equivalent of VENUE_AGREEMENT is DocTypeVenuePermit.
+var AccountDocumentTypes = []string{"KTP", "NPWP", "NIB", "SIUP", "BUSINESS_LICENSE"}
+
+// RequiredAccountDocumentTypes must all be VERIFIED by an auditor before the
+// organizer may submit any event for review. Identity, tax and business
+// registration: the three every Indonesian organizer has, whatever their
+// business type.
+//
+// SIUP and BUSINESS_LICENSE stay uploadable and reviewable but deliberately do
+// NOT block — they do not apply uniformly across business types, and gating on
+// a document some organizers cannot obtain would be a gate nobody can pass.
+var RequiredAccountDocumentTypes = []string{"KTP", "NPWP", "NIB"}
+
+// AccountDocumentLabel renders an account document type for humans. These
+// strings reach the organizer verbatim through the publish gate's error, so
+// they cannot read NPWP.
+func AccountDocumentLabel(t string) string {
+	switch t {
+	case "KTP":
+		return "KTP (Director's ID)"
+	case "NPWP":
+		return "NPWP (Tax ID)"
+	case "NIB":
+		return "NIB (Business Registration)"
+	case "SIUP":
+		return "SIUP (Trading Licence)"
+	case "BUSINESS_LICENSE":
+		return "Business Licence"
+	default:
+		return t
+	}
+}
+
+// accountDocumentLabels renders a list of type keys as a human sentence
+// fragment, for error messages that reach the organizer verbatim.
+func accountDocumentLabels(types []string) string {
+	labels := make([]string, 0, len(types))
+	for _, t := range types {
+		labels = append(labels, AccountDocumentLabel(t))
+	}
+	return strings.Join(labels, ", ")
+}
+
+// AccountDocumentReadiness reports whether the organizer may submit events, so
+// the console can disable Submit with a reason instead of letting the publish
+// call 422 after the fact.
+type AccountDocumentReadiness struct {
+	Ready bool `json:"ready"`
+	// Exempt is true for organizers grandfathered by migration 0027 — they were
+	// already running approved events when the gate was introduced.
+	Exempt   bool     `json:"exempt"`
+	Required []string `json:"required"`
+	// Missing carries human labels, not type keys, and covers both "never
+	// uploaded" and "uploaded but not verified".
+	Missing []string `json:"missing"`
+}
+
+func IsValidAccountDocumentType(t string) bool {
+	for _, valid := range AccountDocumentTypes {
+		if valid == t {
+			return true
+		}
+	}
+	return false
 }
 
 type ApplyRequest struct {
@@ -62,6 +304,46 @@ type ApplyRequest struct {
 	BankAccountNumber string `json:"bank_account_number"`
 	BusinessAddress   string `json:"business_address"`
 }
+
+// PayoutDetails is the organizer's payout bank account plus everything the
+// console needs to decide whether the form is editable and what to warn about.
+//
+// The account is organizer-level, not per-event: organizer_applications is
+// UNIQUE (user_id) and the auditor payout screen joins to it via
+// events.organizer_id, so one account receives every payout.
+type PayoutDetails struct {
+	BankName          string `json:"bankName"`
+	BankAccountHolder string `json:"bankAccountHolder"`
+	BankAccountNumber string `json:"bankAccountNumber"`
+
+	// Complete reports whether all three fields are present. The publish gate
+	// uses the same condition, so the console can pre-empt it.
+	Complete           bool   `json:"complete"`
+	VerificationStatus string `json:"verificationStatus"` // "unverified" | "verified"
+	UpdatedAt          string `json:"updatedAt,omitempty"`
+
+	// Editable is false once the details are committed to something: an event
+	// awaiting an auditor, or a payout already in flight. LockReason says which,
+	// so the console explains the lock instead of just disabling the form.
+	Editable   bool   `json:"editable"`
+	LockReason string `json:"lockReason,omitempty"`
+}
+
+// UpdatePayoutDetailsRequest is the payload of PUT /api/organizer/payout-details.
+type UpdatePayoutDetailsRequest struct {
+	BankName          string `json:"bankName"`
+	BankAccountHolder string `json:"bankAccountHolder"`
+	BankAccountNumber string `json:"bankAccountNumber"`
+}
+
+// ErrPayoutDetailsLocked is returned when bank details are edited while an
+// event is under review or a payout is in flight. Distinct from
+// ErrApplicationLocked, which is about the application wizard.
+var ErrPayoutDetailsLocked = errors.New("payout details are locked")
+
+// ErrPayoutDetailsRequired gates event submission: an event cannot go to an
+// auditor until the organizer has an account for the money to land in.
+var ErrPayoutDetailsRequired = errors.New("payout bank details are required")
 
 type DocumentUpload struct {
 	Type     string
@@ -129,6 +411,9 @@ type RecentEvent struct {
 	Revenue   float64 `json:"revenue"`
 	Status    string  `json:"status"`
 	Image     string  `json:"image"`
+	// Published distinguishes an approved event that is on sale from one the
+	// organizer has not listed yet.
+	Published bool `json:"published"`
 }
 
 type DashboardResponse struct {
@@ -137,26 +422,81 @@ type DashboardResponse struct {
 	RecentEvents []RecentEvent  `json:"recentEvents"`
 }
 
+// NewVenueInput carries a venue the organizer is creating inline from the event
+// wizard, when the one they want isn't in the catalogue yet. Nil on the common
+// path, where VenueID already points at an existing row.
+//
+// Plain text throughout: the address is typed, not geocoded, so there are no
+// coordinates and no external place id here.
+type NewVenueInput struct {
+	Name          string `json:"name"`
+	Address       string `json:"address"`
+	City          string `json:"city"`
+	Province      string `json:"province"`
+	PostalCode    string `json:"postalCode"`
+	TotalCapacity int    `json:"totalCapacity"`
+}
+
 // eorganizer Event models
+//
+// This struct is both the request and the response shape for the organizer
+// event endpoints. On the way IN, the venue is identified by VenueID (picked
+// from the catalogue) or NewVenue (created inline). On the way OUT, the Venue*
+// and Location* fields are read back off the joined venues row.
+//
+// Events are physical-venue-only. The old "virtual" locationType was an
+// application fiction built on an auto-created 'Virtual Venue' row, and the
+// read paths hardcoded every event back to "physical" anyway.
+//
+// The venue is OPTIONAL on a draft (migration 0015 made events.venue_id
+// nullable): it is chosen in the event workspace, not the creation wizard. On a
+// venue-less event VenueID is 0 and the Venue*/Location* fields are empty.
+// Publishing is gated on a venue being set.
 type OrganizerEvent struct {
-	ID              string  `json:"id"`
-	Name            string  `json:"name"`
-	Category        string  `json:"category"`
-	Description     string  `json:"description"`
-	Date            string  `json:"date"`
-	StartDate       string  `json:"startDate"`
-	StartTime       string  `json:"startTime"`
-	EndDate         string  `json:"endDate"`
-	EndTime         string  `json:"endTime"`
-	LocationType    string  `json:"locationType"`
-	Location        string  `json:"location"`
-	LocationAddress string  `json:"locationAddress"`
-	VenueName       string  `json:"venueName"`
-	Capacity        int     `json:"capacity"`
-	Sold            int     `json:"sold"`
-	Revenue         float64 `json:"revenue"`
-	Status          string  `json:"status"`
-	Image           string  `json:"image"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Category    string `json:"category"`
+	Description string `json:"description"`
+	Date        string `json:"date"`
+	StartDate   string `json:"startDate"`
+	StartTime   string `json:"startTime"`
+	EndDate     string `json:"endDate"`
+	EndTime     string `json:"endTime"`
+
+	VenueID  int            `json:"venueId"`
+	NewVenue *NewVenueInput `json:"newVenue,omitempty"`
+
+	VenueName string `json:"venueName"` // venues.name
+	VenueCity string `json:"venueCity"` // venues.city
+	// LocationAddress is the real venues.address street line. Location is the
+	// composed "Name, City" display string the console renders.
+	LocationAddress string `json:"locationAddress"`
+	Location        string `json:"location"`
+
+	Capacity int     `json:"capacity"`
+	Sold     int     `json:"sold"`
+	Revenue  float64 `json:"revenue"`
+	Status   string  `json:"status"`
+	Image    string  `json:"image"`
+
+	// Published reports whether the organizer has put the approved event on the
+	// public listing. Approval alone no longer implies it.
+	Published bool `json:"published"`
+
+	// MaxTicketsPerOrder caps the TOTAL tickets one order may contain across
+	// every tier (migration 0030). 0 means uncapped. Read-only on this struct:
+	// it is written through SetEventMaxTicketsPerOrder, never through
+	// UpdateOrganizerEvent, which blanks columns its payload omits.
+	MaxTicketsPerOrder int `json:"maxTicketsPerOrder"`
+
+	// Delegated is true when the caller reaches this event through a
+	// co-organizer delegation rather than owning it. Computed per request from
+	// events.organizer_id, so the same event is delegated for one user and not
+	// for another — never stored.
+	Delegated bool `json:"delegated"`
+	// OwnerName is who the event belongs to. Only meaningful alongside
+	// Delegated; on your own events it is your own name.
+	OwnerName string `json:"ownerName,omitempty"`
 }
 
 // Ticket Tier model
@@ -167,7 +507,6 @@ type OrganizerTicketTier struct {
 	Sold        int     `json:"sold"`
 	Capacity    int     `json:"capacity"`
 	Status      string  `json:"status,omitempty"`
-	MaxPerOrder int     `json:"maxPerOrder,omitempty"`
 	SalesStart  string  `json:"salesStart,omitempty"`
 	SalesEnd    string  `json:"salesEnd,omitempty"`
 	Description string  `json:"description,omitempty"`
@@ -226,10 +565,22 @@ type EventRevisionFeedback struct {
 	StatusLogs          []*EventStatusLogItem  `json:"statusLogs"`
 }
 
+// RespondRevisionRequest carries the organizer's reply to one revision point.
+// There is deliberately no file field: the old `proofFile` only ever transmitted
+// a filename the browser never uploaded, so the auditor was shown an attachment
+// that did not exist. Evidence now comes from the documents the organizer
+// actually replaced, recorded automatically as RevisionDocumentChange.
 type RespondRevisionRequest struct {
 	Comment     string `json:"comment"`
 	ActionTaken string `json:"actionTaken"`
-	ProofFile   string `json:"proofFile"`
+}
+
+// RevisionDocumentChange is one event document that was re-uploaded after the
+// auditor raised the revision, captured at the moment the organizer responded.
+type RevisionDocumentChange struct {
+	DocumentType string `json:"documentType"`
+	Label        string `json:"label"`
+	UploadedAt   string `json:"uploadedAt"`
 }
 
 type AuditorRevisionItem struct {
@@ -243,8 +594,13 @@ type AuditorRevisionItem struct {
 	CreatedAt            time.Time `json:"createdAt"`
 	OrganizerComment     string    `json:"organizerComment,omitempty"`
 	OrganizerActionTaken string    `json:"organizerActionTaken,omitempty"`
-	OrganizerFile        string    `json:"organizerFile,omitempty"`
 	RespondedAt          string    `json:"respondedAt,omitempty"`
+	// DocumentsChanged is never nil — an empty list means the organizer
+	// answered without touching any paperwork, which is a meaningful answer.
+	DocumentsChanged []RevisionDocumentChange `json:"documentsChanged"`
+	// PendingDocumentChanges previews, for an unanswered revision, which
+	// documents have already been re-uploaded since it was raised.
+	PendingDocumentChanges []RevisionDocumentChange `json:"pendingDocumentChanges,omitempty"`
 }
 
 type EventStatusLogItem struct {
@@ -323,26 +679,79 @@ type OrganizerAnalytics struct {
 	Points []AnalyticsPoint `json:"points"`
 }
 
+// Live gate/check-in figures for one event, read from ticket_checkins and
+// scanner_logs. The scanner package exposes similar numbers but its routes carry
+// no auth middleware, so the organizer console reads them through here instead.
+type EventCheckInStats struct {
+	TotalCheckedIn int                `json:"totalCheckedIn"`
+	TotalTickets   int                `json:"totalTickets"`
+	// Mean scanner round-trip in milliseconds; 0 when nothing has been scanned.
+	AvgScanMs int                  `json:"avgScanMs"`
+	Gates     []GateCheckInStat    `json:"gates"`
+	Devices   []DeviceCheckInStat  `json:"devices"`
+	Hourly    []HourlyCheckInPoint `json:"hourly"`
+}
+
+type DeviceCheckInStat struct {
+	DeviceID int `json:"deviceId"`
+	Scans    int `json:"scans"`
+}
+
+type GateCheckInStat struct {
+	GateID      int    `json:"gateId"`
+	GateName    string `json:"gateName"`
+	Status      string `json:"status"`
+	Scans       int    `json:"scans"`
+	DeviceCount int    `json:"deviceCount"`
+}
+
+type HourlyCheckInPoint struct {
+	// Local hour bucket, "08:00".
+	Hour  string `json:"hour"`
+	Scans int    `json:"scans"`
+}
+
 type Repository interface {
 	Create(ctx context.Context, app *OrganizerApplication, docs []*OrganizerDocument) error
 	GetByUserID(ctx context.Context, userID int) (*OrganizerApplication, error)
+	// ListAccountDocuments returns only the CURRENT version of each document
+	// type. organizer_documents keeps superseded rows so a rejection stays on
+	// the record, so anything counting or listing must filter is_current.
+	ListAccountDocuments(ctx context.Context, userID int) ([]*OrganizerDocument, error)
+	GetAccountDocumentReadiness(ctx context.Context, userID int) (*AccountDocumentReadiness, error)
+	ReplaceAccountDocument(ctx context.Context, userID int, doc *OrganizerDocument) error
+	GetAccountDocumentPath(ctx context.Context, userID, docID int) (string, error)
+	// DeleteAccountDocument removes one CURRENT document and returns the object
+	// key to purge. Superseded rows are not deletable: they are the evidence an
+	// auditor's earlier decision was made against.
+	DeleteAccountDocument(ctx context.Context, userID, docID int) (string, error)
 	GetByID(ctx context.Context, id int) (*OrganizerApplication, error)
 	Update(ctx context.Context, app *OrganizerApplication) error
 	Delete(ctx context.Context, id int) error
 
 	// eorganizer methods
 	GetDashboardData(ctx context.Context, organizerID int) (*DashboardResponse, error)
-	ListOrganizerEvents(ctx context.Context, organizerID int) ([]*OrganizerEvent, error)
+	ListOrganizerEvents(ctx context.Context, organizerID int, archived bool) ([]*OrganizerEvent, error)
 	GetOrganizerEvent(ctx context.Context, eventID int, organizerID int) (*OrganizerEvent, error)
 	CreateOrganizerEvent(ctx context.Context, organizerID int, event *OrganizerEvent) error
 	UpdateOrganizerEvent(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
+	SetEventVenue(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
+	SetEventMapsURL(ctx context.Context, eventID int, organizerID int, mapsURL string) error
+	SetEventMaxTicketsPerOrder(ctx context.Context, eventID int, organizerID int, maxPerOrder int) error
+	SetEventCoverImage(ctx context.Context, eventID int, organizerID int, url string) error
+	WithdrawEventFromReview(ctx context.Context, eventID int, organizerID int) error
+	SetEventArchived(ctx context.Context, eventID int, organizerID int, archived bool) error
+	SetEventListed(ctx context.Context, eventID int, organizerID int, listed bool) error
 	PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
+	GetPayoutDetails(ctx context.Context, organizerID int) (*PayoutDetails, error)
+	UpdatePayoutDetails(ctx context.Context, organizerID int, req UpdatePayoutDetailsRequest) (*PayoutDetails, error)
 	DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	ListTicketTiers(ctx context.Context, eventID int, organizerID int) ([]*OrganizerTicketTier, error)
 	CreateTicketTier(ctx context.Context, eventID int, organizerID int, tier *OrganizerTicketTier) error
 	UpdateTicketTier(ctx context.Context, eventID int, organizerID int, tierID int, tier *OrganizerTicketTier) error
 	DeleteTicketTier(ctx context.Context, eventID int, organizerID int, tierID int) error
 	ListOrders(ctx context.Context, organizerID int) ([]*OrganizerOrder, error)
+	ListEventOrders(ctx context.Context, eventID int, organizerID int) ([]*OrganizerOrder, error)
 	GetOrderDetails(ctx context.Context, orderID string, organizerID int) (*OrganizerOrder, error)
 	ListRefunds(ctx context.Context, organizerID int) ([]*OrganizerRefund, error)
 	ListAttendees(ctx context.Context, organizerID int) ([]*OrganizerAttendee, error)
@@ -352,6 +761,7 @@ type Repository interface {
 	CreatePayoutRequest(ctx context.Context, eventID int, organizerID int, amount float64) error
 	GetAnalytics(ctx context.Context, organizerID int, dateRange string) (*OrganizerAnalytics, error)
 	GetEventAnalytics(ctx context.Context, eventID int, organizerID int, dateRange string) (*OrganizerAnalytics, error)
+	GetEventCheckInStats(ctx context.Context, eventID int, organizerID int) (*EventCheckInStats, error)
 	GetEventSeating(ctx context.Context, eventID int, organizerID int) (*EventSeatingResponse, error)
 	SeedEventSeating(ctx context.Context, eventID int, organizerID int, assignments []SeatingAssignment) error
 	CheckInAttendee(ctx context.Context, eventID int, organizerID int, qrToken string) (*CheckInResponse, error)
@@ -359,21 +769,41 @@ type Repository interface {
 	MarkNotificationsRead(ctx context.Context, userID int, notificationIDs []int) error
 	GetEventRevisions(ctx context.Context, eventID int, organizerID int) (*EventRevisionFeedback, error)
 	RespondToEventRevision(ctx context.Context, eventID, revID, organizerID int, req RespondRevisionRequest) error
+
+	// Per-event documents
+	ListEventDocuments(ctx context.Context, eventID int) ([]*EventDocument, error)
+	UpsertEventDocument(ctx context.Context, doc *EventDocument, uploadedBy int) (string, error)
+	GetEventDocument(ctx context.Context, eventID int, docID int) (*EventDocument, error)
+	DeleteEventDocument(ctx context.Context, eventID int, docID int) (string, error)
 }
 
 type Service interface {
 	Apply(ctx context.Context, userID int, req ApplyRequest, docs []*DocumentUpload) (*OrganizerApplication, error)
 	GetApplication(ctx context.Context, userID int) (*OrganizerApplication, error)
 	UpdateApplication(ctx context.Context, userID int, req ApplyRequest, newDocs []*DocumentUpload) (*OrganizerApplication, error)
+	ListAccountDocuments(ctx context.Context, userID int) ([]*OrganizerDocument, error)
+	GetAccountDocumentReadiness(ctx context.Context, userID int) (*AccountDocumentReadiness, error)
+	UploadAccountDocument(ctx context.Context, userID int, doc *DocumentUpload) (*OrganizerDocument, error)
+	GetAccountDocumentURL(ctx context.Context, userID, docID int) (string, error)
+	DeleteAccountDocument(ctx context.Context, userID, docID int) error
 	DeleteApplication(ctx context.Context, userID int) error
 
 	// eorganizer methods
 	GetDashboardData(ctx context.Context, organizerID int) (*DashboardResponse, error)
-	ListOrganizerEvents(ctx context.Context, organizerID int) ([]*OrganizerEvent, error)
+	ListOrganizerEvents(ctx context.Context, organizerID int, archived bool) ([]*OrganizerEvent, error)
 	GetOrganizerEvent(ctx context.Context, eventID int, organizerID int) (*OrganizerEvent, error)
 	CreateOrganizerEvent(ctx context.Context, organizerID int, event *OrganizerEvent) error
 	UpdateOrganizerEvent(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
+	SetEventVenue(ctx context.Context, eventID int, organizerID int, event *OrganizerEvent) error
+	SetEventMapsURL(ctx context.Context, eventID int, organizerID int, mapsURL string) error
+	SetEventMaxTicketsPerOrder(ctx context.Context, eventID int, organizerID int, maxPerOrder int) error
+	UploadEventCover(ctx context.Context, eventID int, organizerID int, upload *CoverImageUpload) (string, error)
+	WithdrawEventFromReview(ctx context.Context, eventID int, organizerID int) error
+	SetEventArchived(ctx context.Context, eventID int, organizerID int, archived bool) error
+	SetEventListed(ctx context.Context, eventID int, organizerID int, listed bool) error
 	PublishOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
+	GetPayoutDetails(ctx context.Context, organizerID int) (*PayoutDetails, error)
+	UpdatePayoutDetails(ctx context.Context, organizerID int, req UpdatePayoutDetailsRequest) (*PayoutDetails, error)
 	DeleteOrganizerEvent(ctx context.Context, eventID int, organizerID int) error
 	GetEventSeating(ctx context.Context, eventID int, organizerID int) (*EventSeatingResponse, error)
 	SeedEventSeating(ctx context.Context, eventID int, organizerID int, req SeedSeatingRequest) error
@@ -383,6 +813,7 @@ type Service interface {
 	UpdateTicketTier(ctx context.Context, eventID int, organizerID int, tierID int, tier *OrganizerTicketTier) error
 	DeleteTicketTier(ctx context.Context, eventID int, organizerID int, tierID int) error
 	ListOrders(ctx context.Context, organizerID int) ([]*OrganizerOrder, error)
+	ListEventOrders(ctx context.Context, eventID int, organizerID int) ([]*OrganizerOrder, error)
 	GetOrderDetails(ctx context.Context, orderID string, organizerID int) (*OrganizerOrder, error)
 	ListRefunds(ctx context.Context, organizerID int) ([]*OrganizerRefund, error)
 	ListAttendees(ctx context.Context, organizerID int) ([]*OrganizerAttendee, error)
@@ -392,10 +823,17 @@ type Service interface {
 	CreatePayoutRequest(ctx context.Context, eventID int, organizerID int, amount float64) error
 	GetAnalytics(ctx context.Context, organizerID int, dateRange string) (*OrganizerAnalytics, error)
 	GetEventAnalytics(ctx context.Context, eventID int, organizerID int, dateRange string) (*OrganizerAnalytics, error)
+	GetEventCheckInStats(ctx context.Context, eventID int, organizerID int) (*EventCheckInStats, error)
 	GetEventRevisions(ctx context.Context, eventID int, organizerID int) (*EventRevisionFeedback, error)
 	RespondToEventRevision(ctx context.Context, eventID, revID, organizerID int, req RespondRevisionRequest) error
 	ListNotifications(ctx context.Context, userID int) ([]*Notification, error)
 	MarkNotificationsRead(ctx context.Context, userID int, notificationIDs []int) error
+
+	// Per-event documents
+	ListEventDocuments(ctx context.Context, eventID int) (*EventDocumentsResponse, error)
+	UploadEventDocument(ctx context.Context, eventID int, userID int, upload *EventDocumentUpload) (*EventDocument, error)
+	GetEventDocumentURL(ctx context.Context, eventID int, docID int) (*EventDocumentURL, error)
+	DeleteEventDocument(ctx context.Context, eventID int, docID int) error
 }
 
 func MapApplication(app *OrganizerApplication) *ApplicationResponse {

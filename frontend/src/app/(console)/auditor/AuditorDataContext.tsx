@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import {
   EventSubmission, DocumentReview, RevisionEntry, OrganizerVerification,
-  PayoutRequest, OrganizerStatus, PayoutStatus, ReviewStage, AuditorActivity,
+  PayoutRequest, OrganizerStatus, PayoutStatus, AuditorActivity,
 } from "./types";
 import {
   getDashboardData,
@@ -19,10 +19,13 @@ import {
   approvePayout,
   rejectPayout,
   holdPayout,
+  revisePayout,
+  updatePayoutNotes,
   listAuditorNotifications,
   AuditorNotification,
   DashboardStats
 } from "@/lib/api/auditor";
+import { mapPayoutListItem } from "./payoutMapping";
 
 interface AuditorDataValue {
   submissions: EventSubmission[];
@@ -46,7 +49,6 @@ interface AuditorDataValue {
   handleRejectDocument: (id: string) => void;
   handleVerifySubmissionDocument: (submissionId: string, docName: string) => void;
   handleRejectSubmissionDocument: (submissionId: string, docName: string) => void;
-  handleChangeSubmissionStage: (submissionId: string, stage: ReviewStage) => void;
   handleAddRevision: (submissionId: string, revision: RevisionEntry) => void;
   handleUpdateOrganizerStatus: (id: string, status: OrganizerStatus, notes: string, feedback: string) => void;
   handleUpdateOrganizerChecklist: (id: string, checklist: OrganizerVerification["checklist"]) => void;
@@ -118,11 +120,10 @@ export function AuditorDataProvider({ children }: { children: React.ReactNode })
       // Load payout requests
       const payoutsRes = await listPayouts({ limit: 100 });
       if (payoutsRes.success && payoutsRes.data) {
-        const payoutList = payoutsRes.data.map((pay: any) => ({
-          ...pay,
-          id: String(pay.id),
-        })) as any[];
-        setPayouts(payoutList);
+        // Mapped, not spread. A bare spread left the PayoutRequest fields the
+        // list endpoint does not return undefined, and the table crashed on the
+        // first row it rendered.
+        setPayouts(payoutsRes.data.map(mapPayoutListItem));
       }
 
       // Load notifications
@@ -213,10 +214,6 @@ export function AuditorDataProvider({ children }: { children: React.ReactNode })
     }));
   };
 
-  const handleChangeSubmissionStage = (submissionId: string, stage: ReviewStage) => {
-    setSubmissions(prev => prev.map(s => s.id === submissionId ? { ...s, stage } : s));
-  };
-
   const handleAddRevision = (submissionId: string, revision: RevisionEntry) => {
     setSubmissions(prev => prev.map(s => {
       if (s.id === submissionId) {
@@ -251,6 +248,12 @@ export function AuditorDataProvider({ children }: { children: React.ReactNode })
     setOrganizers(prev => prev.map(o => o.id === id ? { ...o, checklist } : o));
   };
 
+  // Every branch must issue a request. Previously only Approved/Rejected/On Hold
+  // were handled, so 'Need Revision' — and Save Draft, which passes the payout's
+  // CURRENT status — fell through with `res` undefined and reported
+  // "Failed to update payout status: unknown error" while sending nothing at
+  // all. A save that silently does nothing but claims to have failed is worse
+  // than either outcome on its own.
   const handleUpdatePayoutStatus = async (id: string, status: PayoutStatus, notes: string, financeNotes: string) => {
     try {
       let res;
@@ -260,18 +263,30 @@ export function AuditorDataProvider({ children }: { children: React.ReactNode })
         res = await rejectPayout(id, financeNotes || "Payout details invalid", notes);
       } else if (status === 'On Hold') {
         res = await holdPayout(id, financeNotes || "Verification pending");
+      } else if (status === 'Need Revision') {
+        res = await revisePayout(id, financeNotes || "Revision required", notes);
+      } else {
+        // Save Draft: keep the status, persist the notes.
+        res = await updatePayoutNotes(id, notes, financeNotes);
       }
 
       if (res && res.success) {
         fetchDashboard();
-      } else {
-        alert("Failed to update payout status: " + (res?.error?.message || "unknown error"));
+        return true;
       }
+      alert("Failed to save: " + (res?.error?.message || "unknown error"));
+      return false;
     } catch (err) {
       console.error("Error updating payout status:", err);
+      alert("Failed to save: the request could not be sent.");
+      return false;
     }
   };
 
+  // Updates the LIST copy only. The detail page keeps its own state, because
+  // this handler used to be the sole store: the page rendered a local object
+  // fetched from getPayout, so toggling a checklist mutated a different object
+  // and the box never even ticked. Checklists are not persisted anywhere yet.
   const handleUpdatePayoutChecklists = (
     id: string,
     financialChecklist: PayoutRequest['financialChecklist'],
@@ -287,7 +302,7 @@ export function AuditorDataProvider({ children }: { children: React.ReactNode })
     handleApprove, handleReject, handleRequestChanges,
     handleVerifyDocument, handleRejectDocument,
     handleVerifySubmissionDocument, handleRejectSubmissionDocument,
-    handleChangeSubmissionStage, handleAddRevision,
+    handleAddRevision,
     handleUpdateOrganizerStatus, handleUpdateOrganizerChecklist,
     handleUpdatePayoutStatus, handleUpdatePayoutChecklists,
   };

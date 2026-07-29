@@ -5,26 +5,36 @@
  * location dropdown / date / search button / reset button). Matches the
  * Stitch markup exactly. Indonesian copy preserved as-is, matching the
  * design's locale.
+ *
+ * Now controlled by parent — search state is lifted so the events page
+ * can filter its grid in real-time.
  */
 
 "use client";
 
-import { useState } from "react";
 import { Search, MapPin, Calendar, RotateCcw } from "lucide-react";
 
-const LOCATIONS = ["All Locations", "Jakarta", "Bandung", "Bali", "Surabaya"];
+const LOCATIONS = ["All Locations", "Jakarta", "Bandung", "Surabaya", "Tangerang", "Sleman", "Badung"];
 
-export function EventSearchHero() {
-  const [query, set_query] = useState("");
-  const [location, set_location] = useState(LOCATIONS[0]);
-  const [date, set_date] = useState("");
+interface EventSearchHeroProps {
+  query: string;
+  on_query_change: (value: string) => void;
+  location: string;
+  on_location_change: (value: string) => void;
+  date: string;
+  on_date_change: (value: string) => void;
+  on_reset: () => void;
+}
 
-  function handle_reset() {
-    set_query("");
-    set_location(LOCATIONS[0]);
-    set_date("");
-  }
-
+export function EventSearchHero({
+  query,
+  on_query_change,
+  location,
+  on_location_change,
+  date,
+  on_date_change,
+  on_reset,
+}: EventSearchHeroProps) {
   return (
     <section className="border-b border-border-subtle bg-surface-white py-stack-lg">
       <div className="mx-auto flex max-w-7xl w-full px-margin-mobile md:px-margin-desktop flex-col gap-8">
@@ -47,7 +57,7 @@ export function EventSearchHero() {
             <input
               type="text"
               value={query}
-              onChange={(e) => set_query(e.target.value)}
+              onChange={(e) => on_query_change(e.target.value)}
               placeholder="Search event, artist, or team name..."
               className="w-full rounded-lg border-none bg-surface-white py-4 pl-12 pr-4 font-body-md text-body-md focus:outline-none focus:ring-2 focus:ring-secondary"
             />
@@ -59,7 +69,7 @@ export function EventSearchHero() {
             />
             <select
               value={location}
-              onChange={(e) => set_location(e.target.value)}
+              onChange={(e) => on_location_change(e.target.value)}
               className="w-full appearance-none rounded-lg border-none bg-surface-white py-4 pl-12 pr-4 font-body-md text-body-md focus:outline-none focus:ring-2 focus:ring-secondary"
             >
               {LOCATIONS.map((loc) => (
@@ -77,7 +87,7 @@ export function EventSearchHero() {
             <input
               type="date"
               value={date}
-              onChange={(e) => set_date(e.target.value)}
+              onChange={(e) => on_date_change(e.target.value)}
               placeholder="Select Date"
               className="w-full rounded-lg border-none bg-surface-white py-4 pl-12 pr-4 font-body-md text-body-md focus:outline-none focus:ring-2 focus:ring-secondary"
             />
@@ -85,18 +95,12 @@ export function EventSearchHero() {
           <div className="flex gap-2">
             <button
               type="button"
-              className="flex-1 rounded-lg bg-text-primary font-label-md text-label-md text-white shadow-lg shadow-primary/10 transition-all hover:bg-secondary active:scale-95"
-            >
-              Search Events
-            </button>
-            <button
-              type="button"
-              onClick={handle_reset}
+              onClick={on_reset}
               title="Reset Filters"
               aria-label="Reset filters"
-              className="rounded-lg border border-border-subtle bg-surface-white px-4 font-label-md text-label-md text-text-secondary transition-all hover:bg-surface-container active:scale-95"
+              className="flex-1 rounded-lg border border-border-subtle bg-surface-white px-4 font-label-md text-label-md text-text-secondary transition-all hover:bg-surface-container active:scale-95 flex items-center justify-center gap-2"
             >
-              <RotateCcw size={20} />
+              <RotateCcw size={18} /> Reset
             </button>
           </div>
         </div>

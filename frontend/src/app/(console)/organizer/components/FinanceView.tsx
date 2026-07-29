@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { DollarSign, Landmark, ArrowUpRight } from 'lucide-react';
 import { getFinanceSummary, listPayouts, createPayoutRequest, OrganizerFinance, OrganizerPayout } from '@/lib/api/eorganizer';
 import { useOrganizerData } from '../OrganizerDataContext';
+import { formatIDR } from "@/lib/pricing";
 
 export default function FinanceView() {
   const { events } = useOrganizerData();
@@ -25,17 +26,27 @@ export default function FinanceView() {
   };
 
   useEffect(() => {
-    fetchFinanceData();
+    let isMounted = true;
+    Promise.all([getFinanceSummary(), listPayouts()]).then(([sumRes, payRes]) => {
+      if (!isMounted) return;
+      if (sumRes.success && sumRes.data) setSummary(sumRes.data);
+      if (payRes.success && payRes.data) setPayouts(payRes.data);
+      setIsLoading(false);
+    });
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleRequestPayout = async () => {
-    if (events.length === 0) {
+    const activeEvents = events.filter(e => e.status !== "Archived");
+    if (activeEvents.length === 0) {
       alert("No active deployments found. You must deploy an event before settlement requests.");
       return;
     }
-    const targetEvent = events[0];
+    const targetEvent = activeEvents[0];
     const maxFunds = summary ? summary.payoutBalance : 0;
-    const amountStr = prompt(`Enter withdrawal amount (Maximum: $${maxFunds.toLocaleString()}):`);
+    const amountStr = prompt(`Enter withdrawal amount (Maximum: ${formatIDR(maxFunds)}):`);
     if (!amountStr) return;
     
     const amount = parseFloat(amountStr);
@@ -51,6 +62,7 @@ export default function FinanceView() {
     const res = await createPayoutRequest(Number(targetEvent.id), amount);
     if (res.success) {
       alert("Settlement request submitted successfully and is awaiting review.");
+      setIsLoading(true);
       await fetchFinanceData();
     } else {
       alert(`Settlement request failed: ${res.error?.message || "Internal server error"}`);
@@ -67,7 +79,7 @@ export default function FinanceView() {
         <button
           onClick={handleRequestPayout}
           disabled={isLoading || !summary || summary.payoutBalance <= 0}
-          className="px-4 py-2 bg-secondary text-white hover:bg-secondary/90 disabled:opacity-50 rounded-lg font-sans text-xs font-semibold shadow-sm flex items-center gap-2 cursor-pointer transition-colors"
+          className="px-4 py-2 bg-primary text-white hover:bg-primary/90 disabled:opacity-50 rounded-lg font-sans text-xs font-semibold shadow-sm flex items-center gap-2 cursor-pointer transition-colors"
         >
           Request Settlement
         </button>

@@ -224,4 +224,11 @@ func (r *PostgresRepository) UpdateProfile(userID int, req UpdateProfileRequest)
 	return err
 }
 
+func (r *PostgresRepository) UpdatePasswordHash(userID int, newHash string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
+	query := `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`
+	_, err := r.db.ExecContext(ctx, query, newHash, userID)
+	return err
+}

@@ -24,6 +24,8 @@ type CheckInResponse struct {
 	AttendeeName string `json:"attendeeName"` // Nama penonton
 	TicketType   string `json:"ticketType"`   // Tier tiket (VIP, General Admission, dll)
 	SeatNumber   string `json:"seatNumber"`   // Nomor kursi atau "General Seating"
+	TicketID     string `json:"ticketId,omitempty"` // ID Tiket
+	OrderID      string `json:"orderId,omitempty"`  // ID Order
 	Message      string `json:"message"`      // Pesan deskriptif
 	CheckInTime  string `json:"checkInTime"`  // Waktu check-in (untuk status ALREADY_USED)
 	GateName     string `json:"gateName"`     // Nama gate (untuk status ALREADY_USED)

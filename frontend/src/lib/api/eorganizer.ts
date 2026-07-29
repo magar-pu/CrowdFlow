@@ -32,6 +32,7 @@ export interface RecentEvent {
   capacity: number;
   sold: number;
   revenue: number;
+  date?: string;
   status: string;
   image: string;
 }
@@ -40,6 +41,17 @@ export interface DashboardResponse {
   stats: DashboardStats;
   recentOrders: RecentOrder[];
   recentEvents: RecentEvent[];
+}
+
+/** A venue created inline from the workspace, when the one the organizer wants
+ *  isn't in the catalogue yet. Mirrors the backend NewVenueInput. */
+export interface NewVenueInput {
+  name: string;
+  address: string;
+  city: string;
+  province?: string;
+  postalCode?: string;
+  totalCapacity?: number;
 }
 
 export interface OrganizerEvent {
@@ -52,15 +64,56 @@ export interface OrganizerEvent {
   startTime: string;
   endDate: string;
   endTime: string;
-  locationType: string;
+  // 0 when no venue has been picked yet — the creation wizard doesn't ask for
+  // one, it's set later in the workspace's Venue tab.
+  venueId: number;
   location: string;
   locationAddress: string;
   venueName: string;
+  venueCity: string;
   capacity: number;
   sold: number;
   revenue: number;
   status: string;
   image: string;
+  /** Whether the organizer has put this approved event on the public listing. */
+  published?: boolean;
+  /**
+   * Cap on the TOTAL tickets one order may contain, across every tier
+   * combined. 0 means no limit. Written through setEventMaxTicketsPerOrder,
+   * never through updateOrganizerEvent.
+   */
+  maxTicketsPerOrder?: number;
+  /**
+   * True when this event reaches you through a co-organizer delegation rather
+   * than because you own it. Computed per request from events.organizer_id, so
+   * the same event is delegated for one user and not for another.
+   */
+  delegated?: boolean;
+  /** Who the event belongs to. Only worth showing when `delegated`. */
+  ownerName?: string;
+}
+
+/** The payload the creation wizard sends: identity + schedule only. */
+export type CreateOrganizerEventInput = Pick<
+  OrganizerEvent,
+  | "name"
+  | "category"
+  | "description"
+  | "date"
+  | "startDate"
+  | "startTime"
+  | "endDate"
+  | "endTime"
+  | "capacity"
+  | "status"
+  | "image"
+>;
+
+/** The body of PUT /api/organizer/events/{id}/venue — one of the two. */
+export interface SetEventVenueInput {
+  venueId?: number;
+  newVenue?: NewVenueInput;
 }
 
 export interface OrganizerTicketTier {
@@ -70,7 +123,6 @@ export interface OrganizerTicketTier {
   sold: number;
   capacity: number;
   status?: string;
-  maxPerOrder?: number;
   salesStart?: string;
   salesEnd?: string;
   description?: string;
@@ -162,8 +214,13 @@ export async function getDashboardData(): Promise<ApiResponse<DashboardResponse>
   });
 }
 
-export async function listOrganizerEvents(): Promise<ApiResponse<OrganizerEvent[]>> {
-  return apiRequest<OrganizerEvent[]>("/api/organizer/events", {
+/**
+ * Lists the organizer's events. `archived: true` returns the archive instead of
+ * the active list — the two views are mutually exclusive, since an archived
+ * event appearing next to live ones defeats the point of archiving.
+ */
+export async function listOrganizerEvents(archived = false): Promise<ApiResponse<OrganizerEvent[]>> {
+  return apiRequest<OrganizerEvent[]>(`/api/organizer/events${archived ? "?archived=true" : ""}`, {
     method: "GET",
   });
 }
@@ -180,7 +237,70 @@ export async function deleteOrganizerEvent(eventId: number): Promise<ApiResponse
   });
 }
 
-export async function createOrganizerEvent(event: Omit<OrganizerEvent, "id" | "sold" | "revenue">): Promise<ApiResponse<OrganizerEvent>> {
+/**
+ * Pulls an event back out of the auditor queue and returns it to draft.
+ * Refused with 409 REVIEW_IN_PROGRESS once an auditor has claimed it.
+ */
+export async function withdrawOrganizerEvent(eventId: number): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/withdraw`, {
+    method: "POST",
+  });
+}
+
+/**
+ * Hides a terminal (draft or rejected) event from the active list without
+ * touching its status, so the review trail survives. Reversible.
+ */
+export async function archiveOrganizerEvent(eventId: number): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/archive`, {
+    method: "POST",
+  });
+}
+
+export async function unarchiveOrganizerEvent(eventId: number): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/archive`, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * Puts an auditor-approved event on the public listing. The organizer has the
+ * final call — approval makes an event eligible, it does not publish it.
+ *
+ * Note the path: PATCH .../publish already means "submit to the auditor".
+ */
+export async function listEventPublicly(eventId: number): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/listing`, {
+    method: "POST",
+  });
+}
+
+/**
+ * Withdraws the event from the public listing. It leaves browse/search and new
+ * bookings are rejected; tickets already sold stay valid and direct links keep
+ * working for the people holding them. Reversible without re-approval.
+ */
+export async function unlistEvent(eventId: number): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/listing`, {
+    method: "DELETE",
+  });
+}
+
+// Event types drive the Category dropdown. The create endpoint resolves an
+// event's category by NAME (event_types.event_type), so the dropdown submits
+// the type name — not the id.
+export interface EventType {
+  event_type_id: number;
+  event_type: string;
+}
+
+export async function listEventTypes(): Promise<ApiResponse<EventType[]>> {
+  return apiRequest<EventType[]>("/api/v1/event-types", {
+    method: "GET",
+  });
+}
+
+export async function createOrganizerEvent(event: CreateOrganizerEventInput): Promise<ApiResponse<OrganizerEvent>> {
   return apiRequest<OrganizerEvent>("/api/organizer/events", {
     method: "POST",
     body: JSON.stringify(event),
@@ -200,9 +320,55 @@ export async function publishOrganizerEvent(eventId: number): Promise<ApiRespons
   });
 }
 
-export async function getVenueLayout(eventId: number): Promise<ApiResponse<VenueSection[]>> {
-  return apiRequest<VenueSection[]>(`/api/organizer/events/${eventId}/venue`, {
-    method: "GET",
+/**
+ * PUT /api/organizer/events/{id}/venue — bind the event to a venue.
+ *
+ * This is where an event first gets a venue: the creation wizard captures only
+ * identity and schedule. Pass venueId to pick from the catalogue, or newVenue to
+ * create one inline.
+ *
+ * Changing an already-set venue clears the bound layout and its seat overlay
+ * (they belong to the old venue's geometry); the backend refuses outright if any
+ * seat is already sold or blocked.
+ */
+export async function setEventVenue(eventId: number, input: SetEventVenueInput): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/venue`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+/**
+ * Sets this event's Google Maps link, used by the buyer page's "Open in Google
+ * Maps" button instead of a name+address search. Pass "" to clear it.
+ *
+ * The backend rejects anything that is not an https link on a Google Maps host
+ * with a 422 — the value becomes an href on a public page.
+ */
+export async function setEventMapsUrl(
+  eventId: number,
+  googleMapsUrl: string
+): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/maps-url`, {
+    method: "PUT",
+    body: JSON.stringify({ google_maps_url: googleMapsUrl }),
+  });
+}
+
+/**
+ * Sets how many tickets one order may contain for this event, counted across
+ * every ticket type together. 0 means no limit.
+ *
+ * Replaces the old per-tier cap: that one applied to each tier separately, so
+ * an event with two tiers capped at 4 each actually allowed 8 in one order.
+ */
+export async function setEventMaxTicketsPerOrder(
+  eventId: number,
+  maxTicketsPerOrder: number
+): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/max-tickets-per-order`, {
+    method: "PUT",
+    body: JSON.stringify({ max_tickets_per_order: maxTicketsPerOrder }),
   });
 }
 
@@ -281,6 +447,13 @@ export async function listOrders(): Promise<ApiResponse<OrganizerOrder[]>> {
   });
 }
 
+/** The workspace's Recent Transactions table: real orders for one event. */
+export async function listEventOrders(eventId: number): Promise<ApiResponse<OrganizerOrder[]>> {
+  return apiRequest<OrganizerOrder[]>(`/api/organizer/events/${eventId}/orders`, {
+    method: "GET",
+  });
+}
+
 export async function getOrderDetails(orderId: string): Promise<ApiResponse<OrganizerOrder>> {
   return apiRequest<OrganizerOrder>(`/api/organizer/orders/${orderId}`, {
     method: "GET",
@@ -335,6 +508,156 @@ export async function getAnalytics(range: string = "30d"): Promise<ApiResponse<O
 export async function getEventAnalytics(eventId: number, range: string = "30d"): Promise<ApiResponse<OrganizerAnalytics>> {
   return apiRequest<OrganizerAnalytics>(`/api/organizer/events/${eventId}/analytics?range=${range}`, {
     method: "GET",
+  });
+}
+
+/** Live gate figures for one event, straight from ticket_checkins/scanner_logs. */
+export interface EventCheckInStats {
+  totalCheckedIn: number;
+  totalTickets: number;
+  /** Mean scanner round-trip in ms; 0 when nothing has been scanned yet. */
+  avgScanMs: number;
+  gates: GateCheckInStat[];
+  devices: DeviceCheckInStat[];
+  hourly: HourlyCheckInPoint[];
+}
+
+export interface DeviceCheckInStat {
+  deviceId: number;
+  scans: number;
+}
+
+export interface GateCheckInStat {
+  gateId: number;
+  gateName: string;
+  status: string;
+  scans: number;
+  deviceCount: number;
+}
+
+export interface HourlyCheckInPoint {
+  hour: string;
+  scans: number;
+}
+
+export async function getEventCheckInStats(eventId: number): Promise<ApiResponse<EventCheckInStats>> {
+  return apiRequest<EventCheckInStats>(`/api/organizer/events/${eventId}/checkin-stats`, {
+    method: "GET",
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * Per-event documents
+ *
+ * Distinct from the ACCOUNT-level documents (KTP/NPWP/NIB) an organizer
+ * submits once when applying. These are re-submitted per event and are what
+ * the auditor evaluates before approving it.
+ * ------------------------------------------------------------------ */
+
+export type EventDocumentType =
+  | "EVENT_PROPOSAL"
+  | "CROWD_PERMIT"
+  | "PIC_ID"
+  | "VENUE_PERMIT";
+
+export type EventDocumentStatus = "pending_verification" | "verified" | "rejected";
+
+export interface EventDocument {
+  id: number;
+  event_id: number;
+  document_type: EventDocumentType;
+  file_name: string;
+  file_size: number;
+  content_type: string;
+  status: EventDocumentStatus;
+  /** Auditor's reason, present only when status is "rejected". */
+  review_notes?: string;
+  uploaded_at: string;
+}
+
+/**
+ * A freshly minted view link. Deliberately NOT part of the list payload: a
+ * presigned URL is a bearer credential — anyone holding it reads the file with no
+ * identity check — so one is fetched only when a specific document is opened.
+ */
+export interface EventDocumentURL {
+  url: string;
+  /** Seconds until the link stops working. */
+  expires_in: number;
+}
+
+export interface EventDocumentsResponse {
+  documents: EventDocument[];
+  /** Types that must be present before the event may be submitted for review. */
+  required: EventDocumentType[];
+  /** Required types still missing or rejected. */
+  missing: EventDocumentType[];
+  complete: boolean;
+}
+
+export async function listEventDocuments(eventId: number): Promise<ApiResponse<EventDocumentsResponse>> {
+  return apiRequest<EventDocumentsResponse>(`/api/organizer/events/${eventId}/documents`, {
+    method: "GET",
+  });
+}
+
+/**
+ * Uploads one document. Re-uploading a type REPLACES the existing file and resets
+ * its review status, so there is no separate "update" call.
+ *
+ * Sends FormData deliberately — apiRequest leaves the Content-Type unset for
+ * FormData so the browser can write the multipart boundary itself.
+ */
+export async function uploadEventDocument(
+  eventId: number,
+  documentType: EventDocumentType,
+  file: File
+): Promise<ApiResponse<EventDocument>> {
+  const body = new FormData();
+  body.append("document_type", documentType);
+  body.append("file", file);
+
+  return apiRequest<EventDocument>(`/api/organizer/events/${eventId}/documents`, {
+    method: "POST",
+    body,
+  });
+}
+
+export interface EventCoverImage {
+  imageUrl: string;
+}
+
+/**
+ * Replaces the event's cover art. The file goes to the PUBLIC bucket (it is
+ * rendered on the public event page), unlike event documents which are private.
+ * Returns the persisted URL so the caller can drop its local blob: preview.
+ */
+export async function uploadEventCover(
+  eventId: number,
+  file: File
+): Promise<ApiResponse<EventCoverImage>> {
+  const body = new FormData();
+  body.append("file", file);
+
+  return apiRequest<EventCoverImage>(`/api/organizer/events/${eventId}/cover`, {
+    method: "POST",
+    body,
+  });
+}
+
+/** Mints a short-lived link for one document. Call this on an explicit view action. */
+export async function getEventDocumentUrl(
+  eventId: number,
+  docId: number
+): Promise<ApiResponse<EventDocumentURL>> {
+  return apiRequest<EventDocumentURL>(`/api/organizer/events/${eventId}/documents/${docId}/url`, {
+    method: "GET",
+  });
+}
+
+export async function deleteEventDocument(eventId: number, docId: number): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/organizer/events/${eventId}/documents/${docId}`, {
+    method: "DELETE",
   });
 }
 
@@ -396,6 +719,12 @@ export async function markNotificationsRead(notificationIds?: number[]): Promise
   });
 }
 
+export interface RevisionDocumentChange {
+  documentType: string;
+  label: string;
+  uploadedAt: string;
+}
+
 export interface EventRevisionFeedback {
   eventId: number;
   eventStatus: string;
@@ -412,8 +741,11 @@ export interface EventRevisionFeedback {
     status: string;
     organizerComment?: string;
     organizerActionTaken?: string;
-    organizerFile?: string;
     respondedAt?: string;
+    /** Documents re-uploaded in response to this point, snapshotted on reply. */
+    documentsChanged?: RevisionDocumentChange[];
+    /** For an unanswered point: documents already replaced since it was raised. */
+    pendingDocumentChanges?: RevisionDocumentChange[];
   }>;
   statusLogs?: Array<{
     fromStatus: string;
@@ -429,15 +761,154 @@ export async function getEventRevisions(eventId: number): Promise<ApiResponse<Ev
   });
 }
 
+/**
+ * Sends the organizer's reply to one revision point. There is no file argument:
+ * evidence is the set of event documents they actually replaced, which the
+ * backend records automatically. The previous `proofFile` only ever sent a
+ * filename that was never uploaded anywhere.
+ */
 export async function respondToEventRevision(
   eventId: number,
   revId: number,
   comment: string,
-  actionTaken: string,
-  proofFile?: string
+  actionTaken: string
 ): Promise<ApiResponse<void>> {
   return apiRequest<void>(`/api/organizer/events/${eventId}/revisions/${revId}/respond`, {
     method: "POST",
-    body: JSON.stringify({ comment, actionTaken, proofFile }),
+    body: JSON.stringify({ comment, actionTaken }),
   });
+}
+
+/**
+ * Payout bank details. Organizer-level, not per-event: one account receives
+ * every payout, and the auditor payout screen reads it via events.organizer_id.
+ *
+ * `editable` is false once the account is committed to something a change would
+ * silently affect (an event under review, a payout in flight); `lockReason`
+ * says which, so the form can explain itself rather than just being disabled.
+ */
+export interface PayoutDetails {
+  bankName: string;
+  bankAccountHolder: string;
+  bankAccountNumber: string;
+  complete: boolean;
+  verificationStatus: "unverified" | "verified";
+  updatedAt?: string;
+  editable: boolean;
+  lockReason?: string;
+}
+
+export async function getPayoutDetails(): Promise<ApiResponse<PayoutDetails>> {
+  return apiRequest<PayoutDetails>("/api/organizer/payout-details", {
+    method: "GET",
+  });
+}
+
+export async function updatePayoutDetails(
+  details: Pick<PayoutDetails, "bankName" | "bankAccountHolder" | "bankAccountNumber">
+): Promise<ApiResponse<PayoutDetails>> {
+  return apiRequest<PayoutDetails>("/api/organizer/payout-details", {
+    method: "PUT",
+    body: JSON.stringify(details),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Account-level documents (KTP/NPWP/NIB/SIUP...)
+//
+// Distinct from per-event documents. These belong to the organizer's
+// application and are reused across every event, which is why they are not
+// scoped to an event id.
+// ---------------------------------------------------------------------------
+
+export interface OrganizerAccountDocument {
+  id: number;
+  application_id: number;
+  document_type: string;
+  status: "pending_verification" | "verified" | "rejected";
+  uploaded_at: string;
+  is_current: boolean;
+  /** Added in migration 0031 to match event documents. Rows filed before it
+   *  carry the storage key's basename, and a `file_size` of 0 meaning unknown
+   *  — the original values were never recorded and cannot be recovered. */
+  file_name: string;
+  file_size: number;
+  /** The auditor's reason on the latest rejection, from
+   *  auditor_document_reviews. Absent unless `status` is "rejected". */
+  review_notes?: string | null;
+}
+
+/** The document types the backend accepts, in the order the console shows them.
+ *
+ *  VENUE_AGREEMENT and EVENT_PROPOSAL were removed: both are per-EVENT
+ *  artifacts and belong in the event workspace's Documents tab, not on the
+ *  organizer account. EVENT_PROPOSAL is in fact already a required EVENT
+ *  document (see EventDocumentType), so it was being collected twice. */
+export const ACCOUNT_DOCUMENT_TYPES = [
+  "KTP",
+  "NPWP",
+  "NIB",
+  "SIUP",
+  "BUSINESS_LICENSE",
+] as const;
+
+export const ACCOUNT_DOCUMENT_LABELS: Record<string, string> = {
+  KTP: "KTP (Director's ID)",
+  NPWP: "NPWP (Tax ID)",
+  NIB: "NIB (Business Registration)",
+  SIUP: "SIUP (Trading Licence)",
+  BUSINESS_LICENSE: "Business Licence",
+};
+
+export async function listAccountDocuments(): Promise<ApiResponse<OrganizerAccountDocument[]>> {
+  return apiRequest<OrganizerAccountDocument[]>("/api/organizer/documents", { method: "GET" });
+}
+
+/** Whether the organizer's account paperwork clears the submission gate.
+ *
+ *  `missing` carries human labels and covers both "never uploaded" and
+ *  "uploaded but not yet verified" — from the organizer's point of view both
+ *  are the same blocker. `exempt` is true for organizers grandfathered by
+ *  migration 0027, who were already running approved events when the gate
+ *  was introduced. */
+export interface AccountDocumentReadiness {
+  ready: boolean;
+  exempt: boolean;
+  required: string[];
+  missing: string[];
+}
+
+export async function getAccountDocumentReadiness(): Promise<ApiResponse<AccountDocumentReadiness>> {
+  return apiRequest<AccountDocumentReadiness>("/api/organizer/documents/readiness", { method: "GET" });
+}
+
+/** Upload or replace one account document. A replacement supersedes the
+ *  previous version rather than overwriting it, and re-enters review: the
+ *  auditor verified the file that was there before, not this one. */
+export async function uploadAccountDocument(
+  documentType: string,
+  file: File,
+): Promise<ApiResponse<OrganizerAccountDocument>> {
+  const form = new FormData();
+  form.append("document_type", documentType);
+  form.append("file", file);
+  return apiRequest<OrganizerAccountDocument>("/api/organizer/documents", {
+    method: "POST",
+    body: form,
+  });
+}
+
+export async function getAccountDocumentURL(docId: number): Promise<ApiResponse<{ url: string }>> {
+  return apiRequest<{ url: string }>(`/api/organizer/documents/${docId}/url`, { method: "GET" });
+}
+
+/** Removes a filed document outright, rather than superseding it.
+ *
+ *  Only the CURRENT version of a type can be deleted — superseded rows are the
+ *  record an auditor's earlier decision was made against, and the backend
+ *  answers 404 for them. Deleting a document that clears the submission gate is
+ *  permitted: the gate re-reads on every submit, so it only blocks the
+ *  organizer themselves. */
+export async function deleteAccountDocument(docId: number): Promise<ApiResponse<{ deleted: boolean }>> {
+  return apiRequest<{ deleted: boolean }>(`/api/organizer/documents/${docId}`, { method: "DELETE" });
 }

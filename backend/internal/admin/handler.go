@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -65,8 +66,12 @@ func (h *Handler) RegisterRoutes(
 	}
 
 	mux.Handle("GET /dashboard/stats", admin(h.handleGetDashboardStats))
+	mux.Handle("GET /dashboard/analytics", admin(h.handleGetPlatformAnalytics))
 	mux.Handle("GET /dashboard/alerts", admin(h.handleListSecurityAlerts))
 	mux.Handle("GET /dashboard/activities", admin(h.handleListActivities))
+
+	mux.Handle("GET /notifications", admin(h.handleListNotifications))
+	mux.Handle("PUT /notifications/read", admin(h.handleMarkNotificationsRead))
 
 	mux.Handle("GET /events", admin(h.handleListEvents))
 	mux.Handle("POST /events/{id}/approve", admin(h.handleApproveEvent))
@@ -139,6 +144,57 @@ func (h *Handler) handleListActivities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.JSON(w, http.StatusOK, activities)
+}
+
+func (h *Handler) handleGetPlatformAnalytics(w http.ResponseWriter, r *http.Request) {
+	analytics, err := h.service.GetPlatformAnalytics(r.URL.Query().Get("range"))
+	if err != nil {
+		log.Printf("admin GetPlatformAnalytics: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load platform analytics")
+		return
+	}
+	response.JSON(w, http.StatusOK, analytics)
+}
+
+func (h *Handler) handleListNotifications(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := actorIDFromRequest(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
+		return
+	}
+
+	notifications, err := h.service.ListNotifications(actorID)
+	if err != nil {
+		log.Printf("admin ListNotifications: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load notifications")
+		return
+	}
+	response.JSON(w, http.StatusOK, notifications)
+}
+
+func (h *Handler) handleMarkNotificationsRead(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := actorIDFromRequest(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Could not resolve the authenticated admin")
+		return
+	}
+
+	// An empty body means "mark everything read" - the header sends no payload
+	// when the bell is opened.
+	var req MarkNotificationsReadRequest
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse request")
+			return
+		}
+	}
+
+	if err := h.service.MarkNotificationsRead(actorID, req.NotificationIDs); err != nil {
+		log.Printf("admin MarkNotificationsRead: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to mark notifications read")
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Notifications updated successfully"})
 }
 
 func (h *Handler) handleListEvents(w http.ResponseWriter, r *http.Request) {

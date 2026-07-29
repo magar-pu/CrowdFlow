@@ -42,32 +42,35 @@ export function QuickFilterBar({
   on_sort_change,
 }: QuickFilterBarProps) {
   return (
-    <div className="flex items-center justify-between gap-4">
-      <div className="flex gap-2 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 w-full">
+      {/* Pills container - takes full width on mobile with smooth touch swipe */}
+      <div className="flex w-full min-w-0 items-center gap-2 overflow-x-auto pb-1.5 sm:pb-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {QUICK_FILTERS.map((filter) => (
           <button
             key={filter}
             type="button"
             onClick={() => on_filter_change(filter)}
             className={cn(
-              "whitespace-nowrap rounded-full border px-6 py-2 font-label-md text-label-md transition-all",
+              "whitespace-nowrap rounded-full border px-4 py-1.5 sm:px-6 sm:py-2 text-xs sm:text-sm font-semibold transition-all shrink-0 cursor-pointer",
               active_filter === filter
-                ? "border-transparent bg-text-primary text-white"
-                : "border-border-subtle bg-surface-white text-text-secondary hover:border-secondary"
+                ? "border-transparent bg-neutral-900 text-white shadow-xs"
+                : "border-border-subtle bg-surface-white text-text-secondary hover:border-neutral-400"
             )}
           >
             {filter}
           </button>
         ))}
       </div>
-      <div className="flex shrink-0 items-center gap-4">
-        <span className="hidden font-body-sm text-text-secondary md:inline">
+
+      {/* Sort By Dropdown */}
+      <div className="flex items-center justify-end gap-2 shrink-0 self-end sm:self-auto">
+        <span className="text-xs sm:text-sm font-medium text-text-secondary whitespace-nowrap">
           Sort by:
         </span>
         <select
           value={sort_by}
           onChange={(e) => on_sort_change(e.target.value)}
-          className="rounded-lg border-border-subtle bg-surface-white px-4 py-2 font-label-md text-label-md focus:ring-secondary"
+          className="rounded-xl border border-border-subtle bg-surface-white px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-semibold text-text-primary focus:outline-none focus:ring-2 focus:ring-neutral-900 cursor-pointer shadow-2xs"
         >
           {SORT_OPTIONS.map((option) => (
             <option key={option} value={option}>

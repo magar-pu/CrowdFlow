@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { BarChart3, TrendingUp, Users, DollarSign, Ticket, Calendar, ArrowUpRight } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import {DollarSign, Ticket, Calendar} from 'lucide-react';
 import { getAnalytics, OrganizerAnalytics } from '@/lib/api/eorganizer';
 
 export default function ReportsView() {
@@ -165,80 +165,6 @@ export default function ReportsView() {
             </div>
           </div>
         )}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white border border-border-subtle rounded-xl p-5 soft-shadow flex flex-col gap-4">
-          <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-secondary" />
-            Acquisition Channels
-          </h3>
-          <div className="space-y-4 flex-1 flex flex-col justify-center">
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs font-mono">
-                <span className="text-text-secondary">Direct Search</span>
-                <span className="font-bold text-text-primary">45%</span>
-              </div>
-              <div className="w-full bg-surface-container h-2 rounded-full overflow-hidden">
-                <div className="bg-secondary h-full rounded-full" style={{ width: '45%' }}></div>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs font-mono">
-                <span className="text-text-secondary">Social Media Ads</span>
-                <span className="font-bold text-text-primary">30%</span>
-              </div>
-              <div className="w-full bg-surface-container h-2 rounded-full overflow-hidden">
-                <div className="bg-tertiary h-full rounded-full" style={{ width: '30%' }}></div>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs font-mono">
-                <span className="text-text-secondary">Partners & Affiliates</span>
-                <span className="font-bold text-text-primary">25%</span>
-              </div>
-              <div className="w-full bg-surface-container h-2 rounded-full overflow-hidden">
-                <div className="bg-primary h-full rounded-full" style={{ width: '25%' }}></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white border border-border-subtle rounded-xl p-5 soft-shadow flex flex-col gap-4">
-          <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
-            <Users className="w-4 h-4 text-secondary" />
-            Visitor Funnel
-          </h3>
-          <div className="space-y-3 font-mono text-xs flex-1 flex flex-col justify-center">
-            <div className="flex justify-between border-b border-border-subtle pb-2">
-              <span className="text-text-secondary">Page views</span>
-              <span className="font-bold text-text-primary">24,500</span>
-            </div>
-            <div className="flex justify-between border-b border-border-subtle pb-2">
-              <span className="text-text-secondary">Ticket selections</span>
-              <span className="font-bold text-text-primary">18,204</span>
-            </div>
-            <div className="flex justify-between border-b border-border-subtle pb-2">
-              <span className="text-text-secondary">Conversions (Purchased)</span>
-              <span className="font-bold text-success">{totalTickets.toLocaleString()}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white border border-border-subtle rounded-xl p-5 soft-shadow flex flex-col gap-4">
-          <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-secondary" />
-            Conversion Rate
-          </h3>
-          <div className="flex-1 flex flex-col items-center justify-center space-y-2">
-            <span className="text-4xl font-extrabold text-secondary">
-              {totalTickets > 0 ? ((totalTickets / 18204) * 100).toFixed(1) + "%" : "93.9%"}
-            </span>
-            <p className="text-xs text-text-secondary text-center leading-normal max-w-[200px]">
-              Checkout-to-purchase ratio based on verified sales and ticket selections.
-            </p>
-          </div>
-        </div>
       </div>
     </div>
   );

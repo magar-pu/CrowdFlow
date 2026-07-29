@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Staff, Gate, ScannerDevice } from '../../types';
 import { X, Search, QrCode, Copy, Check, Loader2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import Select from '@/components/ui/Select';
 
 interface AssignScannerModalProps {
   staffList: Staff[];
@@ -131,9 +132,9 @@ export default function AssignScannerModal({ staffList, gates, onClose, onAssign
 
             <div className="space-y-1.5">
               <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Gate Assignment</label>
-              <select value={gate} onChange={(e) => setGate(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none cursor-pointer">
+              <Select value={gate} onChange={(e) => setGate(e.target.value)}>
                 {gates.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
-              </select>
+              </Select>
             </div>
 
             <div className="space-y-1.5">
@@ -173,9 +174,9 @@ export default function AssignScannerModal({ staffList, gates, onClose, onAssign
 
             <div className="space-y-1.5">
               <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Session Duration</label>
-              <select value={duration} onChange={(e) => setDuration(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none cursor-pointer">
+              <Select value={duration} onChange={(e) => setDuration(e.target.value)}>
                 {DURATIONS.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
+              </Select>
             </div>
 
              <button
