@@ -1,6 +1,6 @@
 import React from 'react';
 import { EventItem } from '../types';
-import { Calendar, Plus, CalendarDays, MapPin, ArrowRight, Undo2, Archive } from 'lucide-react';
+import { Calendar, Plus, CalendarDays, MapPin, ArrowRight, Undo2, Archive, Users } from 'lucide-react';
 import { formatIDR } from "@/lib/pricing";
 
 interface EventsViewProps {
@@ -94,13 +94,33 @@ export default function EventsView({
                     {event.status}
                   </span>
                 </div>
+
+                {/* Opposite corner from the status chip so the two never
+                    collide on a narrow card. */}
+                {event.delegated && (
+                  <div className="absolute top-4 left-4">
+                    <span className="bg-white/90 backdrop-blur-sm border border-secondary text-secondary px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-sm font-mono text-[9px] font-bold">
+                      <Users className="w-3 h-3" />
+                      DELEGATED
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="p-5 flex-1 flex flex-col">
                 <h3 className="font-sans text-base font-bold text-text-primary mb-1 truncate group-hover:text-secondary transition-colors">
                   {event.name}
                 </h3>
-                
+
+                {/* Whose event this is. Without it a co-organizer sees another
+                    organizer's portfolio mixed into their own with nothing to
+                    tell them apart — and these cards carry revenue. */}
+                {event.delegated && event.ownerName && (
+                  <p className="font-mono text-[10px] text-text-secondary mb-1 truncate">
+                    Owned by {event.ownerName}
+                  </p>
+                )}
+
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4 mt-1">
                   <div className="flex items-center gap-1.5 text-text-secondary font-mono text-[10px]">
                     <CalendarDays className="w-3.5 h-3.5 text-secondary" />

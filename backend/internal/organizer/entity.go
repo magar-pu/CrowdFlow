@@ -488,6 +488,15 @@ type OrganizerEvent struct {
 	// it is written through SetEventMaxTicketsPerOrder, never through
 	// UpdateOrganizerEvent, which blanks columns its payload omits.
 	MaxTicketsPerOrder int `json:"maxTicketsPerOrder"`
+
+	// Delegated is true when the caller reaches this event through a
+	// co-organizer delegation rather than owning it. Computed per request from
+	// events.organizer_id, so the same event is delegated for one user and not
+	// for another — never stored.
+	Delegated bool `json:"delegated"`
+	// OwnerName is who the event belongs to. Only meaningful alongside
+	// Delegated; on your own events it is your own name.
+	OwnerName string `json:"ownerName,omitempty"`
 }
 
 // Ticket Tier model

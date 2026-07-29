@@ -43,9 +43,26 @@ interface SnapCallbacks {
 
 declare global {
   interface Window {
-    snap: { pay: (token: string, callbacks: SnapCallbacks) => void };
+    snap?: { pay: (token: string, callbacks: SnapCallbacks) => void };
   }
 }
+
+const MIDTRANS_CLIENT_KEY = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? "";
+
+/**
+ * Which Snap bundle to load, decided by the client key rather than hardcoded.
+ *
+ * This URL was pinned to app.sandbox.midtrans.com while the configured keys
+ * were production ones, and the backend was pinned to sandbox independently —
+ * two hardcodes that had to agree with each other AND with the keys, with
+ * nothing checking any of it. Midtrans prefixes sandbox credentials with `SB-`
+ * and production ones with nothing, so the key decides here exactly as it does
+ * in payment/service.go. Paste a matching pair from one dashboard tab and both
+ * ends follow it.
+ */
+const SNAP_SRC = MIDTRANS_CLIENT_KEY.startsWith("SB-")
+  ? "https://app.sandbox.midtrans.com/snap/snap.js"
+  : "https://app.midtrans.com/snap/snap.js";
 
 /** The subset of the event CheckoutSummary renders. */
 type SummaryEvent = Pick<Event, "title" | "cover_image_url" | "starts_at" | "venue">;
@@ -175,6 +192,19 @@ function CheckoutContent() {
         return;
       }
 
+      // Guarded because snap.js is a third-party script that can simply not be
+      // there: blocked by an ad blocker, unreachable, or rejected because the
+      // client key does not match the bundle. Unguarded, the click threw a
+      // TypeError into the console and the button just stopped responding — no
+      // message, and the order had already been created server-side.
+      if (typeof window.snap?.pay !== "function") {
+        alert(
+          "The payment window could not be loaded. Please disable any ad blocker for this page and try again — your order has been created and is waiting for payment.",
+        );
+        set_is_submitting(false);
+        return;
+      }
+
       // Open Midtrans Snap Popup
       window.snap.pay(res.data.snap_token, {
         onSuccess: function (result: any) {
@@ -243,10 +273,7 @@ function CheckoutContent() {
 
   return (
     <div className="min-h-screen bg-surface">
-      <Script
-        src="https://app.sandbox.midtrans.com/snap/snap.js"
-        data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY}
-      />
+      <Script src={SNAP_SRC} data-client-key={MIDTRANS_CLIENT_KEY} />
       <Navbar is_authenticated active_href="" />
 
       <div className="mx-auto flex w-full max-w-container-max flex-wrap items-center justify-between gap-3 px-margin-mobile pt-6 md:px-margin-desktop">
