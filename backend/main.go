@@ -13,6 +13,7 @@ import (
 	"crowdflow-backend/internal/auth"
 	"crowdflow-backend/internal/bankaccount"
 	"crowdflow-backend/internal/booking"
+	"crowdflow-backend/internal/config"
 	"crowdflow-backend/internal/delegation"
 	"crowdflow-backend/internal/event"
 	"crowdflow-backend/internal/mail"
@@ -102,9 +103,15 @@ func main() {
 	mux.HandleFunc("GET /api/health", healthCheck(db))
 
 	// Development mode relaxes production-only guardrails (the Secure-cookie flag
-	// below, and the required-secret check here). Anything other than
-	// DEV_MODE=true is treated as production.
-	devMode := os.Getenv("DEV_MODE") == "true"
+	// below, and the required-secret check here). It is derived from APP_ENV
+	// (production | sandbox | local), with a legacy DEV_MODE=true fallback for
+	// a host that hasn't migrated to APP_ENV yet; anything else — including an
+	// unset or unrecognised APP_ENV — resolves to production. devMode is true
+	// for "local" ONLY: the sandbox deployment is still a public host and needs
+	// Secure cookies and a required JWT_SECRET exactly like production. See
+	// internal/config/env.go for the full resolution order.
+	devMode := config.IsLocal()
+	log.Printf("config: APP_ENV=%s (devMode=%v, secureCookies=%v)", config.AppEnv(), devMode, !devMode)
 
 	// Initialize Configuration for JWT & Google Client ID
 	jwtSecret := os.Getenv("JWT_SECRET")
