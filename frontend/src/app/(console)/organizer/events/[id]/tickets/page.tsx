@@ -73,14 +73,20 @@ export default function OrganizerEventTicketsPage() {
       salesEnd: tier.salesEnd ?? "",
       description: tier.description ?? "",
     } as Omit<OrganizerTicketTier, "id" | "sold">);
-    if (res.success) await load();
-    else setError(res.error?.message ?? "Failed to create ticket tier");
+    if (res.success) {
+      await load();
+      return { success: true };
+    }
+    return { success: false, error: res.error?.message ?? "Failed to create ticket tier" };
   };
 
   const handleUpdate = async (id: string, updated: Partial<TicketTier>) => {
     const res = await updateTicketTier(eventId, Number(id), updated as Partial<OrganizerTicketTier>);
-    if (res.success) await load();
-    else setError(res.error?.message ?? "Failed to update ticket tier");
+    if (res.success) {
+      await load();
+      return { success: true };
+    }
+    return { success: false, error: res.error?.message ?? "Failed to update ticket tier" };
   };
 
   const handleDelete = async (id: string) => {

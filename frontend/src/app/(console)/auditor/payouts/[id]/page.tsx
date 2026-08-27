@@ -120,8 +120,9 @@ export default function AuditorPayoutDetailPage() {
   }, [params.id]);
 
   const handleUpdatePayoutStatusAction = async (id: string, status: any, notes: string, financeNotes: string) => {
-    await handleUpdatePayoutStatus(id, status, notes, financeNotes);
-    await loadDetail();
+    const res = await handleUpdatePayoutStatus(id, status, notes, financeNotes);
+    if (res.success) await loadDetail();
+    return res;
   };
 
   if (loading) {

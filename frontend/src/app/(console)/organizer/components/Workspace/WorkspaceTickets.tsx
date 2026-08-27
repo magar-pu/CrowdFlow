@@ -1,40 +1,54 @@
 import React, { useState } from "react";
 import { TicketTier } from "../../types";
-import { Plus, Trash2, Layers, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, Layers, CheckCircle2, Pencil } from "lucide-react";
+import TierFormModal, { TierFormValues, TierSubmitResult } from "./TierFormModal";
 
 interface WorkspaceTicketsProps {
   ticketTiers: TicketTier[];
-  onCreateTier: (tier: Omit<TicketTier, "id">) => void;
-  onUpdateTier: (id: string, updated: Partial<TicketTier>) => void;
+  onCreateTier: (tier: Omit<TicketTier, "id">) => Promise<TierSubmitResult>;
+  onUpdateTier: (id: string, updated: Partial<TicketTier>) => Promise<TierSubmitResult>;
   onDeleteTier: (id: string) => void;
 }
 
 export default function WorkspaceTickets({
   ticketTiers,
   onCreateTier,
+  onUpdateTier,
   onDeleteTier
 }: WorkspaceTicketsProps) {
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newTierName, setNewTierName] = useState("");
-  const [newTierPrice, setNewTierPrice] = useState(150);
-  const [newTierCapacity, setNewTierCapacity] = useState(500);
-  const [newTierSalesEnd, setNewTierSalesEnd] = useState("");
+  const [modalMode, setModalMode] = useState<"none" | "create" | "edit">("none");
+  const [editingTier, setEditingTier] = useState<TicketTier | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTierName) return;
-    onCreateTier({
-      name: newTierName,
-      price: newTierPrice,
+  const openCreate = () => {
+    setEditingTier(null);
+    setModalMode("create");
+  };
+
+  const openEdit = (tier: TicketTier) => {
+    setEditingTier(tier);
+    setModalMode("edit");
+  };
+
+  const closeModal = () => {
+    // Deliberately leave editingTier as-is: TierFormModal stays mounted
+    // during its close transition, and nulling the tier here would flip its
+    // "Edit"/"Create" title mid-fade. It's overwritten on the next open.
+    setModalMode("none");
+  };
+
+  const handleSubmit = (values: TierFormValues): Promise<TierSubmitResult> => {
+    if (modalMode === "edit" && editingTier) {
+      // The backend does a full-row update, not a merge — every editable
+      // field must be sent even though only some changed, or the untouched
+      // ones get overwritten with the form's carried-over values.
+      return onUpdateTier(editingTier.id, values);
+    }
+    return onCreateTier({
+      ...values,
       sold: 0,
-      capacity: newTierCapacity,
       status: "On Sale",
       color: "#3B82F6",
-      salesEnd: newTierSalesEnd || undefined,
     });
-    setNewTierName("");
-    setNewTierSalesEnd("");
-    setShowAddForm(false);
   };
 
   // No "remaining" here: for a seated event a tier's real capacity is however
@@ -69,40 +83,13 @@ export default function WorkspaceTickets({
           <p className="text-xs text-text-secondary">Configure pricing scales and strict capacity limits.</p>
         </div>
         <button
-          onClick={() => setShowAddForm(!showAddForm)}
+          onClick={openCreate}
           className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition-colors cursor-pointer"
         >
           <Plus className="w-3.5 h-3.5 text-white" />
           <span>Add Tier</span>
         </button>
       </div>
-
-      {showAddForm && (
-        <form onSubmit={handleSubmit} className="p-4 bg-white border border-border-subtle rounded-xl space-y-4 max-w-md">
-          <h4 className="text-xs font-bold text-text-primary">Configure New Ticket Tier</h4>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Tier Name</label>
-              <input type="text" value={newTierName} onChange={(e) => setNewTierName(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" placeholder="e.g. VIP All-Access" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Price ($)</label>
-                <input type="number" value={newTierPrice} onChange={(e) => setNewTierPrice(Number(e.target.value))} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Capacity</label>
-                <input type="number" value={newTierCapacity} onChange={(e) => setNewTierCapacity(Number(e.target.value))} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Sales Deadline</label>
-              <input type="date" value={newTierSalesEnd} onChange={(e) => setNewTierSalesEnd(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
-            </div>
-            <button type="submit" className="w-full bg-secondary hover:bg-secondary/90 text-white text-xs font-bold py-2 rounded-lg transition-colors cursor-pointer">Create Tier</button>
-          </div>
-        </form>
-      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {ticketTiers.map((tier) => {
@@ -114,9 +101,14 @@ export default function WorkspaceTickets({
                   <span className="px-2.5 py-0.5 rounded-full font-mono text-[9px] font-bold text-white" style={{ backgroundColor: tier.color || "#3B82F6" }}>
                     {tier.status || "On Sale"}
                   </span>
-                  <button onClick={() => onDeleteTier(tier.id)} className="text-on-surface-variant hover:text-danger p-1 rounded transition-colors cursor-pointer">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => openEdit(tier)} className="text-on-surface-variant hover:text-primary p-1 rounded transition-colors cursor-pointer">
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => onDeleteTier(tier.id)} className="text-on-surface-variant hover:text-danger p-1 rounded transition-colors cursor-pointer">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <div>
@@ -152,6 +144,13 @@ export default function WorkspaceTickets({
           );
         })}
       </div>
+
+      <TierFormModal
+        open={modalMode !== "none"}
+        tier={editingTier ?? undefined}
+        onClose={closeModal}
+        onSubmit={handleSubmit}
+      />
     </div>
   );
 }

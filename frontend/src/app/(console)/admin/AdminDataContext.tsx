@@ -108,7 +108,7 @@ interface AdminDataValue {
   handleApproveVerification: (appId: string) => Promise<void>;
   handleRejectVerification: (appId: string) => Promise<void>;
   handleApproveEvent: (eventId: string) => Promise<void>;
-  handleRejectEvent: (eventId: string, notes: string) => Promise<void>;
+  handleRejectEvent: (eventId: string, notes: string) => Promise<ApiResponse<void>>;
   handleSetEventDraft: (eventId: string) => Promise<void>;
   handleSetEventPendingReview: (eventId: string) => Promise<void>;
   handleToggleUserStatus: (userId: string, newStatus: 'Verified' | 'Suspended') => Promise<void>;
@@ -117,7 +117,7 @@ interface AdminDataValue {
   handleProcessPayout: (payoutId: string) => Promise<void>;
   handleRejectPayout: (payoutId: string) => Promise<void>;
   handleUpdateTransactionStatus: (txId: string, newStatus: 'Success' | 'Refunded') => Promise<void>;
-  handleUpdateTiers: (updatedTiers: TicketTier[]) => Promise<void>;
+  handleUpdateTiers: (updatedTiers: TicketTier[]) => Promise<ApiResponse<void>>;
   handleDeleteTier: (tierId: string) => Promise<void>;
   handleAddScanner: (newScanner: Scanner) => void;
   handleDeleteScanner: (id: string) => void;
@@ -243,14 +243,13 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   // setVenueSections is a local-only setter feeding the scanner simulator's
   // block/simulate-entries demo. Only ticket tier edits are wired to a real
   // mutation below.
-  const handleUpdateTiers = async (updatedTiers: TicketTier[]) => {
-    if (!selectedEventId) return;
+  const handleUpdateTiers = async (updatedTiers: TicketTier[]): Promise<ApiResponse<void>> => {
+    if (!selectedEventId) return { success: false, error: { code: 'NO_EVENT', message: 'No event selected.' } };
     const result = await updateTicketTiers(selectedEventId, updatedTiers);
     if (result.success) {
       await refreshWorkspaceData(selectedEventId);
-    } else {
-      alert(result.error?.message ?? 'Failed to save ticket tiers');
     }
+    return result;
   };
 
   const handleDeleteTier = async (tierId: string) => {
@@ -360,9 +359,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     const result = await rejectEvent(eventId, notes);
     if (result.success) {
       await Promise.all([refreshEvents(), refreshActivities()]);
-    } else {
-      setEventsError(result.error?.message ?? 'Failed to reject event');
     }
+    return result;
   };
 
   const handleSetEventDraft = async (eventId: string) => {

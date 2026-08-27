@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Plus, X, Pencil, Trash2 } from 'lucide-react';
-import { TicketTier } from '@/types/admin';
+import { Plus, Pencil, Trash2, AlertCircle, Loader2 } from 'lucide-react';
+import { ApiResponse, TicketTier } from '@/types/admin';
+import Modal from '@/components/ui/Modal';
 
 interface WorkspaceTicketTiersTabProps {
   ticketTiers: TicketTier[];
-  onUpdateTiers: (updatedTiers: TicketTier[]) => void;
+  onUpdateTiers: (updatedTiers: TicketTier[]) => Promise<ApiResponse<void>>;
   onDeleteTier: (tierId: string) => void;
 }
 
@@ -22,6 +23,8 @@ export default function WorkspaceTicketTiersTab({ ticketTiers, onUpdateTiers, on
   const [tierCap, setTierCap] = useState('');
   const [tierCapacity, setTierCapacity] = useState('');
   const [deletingTierId, setDeletingTierId] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const isEditing = modalState !== null && modalState !== 'new';
 
@@ -31,6 +34,7 @@ export default function WorkspaceTicketTiersTab({ ticketTiers, onUpdateTiers, on
     setTierPrice('');
     setTierCap('');
     setTierCapacity('');
+    setFormError(null);
     setModalState('new');
   };
 
@@ -40,10 +44,11 @@ export default function WorkspaceTicketTiersTab({ ticketTiers, onUpdateTiers, on
     setTierPrice(String(tier.price));
     setTierCap(String(tier.priceCap ?? ''));
     setTierCapacity(String(tier.capacity));
+    setFormError(null);
     setModalState(tier);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tierName || !tierPrice) return;
 
@@ -51,14 +56,17 @@ export default function WorkspaceTicketTiersTab({ ticketTiers, onUpdateTiers, on
     const cap = parseFloat(tierCap) || (price * 1.2);
     const capacity = parseInt(tierCapacity) || 1000;
 
+    let nextTiers: TicketTier[];
     if (isEditing) {
       const editingTier = modalState as TicketTier;
-      onUpdateTiers(
-        ticketTiers.map((t) =>
-          t.id === editingTier.id
-            ? { ...t, name: tierName, description: tierDescription.trim(), price, priceCap: cap, capacity }
-            : t
-        )
+      if (capacity < editingTier.sold) {
+        setFormError(`Capacity can't be lower than the ${editingTier.sold} ticket${editingTier.sold === 1 ? '' : 's'} already sold.`);
+        return;
+      }
+      nextTiers = ticketTiers.map((t) =>
+        t.id === editingTier.id
+          ? { ...t, name: tierName, description: tierDescription.trim(), price, priceCap: cap, capacity }
+          : t
       );
     } else {
       const newTier: TicketTier = {
@@ -71,10 +79,19 @@ export default function WorkspaceTicketTiersTab({ ticketTiers, onUpdateTiers, on
         sold: 0,
         color: 'border-emerald-500 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
       };
-      onUpdateTiers([...ticketTiers, newTier]);
+      nextTiers = [...ticketTiers, newTier];
     }
 
-    setModalState(null);
+    setFormError(null);
+    setSubmitting(true);
+    const res = await onUpdateTiers(nextTiers);
+    setSubmitting(false);
+
+    if (res.success) {
+      setModalState(null);
+    } else {
+      setFormError(res.error?.message ?? 'Failed to save ticket tier. Please try again.');
+    }
   };
 
   return (
@@ -146,13 +163,7 @@ export default function WorkspaceTicketTiersTab({ ticketTiers, onUpdateTiers, on
         })}
       </div>
 
-      {modalState !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="relative max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-border-subtle bg-surface-white p-5 shadow-2xl sm:p-6">
-            <button onClick={() => setModalState(null)} className="absolute right-4 top-4 text-text-muted hover:text-text-primary">
-              <X className="h-5 w-5" />
-            </button>
-            <h3 className="mb-4 pr-8 text-base font-bold text-text-primary">{isEditing ? 'Edit Event Ticket Tier' : 'Add Event Ticket Tier'}</h3>
+      <Modal open={modalState !== null} onClose={submitting ? undefined : () => setModalState(null)} title={isEditing ? 'Edit Event Ticket Tier' : 'Add Event Ticket Tier'}>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="mb-1.5 block text-[10px] font-bold uppercase text-text-muted">Tier Name</label>
@@ -208,35 +219,37 @@ export default function WorkspaceTicketTiersTab({ ticketTiers, onUpdateTiers, on
                   />
                 </div>
               </div>
+              {formError && (
+                <div className="flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[11px] font-medium text-danger">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <span>{formError}</span>
+                </div>
+              )}
               <div className="mt-5 flex flex-col-reverse gap-2 border-t border-border-subtle pt-4 sm:flex-row sm:justify-end">
-                <button type="button" onClick={() => setModalState(null)} className="min-h-11 rounded-xl border border-border-subtle px-4 py-2 text-xs text-text-secondary hover:bg-surface-soft">Cancel</button>
-                <button type="submit" className="min-h-11 rounded-xl bg-primary px-4 py-2 text-xs text-white hover:bg-primary-hover">{isEditing ? 'Save Changes' : 'Inject Ticket Tier'}</button>
+                <button type="button" onClick={() => setModalState(null)} disabled={submitting} className="min-h-11 rounded-xl border border-border-subtle px-4 py-2 text-xs text-text-secondary hover:bg-surface-soft disabled:opacity-50">Cancel</button>
+                <button type="submit" disabled={submitting} className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs text-white hover:bg-primary-hover disabled:opacity-60">
+                  {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {isEditing ? 'Save Changes' : 'Inject Ticket Tier'}
+                </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
 
-      {deletingTierId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="relative w-full max-w-sm rounded-2xl border border-border-subtle bg-surface-white p-5 shadow-2xl sm:p-6">
-            <h3 className="mb-2 text-base font-bold text-text-primary">Delete Ticket Tier?</h3>
-            <p className="mb-5 text-xs text-text-muted">This cannot be undone. This is only possible because the tier has zero tickets sold.</p>
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button onClick={() => setDeletingTierId(null)} className="min-h-11 rounded-xl border border-border-subtle px-4 py-2 text-xs text-text-secondary hover:bg-surface-soft">Cancel</button>
-              <button
-                onClick={() => {
-                  onDeleteTier(deletingTierId);
-                  setDeletingTierId(null);
-                }}
-                className="min-h-11 rounded-xl bg-danger px-4 py-2 text-xs text-white hover:bg-danger/90"
-              >
-                Delete Tier
-              </button>
-            </div>
+      <Modal open={!!deletingTierId} onClose={() => setDeletingTierId(null)} title="Delete Ticket Tier?" size="sm">
+          <p className="mb-5 text-xs text-text-muted">This cannot be undone. This is only possible because the tier has zero tickets sold.</p>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button onClick={() => setDeletingTierId(null)} className="min-h-11 rounded-xl border border-border-subtle px-4 py-2 text-xs text-text-secondary hover:bg-surface-soft">Cancel</button>
+            <button
+              onClick={() => {
+                if (deletingTierId) onDeleteTier(deletingTierId);
+                setDeletingTierId(null);
+              }}
+              className="min-h-11 rounded-xl bg-danger px-4 py-2 text-xs text-white hover:bg-danger/90"
+            >
+              Delete Tier
+            </button>
           </div>
-        </div>
-      )}
+      </Modal>
     </div>
   );
 }

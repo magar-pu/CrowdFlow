@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import { ScannerDevice, Gate, Staff } from "../../types";
-import { Plus, Wifi, WifiOff, BatteryMedium, QrCode, Copy, Check, ExternalLink, X } from "lucide-react";
+import { Plus, Wifi, WifiOff, BatteryMedium, QrCode, Copy, Check, ExternalLink } from "lucide-react";
 import ScannerSimulator from "./ScannerSimulator";
 import AssignScannerModal from "./AssignScannerModal";
 import { QRCodeSVG } from "qrcode.react";
 import { useParams } from "next/navigation";
+import Modal from "@/components/ui/Modal";
 
 interface WorkspaceScannerProps {
   devices: ScannerDevice[];
@@ -31,6 +32,7 @@ export default function WorkspaceScanner({
   const eventId = params?.id || "1";
 
   const [selectedSimDevice, setSelectedSimDevice] = useState<ScannerDevice | null>(null);
+  const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [viewQrDevice, setViewQrDevice] = useState<ScannerDevice | null>(null);
   const [copied, setCopied] = useState(false);
@@ -147,7 +149,7 @@ export default function WorkspaceScanner({
                       </button>
 
                       <button
-                        onClick={() => setSelectedSimDevice(dev)}
+                        onClick={() => { setSelectedSimDevice(dev); setSimulatorOpen(true); }}
                         className="bg-surface-container hover:bg-surface-container-high text-text-primary border border-border-subtle hover:text-text-primary font-sans text-[10px] font-bold px-2.5 py-1 rounded transition-colors cursor-pointer"
                       >
                         Simulator
@@ -162,22 +164,15 @@ export default function WorkspaceScanner({
       </div>
 
       {/* Persistent Access QR Code & Link Modal */}
-      {viewQrDevice && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-border-subtle rounded-2xl w-full max-w-sm p-6 text-center shadow-2xl space-y-4 animate-scale-in">
-            <div className="flex items-center justify-between border-b border-border-subtle pb-3">
-              <div className="text-left">
-                <h3 className="text-sm font-bold text-text-primary">{viewQrDevice.name} Access</h3>
-                <p className="text-[10px] text-text-secondary">Assigned to {viewQrDevice.staff} ({viewQrDevice.gate})</p>
-              </div>
-              <button
-                onClick={() => setViewQrDevice(null)}
-                className="p-1 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-container transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
+      <Modal
+        open={!!viewQrDevice}
+        onClose={() => setViewQrDevice(null)}
+        title={viewQrDevice ? `${viewQrDevice.name} Access` : undefined}
+        description={viewQrDevice ? `Assigned to ${viewQrDevice.staff} (${viewQrDevice.gate})` : undefined}
+        size="sm"
+      >
+        {viewQrDevice && (
+          <div className="text-center space-y-4">
             <div className="w-36 h-36 mx-auto rounded-xl border border-border-subtle flex items-center justify-center bg-white p-3 shadow-xs">
               <QRCodeSVG value={getDeviceUrl(viewQrDevice)} size={120} />
             </div>
@@ -205,26 +200,26 @@ export default function WorkspaceScanner({
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
       {selectedSimDevice && (
         <ScannerSimulator
+          open={simulatorOpen}
           device={selectedSimDevice}
-          onClose={() => setSelectedSimDevice(null)}
+          onClose={() => setSimulatorOpen(false)}
           onScan={handleSimScan}
           onCheckIn={onCheckIn}
         />
       )}
 
-      {showAssignModal && (
-        <AssignScannerModal
-          staffList={staffList}
-          gates={gates}
-          onClose={() => setShowAssignModal(false)}
-          onAssign={onAddDevice}
-        />
-      )}
+      <AssignScannerModal
+        open={showAssignModal}
+        staffList={staffList}
+        gates={gates}
+        onClose={() => setShowAssignModal(false)}
+        onAssign={onAddDevice}
+      />
     </div>
   );
 }

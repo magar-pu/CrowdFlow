@@ -6,8 +6,10 @@ import { ApiResponse, Event, User } from '@/types/admin';
 import RoleBadge from './RoleBadge';
 import UserRolesManager from './UserRolesManager';
 import UserDelegationsPanel from './UserDelegationsPanel';
+import Modal from '@/components/ui/Modal';
 
 interface UserDetailDrawerProps {
+  open: boolean;
   user: User;
   events: Event[];
   onClose: () => void;
@@ -17,6 +19,7 @@ interface UserDetailDrawerProps {
 }
 
 export default function UserDetailDrawer({
+  open,
   user,
   events,
   onClose,
@@ -39,11 +42,8 @@ export default function UserDetailDrawer({
     user.role === 'Admin' || (user.roleAssignments?.some((a) => a.role === 'Admin') ?? false);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm animate-fade-in">
-      {/* Backdrop exit */}
-      <div className="absolute inset-0" onClick={onClose} />
-      
-      <div className="relative z-10 flex w-full max-w-md max-h-[90vh] overflow-y-auto flex-col justify-between rounded-2xl border border-border-subtle bg-surface-white p-6 shadow-overlay animate-fade-in">
+    <Modal open={open} bare onClose={onClose} closeOnBackdropClick backdropClassName="bg-primary/40 backdrop-blur-sm">
+      <div className="relative flex w-full max-w-md max-h-[90vh] overflow-y-auto flex-col justify-between rounded-2xl border border-border-subtle bg-surface-white p-6 shadow-overlay animate-fade-in">
         {/* Header */}
         <div>
           <button
@@ -145,6 +145,6 @@ export default function UserDetailDrawer({
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

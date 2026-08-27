@@ -1,19 +1,31 @@
 "use client";
 
-import React, { useState } from 'react';
-import { X, Tag, AlertTriangle } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Tag, AlertTriangle } from 'lucide-react';
 import { createResaleListing } from '@/lib/api/resale';
+import Modal from '@/components/ui/Modal';
 
 interface ResellTicketModalProps {
+  open: boolean;
   onClose: (success?: boolean, listingId?: string) => void;
   ticketId: string;
   originalPrice: number;
 }
 
-export default function ResellTicketModal({ onClose, ticketId, originalPrice }: ResellTicketModalProps) {
+export default function ResellTicketModal({ open, onClose, ticketId, originalPrice }: ResellTicketModalProps) {
   const [resalePrice, setResalePrice] = useState(originalPrice.toLocaleString('id-ID'));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
+  // Stays mounted across open/close cycles (for the close transition), so
+  // reset the form here on each open instead of relying on a fresh mount.
+  useEffect(() => {
+    if (open) {
+      setResalePrice(originalPrice.toLocaleString('id-ID'));
+      setErrorMsg("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const handleResell = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,25 +54,13 @@ export default function ResellTicketModal({ onClose, ticketId, originalPrice }: 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
-      <div className="relative w-full max-w-md rounded-xl border border-border-subtle bg-surface-white p-6 shadow-overlay">
-        <button
-          onClick={() => onClose()}
-          className="absolute top-4 right-4 rounded-lg p-1 text-text-secondary hover:bg-surface hover:text-text-primary cursor-pointer"
-        >
-          <X className="h-5 w-5" />
-        </button>
-
-        <div className="mb-4 flex items-center gap-2">
-          <div className="rounded-lg border border-primary/20 bg-primary/5 p-2 text-primary">
-            <Tag className="h-5 w-5" />
-          </div>
-          <div>
-            <h3 className="text-base font-bold text-text-primary">Resell Your Ticket</h3>
-            <p className="text-xs text-text-secondary">List your ticket on the Verified Marketplace.</p>
-          </div>
-        </div>
-
+    <Modal
+      open={open}
+      onClose={() => onClose()}
+      title="Resell Your Ticket"
+      description="List your ticket on the Verified Marketplace."
+      icon={<Tag className="h-4 w-4" />}
+    >
         {/* IMPORTANT DISCLAIMER HERE */}
         <div className="mb-6 rounded-lg bg-warning/10 p-3 border border-warning/20 flex gap-3 items-start">
           <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
@@ -119,7 +119,6 @@ export default function ResellTicketModal({ onClose, ticketId, originalPrice }: 
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }

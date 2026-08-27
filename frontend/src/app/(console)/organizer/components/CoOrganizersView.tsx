@@ -28,6 +28,7 @@ import {
   revokeDelegation,
 } from "@/lib/api/delegations";
 import { listOrganizerEvents, OrganizerEvent } from "@/lib/api/eorganizer";
+import Modal from "@/components/ui/Modal";
 
 type Tab = "granted" | "received";
 
@@ -186,40 +187,37 @@ export default function CoOrganizersView() {
         <ReceivedList items={received} />
       )}
 
-      {inviteOpen && (
-        <DelegationFormModal
-          mode="invite"
-          onClose={() => setInviteOpen(false)}
-          onDone={(msg) => {
-            setInviteOpen(false);
-            notify("success", msg);
-            refresh();
-          }}
-        />
-      )}
-      {requestOpen && (
-        <DelegationFormModal
-          mode="request"
-          onClose={() => setRequestOpen(false)}
-          onDone={(msg) => {
-            setRequestOpen(false);
-            notify("success", msg);
-            refresh();
-          }}
-        />
-      )}
-      {editTarget && (
-        <DelegationFormModal
-          mode="edit"
-          target={editTarget}
-          onClose={() => setEditTarget(null)}
-          onDone={(msg) => {
-            setEditTarget(null);
-            notify("success", msg);
-            refresh();
-          }}
-        />
-      )}
+      <DelegationFormModal
+        open={inviteOpen}
+        mode="invite"
+        onClose={() => setInviteOpen(false)}
+        onDone={(msg) => {
+          setInviteOpen(false);
+          notify("success", msg);
+          refresh();
+        }}
+      />
+      <DelegationFormModal
+        open={requestOpen}
+        mode="request"
+        onClose={() => setRequestOpen(false)}
+        onDone={(msg) => {
+          setRequestOpen(false);
+          notify("success", msg);
+          refresh();
+        }}
+      />
+      <DelegationFormModal
+        open={!!editTarget}
+        mode="edit"
+        target={editTarget ?? undefined}
+        onClose={() => setEditTarget(null)}
+        onDone={(msg) => {
+          setEditTarget(null);
+          notify("success", msg);
+          refresh();
+        }}
+      />
     </div>
   );
 }
@@ -356,11 +354,13 @@ function ReceivedList({ items }: { items: Delegation[] }) {
 // ---- Shared form modal (invite / request / edit) ----
 
 function DelegationFormModal({
+  open,
   mode,
   target,
   onClose,
   onDone,
 }: {
+  open: boolean;
   mode: "invite" | "request" | "edit";
   target?: Delegation;
   onClose: () => void;
@@ -375,6 +375,19 @@ function DelegationFormModal({
   const [events, setEvents] = useState<OrganizerEvent[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Stays mounted across open/close cycles (for the close transition), so
+  // reset the form here on each open instead of relying on a fresh mount.
+  useEffect(() => {
+    if (open) {
+      setEmail("");
+      setScope(target?.scope ?? "all");
+      setNote("");
+      setSelected(target?.events.map((e) => e.event_id) ?? []);
+      setFormError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // The specific-scope event picker only applies to the owner's own events
   // (invite/edit). A delegate requesting access cannot enumerate them, so
@@ -437,18 +450,7 @@ function DelegationFormModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-border-subtle bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-border-subtle p-5">
-          <h3 className="text-sm font-bold text-text-primary">{title}</h3>
-          <button
-            onClick={onClose}
-            className="cursor-pointer rounded p-1 text-on-surface-variant transition-colors hover:text-text-primary"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
+    <Modal open={open} onClose={onClose} title={title} contentClassName="">
         <form onSubmit={handleSubmit} className="space-y-4 p-5 text-left">
           {mode !== "edit" && (
             <div className="space-y-1.5">
@@ -548,8 +550,7 @@ function DelegationFormModal({
             {mode === "invite" ? "Send invite" : mode === "request" ? "Send request" : "Save scope"}
           </button>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

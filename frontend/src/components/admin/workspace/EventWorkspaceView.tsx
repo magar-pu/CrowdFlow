@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Check, ShieldAlert, X, Zap, Shield, Activity, Ticket, Smartphone, Settings, FileEdit } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Event, Scanner, TicketTier, VenueSection, Transaction } from '@/types/admin';
+import { ApiResponse, Event, Scanner, TicketTier, VenueSection, Transaction } from '@/types/admin';
 import RejectReasonModal from '@/components/admin/shared/RejectReasonModal';
 import WorkspaceLiveTrackerTab from './WorkspaceLiveTrackerTab';
 import WorkspaceTicketTiersTab from './WorkspaceTicketTiersTab';
@@ -21,13 +21,13 @@ interface EventWorkspaceViewProps {
   onAddScanner: (newScanner: Scanner) => void;
   onDeleteScanner: (id: string) => void;
   onUpdateSections: (updatedSections: VenueSection[]) => void;
-  onUpdateTiers: (updatedTiers: TicketTier[]) => void;
+  onUpdateTiers: (updatedTiers: TicketTier[]) => Promise<ApiResponse<void>>;
   onDeleteTier: (tierId: string) => void;
   onUpdateScanners: (updatedScanners: Scanner[]) => void;
   onSetDraft: (id: string) => void;
   onSetPendingReview: (id: string) => void;
   onApproveEvent: (id: string) => void;
-  onRejectEvent: (id: string, notes: string) => void;
+  onRejectEvent: (id: string, notes: string) => Promise<ApiResponse<void>>;
   onDetailsSaved: () => void | Promise<void>;
 }
 
@@ -191,16 +191,16 @@ export default function EventWorkspaceView({
         </button>
       </div>
 
-      {showRejectModal && (
-        <RejectReasonModal
-          title="Reject Event"
-          onCancel={() => setShowRejectModal(false)}
-          onConfirm={(notes) => {
-            onRejectEvent(event.id, notes);
-            setShowRejectModal(false);
-          }}
-        />
-      )}
+      <RejectReasonModal
+        open={showRejectModal}
+        title="Reject Event"
+        onCancel={() => setShowRejectModal(false)}
+        onConfirm={async (notes) => {
+          const res = await onRejectEvent(event.id, notes);
+          if (res.success) setShowRejectModal(false);
+          return res;
+        }}
+      />
 
       {/* Tabs navigation panel */}
       <div className="flex space-x-1 overflow-x-auto border-b border-border-subtle">

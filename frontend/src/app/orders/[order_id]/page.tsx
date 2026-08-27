@@ -105,20 +105,19 @@ export default function YourTicketPage() {
         />
       </main>
 
-      {show_resell_modal && (
-        <ResellTicketModal
-          ticketId={ticket.ticket_id}
-          originalPrice={100000} // Hardcoded for mock, will come from DB
-          onClose={(success, listingId) => {
-            set_show_resell_modal(false);
-            if (success) {
-              setIsListed(true);
-              localStorage.setItem('dummy_is_listed', 'true');
-              if (listingId) localStorage.setItem('dummy_listing_id', listingId);
-            }
-          }}
-        />
-      )}
+      <ResellTicketModal
+        open={show_resell_modal}
+        ticketId={ticket.ticket_id}
+        originalPrice={100000} // Hardcoded for mock, will come from DB
+        onClose={(success, listingId) => {
+          set_show_resell_modal(false);
+          if (success) {
+            setIsListed(true);
+            localStorage.setItem('dummy_is_listed', 'true');
+            if (listingId) localStorage.setItem('dummy_listing_id', listingId);
+          }
+        }}
+      />
     </div>
   );
 }
