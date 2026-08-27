@@ -5,6 +5,7 @@ import { Plus, Calendar, MapPin, Search, Filter, ChevronRight, Check, X } from '
 import { ApiResponse, Event, EventType } from '@/types/admin';
 import RejectReasonModal from '@/components/admin/shared/RejectReasonModal';
 import Pagination from '@/components/admin/shared/Pagination';
+import Select from '@/components/ui/Select';
 
 interface EventManagementViewProps {
   events: Event[];
@@ -75,24 +76,24 @@ export default function EventManagementView({ events, eventTypes, onCreateEvent,
           {/* Category Selector */}
           <div className="flex items-center gap-2">
             <Filter className="h-4 w-4 text-text-secondary" />
-            <select
+            <Select
+              selectSize="md"
               id="event-category-filter"
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="h-11 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-text-primary outline-none transition-colors focus:border-secondary focus:bg-surface-white focus:ring-2 focus:ring-secondary/20"
             >
               {categoriesList.map((cat) => (
                 <option key={cat} value={cat}>{cat} Category</option>
               ))}
-            </select>
+            </Select>
           </div>
 
           {/* Status Selector */}
-          <select
+          <Select
+            selectSize="md"
             id="event-status-filter"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="h-11 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-text-primary outline-none transition-colors focus:border-secondary focus:bg-surface-white focus:ring-2 focus:ring-secondary/20"
           >
             <option value="All">All Statuses</option>
             <option value="Active">Active</option>
@@ -100,7 +101,7 @@ export default function EventManagementView({ events, eventTypes, onCreateEvent,
             <option value="In Review">In Review</option>
             <option value="Rejected">Rejected</option>
             <option value="Completed">Completed</option>
-          </select>
+          </Select>
 
           {/* Reset Filters */}
           {(searchTerm || categoryFilter !== 'All' || statusFilter !== 'All') && (

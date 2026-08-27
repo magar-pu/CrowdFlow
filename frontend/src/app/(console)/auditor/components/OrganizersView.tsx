@@ -44,7 +44,6 @@ export default function OrganizersView({
       return matchesStatus && matchesBusiness && matchesSearch;
     })
     .sort((a, b) => {
-      if (sortKey === 'risk') return b.riskScore - a.riskScore;
       if (sortKey === 'name') return a.companyName.localeCompare(b.companyName);
       return b.registrationDate.localeCompare(a.registrationDate); // latest first
     });
@@ -119,7 +118,7 @@ export default function OrganizersView({
 
         <div className="flex items-center gap-2 flex-wrap pt-1">
           <span className="text-[10px] font-mono text-text-secondary flex items-center gap-1"><ArrowUpDown className="w-3 h-3" /> Sort by:</span>
-          {([['date', 'Reg Date'], ['risk', 'Risk Score'], ['name', 'Company Name']] as const).map(([k, label]) => (
+          {([['date', 'Reg Date'], ['name', 'Company Name']] as const).map(([k, label]) => (
             <button
               key={k}
               onClick={() => setSortKey(k)}
@@ -156,17 +155,6 @@ export default function OrganizersView({
               <div className="flex items-center gap-2"><MapPin className="w-3.5 h-3.5 text-on-surface-variant shrink-0" /><span className="truncate">{org.province}</span></div>
               <div className="flex items-center gap-2"><CalendarDays className="w-3.5 h-3.5 text-on-surface-variant shrink-0" /><span>Reg: {org.registrationDate}</span></div>
               <div className="flex items-center gap-2"><Clock className="w-3.5 h-3.5 text-on-surface-variant shrink-0" /><span>Activity: {org.lastActivity}</span></div>
-            </div>
-
-            <div className="bg-surface-container-low border border-border-subtle rounded-xl p-3 grid grid-cols-2 gap-2 text-center text-xs mb-4">
-              <div>
-                <p className="text-[8px] font-mono text-text-secondary uppercase tracking-wider">Risk Category</p>
-                <p className={`text-xs font-bold mt-0.5 ${org.riskCategory === 'Low' ? 'text-success' : org.riskCategory === 'Medium' ? 'text-warning' : 'text-danger'}`}>{org.riskCategory}</p>
-              </div>
-              <div>
-                <p className="text-[8px] font-mono text-text-secondary uppercase tracking-wider">Risk Score</p>
-                <p className="text-xs font-bold text-text-primary mt-0.5">{org.riskScore}%</p>
-              </div>
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-border-subtle text-[10px] font-mono">

@@ -45,6 +45,7 @@ type VenueResponse struct {
 	Address       string `json:"address"`
 	City          string `json:"city"`
 	Province      string `json:"province"`
+	PostalCode    string `json:"postal_code"`
 	TotalCapacity int    `json:"total_capacity"`
 }
 
@@ -72,9 +73,13 @@ type EventListResponse struct {
 	CoverImageURL string    `json:"cover_image_url"`
 	// StartingPrice is the cheapest ticket tier price, or null when the event
 	// has no tiers configured yet.
-	StartingPrice *float64           `json:"starting_price"`
-	Venue         *VenueResponse     `json:"venue,omitempty"`
-	Organizer     *OrganizerResponse `json:"organizer,omitempty"`
+	StartingPrice *float64 `json:"starting_price"`
+	// RecentSales is tickets sold on paid orders in the last 7 days. Clients
+	// use it to decide whether an event genuinely is selling fast. It is
+	// populated for every sort, not just trending.
+	RecentSales int                `json:"recent_sales"`
+	Venue       *VenueResponse     `json:"venue,omitempty"`
+	Organizer   *OrganizerResponse `json:"organizer,omitempty"`
 }
 
 // EventDetailResponse defines a complete payload returned on single event details query (includes description and tax rate)
@@ -91,6 +96,15 @@ type EventDetailResponse struct {
 	EntertainmentTaxPassedToBuyer bool               `json:"entertainment_tax_passed_to_buyer"`
 	CoverImageURL                 string             `json:"cover_image_url"`
 	LayoutID                      *int               `json:"layout_id"` // bound venue layout; null = none
+	// GoogleMapsURL is the organizer's map link, "" when none is set. Host is
+	// validated on write (Google Maps only) since it becomes an href.
+	GoogleMapsURL string `json:"google_maps_url"`
+	// MaxTicketsPerOrder caps the total tickets in one order across all tiers.
+	// 0 means uncapped.
+	MaxTicketsPerOrder int `json:"max_tickets_per_order"`
+	// RecentSales is tickets sold on paid orders in the last 7 days — the same
+	// figure the listing ranks "trending" by.
+	RecentSales int `json:"recent_sales"`
 	Venue                         *VenueResponse     `json:"venue,omitempty"`
 	Organizer                     *OrganizerResponse `json:"organizer,omitempty"`
 }
@@ -106,6 +120,7 @@ func MapVenue(v *Venue) *VenueResponse {
 		Address:       v.Address,
 		City:          v.City,
 		Province:      v.Province,
+		PostalCode:    v.PostalCode,
 		TotalCapacity: v.TotalCapacity,
 	}
 }
@@ -147,6 +162,7 @@ func MapEventToList(e *Event) *EventListResponse {
 		Category:      mapCategory(e.EventTypeID),
 		CoverImageURL: e.CoverImageURL,
 		StartingPrice: e.StartingPrice,
+		RecentSales:   e.RecentSales,
 		Venue:         MapVenue(e.Venue),
 		Organizer:     MapOrganizer(e.Organizer),
 	}
@@ -170,6 +186,9 @@ func MapEventToDetail(e *Event) *EventDetailResponse {
 		EntertainmentTaxPassedToBuyer: e.EntertainmentTaxPassedToBuyer,
 		CoverImageURL:                 e.CoverImageURL,
 		LayoutID:                      e.LayoutID,
+		GoogleMapsURL:                 e.GoogleMapsURL,
+		MaxTicketsPerOrder:            e.MaxTicketsPerOrder,
+		RecentSales:                   e.RecentSales,
 		Venue:                         MapVenue(e.Venue),
 		Organizer:                     MapOrganizer(e.Organizer),
 	}

@@ -2,6 +2,7 @@ package payment
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -48,7 +49,8 @@ func (h *Handler) createOrder(w http.ResponseWriter, r *http.Request) {
 	// 3. Call service
 	resp, err := h.service.CreateMidtransTransaction(r.Context(), userID, &req)
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		log.Printf("Order creation failed for user %d: %v", userID, err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to process payment transaction")
 		return
 	}
 
@@ -66,7 +68,8 @@ func (h *Handler) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.HandleMidtransWebhook(r.Context(), payload); err != nil {
 		// Log the error but return 200 OK to midtrans so it stops retrying
 		// or return 500 depending on the logic, but usually we return 200
-		response.Error(w, http.StatusInternalServerError, "WEBHOOK_FAILED", err.Error())
+		log.Printf("Webhook handling failed: %v", err)
+		response.Error(w, http.StatusInternalServerError, "WEBHOOK_FAILED", "Failed to process webhook")
 		return
 	}
 

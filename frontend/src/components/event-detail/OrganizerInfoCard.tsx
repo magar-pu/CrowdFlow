@@ -1,11 +1,15 @@
 /**
  * components/event-detail/OrganizerInfoCard.tsx
  *
- * Small "Organized by" card under the ticket selection card. Matches
- * Stitch markup: circular avatar, uppercase label, bold name, profile link.
+ * Small "Organized by" card under the ticket CTA: circular avatar, uppercase
+ * label, organizer name.
+ *
+ * There is no "View Organizer Profile" link. The API returns profile_url as
+ * /organizers/{id}, but no such public route exists — the only organizer [id]
+ * page is the auth-gated auditor console — so the link 404'd for every buyer.
+ * It comes back when a public organizer page does.
  */
 
-import Link from "next/link";
 import type { Organizer } from "@/types/ticket";
 
 interface OrganizerInfoCardProps {
@@ -30,12 +34,6 @@ export function OrganizerInfoCard({ organizer }: OrganizerInfoCardProps) {
         <p className="font-label-md text-label-md font-bold text-primary">
           {organizer.name}
         </p>
-        <Link
-          href={organizer.profile_url}
-          className="mt-1 inline-block font-body-sm text-body-sm text-secondary hover:underline"
-        >
-          View Organizer Profile
-        </Link>
       </div>
     </div>
   );

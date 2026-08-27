@@ -4,7 +4,10 @@
  * Secondary tree-view panel for the Seat Mapper mode. Displays:
  * - Sections tree (colour swatch + count; click to select a section)
  * - Blueprint Layer (upload a floor plan, set opacity/scale/offset)
- * - Pricing Tiers (real tiers + seat tallies; click to select those seats)
+ *
+ * Pricing tiers are deliberately NOT shown: a venue layout is untiered,
+ * reusable geometry. Tiers are painted onto seats per EVENT in the organizer
+ * workspace, so a tier tree here described state this editor cannot own.
  *
  * The placeholder "Seating Types" and "Allocation Rules" nodes were removed —
  * they had no backing data and rendered a chevron that expanded nothing.
@@ -16,8 +19,6 @@ import { useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
-  ChevronLeft,
-  DollarSign,
   Layers,
   Upload,
   Trash2,
@@ -92,10 +93,8 @@ export function HierarchyPanel({
   selected_section_id,
   on_section_select,
 }: HierarchyPanelProps) {
-  const [is_expanded, set_is_expanded] = useState(true);
-  const { blueprint, set_blueprint, update_blueprint, seats, pricing_tiers, set_multi_selected_seats } =
+  const { blueprint, set_blueprint, update_blueprint } =
     useVenueEditorStore();
-  const untagged_seats = seats.filter((s) => !s.tier_id);
 
   const handle_blueprint_upload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -115,36 +114,11 @@ export function HierarchyPanel({
     reader.readAsDataURL(file);
   };
 
-  if (!is_expanded) {
-    return (
-      <div className="relative z-30 flex h-full w-12 shrink-0 flex-col items-center border-r border-border-subtle bg-surface-white py-4 shadow-[4px_0_24px_rgba(15,23,42,0.02)] transition-all">
-        <button
-          type="button"
-          onClick={() => set_is_expanded(true)}
-          className="rounded-md p-2 text-on-surface-variant transition-colors hover:bg-surface-container-low hover:text-primary"
-          title="Expand Hierarchy"
-        >
-          <ChevronRight size={16} />
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div className="relative z-30 flex h-full w-64 shrink-0 flex-col border-r border-border-subtle bg-surface-white shadow-[4px_0_24px_rgba(15,23,42,0.02)] transition-all">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border-subtle bg-surface-bright p-4">
-        <h3 className="text-sm font-semibold text-primary">Hierarchy</h3>
-        <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={() => set_is_expanded(false)}
-            className="rounded p-1 text-on-surface-variant transition-colors hover:bg-surface-container-low hover:text-primary"
-            title="Collapse"
-          >
-            <ChevronLeft size={16} />
-          </button>
-        </div>
+      <div className="border-b border-border-subtle px-4 py-3">
+        <h3 className="text-sm font-bold text-text-primary">Hierarchy</h3>
       </div>
 
       {/* Tree */}
@@ -313,65 +287,6 @@ export function HierarchyPanel({
           </div>
         </TreeNode>
 
-        {/* Pricing tiers — click one to select every seat carrying it */}
-        <TreeNode
-          label="Pricing Tiers"
-          icon={<DollarSign size={14} className="text-on-surface-variant" />}
-          count={pricing_tiers.length || undefined}
-        >
-          {pricing_tiers.length === 0 ? (
-            <p className="px-2 py-1.5 text-[11px] text-text-secondary">
-              No tiers yet — add them in Ticket Pricing.
-            </p>
-          ) : (
-            <>
-              {pricing_tiers.map((tier) => {
-                const tier_seats = seats.filter((s) => s.tier_id === tier.tier_id);
-                return (
-                  <button
-                    key={tier.tier_id}
-                    type="button"
-                    disabled={tier_seats.length === 0}
-                    title={
-                      tier_seats.length
-                        ? `Select the ${tier_seats.length} seats on this tier`
-                        : "No seats on this tier yet"
-                    }
-                    onClick={() =>
-                      set_multi_selected_seats(tier_seats.map((s) => s.seat_id))
-                    }
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left transition-colors hover:bg-surface-container-low disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
-                  >
-                    <div
-                      className="h-2 w-2 shrink-0 rounded-sm"
-                      style={{ backgroundColor: tier.color }}
-                    />
-                    <span className="truncate text-xs text-text-secondary">{tier.name}</span>
-                    <span className="ml-auto text-[10px] text-text-secondary">
-                      {tier_seats.length}
-                    </span>
-                  </button>
-                );
-              })}
-              {untagged_seats.length > 0 && (
-                <button
-                  type="button"
-                  title={`Select the ${untagged_seats.length} seats with no tier`}
-                  onClick={() =>
-                    set_multi_selected_seats(untagged_seats.map((s) => s.seat_id))
-                  }
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left transition-colors hover:bg-surface-container-low"
-                >
-                  <div className="h-2 w-2 shrink-0 rounded-sm bg-slate-300" />
-                  <span className="truncate text-xs text-warning">Unassigned</span>
-                  <span className="ml-auto text-[10px] text-text-secondary">
-                    {untagged_seats.length}
-                  </span>
-                </button>
-              )}
-            </>
-          )}
-        </TreeNode>
       </div>
     </div>
   );

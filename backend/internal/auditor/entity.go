@@ -34,15 +34,6 @@ const (
 	StageFinalApproval        ReviewStage = "Final Approval"
 )
 
-type RiskLevel string
-
-const (
-	RiskLow      RiskLevel = "Low"
-	RiskMedium   RiskLevel = "Medium"
-	RiskHigh     RiskLevel = "High"
-	RiskCritical RiskLevel = "Critical"
-)
-
 // ---- Dashboard ----
 
 type DashboardStats struct {
@@ -86,27 +77,86 @@ type EventReview struct {
 	LastUpdated     string         `json:"lastUpdated"`
 	Stage           ReviewStage    `json:"stage"`
 	Status          string         `json:"status"` // pending_review, approved, rejected
-	RiskLevel       RiskLevel      `json:"riskLevel"`
 	ComplianceScore int            `json:"complianceScore"`
 	MissingDocs     int            `json:"missingDocs"`
 	AssignedAuditor string         `json:"assignedAuditor"`
 	Venue           string         `json:"venue"`
+	VenueAddress    string         `json:"venueAddress"`
 	Date            string         `json:"date"`
 	Capacity        int            `json:"capacity"`
+	TicketSold      int            `json:"ticketSold"`
 	Notes           string         `json:"notes"`
 	Documents       []ReviewDoc    `json:"documents"`
 	Finance         ReviewFinance  `json:"finance"`
 	History         []StatusEntry  `json:"history"`
 	Revisions       []Revision     `json:"revisions"`
+
+	OrganizerDetail   ReviewOrganizerDetail   `json:"organizerDetail"`
+	Checklist         []ChecklistItem         `json:"checklist"`
+	ComplianceHistory ReviewComplianceHistory `json:"complianceHistory"`
 }
+
+// ChecklistItem is a single derived pass/fail signal shown on the review
+// overview. Every item must be computed from real state — a checklist that is
+// always green tells the auditor nothing.
+type ChecklistItem struct {
+	Label string `json:"label"`
+	Done  bool   `json:"done"`
+}
+
+// ReviewOrganizerDetail is the organizer's account-level identity as attached to
+// the event under review. It comes from organizer_applications, which is
+// UNIQUE (user_id) — one business per organizer.
+type ReviewOrganizerDetail struct {
+	// ApplicationID lets the console deep-link into the organizer verification
+	// page. Zero when the organizer has no application row.
+	ApplicationID int `json:"applicationId"`
+	CompanyName   string `json:"companyName"`
+	// BusinessLicense is NOT a stored licence number — no such column exists.
+	// It reports the verification state of the organizer's NIB/SIUP document,
+	// which is the signal an auditor actually needs.
+	BusinessLicense string `json:"businessLicense"`
+	Pic             string `json:"pic"`
+	Email           string `json:"email"`
+	Phone           string `json:"phone"`
+	Address         string `json:"address"`
+}
+
+// ReviewComplianceHistory summarises the organizer's track record across their
+// OTHER events, so an auditor can weigh this submission against past behaviour.
+type ReviewComplianceHistory struct {
+	PreviousAudits         int `json:"previousAudits"`
+	PreviousViolations     int `json:"previousViolations"`
+	PreviousRevisions      int `json:"previousRevisions"`
+	PreviousApprovedEvents int `json:"previousApprovedEvents"`
+}
+
+// Document sources feeding a review. IDs are only unique WITHIN a source —
+// organizer_documents and event_documents are separate SERIAL sequences, so an id
+// alone is ambiguous and every mutation must carry the source alongside it.
+const (
+	DocSourceOrganizer = "organizer" // organizer_documents: account-level, reused across events
+	DocSourceEvent     = "event"     // event_documents: submitted for this event specifically
+)
 
 type ReviewDoc struct {
 	ID           int    `json:"id"`
+	Source       string `json:"source"`
 	DocumentType string `json:"name"`
 	Category     string `json:"category"`
 	Status       string `json:"status"`
-	FileURL      string `json:"fileUrl"`
-	UploadedAt   string `json:"uploadDate"`
+	// FileURL is the private-bucket object key, NOT a fetchable link. Call the
+	// document url endpoint to mint a short-lived signed URL for it.
+	FileURL    string `json:"fileUrl"`
+	UploadedAt string `json:"uploadDate"`
+	// ReviewNotes carries the rejection reason for event documents.
+	ReviewNotes string `json:"reviewNotes,omitempty"`
+}
+
+// DocumentURL is a freshly minted, short-lived view link.
+type DocumentURL struct {
+	URL       string `json:"url"`
+	ExpiresIn int    `json:"expires_in"`
 }
 
 type ReviewFinance struct {
@@ -115,35 +165,41 @@ type ReviewFinance struct {
 	GatewayFee       float64            `json:"gatewayFee"`
 	TaxAmount        float64            `json:"taxAmount"`
 	NetPayout        float64            `json:"netPayout"`
-	TaxRate          float64            `json:"taxRate"`
-	TicketTiers      []ReviewTicketTier `json:"ticketTiers"`
-	TaxConfig        ReviewTaxConfig    `json:"taxConfig"`
-	Payout           ReviewPayout       `json:"payout"`
+	// TaxRate is events.entertainment_tax_rate — the only tax figure that is
+	// actually stored per event. The old TaxConfig block reported a hardcoded
+	// 11% PPN, a hardcoded "DKI Jakarta" region and three always-true
+	// applicability flags, none of which existed in the schema.
+	TaxRate     float64            `json:"taxRate"`
+	TicketTiers []ReviewTicketTier `json:"ticketTiers"`
+	Payout      ReviewPayout       `json:"payout"`
 }
 
 type ReviewTicketTier struct {
 	Category string  `json:"category"`
 	Price    float64 `json:"price"`
-	Seats    int     `json:"seats"`
-	Status   string  `json:"status"` // Available, Sold Out
+	// Seats is the tier's real sellable capacity: the number of seats painted
+	// with this tier for assigned-seating tiers, otherwise allocation_limit.
+	Seats int `json:"seats"`
+	Sold  int `json:"sold"`
+	// AssignedSeating reports which of those two rules applied, because
+	// allocation_limit is never consulted once a tier has seats.
+	AssignedSeating bool   `json:"assignedSeating"`
+	Status          string `json:"status"` // Available, Sold Out
 }
 
-type ReviewTaxConfig struct {
-	EntertainmentTax float64 `json:"entertainmentTax"`
-	Ppn              float64 `json:"ppn"`
-	Region           string  `json:"region"`
-	TaxPercentage    float64 `json:"taxPercentage"`
-	RegionMatch      bool    `json:"regionMatch"`
-	TaxApplied       bool    `json:"taxApplied"`
-	PpnApplied       bool    `json:"ppnApplied"`
-}
-
+// ReviewPayout is the organizer's payout destination. Sourced from
+// user_bank_accounts (which carries a real verification flag) and falling back
+// to the bank columns on organizer_applications. Empty strings mean the
+// organizer has not provided one — the console must say so rather than invent
+// an account.
 type ReviewPayout struct {
 	Bank            string  `json:"bank"`
 	AccountName     string  `json:"accountName"`
 	AccountNumber   string  `json:"accountNumber"`
 	EstimatedPayout float64 `json:"estimatedPayout"`
 	Verified        bool    `json:"verified"`
+	// HasAccount is false when no bank details exist in either source.
+	HasAccount bool `json:"hasAccount"`
 }
 
 type StatusEntry struct {
@@ -166,13 +222,22 @@ type Revision struct {
 	CreatedAt            string `json:"createdAt"`
 	OrganizerComment     string `json:"organizerComment,omitempty"`
 	OrganizerActionTaken string `json:"organizerActionTaken,omitempty"`
-	OrganizerFile        string `json:"organizerFile,omitempty"`
 	RespondedAt          string `json:"respondedAt,omitempty"`
+	// DocumentsChanged lists the event documents the organizer actually
+	// re-uploaded in response to this revision, snapshotted when they replied.
+	// It replaces the old organizer_file, which held a filename for a file that
+	// was never uploaded anywhere.
+	DocumentsChanged []RevisionDocumentChange `json:"documentsChanged"`
+}
+
+type RevisionDocumentChange struct {
+	DocumentType string `json:"documentType"`
+	Label        string `json:"label"`
+	UploadedAt   string `json:"uploadedAt"`
 }
 
 type EventReviewFilters struct {
 	Status    string
-	RiskLevel string
 	Search    string
 	Page      int
 	Limit     int
@@ -235,6 +300,14 @@ type OrganizerVerification struct {
 	BankName          string               `json:"bankName"`
 	BankAccountHolder string               `json:"bankAccountHolder"`
 	BankAccountNumber string               `json:"bankAccountNumber"`
+	// BankVerificationStatus was missing entirely, so the organizer profile's
+	// mapper fell back to a literal "Pending" and that screen could never show
+	// the real value — not even for an account an auditor had verified. The
+	// payout screen read the same column correctly, which is how the two
+	// disagreed about one organizer.
+	BankVerificationStatus string          `json:"bankVerificationStatus"`
+	BankVerifiedBy    string               `json:"bankVerifiedBy"`
+	BankVerifiedAt    string               `json:"bankVerifiedAt"`
 	Address           string               `json:"address"`
 }
 
@@ -300,45 +373,101 @@ type AuditorPayout struct {
 	RequestedAmount float64        `json:"requestedAmount"`
 	RequestDate     string         `json:"requestDate"`
 	Status          string         `json:"status"`
-	RiskLevel       RiskLevel      `json:"riskLevel"`
-	RiskScore       int            `json:"riskScore"`
 	SalesSummary    PayoutSales    `json:"salesSummary"`
 	BankName                  string         `json:"bankName"`
 	BankAccountNum            string         `json:"bankAccountNumber"`
 	BankHolder                string         `json:"bankAccountHolder"`
+	// BankVerificationStatus is "verified" only while an auditor has confirmed
+	// the CURRENT account. Any organizer edit resets it, so a payout whose
+	// destination moved since the last check arrives flagged.
+	BankVerificationStatus    string         `json:"bankVerificationStatus"`
 	OrganizerPhone            string         `json:"organizerPhone"`
 	OrganizerBusinessLicense  string         `json:"organizerBusinessLicense"`
 	OrganizerStatus           string         `json:"organizerStatus"`
+	// OrganizerViolations counts the organizer's rejected events, the same rule
+	// GetEventReview applies for compliance history. It excludes this payout's
+	// own event so a rejection here is not counted as prior history.
+	OrganizerViolations       int            `json:"organizerPreviousViolations"`
+	// OrganizerNotes is shown to the organizer; InternalNotes is not. Both live
+	// on `payouts` — reading them off the organizer's application, as this once
+	// did, meant one note appeared on every payout that organizer requested.
+	OrganizerNotes            string         `json:"financeNotes"`
+	// BankVerifiedBy/At record who authorised the destination of the money.
+	// Empty on accounts grandfathered in by migration 0022.
+	BankVerifiedBy            string         `json:"bankVerifiedBy"`
+	BankVerifiedAt            string         `json:"bankVerifiedAt"`
+	// ApplicationID and EventID let the console deep-link to the organizer
+	// profile and the event review; both screens already exist.
+	ApplicationID             int            `json:"applicationId"`
+	EventID                   int            `json:"eventId"`
+	VenueName                 string         `json:"venueName"`
+	EventStatus               string         `json:"eventStatus"`
+	TicketCapacity            int            `json:"ticketCapacity"`
 	FraudDetection            FraudSignals   `json:"fraudDetection"`
 	InternalNotes             string         `json:"internalNotes"`
 	Timeline                  []Activity     `json:"timeline"`
+	// ReviewChecklist is populated on the detail read only. Before migration
+	// 0028 these eleven booleans lived in React state and were lost on
+	// navigation, while a score derived from them was shown on the approve
+	// modal.
+	ReviewChecklist           PayoutReviewChecklist `json:"reviewChecklist"`
 }
 
+// PayoutSales is derived from `orders`, not from ticket_tiers.tickets_sold —
+// nothing in the codebase ever writes that counter, so every figure computed
+// from it was structurally zero. Each order also carries the fee rates that
+// applied when it was placed, so a historic payout is no longer recomputed at
+// today's percentages.
 type PayoutSales struct {
-	TicketsSold     int     `json:"ticketsSold"`
-	GrossRevenue    float64 `json:"grossRevenue"`
-	PlatformFee     float64 `json:"platformFee"`
-	GatewayFee      float64 `json:"paymentGatewayFee"`
+	TicketsSold      int     `json:"ticketsSold"`
+	GrossRevenue     float64 `json:"grossRevenue"`
+	PlatformFee      float64 `json:"platformFee"`
+	GatewayFee       float64 `json:"paymentGatewayFee"`
+	// PPN is the VAT actually charged on the two fees (platform_fee_ppn +
+	// gateway_fee_ppn). The rate is per-order, so it is never assumed to be 11%.
+	PPN              float64 `json:"ppn"`
 	EntertainmentTax float64 `json:"entertainmentTax"`
-	RefundAmount    float64 `json:"refundAmount"`
-	NetRevenue      float64 `json:"netRevenue"`
+	RefundAmount     float64 `json:"refundAmount"`
+	NetRevenue       float64 `json:"netRevenue"`
 }
 
 type FraudSignals struct {
 	DuplicatePayout     bool   `json:"duplicatePayout"`
 	SuspiciousRevenue   bool   `json:"suspiciousRevenue"`
-	UnusualRefundRate   bool   `json:"unusualRefundRate"`
-	HighChargeback      bool   `json:"highChargeback"`
 	HasAlert            bool   `json:"hasAlert"`
 	AlertMessage        string `json:"alertMessage"`
 }
 
 type PayoutFilters struct {
 	Status    string
-	RiskLevel string
 	Search    string
 	Page      int
 	Limit     int
+}
+
+// RevisePayoutRequest sends a payout back to the organizer. Reason is required:
+// a payout returned without saying what to fix leaves the organizer guessing,
+// and the console already collects the text.
+type RevisePayoutRequest struct {
+	Reason        string `json:"reason"`
+	InternalNotes string `json:"internalNotes"`
+}
+
+// UpdatePayoutNotesRequest saves notes without touching status — what the
+// console's "Save Draft" button has always claimed to do.
+type UpdatePayoutNotesRequest struct {
+	InternalNotes  string `json:"internalNotes"`
+	OrganizerNotes string `json:"financeNotes"`
+}
+
+// VerifyBankAccountRequest confirms the bank account a payout will be sent to.
+//
+// AccountNumber is echoed back by the console and checked against what is on
+// file: an auditor verifies the account they were shown, and the organizer may
+// have changed it since the page loaded. A mismatch is refused rather than
+// silently verifying the newer value.
+type VerifyBankAccountRequest struct {
+	AccountNumber string `json:"accountNumber"`
 }
 
 type ApprovePayoutRequest struct {
@@ -353,6 +482,94 @@ type RejectPayoutRequest struct {
 
 type HoldPayoutRequest struct {
 	Reason string `json:"reason"`
+}
+
+// ---- Payout review checklist ----
+
+// PayoutReviewItem is one line of the auditor's verification checklist.
+//
+// Key, Label and Group all come from the server so the console cannot drift
+// from what the database will accept — the same reason the organizer document
+// gate serves its required types rather than duplicating them in the frontend.
+// CheckedBy/CheckedAt are populated for ticked AND unticked rows: withdrawing a
+// tick is itself a reviewer decision worth attributing.
+type PayoutReviewItem struct {
+	Key       string `json:"key"`
+	Label     string `json:"label"`
+	Group     string `json:"group"`
+	Checked   bool   `json:"checked"`
+	CheckedBy string `json:"checkedBy"`
+	CheckedAt string `json:"checkedAt"`
+}
+
+// PayoutReviewChecklist is the whole checklist plus whether it still accepts
+// edits. Frozen is computed from the payout's status rather than stored: the
+// checklist records what was verified BEFORE the money left, so once a payout
+// is terminal that record must stop moving.
+type PayoutReviewChecklist struct {
+	Items        []PayoutReviewItem `json:"items"`
+	Frozen       bool               `json:"frozen"`
+	FrozenReason string             `json:"frozenReason"`
+}
+
+// UpdatePayoutCheckRequest toggles ONE item. Deliberately single-item rather
+// than a whole-checklist write: two auditors on the same payout would otherwise
+// overwrite each other with a stale copy of every other box.
+type UpdatePayoutCheckRequest struct {
+	ItemKey string `json:"itemKey"`
+	Checked bool   `json:"checked"`
+}
+
+// payoutReviewItemDefs is the authoritative whitelist of the eleven checklist
+// items, in display order. Migration 0028 carries the same eleven keys as a
+// CHECK constraint; this list is what rejects an unknown key with a 422 before
+// the database ever sees it.
+var payoutReviewItemDefs = []PayoutReviewItem{
+	{Key: "revenueMatch", Label: "Revenue Matches Gateways", Group: "financial"},
+	{Key: "ticketSalesMatch", Label: "Ticket Sales Logs Verified", Group: "financial"},
+	{Key: "refundCalculated", Label: "Refunds Properly Calculated", Group: "financial"},
+	{Key: "platformFeeCorrect", Label: "Platform Fees Verified", Group: "financial"},
+	{Key: "taxCorrect", Label: "Entertainment/VAT Taxes Match", Group: "financial"},
+	{Key: "netRevenueCorrect", Label: "Net Revenue Allocation Valid", Group: "financial"},
+	{Key: "eventApproved", Label: "Event Approved", Group: "compliance"},
+	{Key: "organizerVerified", Label: "Organizer Verified", Group: "compliance"},
+	{Key: "requiredDocumentsComplete", Label: "Required Documents Complete", Group: "compliance"},
+	{Key: "noActiveInvestigation", Label: "No Active Investigation", Group: "compliance"},
+	{Key: "noPendingRevision", Label: "No Pending Revision", Group: "compliance"},
+}
+
+// isPayoutReviewItemKey reports whether key is one of the eleven.
+func isPayoutReviewItemKey(key string) bool {
+	for _, def := range payoutReviewItemDefs {
+		if def.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// payoutReviewItemLabel renders a key for the activity_log detail written when
+// a payout is approved with items outstanding. A log line naming
+// "requiredDocumentsComplete" is a variable name; naming "Required Documents
+// Complete" is a record someone can read later.
+func payoutReviewItemLabel(key string) string {
+	for _, def := range payoutReviewItemDefs {
+		if def.Key == key {
+			return def.Label
+		}
+	}
+	return key
+}
+
+// terminalPayoutStatuses are the states after which the checklist is a
+// historical record rather than a working document. 'on_hold' and
+// 'need_revision' are absent on purpose — both are still open reviews that a
+// payout comes back from.
+var terminalPayoutStatuses = map[string]string{
+	"approved":  "approved",
+	"rejected":  "rejected",
+	"processed": "paid out",
+	"failed":    "failed",
 }
 
 // ---- Notifications ----
@@ -392,6 +609,11 @@ type Repository interface {
 	VerifyReviewDocument(ctx context.Context, docID, actorID int) error
 	RejectReviewDocument(ctx context.Context, docID, actorID int, reason string) error
 
+	// Per-event documents (event_documents; separate id space from organizer_documents)
+	VerifyEventDocument(ctx context.Context, docID, actorID int) error
+	RejectEventDocument(ctx context.Context, docID, actorID int, reason string) error
+	GetDocumentPath(ctx context.Context, source string, docID int) (string, error)
+
 	// Documents
 	ListDocuments(ctx context.Context, filters DocumentFilters) ([]*Document, error)
 	GetDocument(ctx context.Context, docID int) (*Document, error)
@@ -411,6 +633,10 @@ type Repository interface {
 	ApprovePayout(ctx context.Context, payoutID, actorID int, req ApprovePayoutRequest) error
 	RejectPayout(ctx context.Context, payoutID, actorID int, req RejectPayoutRequest) error
 	HoldPayout(ctx context.Context, payoutID, actorID int, req HoldPayoutRequest) error
+	RevisePayout(ctx context.Context, payoutID, actorID int, req RevisePayoutRequest) error
+	UpdatePayoutCheck(ctx context.Context, payoutID, actorID int, req UpdatePayoutCheckRequest) error
+	UpdatePayoutNotes(ctx context.Context, payoutID, actorID int, req UpdatePayoutNotesRequest) error
+	VerifyPayoutBankAccount(ctx context.Context, payoutID, actorID int, req VerifyBankAccountRequest) error
 
 	// Notifications
 	ListNotifications(ctx context.Context, userID int) ([]*AuditorNotification, error)
@@ -439,6 +665,11 @@ type Service interface {
 	VerifyReviewDocument(ctx context.Context, docID, actorID int) error
 	RejectReviewDocument(ctx context.Context, docID, actorID int, reason string) error
 
+	// Per-event documents (event_documents; separate id space from organizer_documents)
+	VerifyEventDocument(ctx context.Context, docID, actorID int) error
+	RejectEventDocument(ctx context.Context, docID, actorID int, reason string) error
+	GetDocumentViewURL(ctx context.Context, source string, docID int) (*DocumentURL, error)
+
 	// Documents
 	ListDocuments(ctx context.Context, filters DocumentFilters) ([]*Document, error)
 	GetDocument(ctx context.Context, docID int) (*Document, error)
@@ -458,6 +689,10 @@ type Service interface {
 	ApprovePayout(ctx context.Context, payoutID, actorID int, req ApprovePayoutRequest) error
 	RejectPayout(ctx context.Context, payoutID, actorID int, req RejectPayoutRequest) error
 	HoldPayout(ctx context.Context, payoutID, actorID int, req HoldPayoutRequest) error
+	RevisePayout(ctx context.Context, payoutID, actorID int, req RevisePayoutRequest) error
+	UpdatePayoutCheck(ctx context.Context, payoutID, actorID int, req UpdatePayoutCheckRequest) error
+	UpdatePayoutNotes(ctx context.Context, payoutID, actorID int, req UpdatePayoutNotesRequest) error
+	VerifyPayoutBankAccount(ctx context.Context, payoutID, actorID int, req VerifyBankAccountRequest) error
 
 	// Notifications
 	ListNotifications(ctx context.Context, userID int) ([]*AuditorNotification, error)
@@ -465,19 +700,6 @@ type Service interface {
 }
 
 // ---- Helpers ----
-
-func computeRiskLevel(score int) RiskLevel {
-	switch {
-	case score < 30:
-		return RiskLow
-	case score < 60:
-		return RiskMedium
-	case score < 85:
-		return RiskHigh
-	default:
-		return RiskCritical
-	}
-}
 
 func formatTime(t time.Time) string {
 	return t.Format("2006-01-02T15:04:05Z07:00")
@@ -497,6 +719,40 @@ func mapEventReviewStatus(dbStatus string) string {
 		return "Changes Requested"
 	default:
 		return "Pending"
+	}
+}
+
+// requiredEventDocTypes mirrors organizer.RequiredEventDocumentTypes. Duplicated
+// rather than imported to keep the auditor package free of a dependency on the
+// organizer package; if the organizer's required set changes, change this too.
+var requiredEventDocTypes = []string{"EVENT_PROPOSAL", "CROWD_PERMIT", "PIC_ID"}
+
+// eventDocLabel renders a per-event document type for the review UI.
+func eventDocLabel(t string) string {
+	switch t {
+	case "EVENT_PROPOSAL":
+		return "Event Proposal (Proposal Kegiatan)"
+	case "CROWD_PERMIT":
+		return "Crowd Permit (Izin Keramaian)"
+	case "PIC_ID":
+		return "PIC Identification (KTP Penanggung Jawab)"
+	case "VENUE_PERMIT":
+		return "Venue Usage Permit (Izin Penggunaan Tempat)"
+	default:
+		return t
+	}
+}
+
+// eventDocCategory buckets a per-event document into the console's existing
+// category vocabulary.
+func eventDocCategory(t string) string {
+	switch t {
+	case "CROWD_PERMIT", "VENUE_PERMIT":
+		return "Permits & Licenses"
+	case "PIC_ID":
+		return "Business License"
+	default:
+		return "Supporting Documents"
 	}
 }
 

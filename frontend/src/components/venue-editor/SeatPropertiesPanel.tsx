@@ -10,6 +10,7 @@
 "use client";
 
 import { MoreHorizontal } from "lucide-react";
+import Select from "@/components/ui/Select";
 import type { VenueSeat } from "@/types/ticket";
 
 interface SeatPropertiesPanelProps {
@@ -95,24 +96,19 @@ export function SeatPropertiesPanel({ seat, on_update }: SeatPropertiesPanelProp
             <label className="text-xs font-medium text-on-surface-variant">
               Status
             </label>
-            <div className="relative">
-              <select
-                value={seat.status}
-                onChange={(e) =>
-                  on_update(seat.seat_id, {
-                    status: e.target.value as VenueSeat["status"],
-                  })
-                }
-                className="w-full cursor-pointer appearance-none rounded-lg border border-border-subtle bg-surface-white px-3 py-2.5 text-sm text-primary shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option value="available">Available</option>
-                <option value="unavailable">Unavailable</option>
-                <option value="accessible">Accessible</option>
-              </select>
-              <svg className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
+            <Select
+              selectSize="md"
+              value={seat.status}
+              onChange={(e) =>
+                on_update(seat.seat_id, {
+                  status: e.target.value as VenueSeat["status"],
+                })
+              }
+            >
+              <option value="available">Available</option>
+              <option value="unavailable">Unavailable</option>
+              <option value="accessible">Accessible</option>
+            </Select>
           </div>
         </div>
 

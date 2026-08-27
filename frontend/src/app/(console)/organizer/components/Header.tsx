@@ -1,21 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Search, Activity, Play, RefreshCw, Building2, ChevronsUpDown, Check, Menu, CheckCircle, HelpCircle } from 'lucide-react';
+import { Bell, Activity, Menu } from 'lucide-react';
 import { LogEntry } from '../types';
 import { listNotifications, markNotificationsRead, ApiNotification } from '@/lib/api/eorganizer';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store/authStore';
 
-const ORGANIZATIONS = ['CrowdFlow Inc.', 'Nightfall Presents', 'Summit Live Events'];
-
 interface HeaderProps {
   currentTabName: string;
   selectedEventName?: string;
-  onResetData?: () => void;
-  onTriggerLiveScan?: () => void;
   onOpenMenu?: () => void;
   recentLogs?: LogEntry[];
-  searchQuery?: string;
-  setSearchQuery?: (query: string) => void;
   user?: {
     name: string;
     role: string;
@@ -26,19 +20,13 @@ interface HeaderProps {
 export default function Header({
   currentTabName,
   selectedEventName,
-  onResetData,
-  onTriggerLiveScan,
   onOpenMenu,
   recentLogs = [],
-  searchQuery = '',
-  setSearchQuery,
   user,
 }: HeaderProps) {
   const router = useRouter();
   const [showLogsPopup, setShowLogsPopup] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
-  const [activeOrg, setActiveOrg] = useState(ORGANIZATIONS[0]);
 
   const [notifications, setNotifications] = useState<ApiNotification[]>([]);
   const { user: storeUser } = useAuthStore();
@@ -132,54 +120,7 @@ export default function Header({
         </div>
       </div>
 
-      {setSearchQuery && (
-        <div className="hidden sm:flex items-center gap-2 border border-border-subtle rounded-lg px-3 py-1.5 w-64 bg-surface-container-low focus-within:bg-white focus-within:border-outline transition-colors">
-          <Search className="w-3.5 h-3.5 text-on-surface-variant" />
-          <input
-            type="text"
-            placeholder="Quick search..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-transparent text-xs text-text-primary outline-none placeholder-on-surface-variant"
-          />
-        </div>
-      )}
-
       <div className="flex items-center gap-4">
-        <div className="hidden lg:flex items-center gap-1.5 rounded-full border border-success/20 bg-success/5 px-3 py-1 text-xs font-medium text-success">
-          <CheckCircle className="h-3.5 w-3.5" />
-          <span>Operational</span>
-        </div>
-
-        <button
-          onClick={() => alert('CrowdFlow Organizer Help Center: guides for events, ticketing, and check-in operations.')}
-          className="hidden sm:flex rounded-lg p-2 text-text-secondary transition-colors hover:bg-surface-container-low hover:text-text-primary cursor-pointer"
-          title="Help"
-        >
-          <HelpCircle className="w-4 h-4" />
-        </button>
-
-        {selectedEventName && onTriggerLiveScan && (
-          <button
-            onClick={onTriggerLiveScan}
-            className="flex items-center gap-1.5 bg-secondary hover:bg-secondary/90 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition-colors cursor-pointer"
-            title="Simulate a random barcode scan check-in"
-          >
-            <Play className="w-3 h-3 fill-current" />
-            <span>Live Scan</span>
-          </button>
-        )}
-
-        {onResetData && (
-          <button
-            onClick={onResetData}
-            className="hidden sm:flex items-center gap-1 text-text-secondary hover:text-text-primary border border-border-subtle hover:bg-surface-container-low rounded-lg p-1.5 text-xs font-semibold cursor-pointer transition-colors"
-            title="Reset simulation data"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-          </button>
-        )}
-
         {selectedEventName && recentLogs.length > 0 && (
           <div className="relative">
             <button
@@ -212,32 +153,6 @@ export default function Header({
             )}
           </div>
         )}
-
-        <div className="relative">
-          <button
-            onClick={() => setShowOrgSwitcher(!showOrgSwitcher)}
-            className="hidden sm:flex items-center gap-1.5 border border-border-subtle hover:bg-surface-container-low rounded-lg px-2.5 py-1.5 text-xs font-semibold text-text-primary transition-colors cursor-pointer"
-          >
-            <Building2 className="w-3.5 h-3.5 text-text-secondary" />
-            <span className="max-w-[120px] truncate">{activeOrg}</span>
-            <ChevronsUpDown className="w-3 h-3 text-text-secondary" />
-          </button>
-
-          {showOrgSwitcher && (
-            <div className="absolute right-0 mt-2 w-56 bg-white border border-border-subtle rounded-xl shadow-xl z-30 p-1.5 animate-fade-in">
-              {ORGANIZATIONS.map((org) => (
-                <button
-                  key={org}
-                  onClick={() => { setActiveOrg(org); setShowOrgSwitcher(false); }}
-                  className="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-text-primary hover:bg-surface-container-low transition-colors cursor-pointer text-left"
-                >
-                  <span className="truncate">{org}</span>
-                  {org === activeOrg && <Check className="w-3.5 h-3.5 text-secondary shrink-0" />}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
 
         <div className="relative">
           <button

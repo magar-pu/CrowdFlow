@@ -1,28 +1,22 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import EventWorkspaceShell from "../../../components/EventWorkspaceShell";
 import { useOrganizerData } from "../../../OrganizerDataContext";
-import { getEventRevisions, publishOrganizerEvent, respondToEventRevision, EventRevisionFeedback } from "@/lib/api/eorganizer";
+import { getEventRevisions, respondToEventRevision, EventRevisionFeedback } from "@/lib/api/eorganizer";
 import {
   AlertTriangle,
   CheckCircle2,
-  Clock,
-  FileText,
+  ChevronDown,
   Send,
-  Upload,
   UserCheck,
   X,
   ShieldAlert,
-  ChevronRight,
-  RefreshCw,
-  Save,
   MessageSquare,
   Sparkles,
   FileCheck,
   Edit3,
-  ArrowRight
 } from "lucide-react";
 
 export default function OrganizerEventRevisionsPage() {
@@ -39,7 +33,8 @@ export default function OrganizerEventRevisionsPage() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // EO Active Item Selection State
-  // "eo memilih pilihan yang direvisi setelah memilih pilihan yang direvisi baru muncul form"
+  // The organizer picks which revision point to work on; the response form only
+  // appears once a point has been selected.
   const [selectedRevisionId, setSelectedRevisionId] = useState<number | null>(
     revIdParam ? Number(revIdParam) : null
   );
@@ -53,9 +48,10 @@ export default function OrganizerEventRevisionsPage() {
   // Per-item Response State
   const [itemComments, setItemComments] = useState<Record<number, string>>({});
   const [itemActions, setItemActions] = useState<Record<number, string>>({});
-  const [itemFiles, setItemFiles] = useState<Record<number, File | null>>({});
 
-  const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
+  // Which answered point has its recorded response expanded. One at a time —
+  // these are read-back detail, not something to compare side by side.
+  const [expandedResponseId, setExpandedResponseId] = useState<number | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -75,34 +71,35 @@ export default function OrganizerEventRevisionsPage() {
     loadData();
   }, [eventIdNum]);
 
-  const handleFileSelect = (revId: number, file: File | null) => {
-    setItemFiles((prev) => ({ ...prev, [revId]: file }));
-  };
-
   const handleSendItemRevision = async (revId: number) => {
+    // No canned fallbacks: whatever reaches the auditor must be the organizer's
+    // own words. The Send button is disabled until the explanation is written.
+    const comment = (itemComments[revId] || "").trim();
+    if (!comment) return;
+    const actionTaken = (itemActions[revId] || "").trim();
+
     setIsSubmitting(true);
     try {
-      const comment = itemComments[revId] || "Perbaikan telah dilakukan sesuai instruksi auditor.";
-      const actionTaken = itemActions[revId] || "Mengunggah berkas dan memperbarui informasi terkait.";
-      const proofFile = itemFiles[revId] ? itemFiles[revId]?.name : undefined;
-
-      const res = await respondToEventRevision(eventIdNum, revId, comment, actionTaken, proofFile);
+      const res = await respondToEventRevision(eventIdNum, revId, comment, actionTaken);
       if (res.success) {
         setToast({
-          message: "Hasil revisi berhasil dikirim kembali ke Auditor!",
+          message: "Your revision was sent back to the auditor.",
           type: "success"
         });
         setSelectedRevisionId(null);
+        // Swap the form for the recorded response, so the organizer can see
+        // exactly what was filed — including which documents were reported.
+        setExpandedResponseId(revId);
         await fetchData();
         await loadData();
       } else {
         setToast({
-          message: "Gagal mengirim revisi: " + (res.error?.message || "Terjadi kesalahan server"),
+          message: "Failed to send revision: " + (res.error?.message || "A server error occurred"),
           type: "error"
         });
       }
     } catch (err) {
-      setToast({ message: "Error mengirim revisi ke auditor.", type: "error" });
+      setToast({ message: "Something went wrong while sending the revision to the auditor.", type: "error" });
     } finally {
       setIsSubmitting(false);
       setTimeout(() => setToast(null), 4000);
@@ -139,11 +136,11 @@ export default function OrganizerEventRevisionsPage() {
         {/* ── Revision Metrics Dashboard ── */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {[
-            { label: 'Total Permintaan', value: stats.total, color: 'text-text-primary' },
-            { label: 'Perlu Direvisi (EO)', value: stats.open, color: 'text-amber-600' },
-            { label: 'Telah Dikirimkan', value: stats.resubmitted, color: 'text-secondary' },
-            { label: 'Disetujui Auditor', value: stats.resolved, color: 'text-success' },
-            { label: 'Prioritas Tinggi', value: stats.critical, color: 'text-danger' },
+            { label: 'Total Requests', value: stats.total, color: 'text-text-primary' },
+            { label: 'Needs Your Action', value: stats.open, color: 'text-amber-600' },
+            { label: 'Sent Back', value: stats.resubmitted, color: 'text-secondary' },
+            { label: 'Approved', value: stats.resolved, color: 'text-success' },
+            { label: 'High Priority', value: stats.critical, color: 'text-danger' },
           ].map(s => (
             <div key={s.label} className="bg-white border border-border-subtle rounded-2xl p-4 shadow-xs text-center">
               <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
@@ -157,14 +154,14 @@ export default function OrganizerEventRevisionsPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border-subtle pb-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-mono font-bold text-text-secondary uppercase">Tahap Audit</span>
+                <span className="text-[10px] font-mono font-bold text-text-secondary uppercase">Audit Stage</span>
                 <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-secondary/10 text-secondary border border-secondary/20">
                   {feedback?.stage || "Document Verification"}
                 </span>
               </div>
-              <h2 className="text-lg font-bold text-text-primary">Daftar Revisi dari Auditor</h2>
+              <h2 className="text-lg font-bold text-text-primary">Revision Requests from the Auditor</h2>
               <p className="text-xs text-text-secondary mt-0.5">
-                Pilih salah satu poin revisi di bawah ini untuk membuka formulir tanggapan dan mengirimkan hasil perbaikan ke auditor.
+                Select one of the revision points below to open its response form and send your fix back to the auditor.
               </p>
             </div>
           </div>
@@ -173,7 +170,7 @@ export default function OrganizerEventRevisionsPage() {
             <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-1">
               <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
                 <UserCheck className="w-4 h-4 text-amber-700" />
-                <span>Catatan Penting Auditor ({feedback.assignedAuditorName || "Auditor Team"})</span>
+                <span>Auditor&apos;s Key Notes ({feedback.assignedAuditorName || "Auditor Team"})</span>
               </div>
               <p className="text-xs text-amber-900/90 leading-relaxed pl-6">{feedback.auditorNotes}</p>
             </div>
@@ -184,34 +181,49 @@ export default function OrganizerEventRevisionsPage() {
         <div className="space-y-4">
           <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-amber-600" />
-            Pilihan Poin Revisi dari Auditor ({revisionsList.length})
+            Revision Points from the Auditor ({revisionsList.length})
           </h3>
 
           {loading ? (
             <div className="p-8 bg-white border border-border-subtle rounded-2xl text-center text-xs text-text-secondary font-bold">
-              Memuat daftar catatan auditor...
+              Loading the auditor&apos;s notes…
             </div>
           ) : revisionsList.length === 0 ? (
             <div className="p-10 bg-white border border-border-subtle rounded-2xl text-center space-y-3 shadow-xs">
               <CheckCircle2 className="w-10 h-10 text-success mx-auto" />
-              <h4 className="text-sm font-bold text-text-primary">Tidak Ada Catatan Revisi Aktif</h4>
+              <h4 className="text-sm font-bold text-text-primary">No Active Revision Requests</h4>
               <p className="text-xs text-text-secondary max-w-md mx-auto leading-relaxed">
-                Auditor belum mengirimkan permintaan revisi untuk event ini. Formulir perbaikan hanya akan tampil bila auditor meminta perbaikan.
+                The auditor hasn&apos;t requested any revisions for this event. The response form only appears once they ask for a fix.
               </p>
             </div>
           ) : (
             <div className="space-y-4">
               {revisionsList.map((r) => {
                 const isSelected = selectedRevisionId === r.id;
-                const currentFile = itemFiles[r.id];
+                const pendingChanges = r.pendingDocumentChanges ?? [];
+                const reportedChanges = r.documentsChanged ?? [];
+                const canSend = !!(itemComments[r.id] || "").trim();
+                // Open points carry the amber "needs your attention" treatment
+                // used by the workspace banner; settled ones fade back to
+                // neutral so the page reads as a to-do list, not a wall of alerts.
+                const isClosed = r.status === 'Resolved' || r.status === 'Verified';
+                // A response is final once sent — it is now the auditor's turn.
+                // Reopening the form would let the organizer overwrite the
+                // answer (and its document changelog) after the auditor may
+                // already have read it.
+                const isAwaitingAuditor = r.status === 'Resubmitted' || r.status === 'In Review';
+                const canRespond = !isClosed && !isAwaitingAuditor;
+                const isResponseOpen = expandedResponseId === r.id;
 
                 return (
                   <div
                     key={r.id}
                     className={`bg-white border rounded-2xl transition-all overflow-hidden ${
                       isSelected
-                        ? "border-secondary ring-2 ring-secondary/20 shadow-md"
-                        : "border-border-subtle hover:border-border-strong shadow-xs"
+                        ? "border-amber-600 ring-2 ring-amber-500/25 shadow-md"
+                        : isClosed
+                        ? "border-border-subtle hover:border-border-strong shadow-xs"
+                        : "border-amber-500/40 hover:border-amber-600 shadow-xs"
                     }`}
                   >
                     {/* Item Header Banner */}
@@ -238,140 +250,205 @@ export default function OrganizerEventRevisionsPage() {
 
                         <div className="min-w-0 space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="text-sm font-bold text-text-primary">{r.title}</h4>
-                            <span className="text-[9px] font-mono text-text-secondary px-2 py-0.5 bg-surface-container rounded border border-border-subtle">
+                            <h4 className={`text-sm font-bold ${isClosed ? 'text-text-primary' : 'text-amber-900'}`}>{r.title}</h4>
+                            <span className={`text-[9px] font-mono px-2 py-0.5 rounded border ${
+                              isClosed
+                                ? 'text-text-secondary bg-surface-container border-border-subtle'
+                                : 'text-amber-800 bg-amber-500/15 border-amber-500/25'
+                            }`}>
                               {r.category}
                             </span>
                           </div>
                           <p className="text-xs text-text-secondary leading-relaxed">
-                            <strong className="text-text-primary">Instruksi Auditor:</strong> {r.requiredAction}
+                            <strong className={isClosed ? 'text-text-primary' : 'text-amber-800'}>Auditor instruction:</strong> {r.requiredAction}
                           </p>
                         </div>
                       </div>
 
-                      {/* Select Item to Revise Action Button */}
-                      {r.status !== 'Resolved' && (
-                        <button
-                          onClick={() => setSelectedRevisionId(isSelected ? null : r.id)}
-                          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
-                            isSelected
-                              ? "bg-surface-container text-text-primary border border-border-subtle"
-                              : "bg-secondary text-white hover:bg-secondary/90 shadow-sm"
-                          }`}
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>{isSelected ? "Tutup Form Revisi" : "Pilih & Perbaiki Poin Ini"}</span>
-                        </button>
-                      )}
+                      {/* Status + the toggle for the recorded response. Keeping
+                          the response itself out of the header stops a long
+                          explanation from stretching the card. */}
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                        {canRespond ? (
+                          <button
+                            onClick={() => setSelectedRevisionId(isSelected ? null : r.id)}
+                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                              isSelected
+                                ? "bg-surface-container text-text-primary border border-border-subtle"
+                                : "bg-amber-600 text-white hover:bg-amber-700 shadow-sm"
+                            }`}
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>{isSelected ? "Close Revision Form" : "Select & Fix This Point"}</span>
+                          </button>
+                        ) : isAwaitingAuditor ? (
+                          <span className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold shrink-0 bg-secondary/10 text-secondary border border-secondary/20">
+                            <ShieldAlert className="w-3.5 h-3.5" />
+                            Sent — awaiting auditor review
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold shrink-0 bg-success/10 text-success border border-success/20">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Accepted by auditor
+                          </span>
+                        )}
+
+                        {r.respondedAt && (
+                          <button
+                            onClick={() => setExpandedResponseId(isResponseOpen ? null : r.id)}
+                            aria-expanded={isResponseOpen}
+                            className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold shrink-0 border border-border-subtle bg-white text-text-secondary hover:text-text-primary hover:bg-surface-container-low transition-colors cursor-pointer"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>{isResponseOpen ? "Hide details" : "See details"}</span>
+                            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isResponseOpen ? "rotate-180" : ""}`} />
+                          </button>
+                        )}
+                      </div>
                     </div>
 
-                    {/* ── EXPANDED REVISION RESPONSE FORM (Muncul hanya setelah EO memilih poin) ── */}
-                    {isSelected && (
+                    {/* ── RECORDED RESPONSE (expanded on demand) ── */}
+                    {r.respondedAt && isResponseOpen && (
+                      <div className="border-t border-border-subtle bg-surface-container-low/50 p-5 space-y-4 animate-fade-in">
+                        <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-text-secondary uppercase">
+                          <MessageSquare className="w-3.5 h-3.5" /> Your response · sent {r.respondedAt}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="bg-white p-3.5 rounded-xl border border-border-subtle space-y-1">
+                            <span className="text-[9px] font-mono font-bold text-text-secondary uppercase">Your Explanation</span>
+                            <p className="text-xs text-text-primary leading-relaxed">{r.organizerComment}</p>
+                          </div>
+                          <div className="bg-white p-3.5 rounded-xl border border-border-subtle space-y-1">
+                            <span className="text-[9px] font-mono font-bold text-text-secondary uppercase">Corrective Action Taken</span>
+                            <p className="text-xs text-text-primary leading-relaxed">
+                              {r.organizerActionTaken || <span className="text-text-secondary">Not specified.</span>}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <span className="text-[9px] font-mono font-bold text-text-secondary uppercase">Documents Changed</span>
+                          {reportedChanges.length === 0 ? (
+                            <p className="text-xs text-text-secondary bg-white border border-dashed border-border-subtle rounded-xl p-3">
+                              No documents were changed for this point.
+                            </p>
+                          ) : (
+                            <div className="bg-white border border-border-subtle rounded-xl divide-y divide-border-subtle">
+                              {reportedChanges.map((c) => (
+                                <div key={c.documentType} className="flex items-center gap-2.5 p-3 text-xs">
+                                  <FileCheck className="w-4 h-4 text-success shrink-0" />
+                                  <span className="font-bold text-text-primary">{c.label}</span>
+                                  <span className="text-text-secondary">replaced</span>
+                                  <span className="ml-auto font-mono text-[10px] text-text-secondary">{c.uploadedAt}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── EXPANDED REVISION RESPONSE FORM (only after the organizer selects a point) ── */}
+                    {isSelected && canRespond && (
                       <div className="border-t border-border-subtle bg-surface-container-low/50 p-6 space-y-5 animate-fade-in">
-                        <div className="flex items-center gap-2 text-xs font-bold text-secondary border-b border-border-subtle pb-3">
-                          <Sparkles className="w-4 h-4 text-secondary" />
-                          <span>Formulir Tanggapan Revisi (Poin #{r.id}: {r.title})</span>
+                        <div className="flex items-center gap-2 text-xs font-bold text-amber-800 border-b border-amber-500/25 pb-3">
+                          <Sparkles className="w-4 h-4 text-amber-600" />
+                          <span>Revision Response Form (Point #{r.id}: {r.title})</span>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                           <div className="bg-white p-3.5 rounded-xl border border-border-subtle space-y-1">
-                            <span className="text-[9px] font-mono font-bold text-text-secondary uppercase">Detail Anomali Auditor</span>
+                            <span className="text-[9px] font-mono font-bold text-text-secondary uppercase">Auditor&apos;s Findings</span>
                             <p className="text-text-primary leading-relaxed">{r.description}</p>
                           </div>
-                          <div className="bg-primary/5 p-3.5 rounded-xl border border-primary/10 space-y-1">
-                            <span className="text-[9px] font-mono font-bold text-primary uppercase">Persyaratan Yang Wajib Dipenuhi</span>
-                            <p className="text-primary font-bold leading-relaxed">{r.requiredAction}</p>
+                          <div className="bg-amber-500/10 p-3.5 rounded-xl border border-amber-500/20 space-y-1">
+                            <span className="text-[9px] font-mono font-bold text-amber-800 uppercase">Requirement You Must Meet</span>
+                            <p className="text-amber-900 font-bold leading-relaxed">{r.requiredAction}</p>
                           </div>
                         </div>
 
-                        {/* Input Penjelasan EO */}
+                        {/* Organizer's written explanation */}
                         <div className="space-y-1.5">
                           <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">
-                            Penjelasan / Jawaban EO Untuk Auditor
+                            Your Explanation to the Auditor
                           </label>
                           <textarea
                             value={itemComments[r.id] || ""}
                             onChange={(e) => setItemComments({ ...itemComments, [r.id]: e.target.value })}
                             rows={3}
-                            placeholder="Tuliskan penjelasan detail langkah perbaikan yang telah Anda lakukan untuk poin ini..."
+                            placeholder="Describe in detail what you changed to address this point…"
                             className="w-full p-3.5 border border-border-subtle rounded-xl text-xs bg-white outline-none focus:border-secondary focus:ring-1 focus:ring-secondary/20 resize-none"
                           />
                         </div>
 
-                        {/* Input Tindakan Spesifik */}
+                        {/* Specific corrective action */}
                         <div className="space-y-1.5">
                           <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">
-                            Tindakan Perbaikan Spesifik Yang Diambil
+                            Specific Corrective Action Taken
                           </label>
                           <input
                             value={itemActions[r.id] || ""}
                             onChange={(e) => setItemActions({ ...itemActions, [r.id]: e.target.value })}
-                            placeholder="misal: Mengunggah ulang KTP resmi terbaru yang jelas dan tidak buram..."
+                            placeholder="e.g. Re-uploaded a clear, current copy of the official ID…"
                             className="w-full px-3.5 py-2.5 border border-border-subtle rounded-xl text-xs bg-white outline-none focus:border-secondary focus:ring-1 focus:ring-secondary/20"
                           />
                         </div>
 
-                        {/* Unggah Dokumen Bukti */}
+                        {/* Document changelog — what will actually be reported */}
                         <div className="space-y-1.5">
                           <label className="text-[10px] font-mono font-bold text-text-secondary uppercase">
-                            Lampirkan Bukti / Dokumen Perbaikan (Opsional)
+                            Document Changes Reported With This Response
                           </label>
-                          <input
-                            type="file"
-                            ref={(el) => { fileInputRefs.current[r.id] = el; }}
-                            onChange={(e) => handleFileSelect(r.id, e.target.files?.[0] || null)}
-                            accept="image/*,.pdf"
-                            className="hidden"
-                          />
-                          <div
-                            onClick={() => fileInputRefs.current[r.id]?.click()}
-                            className="border-2 border-dashed border-border-subtle rounded-xl p-4 text-center hover:border-secondary/50 transition-colors cursor-pointer bg-white"
-                          >
-                            {currentFile ? (
-                              <div className="flex items-center justify-between p-2 bg-surface-container rounded-lg border border-border-subtle text-xs">
-                                <div className="flex items-center gap-2 truncate">
-                                  <FileText className="w-4 h-4 text-secondary shrink-0" />
-                                  <span className="font-bold text-text-primary truncate">{currentFile.name}</span>
-                                  <span className="text-[10px] text-text-secondary font-mono">({Math.round(currentFile.size / 1024)} KB)</span>
+                          {pendingChanges.length > 0 ? (
+                            <div className="bg-white border border-border-subtle rounded-xl divide-y divide-border-subtle">
+                              {pendingChanges.map((c) => (
+                                <div key={c.documentType} className="flex items-center gap-2.5 p-3 text-xs">
+                                  <FileCheck className="w-4 h-4 text-success shrink-0" />
+                                  <span className="font-bold text-text-primary">{c.label}</span>
+                                  <span className="text-text-secondary">replaced</span>
+                                  <span className="ml-auto font-mono text-[10px] text-text-secondary">{c.uploadedAt}</span>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleFileSelect(r.id, null);
-                                  }}
-                                  className="p-1 hover:bg-surface-container-high rounded text-text-secondary hover:text-danger cursor-pointer"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            ) : (
-                              <>
-                                <Upload className="w-5 h-5 text-text-secondary mx-auto mb-1" />
-                                <p className="text-xs text-text-secondary">Klik untuk mengunggah berkas bukti atau foto screenshot</p>
-                                <p className="text-[9px] text-text-secondary font-mono mt-0.5">PNG, JPG, PDF hingga 10MB</p>
-                              </>
-                            )}
-                          </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="bg-white border border-dashed border-border-subtle rounded-xl p-4 text-center space-y-1">
+                              <p className="text-xs text-text-secondary">
+                                No documents have been replaced since this point was raised.
+                              </p>
+                              <p className="text-[10px] text-text-secondary">
+                                If this revision needs a new file, upload it on the{" "}
+                                <a href={`/organizer/events/${params.id}/documents`} className="font-bold text-secondary hover:underline">
+                                  Documents tab
+                                </a>{" "}
+                                first — it will be listed here automatically.
+                              </p>
+                            </div>
+                          )}
                         </div>
 
                         {/* Submit Item Button */}
-                        <div className="flex justify-end gap-3 pt-2">
+                        <div className="flex justify-end items-center gap-3 pt-2">
+                          {!canSend && (
+                            <span className="text-[10px] text-text-secondary mr-auto">
+                              Write your explanation before sending.
+                            </span>
+                          )}
                           <button
                             type="button"
                             onClick={() => setSelectedRevisionId(null)}
                             className="px-4 py-2.5 border border-border-subtle text-text-secondary rounded-xl text-xs font-bold hover:bg-white transition-colors cursor-pointer"
                           >
-                            Batal
+                            Cancel
                           </button>
                           <button
                             type="button"
                             onClick={() => handleSendItemRevision(r.id)}
-                            disabled={isSubmitting}
-                            className="flex items-center gap-2 px-6 py-2.5 bg-secondary hover:bg-secondary/90 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
+                            disabled={isSubmitting || !canSend}
+                            className="flex items-center gap-2 px-6 py-2.5 bg-secondary hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
                           >
                             <Send className="w-3.5 h-3.5" />
-                            <span>{isSubmitting ? "Mengirim..." : "Kirim Hasil Revisi ke Auditor"}</span>
+                            <span>{isSubmitting ? "Sending…" : "Send Revision to Auditor"}</span>
                           </button>
                         </div>
                       </div>

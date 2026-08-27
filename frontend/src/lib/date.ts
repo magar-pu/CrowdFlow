@@ -6,35 +6,26 @@
  * locale and the WIB suffix are defined once.
  */
 
-/** e.g. "30 Sep • 19:00 WIB" — compact form used on event cards. */
+/** e.g. "30 Sep 2026" — compact date form used on event cards. */
 export function formatEventDateLabel(starts_at: string): string {
   const date = new Date(starts_at);
   if (Number.isNaN(date.getTime())) return "";
 
-  const day = date.toLocaleDateString("id-ID", {
+  return date.toLocaleDateString("en-GB", {
     day: "numeric",
     month: "short",
+    year: "numeric",
   });
-  const time = date.toLocaleTimeString("id-ID", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `${day} • ${time} WIB`;
 }
 
-/** e.g. "30 September 2026 • 19:00 WIB" — long form used on listing rows. */
+/** e.g. "30 September 2026" — long date form used on listing rows. */
 export function formatEventDateLabelLong(starts_at: string): string {
   const date = new Date(starts_at);
   if (Number.isNaN(date.getTime())) return "";
 
-  const day = date.toLocaleDateString("id-ID", {
+  return date.toLocaleDateString("en-GB", {
     day: "numeric",
     month: "long",
     year: "numeric",
   });
-  const time = date.toLocaleTimeString("id-ID", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `${day} • ${time} WIB`;
 }

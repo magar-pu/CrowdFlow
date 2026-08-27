@@ -20,16 +20,41 @@ export interface EventItem {
   startTime: string;
   endDate: string;
   endTime: string;
-  locationType: 'physical' | 'virtual';
+  // The venue is set in the event workspace, not the creation wizard, so a
+  // draft can legitimately have none: venueId is 0 and the rest are empty.
+  venueId: number;
   location: string;
   locationAddress: string;
   venueName: string;
+  venueCity: string;
   capacity: number;
   sold: number;
   revenue: number;
-  status: "Live" | "Scheduled" | "Draft" | "Rejected" | "Need Revision" | "In Review";
+  // "Approved" means an auditor cleared the event but the organizer has not put
+  // it on the public listing yet. "Live" means approved AND published.
+  status: "Live" | "Approved" | "Scheduled" | "Draft" | "Rejected" | "Need Revision" | "In Review" | "Archived";
   image: string;
 }
+
+/**
+ * What the creation wizard produces: the event's identity and schedule, nothing
+ * else. The venue, ticket tiers, layout and seating are all configured in the
+ * event workspace afterwards.
+ */
+export type CreateEventDraft = Pick<
+  EventItem,
+  | 'name'
+  | 'category'
+  | 'description'
+  | 'date'
+  | 'startDate'
+  | 'startTime'
+  | 'endDate'
+  | 'endTime'
+  | 'capacity'
+  | 'status'
+  | 'image'
+>;
 
 export interface TicketTier {
   id: string;
@@ -37,9 +62,11 @@ export interface TicketTier {
   price: number;
   sold: number;
   capacity: number;
-  status?: "Selling Fast" | "On Sale" | "Sold Out";
+  // "Scheduled" and "Expired" describe the sales WINDOW, not stock. A tier
+  // outside its window is not buyable and is absent from the public listing,
+  // so the console must not show it as "On Sale".
+  status?: "Selling Fast" | "On Sale" | "Sold Out" | "Scheduled" | "Expired";
   color?: string;
-  maxPerOrder?: number;
   salesStart?: string;
   salesEnd?: string;
   description?: string;

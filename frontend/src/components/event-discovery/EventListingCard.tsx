@@ -9,12 +9,8 @@
  * card, so any event can carry any combination.
  */
 
-"use client";
-
-import { useState } from "react";
 import Link from "next/link";
 import {
-  Heart,
   CalendarDays,
   MapPin,
   BadgeCheck,
@@ -22,6 +18,7 @@ import {
   Lock,
   Zap,
   Ban,
+  ArrowRight,
 } from "lucide-react";
 import { formatIDR } from "@/lib/pricing";
 import type { EventListingCard as EventListingCardType } from "@/types/ticket";
@@ -40,120 +37,97 @@ const BADGE_CONFIG: Record<
   newly_added: { label: "NEWLY ADDED", class_name: "bg-secondary text-white" },
   sold_out: { label: "SOLD OUT", class_name: "bg-outline text-white" },
 };
-
 export function EventListingCard({ event }: EventListingCardProps) {
-  const [is_favorited, set_is_favorited] = useState(false);
   const badge = BADGE_CONFIG[event.badge];
   const is_sold_out = event.badge === "sold_out";
 
+  // Clean date_label to strip out any time string (e.g. " • 02:00 WIB" -> "")
+  const cleanDate = (event.date_label || "")
+    .replace(/\s*•\s*\d{1,2}:\d{2}(\s*WIB)?/gi, "")
+    .trim();
+
   return (
-    <div className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-border-subtle bg-surface-white shadow-sm transition-all hover:shadow-xl">
-      {/* Full card clickable overlay */}
-      <Link href={`/events/${event.event_id}`} className="absolute inset-0 z-0" aria-label={`View ${event.title}`} />
-      <div className="relative aspect-video overflow-hidden">
+    <Link
+      href={`/events/${event.event_id}`}
+      className="bg-surface-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border border-border-subtle group cursor-pointer flex flex-col h-full"
+    >
+      <div className="relative w-full aspect-[16/9] overflow-hidden">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={event.cover_image_url}
           alt={event.title}
-          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-in-out"
         />
-        <div className="absolute left-4 top-4 flex flex-col gap-2">
+        <div className="absolute left-3 top-3 z-10 flex flex-wrap items-center gap-1.5">
           <span
             className={cn(
-              "rounded-full px-3 py-1 font-label-sm text-label-sm shadow-lg",
+              "rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wider shadow-sm uppercase",
               badge.class_name
             )}
           >
             {badge.label}
           </span>
           {event.trust_signal === "verified" && (
-            <span className="flex items-center gap-1 rounded-full bg-white/90 px-3 py-1 font-label-sm text-label-sm text-primary backdrop-blur">
-              <BadgeCheck size={14} /> Verified
+            <span className="flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-0.5 text-[10px] font-bold tracking-wider text-primary shadow-sm backdrop-blur-md">
+              <BadgeCheck size={12} className="text-success shrink-0" /> Verified
             </span>
           )}
           {event.trust_signal === "identity_required" && (
-            <span className="flex items-center gap-1 rounded-full bg-white/90 px-3 py-1 font-label-sm text-label-sm text-primary backdrop-blur">
-              <ShieldCheck size={14} /> Identity Required
+            <span className="flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-0.5 text-[10px] font-bold tracking-wider text-primary shadow-sm backdrop-blur-md">
+              <ShieldCheck size={12} className="text-secondary shrink-0" /> Identity Required
             </span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            set_is_favorited((fav) => !fav);
-          }}
-          aria-label={is_favorited ? "Remove from favorites" : "Add to favorites"}
-          className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur transition-all hover:bg-white hover:text-danger"
-        >
-          <Heart size={20} fill={is_favorited ? "currentColor" : "none"} />
-        </button>
       </div>
 
-      <div className="flex flex-1 flex-col p-6">
-        <div className="mb-4">
-          <p className="mb-1 font-label-md text-label-md uppercase tracking-tight text-secondary">
-            {event.category_label}
-          </p>
-          <h3 className="font-headline-sm text-headline-sm text-text-primary transition-colors group-hover:text-secondary">
-            {event.title}
-          </h3>
-        </div>
+      <div className="p-4 flex-1 flex flex-col">
+        <h4 className="font-display text-lg text-on-surface font-bold mb-2 group-hover:text-accent-blue transition-colors line-clamp-2">
+          {event.title}
+        </h4>
 
-        <div className="mb-6 space-y-2">
-          <div className="flex items-center gap-2 text-body-sm text-text-secondary">
-            <CalendarDays size={18} />
-            <span>{event.date_label}</span>
-          </div>
-          <div className="flex items-center gap-2 text-body-sm text-text-secondary">
-            <MapPin size={18} />
-            <span>{event.venue_label}</span>
-          </div>
+        <div className="mb-4 space-y-1 text-sm text-on-surface-variant">
+          <p className="flex items-center gap-1.5">
+            <CalendarDays size={14} className="shrink-0 text-on-surface-variant" />
+            <span>{cleanDate}</span>
+          </p>
 
           {event.trust_signal === "sell_out_warning" && (
-            <div className="mt-3 flex items-center gap-2 font-label-md text-label-sm text-danger">
-              <Zap size={18} />
+            <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-danger">
+              <Zap size={14} />
               <span>Likely to sell out in 48 hours</span>
             </div>
           )}
           {event.trust_signal === "protection_enabled" && (
-            <div className="mt-3 flex items-center gap-2 font-label-md text-label-sm text-secondary">
-              <Lock size={18} />
+            <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-secondary">
+              <Lock size={14} />
               <span>CrowdFlow Protection Enabled</span>
             </div>
           )}
         </div>
 
-        <div className="relative z-10 mt-auto flex items-center justify-between border-t border-border-subtle pt-6">
-          <div className="pointer-events-none">
-            <p className="text-[11px] uppercase tracking-wider text-text-secondary">
-              Starting From
-            </p>
-            <p className="font-headline-sm text-text-primary">
+        <div className="mt-auto flex justify-between items-center pt-3 border-t border-border-subtle gap-2">
+          <div>
+            <p className="text-xs text-on-surface-variant mb-0.5">Tickets from</p>
+            <p className="font-bold text-accent-blue text-lg">
               {event.starting_price === null
                 ? "—"
                 : formatIDR(event.starting_price)}
             </p>
           </div>
+
           {is_sold_out ? (
-            <button
-              type="button"
-              disabled
-              className="flex items-center gap-2 rounded-lg bg-surface-container px-6 py-2.5 font-label-md text-label-md text-text-secondary"
+            <span
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-surface-container px-3 py-1.5 text-xs text-text-secondary opacity-60"
             >
-              <Ban size={16} /> Sold Out
-            </button>
+              <Ban size={14} /> Sold Out
+            </span>
           ) : (
-            <Link
-              href={`/events/${event.event_id}`}
-              className="rounded-lg bg-text-primary px-6 py-2.5 font-label-md text-label-md text-white transition-all hover:bg-secondary active:scale-95"
-            >
-              View Event
-            </Link>
+            <div className="w-8 h-8 bg-surface-container-low text-on-surface rounded-full flex items-center justify-center group-hover:bg-accent-blue group-hover:text-white transition-colors shrink-0">
+              <ArrowRight size={16} />
+            </div>
           )}
         </div>
       </div>
-    </div>
+    </Link>
   );
 }

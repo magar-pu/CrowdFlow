@@ -50,7 +50,6 @@ function ShellInner({ children }: { children: React.ReactNode }) {
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
 
   const currentView = sectionFromPathname(pathname);
   const title = hasDetailSegment(pathname) ? (DETAIL_TITLES[currentView] ?? SECTION_TITLES[currentView]) : SECTION_TITLES[currentView];
@@ -98,8 +97,6 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           title={title}
           subtitle="CROWDFLOW AUDITOR"
           onOpenMenu={() => setIsMobileMenuOpen(true)}
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
         />
 
         <main className="mx-auto w-full max-w-[1440px] flex-1 overflow-y-auto px-4 pb-24 pt-5 sm:px-6 md:p-8 space-y-6">

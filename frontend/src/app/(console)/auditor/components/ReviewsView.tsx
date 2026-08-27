@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { EventSubmission, RiskLevel } from '../types';
+import { EventSubmission } from '../types';
 import { Search, MapPin, CalendarDays, Shield, AlertTriangle, FileText, ArrowUpDown } from 'lucide-react';
 
 interface ReviewsViewProps {
@@ -10,8 +10,7 @@ interface ReviewsViewProps {
 }
 
 const FILTERS = ['All', 'Pending', 'Changes Requested', 'Approved', 'Rejected'] as const;
-const RISK_FILTERS = ['All Risk', 'Low', 'Medium', 'High', 'Critical'] as const;
-type SortKey = 'date' | 'compliance' | 'lastUpdated' | 'risk';
+type SortKey = 'date' | 'compliance' | 'lastUpdated';
 
 const statusStyle = (status: EventSubmission['status']) =>
   status === 'Pending' ? 'bg-secondary/10 text-secondary border-secondary/20' :
@@ -19,34 +18,23 @@ const statusStyle = (status: EventSubmission['status']) =>
   status === 'Rejected' ? 'bg-danger/10 text-danger border-danger/20' :
   'bg-warning/10 text-warning border-warning/20';
 
-const riskStyle = (r: RiskLevel) =>
-  r === 'Low' ? 'bg-success/10 text-success border-success/20' :
-  r === 'Medium' ? 'bg-warning/10 text-warning border-warning/20' :
-  r === 'High' ? 'bg-orange-100 text-orange-600 border-orange-200' :
-  'bg-danger/10 text-danger border-danger/20';
-
-const riskOrder: Record<RiskLevel, number> = { Low: 0, Medium: 1, High: 2, Critical: 3 };
-
 export default function ReviewsView({ submissions, onSelectSubmission }: ReviewsViewProps) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<typeof FILTERS[number]>('Pending');
-  const [riskFilter, setRiskFilter] = useState<typeof RISK_FILTERS[number]>('All Risk');
   const [sortKey, setSortKey] = useState<SortKey>('lastUpdated');
 
   const filtered = submissions
     .filter(s => {
       const matchesStatus = filter === 'All' || s.status === filter;
-      const matchesRisk = riskFilter === 'All Risk' || s.riskLevel === riskFilter;
       const q = search.toLowerCase();
       const matchesSearch = !q || s.eventName.toLowerCase().includes(q) ||
         s.organizerName.toLowerCase().includes(q) ||
         s.venue.toLowerCase().includes(q) ||
         s.id.toLowerCase().includes(q);
-      return matchesStatus && matchesRisk && matchesSearch;
+      return matchesStatus && matchesSearch;
     })
     .sort((a, b) => {
       if (sortKey === 'compliance') return b.complianceScore - a.complianceScore;
-      if (sortKey === 'risk') return riskOrder[b.riskLevel] - riskOrder[a.riskLevel];
       if (sortKey === 'date') return a.date.localeCompare(b.date);
       return b.lastUpdated.localeCompare(a.lastUpdated);
     });
@@ -91,22 +79,12 @@ export default function ReviewsView({ submissions, onSelectSubmission }: Reviews
               {f}
             </button>
           ))}
-          <div className="w-px h-5 bg-border-subtle self-center mx-1" />
-          {RISK_FILTERS.map(r => (
-            <button
-              key={r}
-              onClick={() => setRiskFilter(r)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${riskFilter === r ? 'bg-primary text-on-primary border-primary shadow-sm' : 'border-border-subtle text-text-secondary hover:bg-surface-container-low'}`}
-            >
-              {r}
-            </button>
-          ))}
         </div>
 
         {/* Sort Row */}
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[10px] font-mono text-text-secondary flex items-center gap-1"><ArrowUpDown className="w-3 h-3" /> Sort by:</span>
-          {([['date', 'Event Date'], ['compliance', 'Compliance Score'], ['lastUpdated', 'Last Updated'], ['risk', 'Risk Level']] as [SortKey, string][]).map(([k, label]) => (
+          {([['date', 'Event Date'], ['compliance', 'Compliance Score'], ['lastUpdated', 'Last Updated']] as [SortKey, string][]).map(([k, label]) => (
             <button
               key={k}
               onClick={() => setSortKey(k)}
@@ -133,12 +111,6 @@ export default function ReviewsView({ submissions, onSelectSubmission }: Reviews
                 alt={sub.eventName}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
               />
-              {/* Risk Badge on Top-Left */}
-              <div className="absolute top-3 left-3">
-                <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold border uppercase tracking-wider ${riskStyle(sub.riskLevel)}`}>
-                  {sub.riskLevel} Risk
-                </span>
-              </div>
               {/* Status Badge on Top-Right */}
               <div className="absolute top-3 right-3">
                 <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold border uppercase tracking-wider ${statusStyle(sub.status)}`}>
@@ -212,7 +184,7 @@ export default function ReviewsView({ submissions, onSelectSubmission }: Reviews
         {filtered.length === 0 && (
           <div className="md:col-span-2 lg:col-span-3 bg-white border border-border-subtle rounded-xl p-10 text-center">
             <p className="text-sm font-bold text-text-primary">No submissions match this filter</p>
-            <p className="text-xs text-text-secondary mt-1">Try a different status, risk level, or clear your search.</p>
+            <p className="text-xs text-text-secondary mt-1">Try a different status or clear your search.</p>
           </div>
         )}
       </div>

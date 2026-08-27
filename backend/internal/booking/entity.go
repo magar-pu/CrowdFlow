@@ -8,14 +8,18 @@ import (
 // TicketTier is the public-facing ticket tier shape for buyers - only tiers
 // currently on sale (public visibility, within the sales window) are ever
 // returned by Repository.ListTicketTiers.
+//
+// There is no per-tier purchase cap here any more. The limit is one total for
+// the whole order, across every tier, and lives on the event
+// (events.max_tickets_per_order) — see migration 0030. Buyers read it from the
+// event payload, not from each tier.
 type TicketTier struct {
-	ID                int     `json:"ticket_tier_id"`
-	EventID           int     `json:"event_id"`
-	Name              string  `json:"name"`
-	Description       string  `json:"description"`
-	Price             float64 `json:"price"`
-	QuotaRemaining    int     `json:"quota_remaining"`
-	MaxPerTransaction int     `json:"max_per_transaction"`
+	ID             int     `json:"ticket_tier_id"`
+	EventID        int     `json:"event_id"`
+	Name           string  `json:"name"`
+	Description    string  `json:"description"`
+	Price          float64 `json:"price"`
+	QuotaRemaining int     `json:"quota_remaining"`
 }
 
 // Seat is a single seat's live state for one event, derived from
@@ -67,18 +71,68 @@ type SeatMap struct {
 }
 
 // HoldRequest holds either SeatIDs (assigned seating) or Quantity (general
-// admission) for a single ticket tier - never both. Which mode applies is
-// determined by whether the tier has any assigned seats in event_seats_matrix.
+// admission) - never both.
+//
+// Assigned seating carries NO ticket_tier_id. Seats may span several tiers in
+// one hold, and each seat's tier is resolved server-side from
+// event_seats_matrix. That is not just convenience: when the client named the
+// tier, nothing cross-checked that the seats belonged to it, so a request could
+// pair a cheap tier with another tier's seats and be charged the cheap price.
+//
+// General admission has no seats to derive a tier from, so it still names one,
+// and remains one tier per hold.
 type HoldRequest struct {
-	EventID      int   `json:"event_id"`
-	TicketTierID int   `json:"ticket_tier_id"`
-	SeatIDs      []int `json:"seat_ids,omitempty"`
-	Quantity     int   `json:"quantity,omitempty"`
+	EventID int   `json:"event_id"`
+	SeatIDs []int `json:"seat_ids,omitempty"`
+	// General admission only; ignored when SeatIDs is set.
+	TicketTierID int `json:"ticket_tier_id,omitempty"`
+	Quantity     int `json:"quantity,omitempty"`
+}
+
+// SeatAssignment pairs a seat with the tier it was painted with on this event.
+type SeatAssignment struct {
+	SeatID       int
+	TicketTierID int
 }
 
 type Hold struct {
 	HoldToken string    `json:"hold_token"`
 	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// HoldSeat is one seat inside a hold, labelled the way the buyer saw it on the
+// map. Empty for general-admission holds.
+type HoldSeat struct {
+	SeatID int    `json:"seat_id"`
+	Row    string `json:"row"`
+	Number string `json:"number"`
+}
+
+// HoldItem is one tier's worth of a hold: its seats, or its GA quantity.
+type HoldItem struct {
+	TicketTierID int     `json:"ticket_tier_id"`
+	TierName     string  `json:"tier_name"`
+	UnitPrice    float64 `json:"unit_price"`
+	Quantity     int     `json:"quantity"`
+	// Empty for a general-admission item.
+	Seats []HoldSeat `json:"seats"`
+}
+
+// HoldDetail is everything checkout needs to render what the buyer is about to
+// pay for, resolved server-side from the hold token.
+//
+// Checkout used to build its cart from a hardcoded mock, so the seats a buyer
+// picked were discarded on navigation. Prices come from ticket_tiers here
+// rather than from the client, so a tampered query string cannot change what is
+// charged.
+//
+// Items is one entry per tier: a seated hold may span tiers.
+type HoldDetail struct {
+	HoldToken  string     `json:"hold_token"`
+	EventID    int        `json:"event_id"`
+	EventTitle string     `json:"event_title"`
+	Items      []HoldItem `json:"items"`
+	ExpiresAt  time.Time  `json:"expires_at"`
 }
 
 type Repository interface {
@@ -88,6 +142,25 @@ type Repository interface {
 	// IsAssignedSeating reports whether the tier sells specific seats
 	// (event_seats_matrix rows exist for it) as opposed to general admission.
 	IsAssignedSeating(ticketTierID int) (bool, error)
+
+	// GetMaxTicketsPerOrderByTier returns the cap on the TOTAL number of
+	// tickets one order may contain (events.max_tickets_per_order), across
+	// every tier combined. Zero or less means uncapped.
+	//
+	// Keyed by tier rather than by event id for the same reason
+	// IsTierBookable is: the event id on a hold request is client-supplied and
+	// nothing else cross-checks it, so resolving the limit through the tier
+	// makes it impossible to quote one event's cap while buying another's.
+	GetMaxTicketsPerOrderByTier(ticketTierID int) (int, error)
+
+	// IsEventOnSale reports whether the event itself is visible to buyers:
+	// approved by an auditor, published by its organizer, and not archived.
+	IsEventOnSale(eventID int) (bool, error)
+
+	// IsTierBookable reports whether the tier's event is currently on sale:
+	// approved by an auditor, published by its organizer, and not archived.
+	// Resolved from the TIER, not the client-supplied event_id.
+	IsTierBookable(ticketTierID int) (bool, error)
 
 	// AcquireSeatHolds attempts to lock every seat in seatIDs under holdToken.
 	// All-or-nothing: if any seat is already held/sold, everything acquired
@@ -106,11 +179,25 @@ type Repository interface {
 	StoreHoldMetadata(holdToken string, req HoldRequest, ttl time.Duration) error
 	GetHoldMetadata(holdToken string) (*HoldRequest, error)
 	DeleteHoldMetadata(holdToken string) error
+
+	// GetHoldTTL reports how long the hold has left, read from the metadata
+	// key's own expiry so it cannot drift from when the lock actually lapses.
+	GetHoldTTL(holdToken string) (time.Duration, error)
+
+	// DescribeHold resolves a hold's tiers, event and seat labels from the
+	// database. Prices are read here, never taken from the client.
+	DescribeHold(req *HoldRequest) (*HoldDetail, error)
+
+	// ResolveSeatTiers maps each seat to the tier it was painted with on this
+	// event. Seats that do not belong to the event are simply absent from the
+	// result, which is how the caller detects them.
+	ResolveSeatTiers(eventID int, seatIDs []int) ([]SeatAssignment, error)
 }
 
 type Service interface {
 	ListTicketTiers(eventID int) ([]*TicketTier, error)
 	GetSeatMap(eventID int) (*SeatMap, error)
 	CreateHold(req HoldRequest) (*Hold, error)
+	GetHold(holdToken string) (*HoldDetail, error)
 	ReleaseHold(holdToken string) error
 }

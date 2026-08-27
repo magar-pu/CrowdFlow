@@ -48,11 +48,25 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("PATCH /api/v1/auditor/reviews/{id}/documents/{docId}/verify", auditor(http.HandlerFunc(h.handleVerifyReviewDocument)))
 	mux.Handle("PATCH /api/v1/auditor/reviews/{id}/documents/{docId}/reject", auditor(http.HandlerFunc(h.handleRejectReviewDocument)))
 
+	// Per-event documents. Separate paths rather than a param on the routes above:
+	// event_documents and organizer_documents have overlapping SERIAL ids, so
+	// reusing those routes would make {docId} ambiguous and could flip the status
+	// of an unrelated document.
+	mux.Handle("PATCH /api/v1/auditor/reviews/{id}/event-documents/{docId}/verify", auditor(http.HandlerFunc(h.handleVerifyEventDocument)))
+	mux.Handle("PATCH /api/v1/auditor/reviews/{id}/event-documents/{docId}/reject", auditor(http.HandlerFunc(h.handleRejectEventDocument)))
+	// ?source=event|organizer — mints a short-lived link for a specific document.
+	mux.Handle("GET /api/v1/auditor/reviews/{id}/documents/{docId}/url", auditor(http.HandlerFunc(h.handleGetDocumentViewURL)))
+
 	// Document Queue
 	mux.Handle("GET /api/v1/auditor/documents", auditor(http.HandlerFunc(h.handleListDocuments)))
 	mux.Handle("GET /api/v1/auditor/documents/{id}", auditor(http.HandlerFunc(h.handleGetDocument)))
 	mux.Handle("PATCH /api/v1/auditor/documents/{id}/verify", auditor(http.HandlerFunc(h.handleVerifyDocument)))
 	mux.Handle("PATCH /api/v1/auditor/documents/{id}/reject", auditor(http.HandlerFunc(h.handleRejectDocument)))
+	// Signed link for an ACCOUNT-level document. The equivalent already existed
+	// only under /reviews/{id}/documents/{docId}/url, whose {id} the handler
+	// ignores — the organizer profile screen has no event to put there, and
+	// passing a meaningless one would imply a relationship that does not exist.
+	mux.Handle("GET /api/v1/auditor/documents/{id}/url", auditor(http.HandlerFunc(h.handleGetAccountDocumentViewURL)))
 
 	// Organizer Verification
 	mux.Handle("GET /api/v1/auditor/organizers", auditor(http.HandlerFunc(h.handleListOrganizers)))
@@ -67,6 +81,10 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("POST /api/v1/auditor/payouts/{id}/approve", auditor(http.HandlerFunc(h.handleApprovePayout)))
 	mux.Handle("POST /api/v1/auditor/payouts/{id}/reject", auditor(http.HandlerFunc(h.handleRejectPayout)))
 	mux.Handle("POST /api/v1/auditor/payouts/{id}/hold", auditor(http.HandlerFunc(h.handleHoldPayout)))
+	mux.Handle("POST /api/v1/auditor/payouts/{id}/revision", auditor(http.HandlerFunc(h.handleRevisePayout)))
+	mux.Handle("PATCH /api/v1/auditor/payouts/{id}/notes", auditor(http.HandlerFunc(h.handleUpdatePayoutNotes)))
+	mux.Handle("POST /api/v1/auditor/payouts/{id}/verify-bank", auditor(http.HandlerFunc(h.handleVerifyPayoutBankAccount)))
+	mux.Handle("PATCH /api/v1/auditor/payouts/{id}/checks", auditor(http.HandlerFunc(h.handleUpdatePayoutCheck)))
 
 	// Notifications
 	mux.Handle("GET /api/v1/auditor/notifications", auditor(http.HandlerFunc(h.handleListNotifications)))
@@ -156,7 +174,6 @@ func (h *Handler) handleListEventReviews(w http.ResponseWriter, r *http.Request)
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	filters := EventReviewFilters{
 		Status:    q.Get("status"),
-		RiskLevel: q.Get("riskLevel"),
 		Search:    q.Get("search"),
 		Page:      page,
 		Limit:     limit,
@@ -557,7 +574,6 @@ func (h *Handler) handleListPayouts(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	filters := PayoutFilters{
 		Status:    q.Get("status"),
-		RiskLevel: q.Get("riskLevel"),
 		Search:    q.Get("search"),
 		Page:      page,
 		Limit:     limit,
@@ -582,6 +598,99 @@ func (h *Handler) handleGetPayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.JSON(w, http.StatusOK, data)
+}
+
+func (h *Handler) handleRevisePayout(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathIntParam(r, "id")
+	if !ok {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Payout ID must be a positive integer")
+		return
+	}
+	actorID, ok := h.actorID(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	var req RevisePayoutRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := h.service.RevisePayout(r.Context(), id, actorID, req); err != nil {
+		handleServiceError(w, "handleRevisePayout", err)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Revision requested"})
+}
+
+func (h *Handler) handleUpdatePayoutNotes(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathIntParam(r, "id")
+	if !ok {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Payout ID must be a positive integer")
+		return
+	}
+	actorID, ok := h.actorID(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	var req UpdatePayoutNotesRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := h.service.UpdatePayoutNotes(r.Context(), id, actorID, req); err != nil {
+		handleServiceError(w, "handleUpdatePayoutNotes", err)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Notes saved"})
+}
+
+func (h *Handler) handleVerifyPayoutBankAccount(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathIntParam(r, "id")
+	if !ok {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Payout ID must be a positive integer")
+		return
+	}
+	actorID, ok := h.actorID(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	var req VerifyBankAccountRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := h.service.VerifyPayoutBankAccount(r.Context(), id, actorID, req); err != nil {
+		handleServiceError(w, "handleVerifyPayoutBankAccount", err)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Bank account verified"})
+}
+
+// handleUpdatePayoutCheck ticks or unticks a single checklist item.
+//
+// PATCH rather than PUT, and one item rather than the whole checklist: the
+// request describes a single reviewer decision, so a concurrent auditor's ticks
+// are never carried along as stale collateral.
+func (h *Handler) handleUpdatePayoutCheck(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathIntParam(r, "id")
+	if !ok {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Payout ID must be a positive integer")
+		return
+	}
+	actorID, ok := h.actorID(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	var req UpdatePayoutCheckRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := h.service.UpdatePayoutCheck(r.Context(), id, actorID, req); err != nil {
+		handleServiceError(w, "handleUpdatePayoutCheck", err)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Checklist updated"})
 }
 
 func (h *Handler) handleApprovePayout(w http.ResponseWriter, r *http.Request) {
@@ -694,3 +803,84 @@ func (h *Handler) handleMarkNotificationsRead(w http.ResponseWriter, r *http.Req
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Notifications updated successfully"})
 }
 
+
+// ---- Per-event documents ----
+
+func (h *Handler) handleVerifyEventDocument(w http.ResponseWriter, r *http.Request) {
+	docID, ok := pathIntParam(r, "docId")
+	if !ok {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Document ID must be a positive integer")
+		return
+	}
+	actorID, ok := h.actorID(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	if err := h.service.VerifyEventDocument(r.Context(), docID, actorID); err != nil {
+		handleServiceError(w, "handleVerifyEventDocument", err)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Document verified"})
+}
+
+func (h *Handler) handleRejectEventDocument(w http.ResponseWriter, r *http.Request) {
+	docID, ok := pathIntParam(r, "docId")
+	if !ok {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Document ID must be a positive integer")
+		return
+	}
+	actorID, ok := h.actorID(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	var req RejectDocumentRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := h.service.RejectEventDocument(r.Context(), docID, actorID, req.Reason); err != nil {
+		handleServiceError(w, "handleRejectEventDocument", err)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Document rejected"})
+}
+
+func (h *Handler) handleGetAccountDocumentViewURL(w http.ResponseWriter, r *http.Request) {
+	docID, ok := pathIntParam(r, "id")
+	if !ok {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Document ID must be a positive integer")
+		return
+	}
+	link, err := h.service.GetDocumentViewURL(r.Context(), DocSourceOrganizer, docID)
+	if err != nil {
+		handleServiceError(w, "handleGetAccountDocumentViewURL", err)
+		return
+	}
+	response.JSON(w, http.StatusOK, link)
+}
+
+// handleGetDocumentViewURL mints a short-lived signed link for one document.
+// `source` disambiguates which table the id belongs to.
+func (h *Handler) handleGetDocumentViewURL(w http.ResponseWriter, r *http.Request) {
+	docID, ok := pathIntParam(r, "docId")
+	if !ok {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Document ID must be a positive integer")
+		return
+	}
+
+	source := r.URL.Query().Get("source")
+	if source == "" {
+		source = DocSourceOrganizer // pre-existing callers only ever meant account docs
+	}
+
+	link, err := h.service.GetDocumentViewURL(r.Context(), source, docID)
+	if err != nil {
+		handleServiceError(w, "handleGetDocumentViewURL", err)
+		return
+	}
+
+	// A live credential must never be cached by a proxy or the browser.
+	w.Header().Set("Cache-Control", "no-store")
+	response.JSON(w, http.StatusOK, link)
+}

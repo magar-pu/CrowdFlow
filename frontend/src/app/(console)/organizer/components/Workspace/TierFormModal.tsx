@@ -7,7 +7,6 @@ export interface TierFormValues {
   name: string;
   price: number;
   capacity: number;
-  maxPerOrder: number;
   salesStart: string;
   salesEnd: string;
   description: string;
@@ -28,9 +27,8 @@ interface TierFormModalProps {
 function toFormValues(tier?: TicketTier): TierFormValues {
   return {
     name: tier?.name ?? "",
-    price: tier?.price ?? 150,
+    price: tier?.price ?? 150000,
     capacity: tier?.capacity ?? 500,
-    maxPerOrder: tier?.maxPerOrder ?? 10,
     salesStart: tier?.salesStart ?? "",
     salesEnd: tier?.salesEnd ?? "",
     description: tier?.description ?? "",
@@ -44,7 +42,14 @@ function validate(values: TierFormValues, tier: TicketTier | undefined): string 
   if (tier && values.capacity < tier.sold) {
     return `Capacity can't be lower than the ${tier.sold} ticket${tier.sold === 1 ? "" : "s"} already sold.`;
   }
-  if (values.salesStart && values.salesEnd && values.salesEnd < values.salesStart) {
+  // Both dates are required. The form used to omit sales start entirely and
+  // treat the deadline as optional, and the backend filled the gap with
+  // now() and now()+1 month — so a tier saved without dates stopped selling
+  // a month later for no stated reason.
+  if (!values.salesStart || !values.salesEnd) {
+    return "Sales open and sales close dates are both required.";
+  }
+  if (values.salesEnd < values.salesStart) {
     return "Sales close date must be after the sales open date.";
   }
   return null;
@@ -111,7 +116,7 @@ export default function TierFormModal({ open, tier, onClose, onSubmit }: TierFor
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Price ($)</label>
+            <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Price (Rp)</label>
             <input type="number" value={values.price} onChange={(e) => set("price", Number(e.target.value))} disabled={submitting} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none disabled:opacity-60" />
           </div>
           <div className="space-y-1.5">
@@ -126,17 +131,12 @@ export default function TierFormModal({ open, tier, onClose, onSubmit }: TierFor
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Sales Opens</label>
-            <input type="date" value={values.salesStart} onChange={(e) => set("salesStart", e.target.value)} disabled={submitting} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none disabled:opacity-60" />
+            <input type="date" required value={values.salesStart} onChange={(e) => set("salesStart", e.target.value)} disabled={submitting} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none disabled:opacity-60" />
           </div>
           <div className="space-y-1.5">
             <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Sales Closes</label>
-            <input type="date" value={values.salesEnd} onChange={(e) => set("salesEnd", e.target.value)} disabled={submitting} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none disabled:opacity-60" />
+            <input type="date" required min={values.salesStart || undefined} value={values.salesEnd} onChange={(e) => set("salesEnd", e.target.value)} disabled={submitting} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none disabled:opacity-60" />
           </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Max Per Order</label>
-          <input type="number" value={values.maxPerOrder} onChange={(e) => set("maxPerOrder", Number(e.target.value))} disabled={submitting} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none disabled:opacity-60" />
         </div>
 
         <div className="space-y-1.5">

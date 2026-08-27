@@ -1,11 +1,21 @@
 package ticket
 
+import (
+	"log"
+
+	"crowdflow-backend/internal/mail"
+)
+
 type TicketService struct {
-	repo Repository
+	repo        Repository
+	mailService mail.Service
 }
 
-func NewService(repo Repository) *TicketService {
-	return &TicketService{repo: repo}
+func NewService(repo Repository, mailService mail.Service) *TicketService {
+	return &TicketService{
+		repo:        repo,
+		mailService: mailService,
+	}
 }
 
 func (s *TicketService) GetUserTickets(userID int) ([]*Ticket, error) {
@@ -38,4 +48,44 @@ func (s *TicketService) CompletePayment(orderID string) (*CompletePaymentRespons
 		TicketsCount: count,
 		Message:      "Payment processed successfully and tickets generated",
 	}, nil
+}
+
+func (s *TicketService) RequestOTP(ticketID string, userID int, email string) (*RequestOTPResponse, error) {
+	otpCode, err := s.repo.RequestTicketOTP(ticketID, userID, email)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.mailService != nil && email != "" {
+		go func(to string, code string) {
+			if err := s.mailService.SendOTP(to, code, "Klaim Tiket Event"); err != nil {
+				log.Printf("[TICKET OTP ERROR] Failed to send OTP email to %s: %v", to, err)
+			} else {
+				log.Printf("[TICKET OTP SUCCESS] Verification OTP sent to %s via Resend", to)
+			}
+		}(email, otpCode)
+	}
+
+	// The OTP is deliberately NOT echoed back in the response: the whole point
+	// of the mail round-trip is to prove the caller controls the mailbox.
+	// In development the code is still recoverable from the backend log.
+	return &RequestOTPResponse{
+		Message: "OTP sent successfully to " + email,
+	}, nil
+}
+
+func (s *TicketService) VerifyOTP(ticketID string, userID int, email string, otpCode string) (*VerifyOTPResponse, error) {
+	verified, vaultToken, err := s.repo.VerifyTicketOTP(ticketID, userID, email, otpCode)
+	if err != nil {
+		return nil, err
+	}
+	return &VerifyOTPResponse{
+		Verified:   verified,
+		VaultToken: vaultToken,
+		Message:    "OTP verified successfully",
+	}, nil
+}
+
+func (s *TicketService) GetTicketVault(ticketID string, userID int) (*TicketVaultResponse, error) {
+	return s.repo.GetTicketVaultData(ticketID, userID)
 }

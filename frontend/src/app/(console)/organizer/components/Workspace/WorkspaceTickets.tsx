@@ -1,17 +1,36 @@
 import React, { useState } from "react";
 import { TicketTier } from "../../types";
-import { Plus, Trash2, Layers, CheckCircle2, Pencil } from "lucide-react";
+import { Plus, Trash2, Layers, CheckCircle2, Pencil, DollarSign, ShoppingCart } from "lucide-react";
+import type { EventSeating, TierSeating } from "@/lib/api/eorganizer";
+import { formatIDR } from "@/lib/pricing";
 import TierFormModal, { TierFormValues, TierSubmitResult } from "./TierFormModal";
 
 interface WorkspaceTicketsProps {
   ticketTiers: TicketTier[];
+  /** Seat-map figures. null when no layout is bound to this event yet. */
+  seating: EventSeating | null;
+  seatingLoading?: boolean;
+  /**
+   * Cap on the total tickets in one order, across every tier. 0 = no limit.
+   * Event-level on purpose: a per-tier cap let an event with two tiers capped
+   * at 4 each sell 8 in a single order.
+   */
+  maxTicketsPerOrder: number;
+  onSaveMaxTicketsPerOrder: (value: number) => Promise<void>;
   onCreateTier: (tier: Omit<TicketTier, "id">) => Promise<TierSubmitResult>;
   onUpdateTier: (id: string, updated: Partial<TicketTier>) => Promise<TierSubmitResult>;
   onDeleteTier: (id: string) => void;
 }
 
+/** Mirrors maxTicketsPerOrderCeiling in the organizer service. */
+const MAX_TICKETS_PER_ORDER_CEILING = 100;
+
 export default function WorkspaceTickets({
   ticketTiers,
+  seating,
+  seatingLoading = false,
+  maxTicketsPerOrder,
+  onSaveMaxTicketsPerOrder,
   onCreateTier,
   onUpdateTier,
   onDeleteTier
@@ -51,22 +70,99 @@ export default function WorkspaceTickets({
     });
   };
 
-  // No "remaining" here: for a seated event a tier's real capacity is however
-  // many seats are painted with it in the Venue tab, not this figure. Showing a
-  // headroom number derived from the manual allocation limit would contradict
-  // the seat map whenever the two disagree.
-  const totalCapacity = ticketTiers.reduce((acc, t) => acc + t.capacity, 0);
+  // Draft of the event-level order limit. Held locally so typing does not fire
+  // a request per keystroke; committed on Save.
+  const [limitDraft, setLimitDraft] = useState(String(maxTicketsPerOrder));
+  const [limitSaving, setLimitSaving] = useState(false);
+  const [limitError, setLimitError] = useState<string | null>(null);
+  const [limitSaved, setLimitSaved] = useState(false);
+
+  const handleSaveLimit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLimitError(null);
+    setLimitSaved(false);
+
+    const trimmed = limitDraft.trim();
+    const parsed = Number(trimmed);
+    // Number("") is 0, which is a meaningful value here (no limit), so an
+    // empty box must not silently mean "uncapped".
+    if (trimmed === "" || !Number.isInteger(parsed)) {
+      setLimitError("Enter a whole number, or 0 for no limit.");
+      return;
+    }
+    if (parsed < 0) {
+      setLimitError("The limit cannot be negative. Use 0 for no limit.");
+      return;
+    }
+    if (parsed > MAX_TICKETS_PER_ORDER_CEILING) {
+      setLimitError(`The limit cannot exceed ${MAX_TICKETS_PER_ORDER_CEILING}. Use 0 for no limit.`);
+      return;
+    }
+
+    setLimitSaving(true);
+    try {
+      await onSaveMaxTicketsPerOrder(parsed);
+      setLimitSaved(true);
+    } catch {
+      setLimitError("Could not save the limit. Please try again.");
+    } finally {
+      setLimitSaving(false);
+    }
+  };
+
   const totalSold = ticketTiers.reduce((acc, t) => acc + t.sold, 0);
+  const grossRevenue = ticketTiers.reduce((acc, t) => acc + t.sold * t.price, 0);
+
+  // Real capacity comes from the seat map, not from the tiers: a seated event
+  // sells however many seats are painted with a tier in the Venue tab. Summing
+  // the tiers' allocation limits produced a number that contradicted the seat
+  // map whenever the two disagreed, which is why that tile is gone.
+  const totalSeats = seating?.total_seats ?? 0;
+  const untieredSeats = seating?.untiered_seats ?? 0;
+  const pricedSeats = Math.max(totalSeats - untieredSeats, 0);
+  const hasSeatMap = totalSeats > 0;
+
+  // Per-tier seat allocation, keyed by tier id. A tier that appears here has seats
+  // painted with it in the Venue tab, which makes it ASSIGNED SEATING: the backend
+  // sells it by seat id and never consults allocation_limit
+  // (booking/service.go -> IsAssignedSeating). A tier absent from this map is
+  // general admission, where allocation_limit IS the stock. The card shows
+  // whichever number actually governs that tier.
+  const seatsByTier = new Map<number, TierSeating>();
+  for (const t of seating?.tiers ?? []) {
+    seatsByTier.set(t.ticket_tier_id, t);
+  }
 
   return (
     <div className="space-y-6 text-left animate-fade-in">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="p-4 bg-white border border-border-subtle rounded-xl shadow-sm">
           <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-bold text-text-secondary">Total Capacity</span>
+            <span className="text-xs font-bold text-text-secondary">Seats Priced</span>
             <div className="p-1.5 bg-primary/10 border border-primary/20 text-primary rounded-lg"><Layers className="w-4 h-4" /></div>
           </div>
-          <h3 className="text-xl font-bold text-text-primary">{totalCapacity.toLocaleString()}</h3>
+          {seatingLoading ? (
+            <div className="h-7 w-24 animate-pulse rounded bg-surface-container-low" />
+          ) : hasSeatMap ? (
+            <>
+              <h3 className="text-xl font-bold text-text-primary">
+                {pricedSeats.toLocaleString()}
+                <span className="text-sm font-semibold text-text-secondary"> / {totalSeats.toLocaleString()}</span>
+              </h3>
+              {/* Unpriced seats are exactly what blocks submission
+                  (422 SEATING_INCOMPLETE), so they are worth naming here. */}
+              <p className={`text-[10px] font-mono mt-1 ${untieredSeats > 0 ? "text-amber-600 font-bold" : "text-text-secondary"}`}>
+                {untieredSeats > 0
+                  ? `${untieredSeats.toLocaleString()} seat${untieredSeats === 1 ? "" : "s"} unpriced`
+                  : "All seats priced"}
+              </p>
+            </>
+          ) : (
+            <>
+              <h3 className="text-xl font-bold text-text-primary">—</h3>
+              <p className="text-[10px] font-mono text-text-secondary mt-1">No seat map yet</p>
+            </>
+          )}
         </div>
         <div className="p-4 bg-white border border-border-subtle rounded-xl shadow-sm">
           <div className="flex justify-between items-start mb-2">
@@ -74,8 +170,88 @@ export default function WorkspaceTickets({
             <div className="p-1.5 bg-secondary/10 border border-secondary/20 text-secondary rounded-lg"><CheckCircle2 className="w-4 h-4" /></div>
           </div>
           <h3 className="text-xl font-bold text-text-primary">{totalSold.toLocaleString()}</h3>
+          <p className="text-[10px] font-mono text-text-secondary mt-1">
+            across {ticketTiers.length} tier{ticketTiers.length === 1 ? "" : "s"}
+          </p>
+        </div>
+        <div className="p-4 bg-white border border-border-subtle rounded-xl shadow-sm">
+          <div className="flex justify-between items-start mb-2">
+            <span className="text-xs font-bold text-text-secondary">Gross Revenue</span>
+            <div className="p-1.5 bg-success/10 border border-success/20 text-success rounded-lg"><DollarSign className="w-4 h-4" /></div>
+          </div>
+          <h3 className="text-xl font-bold text-text-primary">{formatIDR(grossRevenue)}</h3>
+          <p className="text-[10px] font-mono text-text-secondary mt-1">from tier sales</p>
         </div>
       </div>
+
+      <form
+        onSubmit={handleSaveLimit}
+        className="p-4 bg-white border border-border-subtle rounded-xl space-y-3"
+      >
+        <div className="flex items-start gap-2">
+          <div className="p-1.5 bg-primary/10 border border-primary/20 text-primary rounded-lg shrink-0">
+            <ShoppingCart className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-text-primary">Order Limit</h3>
+            <p className="text-xs text-text-secondary">
+              The most tickets one buyer can put in a single order, counting every ticket type together.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <label
+              htmlFor="max-tickets-per-order"
+              className="block text-[9px] font-mono font-bold text-text-secondary uppercase"
+            >
+              Max tickets per order
+            </label>
+            <input
+              id="max-tickets-per-order"
+              type="number"
+              min={0}
+              max={MAX_TICKETS_PER_ORDER_CEILING}
+              value={limitDraft}
+              onChange={(e) => {
+                setLimitDraft(e.target.value);
+                setLimitSaved(false);
+                setLimitError(null);
+              }}
+              className="w-28 h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={limitSaving || limitDraft.trim() === String(maxTicketsPerOrder)}
+            className="h-9 bg-secondary hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold px-4 rounded-lg transition-colors cursor-pointer"
+          >
+            {limitSaving ? "Saving..." : "Save"}
+          </button>
+          {limitSaved && (
+            <span className="text-xs font-semibold text-success">Saved</span>
+          )}
+        </div>
+
+        {limitError ? (
+          <p className="text-[10px] font-semibold text-danger">{limitError}</p>
+        ) : (
+          <p className="text-[10px] text-text-secondary">
+            {Number(limitDraft) > 0 ? (
+              <>
+                A buyer can mix ticket types freely up to{" "}
+                <strong>{Number(limitDraft).toLocaleString()}</strong> tickets in one order — for example{" "}
+                {Math.max(1, Number(limitDraft) - 1).toLocaleString()} of one type and 1 of another.
+              </>
+            ) : (
+              <span className="text-amber-600 font-bold">
+                No limit — a buyer can put any number of tickets in one order.
+              </span>
+            )}
+          </p>
+        )}
+      </form>
 
       <div className="flex justify-between items-center">
         <div>
@@ -94,13 +270,28 @@ export default function WorkspaceTickets({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {ticketTiers.map((tier) => {
           const revenue = tier.sold * tier.price;
+          const seats = seatsByTier.get(Number(tier.id));
+          // Seated tiers are governed by the seat map; GA tiers by allocation_limit.
+          const stockTotal = seats ? seats.seat_count : tier.capacity;
+          const stockSold = seats ? seats.sold : tier.sold;
+          const soldPct = stockTotal > 0 ? Math.min(100, (stockSold / stockTotal) * 100) : 0;
+          const notSelling = tier.status === "Expired" || tier.status === "Scheduled";
           return (
             <div key={tier.id} className="bg-white border border-border-subtle rounded-xl p-5 soft-shadow flex flex-col justify-between group">
               <div className="space-y-4">
                 <div className="flex justify-between items-start">
-                  <span className="px-2.5 py-0.5 rounded-full font-mono text-[9px] font-bold text-white" style={{ backgroundColor: tier.color || "#3B82F6" }}>
-                    {tier.status || "On Sale"}
-                  </span>
+                  {/* A tier outside its sales window is invisible to buyers, so
+                      it must not wear the tier's own colour like a healthy
+                      badge — it reads as a warning instead. */}
+                  {notSelling ? (
+                    <span className="px-2.5 py-0.5 rounded-full font-mono text-[9px] font-bold bg-warning/15 text-warning border border-warning/30">
+                      {tier.status}
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full font-mono text-[9px] font-bold text-white" style={{ backgroundColor: tier.color || "#3B82F6" }}>
+                      {tier.status || "On Sale"}
+                    </span>
+                  )}
                   <div className="flex items-center gap-1">
                     <button onClick={() => openEdit(tier)} className="text-on-surface-variant hover:text-primary p-1 rounded transition-colors cursor-pointer">
                       <Pencil className="w-4 h-4" />
@@ -112,33 +303,72 @@ export default function WorkspaceTickets({
                 </div>
 
                 <div>
-                  <h4 className="text-base font-bold text-text-primary">{tier.name}</h4>
-                  <p className="text-xs text-on-surface-variant font-mono mt-0.5">Allocation limit: {tier.capacity}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-base font-bold text-text-primary">{tier.name}</h4>
+                    <span className={`px-1.5 py-0.5 rounded font-mono text-[8px] font-bold uppercase tracking-wider border ${
+                      seats
+                        ? "bg-primary/10 text-primary border-primary/20"
+                        : "bg-surface-container text-text-secondary border-border-subtle"
+                    }`}>
+                      {seats ? "Assigned seating" : "General admission"}
+                    </span>
+                  </div>
+                  {seats ? (
+                    <p className="text-xs text-on-surface-variant font-mono mt-0.5">
+                      Seats allocated: {seats.seat_count.toLocaleString()}
+                      {seats.blocked > 0 && (
+                        <span className="text-amber-600"> · {seats.blocked.toLocaleString()} blocked</span>
+                      )}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-on-surface-variant font-mono mt-0.5">Allocation limit: {tier.capacity.toLocaleString()}</p>
+                  )}
                 </div>
 
                 <div className="pt-2 border-t border-surface-container-low">
-                  <span className="text-2xl font-black text-text-primary">${tier.price}</span>
+                  <span className="text-2xl font-black text-text-primary">{formatIDR(tier.price)}</span>
                   <span className="text-[10px] text-on-surface-variant font-mono ml-1.5">/ ticket</span>
                 </div>
 
                 <div className="text-[10px] font-mono">
                   <span className="text-text-secondary block">Tier Revenue</span>
-                  <span className="text-secondary font-bold">${revenue.toLocaleString()}</span>
+                  <span className="text-secondary font-bold">{formatIDR(revenue)}</span>
                 </div>
 
                 {tier.salesEnd && (
                   <p className="text-[10px] text-on-surface-variant font-mono">Sales close: {tier.salesEnd}</p>
                 )}
+
+                {/* Without this the organizer sees a tier the public listing has
+                    already dropped, with nothing to explain where it went. */}
+                {notSelling && (
+                  <p className="text-[10px] text-warning font-mono leading-relaxed">
+                    {tier.status === "Expired"
+                      ? "Outside its sales window — buyers cannot see or purchase this tier. Extend the sales close date to reopen it."
+                      : "Sales have not opened yet — buyers cannot see this tier until the sales start date."}
+                  </p>
+                )}
               </div>
 
               <div className="mt-4 pt-4 border-t border-border-subtle space-y-1.5">
                 <div className="flex justify-between text-[10px] font-mono">
-                  <span className="text-text-secondary">Sales progress</span>
-                  <span className="text-text-primary font-bold">{tier.sold} / {tier.capacity}</span>
+                  <span className="text-text-secondary">
+                    {seats ? "Seats sold" : "Sales progress"}
+                  </span>
+                  <span className="text-text-primary font-bold">
+                    {stockSold.toLocaleString()} / {stockTotal.toLocaleString()}
+                  </span>
                 </div>
+                {/* Guarded: a seated tier with no seats painted yet, or a GA tier
+                    saved with capacity 0, made this width NaN%. */}
                 <div className="w-full bg-surface-container h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-secondary h-full rounded-full" style={{ width: `${(tier.sold / tier.capacity) * 100}%` }}></div>
+                  <div className="bg-secondary h-full rounded-full" style={{ width: `${soldPct}%` }}></div>
                 </div>
+                {seats && seats.available > 0 && (
+                  <p className="text-[10px] font-mono text-text-secondary">
+                    {seats.available.toLocaleString()} still available
+                  </p>
+                )}
               </div>
             </div>
           );

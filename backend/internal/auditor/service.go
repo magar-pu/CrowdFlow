@@ -4,15 +4,24 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
+
+	"crowdflow-backend/internal/storage"
 )
+
+// documentURLTTL matches the organizer console's window. A presigned URL is a
+// bearer credential — whoever holds it reads the file with no identity check —
+// and these documents carry NIK, so links are minted per view and die quickly.
+const documentURLTTL = 2 * time.Minute
 
 // AuditorService implements Service with business validation.
 type AuditorService struct {
-	repo Repository
+	repo    Repository
+	storage *storage.S3Storage
 }
 
-func NewAuditorService(repo Repository) *AuditorService {
-	return &AuditorService{repo: repo}
+func NewAuditorService(repo Repository, storage *storage.S3Storage) *AuditorService {
+	return &AuditorService{repo: repo, storage: storage}
 }
 
 // ---- Dashboard ----
@@ -128,8 +137,21 @@ func (s *AuditorService) AddEventRevision(ctx context.Context, eventID, actorID 
 	return s.repo.AddEventRevision(ctx, eventID, actorID, req)
 }
 
+// validRevisionStatuses mirrors the auditor_revisions_status_check constraint
+// (migration 0020). Without this an unknown status reaches Postgres and comes
+// back as an opaque 500 constraint violation instead of a 422.
+var validRevisionStatuses = map[string]bool{
+	"Draft": true, "Sent": true, "Viewed": true, "In Progress": true,
+	"Resubmitted": true, "Verified": true, "Resolved": true,
+	"Rejected": true, "Expired": true,
+}
+
 func (s *AuditorService) UpdateRevisionStatus(ctx context.Context, revID, actorID int, status string) error {
-	if revID <= 0 || actorID <= 0 || strings.TrimSpace(status) == "" {
+	status = strings.TrimSpace(status)
+	if revID <= 0 || actorID <= 0 || status == "" {
+		return ErrValidation
+	}
+	if !validRevisionStatuses[status] {
 		return ErrValidation
 	}
 	return s.repo.UpdateRevisionStatus(ctx, revID, actorID, status)
@@ -150,6 +172,55 @@ func (s *AuditorService) RejectReviewDocument(ctx context.Context, docID, actorI
 		return ErrValidation
 	}
 	return s.repo.RejectReviewDocument(ctx, docID, actorID, reason)
+}
+
+// ---- Per-event documents ----
+//
+// Kept separate from the ReviewDocument pair above because event_documents and
+// organizer_documents are distinct tables with overlapping SERIAL ids. The
+// (source, id) pair is what identifies a document; an id alone does not.
+
+func (s *AuditorService) VerifyEventDocument(ctx context.Context, docID, actorID int) error {
+	if docID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	return s.repo.VerifyEventDocument(ctx, docID, actorID)
+}
+
+func (s *AuditorService) RejectEventDocument(ctx context.Context, docID, actorID int, reason string) error {
+	if docID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	// The reason is not optional: it is what the organizer sees in the Documents
+	// tab explaining what to fix, and a rejected document blocks resubmission.
+	if strings.TrimSpace(reason) == "" {
+		return ErrValidation
+	}
+	return s.repo.RejectEventDocument(ctx, docID, actorID, reason)
+}
+
+// GetDocumentViewURL mints a short-lived link for one document from either
+// source. Until this existed the review payload carried raw object keys in
+// `fileUrl`, which are not fetchable — the auditor could not open anything.
+func (s *AuditorService) GetDocumentViewURL(ctx context.Context, source string, docID int) (*DocumentURL, error) {
+	if docID <= 0 {
+		return nil, ErrValidation
+	}
+	if source != DocSourceEvent && source != DocSourceOrganizer {
+		return nil, ErrValidation
+	}
+
+	path, err := s.repo.GetDocumentPath(ctx, source, docID)
+	if err != nil {
+		return nil, err
+	}
+
+	url, err := s.storage.GetPresignedURL(ctx, path, documentURLTTL)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DocumentURL{URL: url, ExpiresIn: int(documentURLTTL.Seconds())}, nil
 }
 
 // ---- Documents ----
@@ -262,6 +333,50 @@ func (s *AuditorService) ApprovePayout(ctx context.Context, payoutID, actorID in
 		return ErrValidation
 	}
 	return s.repo.ApprovePayout(ctx, payoutID, actorID, req)
+}
+
+func (s *AuditorService) RevisePayout(ctx context.Context, payoutID, actorID int, req RevisePayoutRequest) error {
+	if payoutID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	// A payout returned with no explanation leaves the organizer guessing at
+	// what to change, and the console already collects the text.
+	if strings.TrimSpace(req.Reason) == "" {
+		return ErrValidation
+	}
+	return s.repo.RevisePayout(ctx, payoutID, actorID, req)
+}
+
+func (s *AuditorService) UpdatePayoutNotes(ctx context.Context, payoutID, actorID int, req UpdatePayoutNotesRequest) error {
+	if payoutID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	return s.repo.UpdatePayoutNotes(ctx, payoutID, actorID, req)
+}
+
+// UpdatePayoutCheck toggles one checklist item.
+//
+// The key is validated against the server-side whitelist here rather than being
+// left to the database's CHECK constraint: an unknown key must come back as a
+// 422 naming the problem, not as a generic 500 from a constraint violation.
+func (s *AuditorService) UpdatePayoutCheck(ctx context.Context, payoutID, actorID int, req UpdatePayoutCheckRequest) error {
+	if payoutID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	if !isPayoutReviewItemKey(req.ItemKey) {
+		return fmt.Errorf("%w: unknown checklist item %q", ErrValidation, req.ItemKey)
+	}
+	return s.repo.UpdatePayoutCheck(ctx, payoutID, actorID, req)
+}
+
+func (s *AuditorService) VerifyPayoutBankAccount(ctx context.Context, payoutID, actorID int, req VerifyBankAccountRequest) error {
+	if payoutID <= 0 || actorID <= 0 {
+		return ErrValidation
+	}
+	if strings.TrimSpace(req.AccountNumber) == "" {
+		return ErrValidation
+	}
+	return s.repo.VerifyPayoutBankAccount(ctx, payoutID, actorID, req)
 }
 
 func (s *AuditorService) RejectPayout(ctx context.Context, payoutID, actorID int, req RejectPayoutRequest) error {

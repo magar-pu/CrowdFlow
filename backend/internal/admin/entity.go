@@ -1,5 +1,7 @@
 package admin
 
+import "time"
+
 // NOTE: JSON field names in this package intentionally use camelCase (not the
 // snake_case convention used by the public event/auth APIs) because they mirror
 // frontend/src/types/admin.ts exactly - that admin frontend was already built
@@ -10,6 +12,37 @@ type DashboardStats struct {
 	TotalUsers   int     `json:"totalUsers"`
 	TotalRevenue float64 `json:"totalRevenue"`
 	TicketsSold  int     `json:"ticketsSold"`
+}
+
+// AnalyticsPoint is one bucket of the platform analytics time series. Buckets
+// are days for 7d, weeks for 30d, months for 90d — whatever keeps the bar count
+// readable for the range.
+type AnalyticsPoint struct {
+	Label         string  `json:"label"`
+	Revenue       float64 `json:"revenue"`
+	Registrations int     `json:"registrations"`
+	Events        int     `json:"events"`
+	TicketsSold   int     `json:"ticketsSold"`
+}
+
+// RevenueBreakdown splits paid orders into the components the orders table
+// actually records. Every field is a summed column, not an assumed percentage:
+// the dashboard used to hardcode a 72/18/10 tickets/fees/resale split that
+// corresponded to nothing.
+type RevenueBreakdown struct {
+	TicketFaceValue  float64 `json:"ticketFaceValue"`
+	PlatformFee      float64 `json:"platformFee"`
+	GatewayFee       float64 `json:"gatewayFee"`
+	EntertainmentTax float64 `json:"entertainmentTax"`
+	GrossTotal       float64 `json:"grossTotal"`
+}
+
+// PlatformAnalytics backs the admin dashboard's Platform Analytics chart and
+// Revenue Breakdown donut.
+type PlatformAnalytics struct {
+	Range     string            `json:"range"`
+	Series    []*AnalyticsPoint `json:"series"`
+	Breakdown RevenueBreakdown  `json:"breakdown"`
 }
 
 type Event struct {
@@ -145,8 +178,29 @@ type EventStatusLogEntry struct {
 	CreatedAt  string `json:"createdAt"`
 }
 
+// Notification mirrors auditor.AuditorNotification field-for-field so the two
+// consoles' header bells can share one frontend shape. Both read the same
+// `notifications` table; Super Admins already receive rows from
+// auditor.CreateNotificationForAuditors, which targets role_name IN
+// ('Auditor', 'Super Admin').
+type Notification struct {
+	ID           int       `json:"id"`
+	UserID       int       `json:"userId"`
+	Title        string    `json:"title"`
+	Detail       string    `json:"detail"`
+	ResourceType string    `json:"resourceType"`
+	ResourceID   string    `json:"resourceId"`
+	IsRead       bool      `json:"isRead"`
+	CreatedAt    time.Time `json:"createdAt"`
+}
+
+type MarkNotificationsReadRequest struct {
+	NotificationIDs []int `json:"notificationIds"`
+}
+
 type Repository interface {
 	GetDashboardStats() (*DashboardStats, error)
+	GetPlatformAnalytics(rangeKey string) (*PlatformAnalytics, error)
 	ListEvents(limit, offset int) ([]*Event, error)
 	ApproveEvent(eventID, auditorID int, notes string) error
 	RejectEvent(eventID, auditorID int, notes string) error
@@ -167,10 +221,13 @@ type Repository interface {
 	ProcessPayout(payoutID string, actorID int) error
 	RejectPayout(payoutID string, actorID int) error
 	ListActivities() ([]*Activity, error)
+	ListNotifications(userID int) ([]*Notification, error)
+	MarkNotificationsRead(userID int, notificationIDs []int) error
 }
 
 type Service interface {
 	GetDashboardStats() (*DashboardStats, error)
+	GetPlatformAnalytics(rangeKey string) (*PlatformAnalytics, error)
 	ListEvents(limit, offset int) ([]*Event, error)
 	ApproveEvent(eventID, auditorID int, notes string) error
 	RejectEvent(eventID, auditorID int, notes string) error
@@ -191,6 +248,8 @@ type Service interface {
 	ProcessPayout(payoutID string, actorID int) error
 	RejectPayout(payoutID string, actorID int) error
 	ListActivities() ([]*Activity, error)
+	ListNotifications(userID int) ([]*Notification, error)
+	MarkNotificationsRead(userID int, notificationIDs []int) error
 
 	// Placeholder-backed - see service.go
 	ListScanners(eventID int) ([]*Scanner, error)

@@ -71,8 +71,8 @@ func (s *DelegationService) Invite(ctx context.Context, ownerID int, req InviteR
 	}
 
 	_ = s.repo.Notify(ctx, delegateID,
-		"Ditambahkan sebagai Co-Organizer",
-		"Anda kini dapat mengelola acara yang didelegasikan kepada Anda.", id)
+		"Added as Co-Organizer",
+		"You can now manage the events delegated to you.", id)
 
 	return s.repo.GetByID(ctx, id)
 }
@@ -119,8 +119,8 @@ func (s *DelegationService) RequestAccess(ctx context.Context, delegateID int, r
 	}
 
 	_ = s.repo.Notify(ctx, ownerID,
-		"Permintaan Co-Organizer Baru",
-		"Seorang organizer meminta akses untuk mengelola acara Anda. Tinjau dan setujui.", id)
+		"New Co-Organizer Request",
+		"An organizer has requested access to manage your events. Review and approve it.", id)
 
 	return s.repo.GetByID(ctx, id)
 }
@@ -162,8 +162,8 @@ func (s *DelegationService) Approve(ctx context.Context, ownerID, delegationID i
 		return nil, err
 	}
 	_ = s.repo.Notify(ctx, d.DelegateID,
-		"Permintaan Co-Organizer Disetujui",
-		"Anda kini dapat mengelola acara yang didelegasikan kepada Anda.", d.ID)
+		"Co-Organizer Request Approved",
+		"You can now manage the events delegated to you.", d.ID)
 	return s.repo.GetByID(ctx, d.ID)
 }
 
@@ -179,8 +179,8 @@ func (s *DelegationService) Decline(ctx context.Context, ownerID, delegationID i
 		return nil, err
 	}
 	_ = s.repo.Notify(ctx, d.DelegateID,
-		"Permintaan Co-Organizer Ditolak",
-		"Permintaan akses co-organizer Anda tidak disetujui.", d.ID)
+		"Co-Organizer Request Declined",
+		"Your co-organizer access request was not approved.", d.ID)
 	return s.repo.GetByID(ctx, d.ID)
 }
 
@@ -196,8 +196,8 @@ func (s *DelegationService) Revoke(ctx context.Context, ownerID, delegationID in
 		return err
 	}
 	_ = s.repo.Notify(ctx, d.DelegateID,
-		"Akses Co-Organizer Dicabut",
-		"Akses Anda untuk mengelola acara ini telah dicabut oleh pemilik.", d.ID)
+		"Co-Organizer Access Revoked",
+		"Your access to manage this event has been revoked by the owner.", d.ID)
 	return nil
 }
 
@@ -231,11 +231,11 @@ func (s *DelegationService) AdminRevoke(ctx context.Context, delegationID, actor
 		return err
 	}
 	_ = s.repo.Notify(ctx, d.DelegateID,
-		"Akses Co-Organizer Dicabut",
-		"Akses co-organizer Anda telah dicabut oleh administrator.", d.ID)
+		"Co-Organizer Access Revoked",
+		"Your co-organizer access has been revoked by an administrator.", d.ID)
 	_ = s.repo.Notify(ctx, d.OwnerID,
-		"Delegasi Co-Organizer Dicabut",
-		"Sebuah delegasi co-organizer pada akun Anda dicabut oleh administrator.", d.ID)
+		"Co-Organizer Delegation Revoked",
+		"A co-organizer delegation on your account was revoked by an administrator.", d.ID)
 	return nil
 }
 

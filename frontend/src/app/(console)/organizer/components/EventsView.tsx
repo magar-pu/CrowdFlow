@@ -1,14 +1,29 @@
 import React from 'react';
 import { EventItem } from '../types';
-import { Filter, Calendar, Plus, CalendarDays, MapPin, ArrowRight } from 'lucide-react';
+import { Calendar, Plus, CalendarDays, MapPin, ArrowRight, Undo2, Archive } from 'lucide-react';
+import { formatIDR } from "@/lib/pricing";
 
 interface EventsViewProps {
   events: EventItem[];
+  /** Which list is on screen. Archived events never mix into the active view. */
+  view: 'active' | 'archived';
+  onViewChange: (next: 'active' | 'archived') => void;
+  isLoadingArchived?: boolean;
+  onRestoreEvent: (eventId: string) => void;
   onCreateEvent: () => void;
   onOpenWorkspace: (eventId: string) => void;
 }
 
-export default function EventsView({ events, onCreateEvent, onOpenWorkspace }: EventsViewProps) {
+export default function EventsView({
+  events,
+  view,
+  onViewChange,
+  isLoadingArchived = false,
+  onRestoreEvent,
+  onCreateEvent,
+  onOpenWorkspace,
+}: EventsViewProps) {
+  const isArchived = view === 'archived';
   return (
     <div className="space-y-8 pb-12 text-left animate-fade-in">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
@@ -20,10 +35,21 @@ export default function EventsView({ events, onCreateEvent, onOpenWorkspace }: E
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
-          <span className="bg-white border border-border-subtle rounded-lg px-3 py-1.5 flex items-center gap-2 text-text-primary font-sans font-semibold text-xs shadow-sm">
-            <Filter className="w-3.5 h-3.5 text-on-surface-variant" />
-            Status: Active
-          </span>
+          <div className="bg-white border border-border-subtle rounded-lg p-0.5 flex items-center shadow-sm">
+            {(['active', 'archived'] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => onViewChange(v)}
+                className={`px-3 py-1 rounded-md font-sans font-semibold text-xs transition-colors cursor-pointer ${
+                  view === v
+                    ? 'bg-primary text-white'
+                    : 'text-text-secondary hover:text-text-primary hover:bg-surface-container-low'
+                }`}
+              >
+                {v === 'active' ? 'Active' : 'Archived'}
+              </button>
+            ))}
+          </div>
           <span className="bg-white border border-border-subtle rounded-lg px-3 py-1.5 flex items-center gap-2 text-text-primary font-sans font-semibold text-xs shadow-sm">
             <Calendar className="w-3.5 h-3.5 text-on-surface-variant" />
             This Year
@@ -47,15 +73,19 @@ export default function EventsView({ events, onCreateEvent, onOpenWorkspace }: E
               className="bg-white border border-border-subtle rounded-xl flex flex-col overflow-hidden soft-shadow group transition-all duration-300 hover:shadow-lg hover:border-outline"
             >
               <div
-                className="h-44 w-full bg-cover bg-center relative"
-                style={{ backgroundImage: `url('${event.image}')` }}
+                className="h-44 w-full bg-cover bg-center relative bg-surface-container-low"
+                style={event.image ? { backgroundImage: `url('${event.image}')` } : undefined}
               >
                 <div className="absolute top-4 right-4">
                   <span className={`backdrop-blur-sm border px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-sm font-mono text-[9px] font-bold ${
                     event.status === 'Live' ? 'bg-success/90 text-white border-success' :
+                    // Approved but not published — deliberately not green-filled,
+                    // so it reads as "cleared" rather than "on sale".
+                    event.status === 'Approved' ? 'bg-white/90 text-success border-success' :
                     event.status === 'Need Revision' ? 'bg-amber-500 text-white border-amber-600' :
                     event.status === 'Rejected' ? 'bg-rose-600 text-white border-rose-700' :
                     event.status === 'In Review' ? 'bg-blue-600 text-white border-blue-700' :
+                    event.status === 'Archived' ? 'bg-slate-500/90 text-white border-slate-600' :
                     'bg-white/90 text-text-primary border-border-subtle'
                   }`}>
                     {event.status === 'Live' && (
@@ -78,7 +108,7 @@ export default function EventsView({ events, onCreateEvent, onOpenWorkspace }: E
                   </div>
                   <div className="flex items-center gap-1.5 text-text-secondary font-mono text-[10px] truncate max-w-[150px]">
                     <MapPin className="w-3.5 h-3.5 text-secondary" />
-                    {event.locationAddress || event.location}
+                    {event.location || event.locationAddress || 'No venue set'}
                   </div>
                 </div>
 
@@ -86,7 +116,7 @@ export default function EventsView({ events, onCreateEvent, onOpenWorkspace }: E
                   <div>
                     <div className="font-mono text-[9px] text-on-surface-variant mb-0.5">Revenue</div>
                     <div className="font-sans text-xs font-bold text-text-primary">
-                      ${typeof event.revenue === 'number' ? event.revenue.toLocaleString() : event.revenue}
+                      {typeof event.revenue === 'number' ? formatIDR(event.revenue) : event.revenue}
                     </div>
                   </div>
                   <div>
@@ -103,7 +133,18 @@ export default function EventsView({ events, onCreateEvent, onOpenWorkspace }: E
                   </div>
                 </div>
 
-                <div className="mt-auto pt-4 border-t border-border-subtle flex justify-end">
+                <div className="mt-auto pt-4 border-t border-border-subtle flex justify-between items-center gap-2">
+                  {isArchived ? (
+                    <button
+                      onClick={() => onRestoreEvent(event.id)}
+                      className="text-text-primary hover:text-primary font-sans text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Undo2 className="w-3.5 h-3.5" />
+                      Restore
+                    </button>
+                  ) : (
+                    <span />
+                  )}
                   <button
                     onClick={() => onOpenWorkspace(event.id)}
                     className="text-secondary hover:text-secondary/80 font-sans text-xs font-semibold flex items-center gap-1 hover:gap-2 transition-all cursor-pointer"
@@ -116,7 +157,25 @@ export default function EventsView({ events, onCreateEvent, onOpenWorkspace }: E
             </div>
           );
         })}
-        {events.length === 0 && (
+        {isArchived && isLoadingArchived && (
+          <div className="col-span-full grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-[420px] animate-pulse rounded-xl border border-border-subtle bg-surface-container-low" />
+            ))}
+          </div>
+        )}
+
+        {isArchived && !isLoadingArchived && events.length === 0 && (
+          <div className="col-span-full py-16 text-center text-sm text-text-secondary border border-dashed border-border-subtle rounded-xl bg-white soft-shadow max-w-lg mx-auto w-full flex flex-col items-center justify-center">
+            <Archive className="w-8 h-8 text-on-surface-variant mb-3" />
+            <div className="font-bold text-text-primary mb-1 text-sm">Nothing Archived</div>
+            <p className="text-xs text-on-surface-variant max-w-xs">
+              Archiving a draft or rejected event moves it here, out of your active list, without deleting anything.
+            </p>
+          </div>
+        )}
+
+        {!isArchived && events.length === 0 && (
           <div className="col-span-full py-16 text-center text-sm text-text-secondary border border-dashed border-border-subtle rounded-xl bg-white soft-shadow max-w-lg mx-auto w-full flex flex-col items-center justify-center">
             <CalendarDays className="w-8 h-8 text-on-surface-variant mb-3 animate-pulse" />
             <div className="font-bold text-text-primary mb-1 text-sm">No Deployments Registered</div>

@@ -101,16 +101,6 @@ export async function requestEventChanges(id: number | string, notes: string): P
   });
 }
 
-/**
- * Update event review stage.
- */
-export async function updateEventReviewStage(id: number | string, stage: string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/v1/auditor/reviews/${id}/stage`, {
-    method: "PATCH",
-    body: JSON.stringify({ stage }),
-  });
-}
-
 export interface AddRevisionPayload {
   category: string;
   title: string;
@@ -147,6 +137,61 @@ export async function rejectReviewDocument(eventId: number | string, docId: numb
     method: "PATCH",
     body: JSON.stringify({ reason }),
   });
+}
+
+/**
+ * Verify a PER-EVENT document (event_documents).
+ *
+ * Deliberately a different path from verifyReviewDocument: that one writes to
+ * organizer_documents, and the two tables have overlapping SERIAL ids. Sending an
+ * event document's id to the organizer route would flip the status of an
+ * unrelated account document.
+ */
+export async function verifyEventReviewDocument(eventId: number | string, docId: number | string): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/v1/auditor/reviews/${eventId}/event-documents/${docId}/verify`, {
+    method: "PATCH",
+  });
+}
+
+/** Reject a PER-EVENT document. The reason is required — the organizer sees it. */
+export async function rejectEventReviewDocument(eventId: number | string, docId: number | string, reason: string): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/v1/auditor/reviews/${eventId}/event-documents/${docId}/reject`, {
+    method: "PATCH",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export interface ReviewDocumentURL {
+  url: string;
+  expires_in: number;
+}
+
+/**
+ * Mints a short-lived signed link for one document.
+ *
+ * The `fileUrl` on a review payload is a private-bucket OBJECT KEY, not a
+ * fetchable URL — opening it directly has never worked. Call this instead, on an
+ * explicit view action.
+ */
+export async function getReviewDocumentUrl(
+  eventId: number | string,
+  docId: number | string,
+  source: "organizer" | "event" = "organizer"
+): Promise<ApiResponse<ReviewDocumentURL>> {
+  return apiRequest<ReviewDocumentURL>(
+    `/api/v1/auditor/reviews/${eventId}/documents/${docId}/url?source=${source}`,
+    { method: "GET" }
+  );
+}
+
+/** Signed link for an ACCOUNT-level organizer document (KTP/NPWP/NIB...).
+ *
+ *  The stored file_path is a private-bucket OBJECT KEY, not a URL — rendering it
+ *  in an href produces a dead link. This is the only way to open one. */
+export async function getAccountDocumentViewURL(
+  docId: number | string,
+): Promise<ApiResponse<ReviewDocumentURL>> {
+  return apiRequest<ReviewDocumentURL>(`/api/v1/auditor/documents/${docId}/url`, { method: "GET" });
 }
 
 export interface ListDocumentsFilters {
@@ -294,21 +339,24 @@ export interface ListPayoutsFilters {
   limit?: number;
 }
 
+/** Derived from paid/refunded `orders`, not from ticket_tiers.tickets_sold. */
 export interface PayoutSalesDTO {
   ticketsSold: number;
   grossRevenue: number;
   platformFee: number;
   paymentGatewayFee: number;
+  /** PPN actually charged on the two fees. Per-order rate, not a fixed 11%. */
+  ppn: number;
   entertainmentTax: number;
   refundAmount: number;
   netRevenue: number;
 }
 
+/** Only conditions the backend can evaluate. Four further signals were removed:
+ *  they were hardcoded false and so could never fire. */
 export interface FraudSignalsDTO {
   duplicatePayout: boolean;
   suspiciousRevenue: boolean;
-  unusualRefundRate: boolean;
-  highChargeback: boolean;
   hasAlert: boolean;
   alertMessage: string;
 }
@@ -322,12 +370,25 @@ export interface AuditorPayoutDTO {
   requestedAmount: number;
   requestDate: string;
   status: string;
-  riskLevel: string;
-  riskScore: number;
   salesSummary: PayoutSalesDTO;
   bankName: string;
   bankAccountNumber: string;
   bankAccountHolder: string;
+  bankVerificationStatus: string;
+  /** Empty on accounts grandfathered in by migration 0022. */
+  bankVerifiedBy: string;
+  bankVerifiedAt: string;
+  financeNotes: string;
+  organizerPhone: string;
+  organizerBusinessLicense: string;
+  organizerStatus: string;
+  organizerPreviousViolations: number;
+  /** 0 when the organizer holds the role without ever filing an application. */
+  applicationId: number;
+  eventId: number;
+  venueName: string;
+  eventStatus: string;
+  ticketCapacity: number;
   fraudDetection: FraudSignalsDTO;
   internalNotes: string;
   timeline: { id: number; actor: string; action: string; detail: string; timestamp: string }[];
@@ -384,6 +445,46 @@ export async function holdPayout(payoutId: number | string, reason: string): Pro
   return apiRequest<void>(`/api/v1/auditor/payouts/${payoutId}/hold`, {
     method: "POST",
     body: JSON.stringify({ reason }),
+  });
+}
+
+/** Send a payout back to the organizer. Distinct from hold: a revision asks the
+ *  organizer to do something, a hold means the auditor is still looking. */
+export async function revisePayout(
+  payoutId: number | string,
+  reason: string,
+  internalNotes = "",
+): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/v1/auditor/payouts/${payoutId}/revision`, {
+    method: "POST",
+    body: JSON.stringify({ reason, internalNotes }),
+  });
+}
+
+/** Save notes without changing status — what "Save Draft" always claimed to do. */
+export async function updatePayoutNotes(
+  payoutId: number | string,
+  internalNotes: string,
+  financeNotes: string,
+): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/v1/auditor/payouts/${payoutId}/notes`, {
+    method: "PATCH",
+    body: JSON.stringify({ internalNotes, financeNotes }),
+  });
+}
+
+/** Confirm the bank account this payout will be sent to.
+ *
+ *  The account number shown on screen is echoed back and checked server-side:
+ *  the organizer may have changed it since the page loaded, and an auditor must
+ *  not end up verifying an account they never saw. */
+export async function verifyPayoutBankAccount(
+  payoutId: number | string,
+  accountNumber: string,
+): Promise<ApiResponse<void>> {
+  return apiRequest<void>(`/api/v1/auditor/payouts/${payoutId}/verify-bank`, {
+    method: "POST",
+    body: JSON.stringify({ accountNumber }),
   });
 }
 
