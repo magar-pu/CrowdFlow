@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Staff, Gate, ScannerDevice } from '../../types';
-import { X, Search, QrCode, Copy, Check, Loader2 } from 'lucide-react';
+import { Search, QrCode, Copy, Check, Loader2, AlertCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import Modal from '@/components/ui/Modal';
 import Select from '@/components/ui/Select';
 
 interface AssignScannerModalProps {
+  open: boolean;
   staffList: Staff[];
   gates: Gate[];
   onClose: () => void;
@@ -15,7 +17,7 @@ const ROLES: ScannerDevice['role'][] = ['QR Scanner', 'Manual Validation', 'Supe
 const PERMISSIONS = ['Scan Tickets', 'Offline Mode', 'View Attendee Info', 'Issue Refunds'];
 const DURATIONS = ['4 Hours', '8 Hours', '24 Hours', '7 Days'];
 
-export default function AssignScannerModal({ staffList, gates, onClose, onAssign }: AssignScannerModalProps) {
+export default function AssignScannerModal({ open, staffList, gates, onClose, onAssign }: AssignScannerModalProps) {
   const [search, setSearch] = useState('');
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
   const [gate, setGate] = useState(gates[0]?.name ?? '');
@@ -26,6 +28,25 @@ export default function AssignScannerModal({ staffList, gates, onClose, onAssign
   const [realUrl, setRealUrl] = useState('');
   const [copied, setCopied] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // The component now stays mounted across open/close cycles (so the close
+  // transition has something to animate), so it has to reset itself here
+  // instead of relying on a fresh mount each time it's assigned.
+  useEffect(() => {
+    if (open) {
+      setSearch('');
+      setSelectedStaff(null);
+      setGate(gates[0]?.name ?? '');
+      setRole('QR Scanner');
+      setPermissions(['Scan Tickets']);
+      setDuration('24 Hours');
+      setAccessCode(null);
+      setRealUrl('');
+      setError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const filteredStaff = staffList.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -38,6 +59,7 @@ export default function AssignScannerModal({ staffList, gates, onClose, onAssign
     const staffName = selectedStaff ? selectedStaff.name : search.trim();
     if (!staffName) return;
 
+    setError(null);
     setIsRegistering(true);
     try {
       const devName = `Scanner ${gate.split(' ')[1] || 'X'}`;
@@ -50,9 +72,12 @@ export default function AssignScannerModal({ staffList, gates, onClose, onAssign
       if (res) {
         setAccessCode(res.token);
         setRealUrl(res.url);
+      } else {
+        setError("Failed to assign scanner device. Please try again.");
       }
     } catch (err) {
       console.error("Failed to assign scanner device:", err);
+      setError("Failed to assign scanner device. Please try again.");
     } finally {
       setIsRegistering(false);
     }
@@ -70,15 +95,7 @@ export default function AssignScannerModal({ staffList, gates, onClose, onAssign
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl border border-border-subtle shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-border-subtle">
-          <h3 className="text-sm font-bold text-text-primary">Assign Scanner Device</h3>
-          <button onClick={onClose} className="text-on-surface-variant hover:text-text-primary p-1 rounded transition-colors cursor-pointer">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
+    <Modal open={open} onClose={isRegistering ? undefined : onClose} title="Assign Scanner Device" contentClassName="">
         {!accessCode ? (
           <form onSubmit={handleGenerate} className="p-5 space-y-4 text-left">
             <div className="space-y-1.5">
@@ -179,6 +196,13 @@ export default function AssignScannerModal({ staffList, gates, onClose, onAssign
               </Select>
             </div>
 
+            {error && (
+              <div className="flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[11px] font-medium text-danger">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
+
              <button
               type="submit"
               disabled={isRegistering || (!selectedStaff && !search.trim())}
@@ -224,7 +248,6 @@ export default function AssignScannerModal({ staffList, gates, onClose, onAssign
             </button>
           </div>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }

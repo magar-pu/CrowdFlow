@@ -1,19 +1,31 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ScannerDevice } from "../../types";
+import Modal from "@/components/ui/Modal";
 
 interface ScannerSimulatorProps {
+  open: boolean;
   device: ScannerDevice;
   onClose: () => void;
   onScan: (deviceId: string, gateName: string, type: "success" | "duplicate" | "invalid") => void;
   onCheckIn?: (qrToken: string) => Promise<{ success: boolean; attendeeName?: string; ticketType?: string; seatNumber?: string; message: string }>;
 }
 
-export default function ScannerSimulator({ device, onClose, onScan, onCheckIn }: ScannerSimulatorProps) {
+export default function ScannerSimulator({ open, device, onClose, onScan, onCheckIn }: ScannerSimulatorProps) {
   const [scanResult, setScanResult] = useState<"idle" | "success" | "duplicate" | "invalid">("idle");
   const [scannedName, setScannedName] = useState("");
   const [simMessage, setSimMessage] = useState("");
   const [tokenInput, setTokenInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Stays mounted across open/close cycles (for the close transition), so
+  // reset the scan-result overlay here instead of relying on a fresh mount.
+  useEffect(() => {
+    if (open) {
+      setScanResult("idle");
+      setSimMessage("");
+      setTokenInput("");
+    }
+  }, [open]);
 
   const triggerScan = (type: "success" | "duplicate" | "invalid") => {
     const names = ["Charlotte Bennett", "Liam Vance", "Tariq Mahmood", "Yuki Tanaka", "Nils Sjöberg"];
@@ -47,7 +59,7 @@ export default function ScannerSimulator({ device, onClose, onScan, onCheckIn }:
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <Modal open={open} bare backdropClassName="bg-black/80 backdrop-blur-sm">
       <div className="bg-black border-2 border-slate-800 rounded-[40px] w-[320px] h-[580px] p-4 flex flex-col justify-between shadow-2xl relative overflow-hidden ring-4 ring-slate-900 text-white font-sans">
         {scanResult !== "idle" && (
           <div className={`absolute inset-0 z-10 transition-all duration-300 pointer-events-none flex flex-col items-center justify-center p-6 ${
@@ -156,6 +168,6 @@ export default function ScannerSimulator({ device, onClose, onScan, onCheckIn }:
           Shutdown Simulator
         </button>
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -3,6 +3,8 @@ package payment
 import (
 	"context"
 	"time"
+
+	"crowdflow-backend/internal/booking"
 )
 
 // Order represents the database entity for the orders table.
@@ -37,8 +39,34 @@ type OrderMailDetails struct {
 	TicketCode     string
 }
 
+// OrderItem is one tier's line on an order, written from the hold at order
+// creation. Populating order_items is what makes it possible to issue the right
+// number of tickets against the right tier when payment settles: before this,
+// ticket issuance had to guess the tier with a LIMIT 1 over the whole table.
+type OrderItem struct {
+	TicketTierID int
+	Quantity     int
+	UnitPrice    float64
+	Subtotal     float64
+}
+
+// HoldReader resolves a hold token to what the buyer is actually entitled to
+// buy, with prices read from ticket_tiers server-side.
+//
+// Deliberately a narrow interface owned by this package rather than an import
+// of booking.Service: payment only ever needs to read a hold, and depending on
+// the whole booking surface would make the coupling two-way and the service
+// harder to test. *booking.BookingService satisfies it as-is.
+type HoldReader interface {
+	GetHold(holdToken string) (*booking.HoldDetail, error)
+}
+
 type Repository interface {
 	CreateOrder(ctx context.Context, order *Order) error
+
+	// CreateOrderItems writes the per-tier breakdown of an order. Called in the
+	// same request as CreateOrder, from the hold — never from the client's cart.
+	CreateOrderItems(ctx context.Context, orderID string, items []OrderItem) error
 	UpdateOrderStatus(ctx context.Context, orderID string, status string, externalTransactionID string) error
 	GetOrderByID(ctx context.Context, orderID string) (*Order, error)
 	GetOrderDetailsForMail(ctx context.Context, orderID string) (*OrderMailDetails, error)

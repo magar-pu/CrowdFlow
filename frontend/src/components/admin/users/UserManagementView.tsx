@@ -38,6 +38,7 @@ export default function UserManagementView({
 }: UserManagementViewProps) {
   const [activeSubTab, setActiveSubTab] = useState<'directory' | 'queue'>('directory');
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Derive the open user from the live `users` list rather than snapshotting it,
   // so a status change or role grant/revoke (which refetches `users`) is
@@ -50,6 +51,7 @@ export default function UserManagementView({
   useEffect(() => {
     if (selectedUserId && !users.some((u) => u.id === selectedUserId)) {
       setSelectedUserId(null);
+      setDrawerOpen(false);
     }
   }, [users, selectedUserId]);
 
@@ -57,6 +59,7 @@ export default function UserManagementView({
 
   const handleInspectUser = (user: User) => {
     setSelectedUserId(user.id);
+    setDrawerOpen(true);
   };
 
   return (
@@ -114,9 +117,10 @@ export default function UserManagementView({
       {/* User Inspection Side Drawer Overlay */}
       {selectedUser && (
         <UserDetailDrawer
+          open={drawerOpen}
           user={selectedUser}
           events={events}
-          onClose={() => setSelectedUserId(null)}
+          onClose={() => setDrawerOpen(false)}
           onToggleStatus={onToggleUserStatus}
           onGrantRole={onGrantRole}
           onRevokeRole={onRevokeRole}

@@ -52,7 +52,7 @@ interface AuditorDataValue {
   handleAddRevision: (submissionId: string, revision: RevisionEntry) => void;
   handleUpdateOrganizerStatus: (id: string, status: OrganizerStatus, notes: string, feedback: string) => void;
   handleUpdateOrganizerChecklist: (id: string, checklist: OrganizerVerification["checklist"]) => void;
-  handleUpdatePayoutStatus: (id: string, status: PayoutStatus, notes: string, financeNotes: string) => void;
+  handleUpdatePayoutStatus: (id: string, status: PayoutStatus, notes: string, financeNotes: string) => Promise<{ success: boolean; error?: string }>;
   handleUpdatePayoutChecklists: (
     id: string,
     financialChecklist: PayoutRequest["financialChecklist"],
@@ -272,14 +272,12 @@ export function AuditorDataProvider({ children }: { children: React.ReactNode })
 
       if (res && res.success) {
         fetchDashboard();
-        return true;
+        return { success: true };
       }
-      alert("Failed to save: " + (res?.error?.message || "unknown error"));
-      return false;
+      return { success: false, error: res?.error?.message || "Failed to update payout status." };
     } catch (err) {
       console.error("Error updating payout status:", err);
-      alert("Failed to save: the request could not be sent.");
-      return false;
+      return { success: false, error: "Failed to update payout status." };
     }
   };
 

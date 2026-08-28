@@ -12,6 +12,23 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG BACKEND_URL
 ENV BACKEND_URL=$BACKEND_URL
+
+# Every NEXT_PUBLIC_* below must be an ENV, not just an ARG, before the build
+# runs: Next reads process.env at build time and inlines these into the client
+# bundle, and an ARG alone is not visible to the build process.
+#
+# They have to arrive here as build args because frontend/.dockerignore excludes
+# .env, so `COPY . .` above never brings the real values into the image. Setting
+# them at runtime (compose `env_file:`) does nothing — the bundle is already
+# built by then. Changing any of these therefore requires a rebuild, not a
+# restart.
+ARG NEXT_PUBLIC_APP_ENV
+ENV NEXT_PUBLIC_APP_ENV=$NEXT_PUBLIC_APP_ENV
+ARG NEXT_PUBLIC_MIDTRANS_CLIENT_KEY
+ENV NEXT_PUBLIC_MIDTRANS_CLIENT_KEY=$NEXT_PUBLIC_MIDTRANS_CLIENT_KEY
+ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY
+ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=$NEXT_PUBLIC_TURNSTILE_SITE_KEY
+
 RUN npm run build
 
 # prod run engine

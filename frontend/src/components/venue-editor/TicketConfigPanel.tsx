@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2, Plus, Rocket, Paintbrush, AlertTriangle, ChevronDown, ChevronUp, BarChart3, X } from "lucide-react";
+import { Trash2, Plus, Rocket, Paintbrush, AlertTriangle, ChevronDown, ChevronUp, BarChart3 } from "lucide-react";
 import type { PricingTier, VenueSection } from "@/types/ticket";
 import { useVenueEditorStore, type ValidationError } from "@/lib/store/venueEditorStore";
 import { cn } from "@/lib/utils";
+import Modal from "@/components/ui/Modal";
 import Select from "@/components/ui/Select";
 
 interface TierStats {
@@ -316,23 +317,15 @@ export function TicketConfigPanel({
       </div>
 
       {/* Validation Error Modal */}
-      {show_validation_modal && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="mx-6 w-full max-w-sm rounded-2xl border border-border-subtle bg-surface-white p-6 shadow-2xl">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-100">
-                  <AlertTriangle size={16} className="text-red-600" />
-                </div>
-                <h3 className="text-lg font-semibold text-primary">Cannot Publish</h3>
-              </div>
-              <button
-                onClick={() => set_show_validation_modal(false)}
-                className="rounded-full p-1.5 text-text-secondary transition-colors hover:bg-surface-container-low hover:text-primary"
-              >
-                <X size={16} />
-              </button>
-            </div>
+      <Modal
+        open={show_validation_modal}
+        position="absolute"
+        onClose={() => set_show_validation_modal(false)}
+        title="Cannot Publish"
+        icon={<AlertTriangle size={16} />}
+        size="sm"
+        backdropClassName="bg-black/40 backdrop-blur-sm"
+      >
             <p className="mb-4 text-sm text-text-secondary">
               Please fix the following issues before publishing:
             </p>
@@ -353,9 +346,7 @@ export function TicketConfigPanel({
             >
               Got it
             </button>
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   );
 }

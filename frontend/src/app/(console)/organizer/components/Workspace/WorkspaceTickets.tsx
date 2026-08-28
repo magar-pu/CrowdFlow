@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import { TicketTier } from "../../types";
-import { Plus, Trash2, Layers, CheckCircle2, DollarSign, ShoppingCart } from "lucide-react";
+import { Plus, Trash2, Layers, CheckCircle2, Pencil, DollarSign, ShoppingCart } from "lucide-react";
 import type { EventSeating, TierSeating } from "@/lib/api/eorganizer";
 import { formatIDR } from "@/lib/pricing";
+import TierFormModal, { TierFormValues, TierSubmitResult } from "./TierFormModal";
 
 interface WorkspaceTicketsProps {
   ticketTiers: TicketTier[];
@@ -16,8 +17,8 @@ interface WorkspaceTicketsProps {
    */
   maxTicketsPerOrder: number;
   onSaveMaxTicketsPerOrder: (value: number) => Promise<void>;
-  onCreateTier: (tier: Omit<TicketTier, "id">) => void;
-  onUpdateTier: (id: string, updated: Partial<TicketTier>) => void;
+  onCreateTier: (tier: Omit<TicketTier, "id">) => Promise<TierSubmitResult>;
+  onUpdateTier: (id: string, updated: Partial<TicketTier>) => Promise<TierSubmitResult>;
   onDeleteTier: (id: string) => void;
 }
 
@@ -31,14 +32,43 @@ export default function WorkspaceTickets({
   maxTicketsPerOrder,
   onSaveMaxTicketsPerOrder,
   onCreateTier,
+  onUpdateTier,
   onDeleteTier
 }: WorkspaceTicketsProps) {
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newTierName, setNewTierName] = useState("");
-  const [newTierPrice, setNewTierPrice] = useState(150000);
-  const [newTierCapacity, setNewTierCapacity] = useState(500);
-  const [newTierSalesEnd, setNewTierSalesEnd] = useState("");
-  const [newTierSalesStart, setNewTierSalesStart] = useState("");
+  const [modalMode, setModalMode] = useState<"none" | "create" | "edit">("none");
+  const [editingTier, setEditingTier] = useState<TicketTier | null>(null);
+
+  const openCreate = () => {
+    setEditingTier(null);
+    setModalMode("create");
+  };
+
+  const openEdit = (tier: TicketTier) => {
+    setEditingTier(tier);
+    setModalMode("edit");
+  };
+
+  const closeModal = () => {
+    // Deliberately leave editingTier as-is: TierFormModal stays mounted
+    // during its close transition, and nulling the tier here would flip its
+    // "Edit"/"Create" title mid-fade. It's overwritten on the next open.
+    setModalMode("none");
+  };
+
+  const handleSubmit = (values: TierFormValues): Promise<TierSubmitResult> => {
+    if (modalMode === "edit" && editingTier) {
+      // The backend does a full-row update, not a merge — every editable
+      // field must be sent even though only some changed, or the untouched
+      // ones get overwritten with the form's carried-over values.
+      return onUpdateTier(editingTier.id, values);
+    }
+    return onCreateTier({
+      ...values,
+      sold: 0,
+      status: "On Sale",
+      color: "#3B82F6",
+    });
+  };
 
   // Draft of the event-level order limit. Held locally so typing does not fire
   // a request per keystroke; committed on Save.
@@ -78,27 +108,6 @@ export default function WorkspaceTickets({
     } finally {
       setLimitSaving(false);
     }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTierName || !newTierSalesStart || !newTierSalesEnd) return;
-    onCreateTier({
-      name: newTierName,
-      price: newTierPrice,
-      sold: 0,
-      capacity: newTierCapacity,
-      // The real status is derived server-side from the sales window and stock;
-      // whatever is sent here is discarded.
-      status: "On Sale",
-      color: "#3B82F6",
-      salesStart: newTierSalesStart,
-      salesEnd: newTierSalesEnd,
-    });
-    setNewTierName("");
-    setNewTierSalesStart("");
-    setNewTierSalesEnd("");
-    setShowAddForm(false);
   };
 
   const totalSold = ticketTiers.reduce((acc, t) => acc + t.sold, 0);
@@ -250,54 +259,13 @@ export default function WorkspaceTickets({
           <p className="text-xs text-text-secondary">Configure pricing scales and strict capacity limits.</p>
         </div>
         <button
-          onClick={() => setShowAddForm(!showAddForm)}
+          onClick={openCreate}
           className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition-colors cursor-pointer"
         >
           <Plus className="w-3.5 h-3.5 text-white" />
           <span>Add Tier</span>
         </button>
       </div>
-
-      {showAddForm && (
-        <form onSubmit={handleSubmit} className="p-4 bg-white border border-border-subtle rounded-xl space-y-4 max-w-md">
-          <h4 className="text-xs font-bold text-text-primary">Configure New Ticket Tier</h4>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Tier Name</label>
-              <input type="text" value={newTierName} onChange={(e) => setNewTierName(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" placeholder="e.g. VIP All-Access" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Price (Rp)</label>
-                <input type="number" value={newTierPrice} onChange={(e) => setNewTierPrice(Number(e.target.value))} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Capacity</label>
-                <input type="number" value={newTierCapacity} onChange={(e) => setNewTierCapacity(Number(e.target.value))} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
-              </div>
-            </div>
-            {/* Both dates are required. The form used to omit sales start
-                entirely and treat the deadline as optional, and the backend
-                filled the gap with now() and now()+1 month — so a tier saved
-                without dates stopped selling a month later for no stated
-                reason. */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Sales Open</label>
-                <input type="date" required value={newTierSalesStart} onChange={(e) => setNewTierSalesStart(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-mono font-bold text-text-secondary uppercase">Sales Close</label>
-                <input type="date" required min={newTierSalesStart || undefined} value={newTierSalesEnd} onChange={(e) => setNewTierSalesEnd(e.target.value)} className="w-full h-9 px-3 border border-border-subtle rounded-lg text-xs bg-white outline-none" />
-              </div>
-            </div>
-            <p className="text-[10px] text-text-secondary">
-              Sales run from the start of <strong>Sales Open</strong> through the end of <strong>Sales Close</strong>, Jakarta time. Buyers cannot see this tier outside that window.
-            </p>
-            <button type="submit" className="w-full bg-secondary hover:bg-secondary/90 text-white text-xs font-bold py-2 rounded-lg transition-colors cursor-pointer">Create Tier</button>
-          </div>
-        </form>
-      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {ticketTiers.map((tier) => {
@@ -324,9 +292,14 @@ export default function WorkspaceTickets({
                       {tier.status || "On Sale"}
                     </span>
                   )}
-                  <button onClick={() => onDeleteTier(tier.id)} className="text-on-surface-variant hover:text-danger p-1 rounded transition-colors cursor-pointer">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => openEdit(tier)} className="text-on-surface-variant hover:text-primary p-1 rounded transition-colors cursor-pointer">
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => onDeleteTier(tier.id)} className="text-on-surface-variant hover:text-danger p-1 rounded transition-colors cursor-pointer">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <div>
@@ -401,6 +374,13 @@ export default function WorkspaceTickets({
           );
         })}
       </div>
+
+      <TierFormModal
+        open={modalMode !== "none"}
+        tier={editingTier ?? undefined}
+        onClose={closeModal}
+        onSubmit={handleSubmit}
+      />
     </div>
   );
 }

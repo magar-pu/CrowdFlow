@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState } from 'react';
-import { Smartphone, Plus, Database, Battery, Layers, QrCode, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Smartphone, Plus, Database, Battery, Layers, QrCode } from 'lucide-react';
 import { Scanner, VenueSection } from '@/types/admin';
 import WorkspaceScannerSimulator from './WorkspaceScannerSimulator';
+import Modal from '@/components/ui/Modal';
 import Select from '@/components/ui/Select';
 
 interface WorkspaceScannerAppTabProps {
@@ -28,6 +29,16 @@ export default function WorkspaceScannerAppTab({
   const [newScannerName, setNewScannerName] = useState('');
   const [newScannerDevice, setNewScannerDevice] = useState('Apple iPhone 15 Pro');
   const [newScannerSection, setNewScannerSection] = useState('General Admission');
+
+  // Stays mounted across open/close cycles (for the close transition), so
+  // reset the form here on each open instead of relying on a fresh mount.
+  useEffect(() => {
+    if (showAddScanner) {
+      setNewScannerName('');
+      setNewScannerDevice('Apple iPhone 15 Pro');
+      setNewScannerSection('General Admission');
+    }
+  }, [showAddScanner]);
 
   const handleRegisterScanner = (e: React.FormEvent) => {
     e.preventDefault();
@@ -143,13 +154,7 @@ export default function WorkspaceScannerAppTab({
         ))}
       </div>
 
-      {showAddScanner && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="relative max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-border-subtle bg-surface-white p-5 shadow-2xl sm:p-6">
-            <button onClick={() => setShowAddScanner(false)} className="absolute right-4 top-4 text-text-muted hover:text-text-primary">
-              <X className="h-5 w-5" />
-            </button>
-            <h3 className="mb-4 pr-8 text-sm font-black text-text-primary">Register Staff Mobile Phone Scanner</h3>
+      <Modal open={showAddScanner} onClose={() => setShowAddScanner(false)} title="Register Staff Mobile Phone Scanner">
             <form onSubmit={handleRegisterScanner} className="space-y-4">
               <div>
                 <label className="mb-1.5 block text-[10px] font-black uppercase text-text-muted">Staff Gate / Entrance Name</label>
@@ -190,9 +195,7 @@ export default function WorkspaceScannerAppTab({
                 <button type="submit" className="min-h-11 rounded-xl bg-primary px-4 py-2 text-xs text-white hover:bg-primary-hover">Authorize Mobile Node</button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   );
 }

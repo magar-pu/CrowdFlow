@@ -33,6 +33,27 @@ import { useHoldCountdown } from "@/lib/hooks/useHoldCountdown";
 import { storeHoldToken } from "@/lib/holdStorage";
 import type { CartItem, Event } from "@/types/ticket";
 
+/**
+ * Which Midtrans environment this build talks to, and therefore which snap.js
+ * to load. Both are inlined at build time from the Docker build args — see
+ * frontend/Dockerfile and docker-compose.yml's frontend build.args.
+ *
+ * The URL and the client key must come from the same environment: a production
+ * key against app.sandbox.midtrans.com (or the reverse) is rejected, and the
+ * failure surfaces as a dead payment button rather than anything nameable. This
+ * page used to pin the sandbox URL unconditionally while the configured keys
+ * were production ones, with nothing checking the pair.
+ *
+ * The backend picks its gateway from APP_ENV the same way, so both ends follow
+ * one switch — see backend/internal/payment/service.go's midtransEnvironment.
+ */
+const APP_ENV = process.env.NEXT_PUBLIC_APP_ENV ?? "local";
+const MIDTRANS_CLIENT_KEY = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? "";
+const SNAP_SRC =
+  APP_ENV === "production"
+    ? "https://app.midtrans.com/snap/snap.js"
+    : "https://app.sandbox.midtrans.com/snap/snap.js";
+
 /** The slice of the Midtrans Snap global this page uses. */
 interface SnapCallbacks {
   onSuccess?: (result?: any) => void;
@@ -43,26 +64,13 @@ interface SnapCallbacks {
 
 declare global {
   interface Window {
+    // Optional on purpose: snap.js is a third-party script that can fail to
+    // load (blocked, offline, wrong environment). Typing it as always-present
+    // is how the unguarded window.snap.pay call below used to throw a bare
+    // TypeError with nothing shown to the buyer.
     snap?: { pay: (token: string, callbacks: SnapCallbacks) => void };
   }
 }
-
-const MIDTRANS_CLIENT_KEY = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? "";
-
-/**
- * Which Snap bundle to load, decided by the client key rather than hardcoded.
- *
- * This URL was pinned to app.sandbox.midtrans.com while the configured keys
- * were production ones, and the backend was pinned to sandbox independently —
- * two hardcodes that had to agree with each other AND with the keys, with
- * nothing checking any of it. Midtrans prefixes sandbox credentials with `SB-`
- * and production ones with nothing, so the key decides here exactly as it does
- * in payment/service.go. Paste a matching pair from one dashboard tab and both
- * ends follow it.
- */
-const SNAP_SRC = MIDTRANS_CLIENT_KEY.startsWith("SB-")
-  ? "https://app.sandbox.midtrans.com/snap/snap.js"
-  : "https://app.midtrans.com/snap/snap.js";
 
 /** The subset of the event CheckoutSummary renders. */
 type SummaryEvent = Pick<Event, "title" | "cover_image_url" | "starts_at" | "venue">;
@@ -181,8 +189,11 @@ function CheckoutContent() {
 
     try {
       const res = await createOrder({
-        event_id: hold ? hold.event_id : Number(paramEventId),
+        event_id: hold.event_id,
         payment_method,
+        // The hold is what the order is priced from, server-side. cart_items
+        // still goes along for display but no longer decides anything.
+        hold_token: hold.hold_token,
         cart_items,
       });
 
@@ -193,13 +204,12 @@ function CheckoutContent() {
       }
 
       // Guarded because snap.js is a third-party script that can simply not be
-      // there: blocked by an ad blocker, unreachable, or rejected because the
-      // client key does not match the bundle. Unguarded, the click threw a
-      // TypeError into the console and the button just stopped responding — no
-      // message, and the order had already been created server-side.
-      if (typeof window.snap?.pay !== "function") {
+      // there: blocked by an extension, a failed network fetch, or a client key
+      // that does not match the environment the script was loaded from. Without
+      // this the click throws a TypeError and the buyer sees nothing happen.
+      if (typeof window === "undefined" || !window.snap) {
         alert(
-          "The payment window could not be loaded. Please disable any ad blocker for this page and try again — your order has been created and is waiting for payment.",
+          "The payment window could not be loaded. Please refresh the page and try again."
         );
         set_is_submitting(false);
         return;

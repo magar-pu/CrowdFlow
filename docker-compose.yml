@@ -1,9 +1,21 @@
 services:
   frontend:
-    build: 
+    build:
       context: ./frontend
+      # NEXT_PUBLIC_* must be supplied at BUILD time, not runtime: Next inlines
+      # them into the client bundle during `npm run build`, and frontend/.env is
+      # excluded by frontend/.dockerignore so the build never sees it. Before
+      # these args existed the checkout page shipped with data-client-key
+      # literally undefined in every containerised deploy — it only worked under
+      # `npm run dev`, which reads frontend/.env directly.
+      #
+      # Values come from the ROOT .env (see .env.example), because compose
+      # interpolates ${...} from there — not from frontend/.env.
       args:
         - BACKEND_URL=http://backend:8080
+        - NEXT_PUBLIC_APP_ENV=${APP_ENV:-local}
+        - NEXT_PUBLIC_MIDTRANS_CLIENT_KEY=${NEXT_PUBLIC_MIDTRANS_CLIENT_KEY:-}
+        - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
     restart: always
@@ -33,12 +45,19 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - DEV_MODE=true
       - REDIS_ADDR=redis:6379
       # No DB_DSN here on purpose. It belongs to backend/.env, and an entry in
       # this block would silently win over it — compose `environment:` overrides
       # `env_file:`. A leftover override pointing at the removed `postgres`
       # service is what put the backend in a crash loop
+      #
+      # No APP_ENV here either, for exactly the same reason, and it is worth
+      # spelling out because this file already made that mistake: it used to
+      # pin `DEV_MODE=true` right here. deploy-main.sh and deploy-dev.sh share
+      # this one compose file, so that single line silently put PRODUCTION into
+      # development mode — relaxed Secure-cookie flag, no required JWT_SECRET —
+      # and no amount of editing backend/.env on the prod host could override
+      # it. APP_ENV is per-host and belongs in backend/.env alone.
     depends_on:
       redis:
         condition: service_healthy

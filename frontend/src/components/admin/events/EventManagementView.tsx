@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Plus, Calendar, MapPin, Search, Filter, ChevronRight, Check, X } from 'lucide-react';
-import { Event, EventType } from '@/types/admin';
+import { ApiResponse, Event, EventType } from '@/types/admin';
 import RejectReasonModal from '@/components/admin/shared/RejectReasonModal';
 import Pagination from '@/components/admin/shared/Pagination';
 import Select from '@/components/ui/Select';
@@ -13,7 +13,7 @@ interface EventManagementViewProps {
   onCreateEvent: () => void;
   onSelectEvent: (id: string) => void;
   onApproveEvent: (id: string) => void;
-  onRejectEvent: (id: string, notes: string) => void;
+  onRejectEvent: (id: string, notes: string) => Promise<ApiResponse<void>>;
   page: number;
   hasNextPage: boolean;
   onPrevPage: () => void;
@@ -244,16 +244,16 @@ export default function EventManagementView({ events, eventTypes, onCreateEvent,
 
       <Pagination page={page} hasNext={hasNextPage} onPrev={onPrevPage} onNext={onNextPage} />
 
-      {rejectingEventId && (
-        <RejectReasonModal
-          title="Reject Event"
-          onCancel={() => setRejectingEventId(null)}
-          onConfirm={(notes) => {
-            onRejectEvent(rejectingEventId, notes);
-            setRejectingEventId(null);
-          }}
-        />
-      )}
+      <RejectReasonModal
+        open={!!rejectingEventId}
+        title="Reject Event"
+        onCancel={() => setRejectingEventId(null)}
+        onConfirm={async (notes) => {
+          const res = await onRejectEvent(rejectingEventId!, notes);
+          if (res.success) setRejectingEventId(null);
+          return res;
+        }}
+      />
     </div>
   );
 }

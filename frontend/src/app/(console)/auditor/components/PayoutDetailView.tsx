@@ -10,11 +10,12 @@ import {
   RefreshCw, Clock, Briefcase,
   Paperclip, History, Eye, Download
 } from 'lucide-react';
+import Modal from '@/components/ui/Modal';
 
 interface PayoutDetailViewProps {
   payout: PayoutRequest;
   onBack: () => void;
-  onUpdatePayoutStatus: (id: string, status: PayoutStatus, notes: string, financeNotes: string) => void;
+  onUpdatePayoutStatus: (id: string, status: PayoutStatus, notes: string, financeNotes: string) => Promise<{ success: boolean; error?: string }>;
   onUpdatePayoutChecklists: (
     id: string,
     financialChecklist: PayoutRequest['financialChecklist'],
@@ -63,6 +64,8 @@ export default function PayoutDetailView({
   const [financeNotes, setFinanceNotes] = useState(payout.financeNotes || '');
   const [actionMode, setActionMode] = useState<'view' | 'reject' | 'revision' | 'hold'>('view');
   const [showApproveConfirm, setShowApproveConfirm] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [approveError, setApproveError] = useState<string | null>(null);
 
   const [revDesc, setRevDesc] = useState('');
   const [rejectReason, setRejectReason] = useState<typeof PAYOUT_REJECTION_REASONS[number] | ''>('');
@@ -96,10 +99,17 @@ export default function PayoutDetailView({
     setVerifyingBank(false);
   };
 
-  const handleApprove = () => {
-    onUpdatePayoutStatus(payout.id, 'Approved', notes, financeNotes);
-    setShowApproveConfirm(false);
-    onBack();
+  const handleApprove = async () => {
+    setApproveError(null);
+    setApproving(true);
+    const res = await onUpdatePayoutStatus(payout.id, 'Approved', notes, financeNotes);
+    setApproving(false);
+    if (res.success) {
+      setShowApproveConfirm(false);
+      onBack();
+    } else {
+      setApproveError(res.error ?? 'Failed to approve payout. Please try again.');
+    }
   };
 
   const handleConfirmReject = () => {
@@ -640,13 +650,13 @@ export default function PayoutDetailView({
       </div>
 
       {/* Approval Confirmation Modal */}
-      {showApproveConfirm && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl border border-border-subtle shadow-2xl w-full max-w-md animate-fade-in">
-            <div className="p-5 border-b border-border-subtle">
-              <h3 className="text-base font-bold text-text-primary">Approve Payout</h3>
-              <p className="text-xs text-text-secondary mt-0.5">Confirm this payout is ready for payment processing.</p>
-            </div>
+      <Modal
+        open={showApproveConfirm}
+        onClose={approving ? undefined : () => setShowApproveConfirm(false)}
+        title="Approve Payout"
+        description="Confirm this payout is ready for payment processing."
+        contentClassName=""
+      >
             <div className="p-5 space-y-3 text-xs">
               {[
                 { label: 'Organizer', value: payout.organizerName },
@@ -672,18 +682,23 @@ export default function PayoutDetailView({
                   </div>
                 ))}
               </div>
+              {approveError && (
+                <div className="flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[11px] font-medium text-danger">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>{approveError}</span>
+                </div>
+              )}
             </div>
             <div className="p-5 border-t border-border-subtle flex gap-2.5">
-              <button onClick={() => setShowApproveConfirm(false)} className="flex-1 border border-border-subtle text-text-secondary text-xs font-bold py-2.5 rounded-lg hover:bg-surface-container-low transition-colors cursor-pointer">
+              <button onClick={() => setShowApproveConfirm(false)} disabled={approving} className="flex-1 border border-border-subtle text-text-secondary text-xs font-bold py-2.5 rounded-lg hover:bg-surface-container-low transition-colors cursor-pointer disabled:opacity-50">
                 Cancel
               </button>
-              <button onClick={handleApprove} className="flex-1 bg-success hover:bg-success/90 text-white text-xs font-bold py-2.5 rounded-lg transition-colors cursor-pointer">
+              <button onClick={handleApprove} disabled={approving} className="flex-1 flex items-center justify-center gap-1.5 bg-success hover:bg-success/90 text-white text-xs font-bold py-2.5 rounded-lg transition-colors cursor-pointer disabled:opacity-60">
+                {approving && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
                 Approve
               </button>
             </div>
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   );
 }
