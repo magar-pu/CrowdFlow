@@ -33,6 +33,27 @@ import { useHoldCountdown } from "@/lib/hooks/useHoldCountdown";
 import { storeHoldToken } from "@/lib/holdStorage";
 import type { CartItem, Event } from "@/types/ticket";
 
+/**
+ * Which Midtrans environment this build talks to, and therefore which snap.js
+ * to load. Both are inlined at build time from the Docker build args — see
+ * frontend/Dockerfile and docker-compose.yml's frontend build.args.
+ *
+ * The URL and the client key must come from the same environment: a production
+ * key against app.sandbox.midtrans.com (or the reverse) is rejected, and the
+ * failure surfaces as a dead payment button rather than anything nameable. This
+ * page used to pin the sandbox URL unconditionally while the configured keys
+ * were production ones, with nothing checking the pair.
+ *
+ * The backend picks its gateway from APP_ENV the same way, so both ends follow
+ * one switch — see backend/internal/payment/service.go's midtransEnvironment.
+ */
+const APP_ENV = process.env.NEXT_PUBLIC_APP_ENV ?? "local";
+const MIDTRANS_CLIENT_KEY = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? "";
+const SNAP_SRC =
+  APP_ENV === "production"
+    ? "https://app.midtrans.com/snap/snap.js"
+    : "https://app.sandbox.midtrans.com/snap/snap.js";
+
 /** The slice of the Midtrans Snap global this page uses. */
 interface SnapCallbacks {
   onSuccess?: (result?: any) => void;
@@ -43,7 +64,11 @@ interface SnapCallbacks {
 
 declare global {
   interface Window {
-    snap: { pay: (token: string, callbacks: SnapCallbacks) => void };
+    // Optional on purpose: snap.js is a third-party script that can fail to
+    // load (blocked, offline, wrong environment). Typing it as always-present
+    // is how the unguarded window.snap.pay call below used to throw a bare
+    // TypeError with nothing shown to the buyer.
+    snap?: { pay: (token: string, callbacks: SnapCallbacks) => void };
   }
 }
 
@@ -164,13 +189,28 @@ function CheckoutContent() {
 
     try {
       const res = await createOrder({
-        event_id: hold ? hold.event_id : Number(paramEventId),
+        event_id: hold.event_id,
         payment_method,
+        // The hold is what the order is priced from, server-side. cart_items
+        // still goes along for display but no longer decides anything.
+        hold_token: hold.hold_token,
         cart_items,
       });
 
       if (!res.success || !res.data?.snap_token) {
         alert("Failed to create order: " + (res.error?.message || "Unknown error"));
+        set_is_submitting(false);
+        return;
+      }
+
+      // Guarded because snap.js is a third-party script that can simply not be
+      // there: blocked by an extension, a failed network fetch, or a client key
+      // that does not match the environment the script was loaded from. Without
+      // this the click throws a TypeError and the buyer sees nothing happen.
+      if (typeof window === "undefined" || !window.snap) {
+        alert(
+          "The payment window could not be loaded. Please refresh the page and try again."
+        );
         set_is_submitting(false);
         return;
       }
@@ -243,10 +283,7 @@ function CheckoutContent() {
 
   return (
     <div className="min-h-screen bg-surface">
-      <Script
-        src="https://app.sandbox.midtrans.com/snap/snap.js"
-        data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY}
-      />
+      <Script src={SNAP_SRC} data-client-key={MIDTRANS_CLIENT_KEY} />
       <Navbar is_authenticated active_href="" />
 
       <div className="mx-auto flex w-full max-w-container-max flex-wrap items-center justify-between gap-3 px-margin-mobile pt-6 md:px-margin-desktop">

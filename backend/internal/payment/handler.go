@@ -2,6 +2,7 @@ package payment
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -66,8 +67,16 @@ func (h *Handler) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.HandleMidtransWebhook(r.Context(), payload); err != nil {
-		// Log the error but return 200 OK to midtrans so it stops retrying
-		// or return 500 depending on the logic, but usually we return 200
+		// A bad signature is not a processing failure: the body did not come
+		// from Midtrans (or the wrong server key is configured). 403 rather
+		// than 500 so a genuine Midtrans retry storm is distinguishable from a
+		// forged caller in the access log, and so Midtrans stops retrying a
+		// body that will never verify.
+		if errors.Is(err, ErrInvalidSignature) {
+			response.Error(w, http.StatusForbidden, "INVALID_SIGNATURE", "Signature verification failed")
+			return
+		}
+
 		log.Printf("Webhook handling failed: %v", err)
 		response.Error(w, http.StatusInternalServerError, "WEBHOOK_FAILED", "Failed to process webhook")
 		return

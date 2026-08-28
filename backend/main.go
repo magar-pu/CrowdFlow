@@ -215,7 +215,10 @@ func main() {
 
 	// Initialize Payment dependencies
 	paymentRepo := payment.NewPostgresRepository(db)
-	paymentService := payment.NewPaymentService(paymentRepo, mailService)
+	// bookingService is passed in as payment's HoldReader: the hold is the
+	// authority on what an order contains and what it costs, so pricing is
+	// re-derived from it server-side rather than trusted from the request body.
+	paymentService := payment.NewPaymentService(paymentRepo, mailService, bookingService)
 	paymentHandler := payment.NewHandler(paymentService)
 
 	// Register Payment routes
