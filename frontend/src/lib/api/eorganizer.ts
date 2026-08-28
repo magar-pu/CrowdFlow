@@ -84,6 +84,14 @@ export interface OrganizerEvent {
    * never through updateOrganizerEvent.
    */
   maxTicketsPerOrder?: number;
+  /**
+   * True when this event reaches you through a co-organizer delegation rather
+   * than because you own it. Computed per request from events.organizer_id, so
+   * the same event is delegated for one user and not for another.
+   */
+  delegated?: boolean;
+  /** Who the event belongs to. Only worth showing when `delegated`. */
+  ownerName?: string;
 }
 
 /** The payload the creation wizard sends: identity + schedule only. */
@@ -820,6 +828,14 @@ export interface OrganizerAccountDocument {
   status: "pending_verification" | "verified" | "rejected";
   uploaded_at: string;
   is_current: boolean;
+  /** Added in migration 0031 to match event documents. Rows filed before it
+   *  carry the storage key's basename, and a `file_size` of 0 meaning unknown
+   *  — the original values were never recorded and cannot be recovered. */
+  file_name: string;
+  file_size: number;
+  /** The auditor's reason on the latest rejection, from
+   *  auditor_document_reviews. Absent unless `status` is "rejected". */
+  review_notes?: string | null;
 }
 
 /** The document types the backend accepts, in the order the console shows them.
@@ -884,4 +900,15 @@ export async function uploadAccountDocument(
 
 export async function getAccountDocumentURL(docId: number): Promise<ApiResponse<{ url: string }>> {
   return apiRequest<{ url: string }>(`/api/organizer/documents/${docId}/url`, { method: "GET" });
+}
+
+/** Removes a filed document outright, rather than superseding it.
+ *
+ *  Only the CURRENT version of a type can be deleted — superseded rows are the
+ *  record an auditor's earlier decision was made against, and the backend
+ *  answers 404 for them. Deleting a document that clears the submission gate is
+ *  permitted: the gate re-reads on every submit, so it only blocks the
+ *  organizer themselves. */
+export async function deleteAccountDocument(docId: number): Promise<ApiResponse<{ deleted: boolean }>> {
+  return apiRequest<{ deleted: boolean }>(`/api/organizer/documents/${docId}`, { method: "DELETE" });
 }

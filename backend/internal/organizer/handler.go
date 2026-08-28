@@ -42,6 +42,7 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("GET /api/organizer/documents", authenticate(http.HandlerFunc(h.handleListAccountDocuments)))
 	mux.Handle("POST /api/organizer/documents", authenticate(http.HandlerFunc(h.handleUploadAccountDocument)))
 	mux.Handle("GET /api/organizer/documents/{docId}/url", authenticate(http.HandlerFunc(h.handleGetAccountDocumentURL)))
+	mux.Handle("DELETE /api/organizer/documents/{docId}", authenticate(http.HandlerFunc(h.handleDeleteAccountDocument)))
 	// Readiness is read by the event workspace to disable Submit with a reason.
 	// Registered before the {docId} route above would ever be consulted, since
 	// ServeMux prefers the more specific literal path.
@@ -235,6 +236,31 @@ func (h *Handler) handleGetAccountDocumentURL(w http.ResponseWriter, r *http.Req
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]string{"url": url})
+}
+
+func (h *Handler) handleDeleteAccountDocument(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.userID(w, r)
+	if !ok {
+		return
+	}
+	docID, err := strconv.Atoi(r.PathValue("docId"))
+	if err != nil || docID <= 0 {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Document ID must be a positive integer")
+		return
+	}
+	if err := h.service.DeleteAccountDocument(r.Context(), userID, docID); err != nil {
+		// Also the answer when the document belongs to someone else, or is a
+		// superseded version: the ownership and is_current filters live in the
+		// DELETE itself, so neither case resolves to a row.
+		if errors.Is(err, ErrDocumentNotFound) {
+			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Document not found")
+			return
+		}
+		log.Printf("handleDeleteAccountDocument: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to remove the document")
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
 func (h *Handler) handleApply(w http.ResponseWriter, r *http.Request) {

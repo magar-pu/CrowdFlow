@@ -200,6 +200,17 @@ type OrganizerDocument struct {
 	PresignedURL  string    `json:"url,omitempty"` // populated dynamically at runtime
 	Status        string    `json:"status"`        // 'pending_verification', 'verified', 'rejected'
 	UploadedAt    time.Time `json:"uploaded_at"`
+	// FileName and FileSize mirror event_documents so both document surfaces can
+	// render from one component. Added in migration 0031; rows filed before it
+	// carry the object key's basename and a zero size, which the UI reads as
+	// "unknown" rather than printing "0 B".
+	FileName string `json:"file_name"`
+	FileSize int64  `json:"file_size"`
+	// ReviewNotes is the auditor's reason on the most recent decision for this
+	// document, from auditor_document_reviews. Only worth showing on a rejection
+	// — that is the one case where the organizer must act on it — so the list
+	// query populates it for rejected rows only.
+	ReviewNotes *string `json:"review_notes,omitempty"`
 	// IsCurrent is false on superseded uploads. The organizer console only ever
 	// shows current rows; the history exists so an auditor can see that an
 	// earlier version was rejected.
@@ -477,6 +488,15 @@ type OrganizerEvent struct {
 	// it is written through SetEventMaxTicketsPerOrder, never through
 	// UpdateOrganizerEvent, which blanks columns its payload omits.
 	MaxTicketsPerOrder int `json:"maxTicketsPerOrder"`
+
+	// Delegated is true when the caller reaches this event through a
+	// co-organizer delegation rather than owning it. Computed per request from
+	// events.organizer_id, so the same event is delegated for one user and not
+	// for another — never stored.
+	Delegated bool `json:"delegated"`
+	// OwnerName is who the event belongs to. Only meaningful alongside
+	// Delegated; on your own events it is your own name.
+	OwnerName string `json:"ownerName,omitempty"`
 }
 
 // Ticket Tier model
@@ -701,6 +721,10 @@ type Repository interface {
 	GetAccountDocumentReadiness(ctx context.Context, userID int) (*AccountDocumentReadiness, error)
 	ReplaceAccountDocument(ctx context.Context, userID int, doc *OrganizerDocument) error
 	GetAccountDocumentPath(ctx context.Context, userID, docID int) (string, error)
+	// DeleteAccountDocument removes one CURRENT document and returns the object
+	// key to purge. Superseded rows are not deletable: they are the evidence an
+	// auditor's earlier decision was made against.
+	DeleteAccountDocument(ctx context.Context, userID, docID int) (string, error)
 	GetByID(ctx context.Context, id int) (*OrganizerApplication, error)
 	Update(ctx context.Context, app *OrganizerApplication) error
 	Delete(ctx context.Context, id int) error
@@ -761,6 +785,7 @@ type Service interface {
 	GetAccountDocumentReadiness(ctx context.Context, userID int) (*AccountDocumentReadiness, error)
 	UploadAccountDocument(ctx context.Context, userID int, doc *DocumentUpload) (*OrganizerDocument, error)
 	GetAccountDocumentURL(ctx context.Context, userID, docID int) (string, error)
+	DeleteAccountDocument(ctx context.Context, userID, docID int) error
 	DeleteApplication(ctx context.Context, userID int) error
 
 	// eorganizer methods

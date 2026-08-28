@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"crowdflow-backend/internal/config"
 	"crowdflow-backend/internal/booking"
+	"crowdflow-backend/internal/config"
 	"crowdflow-backend/internal/mail"
 
 	"github.com/midtrans/midtrans-go"
@@ -300,11 +300,18 @@ func (s *PaymentService) CreateMidtransTransaction(ctx context.Context, userID i
 
 	snapResp, midtransErr := s.snapClient.CreateTransaction(snapReq)
 	if midtransErr != nil {
-		// The environment is included here — not in the client-facing message
-		// (handler.go collapses this into a generic "Failed to process
-		// payment transaction" and stays that way) — so the server log for a
-		// 401 names which gateway rejected the key instead of leaving an
-		// operator to guess.
+		// Status code and endpoint are logged because they are the two facts
+		// that identify the cause, and neither survives into what the buyer
+		// sees (handler.go collapses this into a generic "Failed to process
+		// payment transaction" and stays that way). A 401 here means exactly
+		// one thing: the server key does not belong to the gateway it was sent
+		// to — compare APP_ENV against the endpoint named below. Never log the
+		// key itself.
+		log.Printf("[ERROR] payment: Midtrans CreateTransaction failed (status %d, env=%s, endpoint %s): %s",
+			midtransErr.StatusCode, midtransEnvName(s.midtransEnv), s.midtransEnv.SnapURL(), midtransErr.GetMessage())
+
+		// The environment is repeated in the returned error so a caller that
+		// only ever sees the wrapped value still knows which gateway refused.
 		return nil, fmt.Errorf("midtrans error (env=%s): %v", midtransEnvName(s.midtransEnv), midtransErr.GetMessage())
 	}
 

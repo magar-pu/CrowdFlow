@@ -8,7 +8,42 @@ import {
   INITIAL_EVENTS, INITIAL_TICKET_TIERS, INITIAL_GATES, INITIAL_DEVICES,
   STAFF_MEMBERS, INITIAL_VENUE_SECTIONS, RECENT_TRANSACTIONS, ACTIVITY_LOGS,
 } from "./data";
-import { listOrganizerEvents, getDashboardData, DashboardResponse, createOrganizerEvent, publishOrganizerEvent, updateOrganizerEvent, uploadEventCover } from "@/lib/api/eorganizer";
+import { listOrganizerEvents, getDashboardData, DashboardResponse, createOrganizerEvent, publishOrganizerEvent, updateOrganizerEvent, uploadEventCover, type OrganizerEvent } from "@/lib/api/eorganizer";
+
+/**
+ * API event -> console event.
+ *
+ * This mapping existed four times over — twice in fetchData and twice in the
+ * mount effect, active and archived each. Adding `delegated`/`ownerName` to four
+ * copies is exactly how the fifth one ends up missing a field.
+ */
+function toEventItem(e: OrganizerEvent): EventItem {
+  return {
+    id: e.id,
+    name: e.name,
+    category: e.category,
+    description: e.description,
+    date: e.date,
+    startDate: e.startDate,
+    startTime: e.startTime,
+    endDate: e.endDate,
+    endTime: e.endTime,
+    venueId: e.venueId,
+    location: e.location,
+    locationAddress: e.locationAddress,
+    venueName: e.venueName,
+    venueCity: e.venueCity,
+    capacity: e.capacity,
+    sold: e.sold,
+    revenue: e.revenue,
+    status: e.status as EventItem["status"],
+    image: e.image,
+    // Whose event this is. The server decides — it is derived per request from
+    // events.organizer_id against the caller, never sent up by the client.
+    delegated: e.delegated ?? false,
+    ownerName: e.ownerName ?? "",
+  };
+}
 
 interface Toast {
   message: string;
@@ -71,49 +106,9 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
       getDashboardData(),
     ]);
 
-    const activeList = eventsRes.success && eventsRes.data ? eventsRes.data.map(e => ({
-      id: e.id,
-      name: e.name,
-      category: e.category,
-      description: e.description,
-      date: e.date,
-      startDate: e.startDate,
-      startTime: e.startTime,
-      endDate: e.endDate,
-      endTime: e.endTime,
-      venueId: e.venueId,
-      location: e.location,
-      locationAddress: e.locationAddress,
-      venueName: e.venueName,
-      venueCity: e.venueCity,
-      capacity: e.capacity,
-      sold: e.sold,
-      revenue: e.revenue,
-      status: e.status as EventItem["status"],
-      image: e.image,
-    })) : [];
+    const activeList = eventsRes.success && eventsRes.data ? eventsRes.data.map(toEventItem) : [];
 
-    const archivedList = archivedRes.success && archivedRes.data ? archivedRes.data.map(e => ({
-      id: e.id,
-      name: e.name,
-      category: e.category,
-      description: e.description,
-      date: e.date,
-      startDate: e.startDate,
-      startTime: e.startTime,
-      endDate: e.endDate,
-      endTime: e.endTime,
-      venueId: e.venueId,
-      location: e.location,
-      locationAddress: e.locationAddress,
-      venueName: e.venueName,
-      venueCity: e.venueCity,
-      capacity: e.capacity,
-      sold: e.sold,
-      revenue: e.revenue,
-      status: e.status as EventItem["status"],
-      image: e.image,
-    })) : [];
+    const archivedList = archivedRes.success && archivedRes.data ? archivedRes.data.map(toEventItem) : [];
 
     setEvents([...activeList, ...archivedList]);
 
@@ -132,49 +127,9 @@ export function OrganizerDataProvider({ children }: { children: React.ReactNode 
     ]).then(([eventsRes, archivedRes, dashRes]) => {
       if (!isMounted) return;
 
-      const activeList = eventsRes.success && eventsRes.data ? eventsRes.data.map(e => ({
-        id: e.id,
-        name: e.name,
-        category: e.category,
-        description: e.description,
-        date: e.date,
-        startDate: e.startDate,
-        startTime: e.startTime,
-        endDate: e.endDate,
-        endTime: e.endTime,
-        venueId: e.venueId,
-        location: e.location,
-        locationAddress: e.locationAddress,
-        venueName: e.venueName,
-        venueCity: e.venueCity,
-        capacity: e.capacity,
-        sold: e.sold,
-        revenue: e.revenue,
-        status: e.status as EventItem["status"],
-        image: e.image,
-      })) : [];
+      const activeList = eventsRes.success && eventsRes.data ? eventsRes.data.map(toEventItem) : [];
 
-      const archivedList = archivedRes.success && archivedRes.data ? archivedRes.data.map(e => ({
-        id: e.id,
-        name: e.name,
-        category: e.category,
-        description: e.description,
-        date: e.date,
-        startDate: e.startDate,
-        startTime: e.startTime,
-        endDate: e.endDate,
-        endTime: e.endTime,
-        venueId: e.venueId,
-        location: e.location,
-        locationAddress: e.locationAddress,
-        venueName: e.venueName,
-        venueCity: e.venueCity,
-        capacity: e.capacity,
-        sold: e.sold,
-        revenue: e.revenue,
-        status: e.status as EventItem["status"],
-        image: e.image,
-      })) : [];
+      const archivedList = archivedRes.success && archivedRes.data ? archivedRes.data.map(toEventItem) : [];
 
       setEvents([...activeList, ...archivedList]);
       if (dashRes.success && dashRes.data) {

@@ -9,61 +9,26 @@ import { applyOrganizer, getOrganizerApplication, updateOrganizerApplication, de
 import { getMe } from "@/lib/api/auth";
 import { CheckCircle2, AlertTriangle, Clock, RefreshCw, Trash2, Building, Mail, Phone, Globe, FileText, UploadCloud, AlertCircle } from "lucide-react";
 import { Turnstile } from "@/components/common/Turnstile";
-
-/**
- * Upload limits, mirroring backend/internal/organizer/service.go.
- *
- * Two caps matter here, and only the first is obvious:
- *   - maxDocumentBytes  (10MB) bounds a SINGLE file.
- *   - maxUploadRequestBytes (12MB) bounds the WHOLE multipart request.
- *
- * This form submits up to four documents in one request, so four individually
- * legal files can still be rejected together — and that rejection happens in
- * ParseMultipartForm, before any per-file check runs, so the server can only
- * answer with a generic "too large or malformed" that names no file. Checking
- * the total here is the only place the user can be told which files to trim.
- */
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const MAX_REQUEST_BYTES = 12 * 1024 * 1024;
-const MAX_FILE_MB = MAX_FILE_BYTES / (1024 * 1024);
-const MAX_REQUEST_MB = MAX_REQUEST_BYTES / (1024 * 1024);
-
-// One accept list and one criteria string, both derived from the constants
-// above so the input filter, the on-screen hint and the error text cannot
-// drift apart. WebP is included because the backend accepts it.
-const ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp";
-const ACCEPTED_MIME = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
-const CRITERIA = `PDF, PNG, JPG/JPEG, or WebP · up to ${MAX_FILE_MB}MB per file, ${MAX_REQUEST_MB}MB total`;
+// Shared with the Business Documents card in organizer Settings, which files
+// the same paperwork against the same server-side caps.
+//
+// MAX_REQUEST_BYTES matters HERE and nowhere else: this form submits up to four
+// documents in one request, so four individually legal files can still be
+// rejected together — and that rejection happens in ParseMultipartForm, before
+// any per-file check runs, so the server can only answer with a generic "too
+// large or malformed" that names no file. Checking the total below is the only
+// place the user can be told which files to trim.
+import {
+  ACCEPT,
+  CRITERIA,
+  MAX_FILE_MB,
+  MAX_REQUEST_BYTES,
+  MAX_REQUEST_MB,
+  formatSize,
+  validateDocument,
+} from "@/lib/documentUpload";
 
 type DocumentSlot = "ktp" | "npwp" | "nib" | "siup";
-
-function formatSize(bytes: number): string {
-  if (bytes <= 0) return "—";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/**
- * Rejects a file the server would reject anyway, before it is uploaded.
- *
- * The browser's `type` is trusted only to say no early — it comes from the file
- * extension and is spoofable. The backend re-sniffs the real bytes with
- * http.DetectContentType, which is the check that actually protects anything.
- * An empty `type` (unknown extension) is passed through rather than guessed at.
- */
-function validateDocument(file: File): string | null {
-  if (file.size === 0) {
-    return "That file is empty.";
-  }
-  if (file.size > MAX_FILE_BYTES) {
-    return `That file is ${formatSize(file.size)} — the limit is ${MAX_FILE_MB}MB per file.`;
-  }
-  if (file.type && !ACCEPTED_MIME.includes(file.type)) {
-    return "Unsupported format. Upload a PDF, PNG, JPG/JPEG, or WebP.";
-  }
-  return null;
-}
 
 /**
  * The marketing hero for /business.

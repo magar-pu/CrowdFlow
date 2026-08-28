@@ -34,6 +34,14 @@ export interface EventItem {
   // it on the public listing yet. "Live" means approved AND published.
   status: "Live" | "Approved" | "Scheduled" | "Draft" | "Rejected" | "Need Revision" | "In Review" | "Archived";
   image: string;
+  /**
+   * True when this event belongs to another organizer who delegated it to you
+   * as a co-organizer. The console lists owned and delegated events together —
+   * they are managed identically — so the card has to say which is which.
+   */
+  delegated: boolean;
+  /** The owner's name. Only rendered when `delegated`. */
+  ownerName: string;
 }
 
 /**

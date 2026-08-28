@@ -117,6 +117,27 @@ func (h *Handler) clearAuthCookies(w http.ResponseWriter) {
 	}
 }
 
+func resolveFrontendURL(r *http.Request) string {
+	if envURL := os.Getenv("FRONTEND_URL"); envURL != "" {
+		return envURL
+	}
+	if origin := r.Header.Get("Origin"); origin != "" {
+		return origin
+	}
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	host := r.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = r.Host
+	}
+	if host != "" && host != "localhost" && host != "127.0.0.1" && host != "backend:8080" {
+		return scheme + "://" + host
+	}
+	return "http://localhost:3000"
+}
+
 // resolveRoleName returns the user's highest-privilege platform role (roles
 // scoped to a specific event are ignored), defaulting to "User".
 func (h *Handler) resolveRoleName(userID int) string {
@@ -281,10 +302,7 @@ func (h *Handler) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		roleName = h.resolveRoleName(userID)
 	}
 
-	frontendURL := os.Getenv("FRONTEND_URL")
-	if frontendURL == "" {
-		frontendURL = "http://localhost:3000"
-	}
+	frontendURL := resolveFrontendURL(r)
 
 	targetPath := "/"
 	switch roleName {
@@ -503,10 +521,7 @@ func (h *Handler) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resetBaseURL := "http://localhost:3000"
-	if origin := r.Header.Get("Origin"); origin != "" {
-		resetBaseURL = origin
-	}
+	resetBaseURL := resolveFrontendURL(r)
 
 	_ = h.service.RequestPasswordReset(req.Email, resetBaseURL)
 

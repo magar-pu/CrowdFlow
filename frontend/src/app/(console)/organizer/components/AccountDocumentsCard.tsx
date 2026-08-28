@@ -1,8 +1,38 @@
+/**
+ * AccountDocumentsCard.tsx
+ *
+ * The organizer's account-level paperwork (KTP, NPWP, NIB, SIUP...), filed once
+ * and reused across every event. Distinct from the per-event documents in the
+ * event workspace.
+ *
+ * Until recently these could only be supplied through the application wizard, and
+ * UpdateApplication refuses once an application is approved — so an organizer
+ * whose NIB an auditor REJECTED had no way to file a corrected one. The
+ * rejection was visible and unactionable.
+ *
+ * A replacement supersedes rather than overwrites: the auditor needs to see
+ * that an earlier version was rejected, and it re-enters review because the
+ * auditor verified the file that was there before, not this one. Remove is the
+ * exception — it deletes outright, and only the current version, so review
+ * history is never rewritten.
+ *
+ * The slots are `@/components/documents/DocumentSlot`, shared with the event
+ * workspace's Documents tab. Filing paperwork is one task and now looks like it
+ * from both directions: drag-and-drop, what each document is for, which file is
+ * on record, and what the auditor said when they rejected it.
+ */
+
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { FileText, Upload, ExternalLink, ShieldCheck, ShieldAlert, Clock } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { AlertTriangle, Check, FileText, IdCard, Receipt, ShieldCheck } from "lucide-react";
+import DocumentSlot, {
+  DocumentSlotSkeleton,
+  type DocumentSlotFile,
+  type DocumentSlotSpec,
+} from "@/components/documents/DocumentSlot";
 import {
+  deleteAccountDocument,
   listAccountDocuments,
   uploadAccountDocument,
   getAccountDocumentURL,
@@ -12,49 +42,72 @@ import {
   type AccountDocumentReadiness,
   type OrganizerAccountDocument,
 } from "@/lib/api/eorganizer";
+import { ACCEPT, CRITERIA_SINGLE, validateDocument } from "@/lib/documentUpload";
 
-// The organizer's account-level paperwork (KTP, NPWP, NIB, SIUP...), filed once
-// and reused across every event. Distinct from the per-event documents in the
-// event workspace.
-//
-// Until now these could only be supplied through the application wizard, and
-// UpdateApplication refuses once an application is approved — so an organizer
-// whose NIB an auditor REJECTED had no way to file a corrected one. The
-// rejection was visible and unactionable.
-//
-// A replacement supersedes rather than overwrites: the auditor needs to see
-// that an earlier version was rejected, and it re-enters review because the
-// auditor verified the file that was there before, not this one.
-
-const STATUS_STYLE: Record<string, { label: string; cls: string; Icon: typeof ShieldCheck }> = {
-  verified: {
-    label: "Verified",
-    cls: "border-success/20 bg-success/10 text-success",
-    Icon: ShieldCheck,
+/** What each document is and why it is being asked for. Mirrors the depth of the
+ *  event workspace's slots — "NPWP (Tax ID)" alone told an organizer nothing
+ *  about which of their several tax documents was wanted. Descriptions only;
+ *  which types BLOCK event submission comes from the server. */
+const SLOT_COPY: Record<
+  string,
+  { label: string; localName?: string; description: string; icon: DocumentSlotSpec["icon"] }
+> = {
+  KTP: {
+    label: "Director's ID",
+    localName: "KTP Direktur",
+    description:
+      "The national ID of the person who legally represents the business. Carries your NIK, so it is stored privately and only ever opened through a link that expires in minutes.",
+    icon: IdCard,
   },
-  rejected: {
-    label: "Rejected — re-upload required",
-    cls: "border-danger/20 bg-danger/10 text-danger",
-    Icon: ShieldAlert,
+  NPWP: {
+    label: "Tax ID",
+    localName: "NPWP",
+    description:
+      "The company's taxpayer registration. Used to settle payouts correctly — it is not a personal NPWP unless you trade as an individual.",
+    icon: Receipt,
   },
-  pending_verification: {
-    label: "Awaiting review",
-    cls: "border-warning/30 bg-warning/10 text-warning",
-    Icon: Clock,
+  NIB: {
+    label: "Business Registration",
+    localName: "NIB",
+    description:
+      "Your Nomor Induk Berusaha from OSS. This is what proves the business exists and may sell tickets.",
+    icon: ShieldCheck,
+  },
+  SIUP: {
+    label: "Trading Licence",
+    localName: "SIUP",
+    description:
+      "Only where your business type still issues one. Newer entities registered through OSS will not have a separate SIUP.",
+    icon: FileText,
+  },
+  BUSINESS_LICENSE: {
+    label: "Business Licence",
+    description:
+      "Any further operating licence specific to your line of business. Attach it if an auditor has asked for one.",
+    icon: FileText,
   },
 };
+
+/** The list payload and the slot render one shape. */
+function toSlotFile(doc: OrganizerAccountDocument): DocumentSlotFile {
+  return {
+    id: doc.id,
+    fileName: doc.file_name,
+    fileSize: doc.file_size,
+    uploadedAt: doc.uploaded_at,
+    status: doc.status,
+    reviewNotes: doc.review_notes,
+  };
+}
 
 export default function AccountDocumentsCard() {
   const [docs, setDocs] = useState<OrganizerAccountDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyType, setBusyType] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Per-slot, so a failure on NIB does not sit above an untouched KTP. */
+  const [slotError, setSlotError] = useState<Record<string, string | undefined>>({});
   const [readiness, setReadiness] = useState<AccountDocumentReadiness | null>(null);
-
-  // One hidden input per document type, so "Replace" opens the picker for the
-  // row that was clicked rather than a shared input whose target must be
-  // tracked separately.
-  const inputs = useRef<Record<string, HTMLInputElement | null>>({});
 
   // No setState before the first await: this runs from an effect, and a
   // synchronous setState in an effect body triggers a cascading render (and the
@@ -82,54 +135,123 @@ export default function AccountDocumentsCard() {
     load();
   }, [load]);
 
-  const handleFile = async (documentType: string, file: File | undefined) => {
-    if (!file) return;
+  const handleFile = async (documentType: string, file: File) => {
+    setSlotError((prev) => ({ ...prev, [documentType]: undefined }));
+
+    // Rejected here rather than after the upload. The card once claimed a 10MB
+    // limit while checking nothing, so an oversized file was transferred in full
+    // before the server refused it — the user waited out the whole upload to be
+    // told no. Same rules as the /business wizard, from one module.
+    const problem = validateDocument(file);
+    if (problem) {
+      setSlotError((prev) => ({ ...prev, [documentType]: problem }));
+      return;
+    }
+
     setBusyType(documentType);
-    setError(null);
     const res = await uploadAccountDocument(documentType, file);
     if (res.success) {
       await load();
     } else {
-      setError(res.error?.message ?? `Failed to upload ${documentType}`);
+      setSlotError((prev) => ({
+        ...prev,
+        [documentType]: res.error?.message ?? "Upload failed. Please try again.",
+      }));
     }
     setBusyType(null);
   };
 
   // Open the blank tab synchronously, BEFORE awaiting the signed URL — a popup
   // blocker rejects a window opened from an async continuation.
-  const handleOpen = async (doc: OrganizerAccountDocument) => {
+  //
+  // No "noopener" in the feature string: window.open() returns NULL when it is
+  // set, which defeats the whole point of opening early and silently downgrades
+  // every view to a same-tab navigation. The opener reference is dropped on the
+  // handle instead, which is the same protection with a usable return value.
+  const handleView = async (documentType: string, doc: OrganizerAccountDocument) => {
+    setSlotError((prev) => ({ ...prev, [documentType]: undefined }));
     const tab = window.open("", "_blank");
+    if (tab) tab.opener = null;
     const res = await getAccountDocumentURL(doc.id);
     if (res.success && res.data?.url) {
-      if (tab) tab.location.href = res.data.url;
-    } else {
-      tab?.close();
-      setError(res.error?.message ?? "Could not open that document");
+      if (tab) {
+        tab.location.assign(res.data.url);
+      } else {
+        // Popup blocked despite the synchronous open — fall back to this tab.
+        window.location.assign(res.data.url);
+      }
+      return;
     }
+    tab?.close();
+    setSlotError((prev) => ({
+      ...prev,
+      [documentType]: res.error?.message ?? "Could not open that document.",
+    }));
   };
 
-  if (loading) {
-    return <div className="h-64 animate-pulse rounded-xl bg-surface-container" />;
-  }
+  const handleDelete = async (documentType: string, doc: OrganizerAccountDocument) => {
+    // Named in the prompt because these five slots look alike in a list, and the
+    // consequence is spelled out for the types that gate submission: this is a
+    // real delete, not the supersede that Replace performs.
+    const gated = readiness?.required.includes(documentType) && !readiness.exempt;
+    const consequence = gated
+      ? " You will not be able to submit an event for review until you upload a replacement and an auditor verifies it."
+      : "";
+    if (!window.confirm(`Remove "${doc.file_name || SLOT_COPY[documentType]?.label || documentType}"?${consequence}`)) {
+      return;
+    }
+
+    setBusyType(documentType);
+    const res = await deleteAccountDocument(doc.id);
+    if (res.success) {
+      await load();
+    } else {
+      setSlotError((prev) => ({
+        ...prev,
+        [documentType]: res.error?.message ?? "Failed to remove the document.",
+      }));
+    }
+    setBusyType(null);
+  };
 
   const byType = new Map(docs.map((d) => [d.document_type, d]));
 
   return (
-    <div className="rounded-xl border border-border-subtle bg-white p-5 shadow-sm">
-      <div className="border-b border-border-subtle pb-4">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-text-primary">
-          <FileText className="h-4 w-4 text-secondary" />
-          <span>Business Documents</span>
-        </h3>
-        <p className="mt-0.5 text-xs text-text-secondary">
-          Your company paperwork, reused for every event you organise. Replacing a document sends it
-          back for review.
-        </p>
+    <div className="rounded-xl border border-border-subtle bg-white p-5 shadow-sm space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border-subtle pb-3">
+        <div className="space-y-1">
+          <h3 className="flex items-center gap-2 text-base font-bold text-text-primary">
+            <FileText className="h-4 w-4 text-secondary" />
+            <span>Business Documents</span>
+          </h3>
+          <p className="text-xs text-text-secondary">
+            Your company paperwork, reused for every event you organise. Files are stored
+            privately; View creates a link that expires within a couple of minutes. Replacing a
+            document sends it back for review and keeps the previous version on the record.
+          </p>
+          <p className="font-mono text-[10px] text-text-secondary">{CRITERIA_SINGLE}</p>
+        </div>
+        {!loading && readiness && !readiness.exempt && (
+          readiness.ready ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/20 bg-success/10 px-2.5 py-1 font-mono text-[9px] font-bold uppercase tracking-wide text-success">
+              <Check className="h-3 w-3" /> All required documents verified
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-warning/30 bg-warning/10 px-2.5 py-1 font-mono text-[9px] font-bold uppercase tracking-wide text-warning">
+              <AlertTriangle className="h-3 w-3" />
+              {readiness.missing.length} outstanding
+            </span>
+          )
+        )}
       </div>
 
       {error && (
-        <div className="mt-4 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2.5 text-xs font-semibold text-danger">
-          {error}
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-danger/20 bg-danger/10 px-4 py-2"
+        >
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+          <p className="text-xs font-semibold text-danger">{error}</p>
         </div>
       )}
 
@@ -137,92 +259,56 @@ export default function AccountDocumentsCard() {
           "these are required" notice on a complete account is noise, and an
           exempt organizer is not being asked for anything. */}
       {readiness && !readiness.ready && !readiness.exempt && (
-        <div className="mt-4 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5">
-          <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+        <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-4 py-2">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
           <p className="text-xs font-semibold text-warning">
-            You cannot submit an event for review until an auditor has verified these
-            documents. Outstanding: {readiness.missing.join(", ")}.
+            You cannot submit an event for review until an auditor has verified these documents.
+            Outstanding: {readiness.missing.join(", ")}.
           </p>
         </div>
       )}
 
-      <ul className="mt-4 space-y-2">
-        {ACCOUNT_DOCUMENT_TYPES.map((type) => {
-          const doc = byType.get(type);
-          const style = doc ? STATUS_STYLE[doc.status] : undefined;
-          const busy = busyType === type;
+      {loading ? (
+        <div className="space-y-3">
+          {ACCOUNT_DOCUMENT_TYPES.map((type) => (
+            <DocumentSlotSkeleton key={type} />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {ACCOUNT_DOCUMENT_TYPES.map((type) => {
+            const doc = byType.get(type);
+            const copy = SLOT_COPY[type];
+            const slot: DocumentSlotSpec = {
+              type,
+              label: copy?.label ?? ACCOUNT_DOCUMENT_LABELS[type] ?? type,
+              localName: copy?.localName,
+              description: copy?.description ?? "",
+              icon: copy?.icon ?? FileText,
+              // Which types block submission comes from the server, so this
+              // marker cannot drift from the gate that enforces it.
+              required: readiness?.required.includes(type) ?? false,
+              requiredLabel: "Required to submit events",
+            };
 
-          return (
-            <li
-              key={type}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border-subtle px-3 py-2.5"
-            >
-              <div className="min-w-0">
-                <p className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-text-primary">
-                  <span>{ACCOUNT_DOCUMENT_LABELS[type] ?? type}</span>
-                  {/* Which types block submission comes from the server, so this
-                      marker cannot drift from the gate that enforces it. */}
-                  {readiness?.required.includes(type) && (
-                    <span className="rounded-full border border-border-subtle px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-text-secondary">
-                      Required to submit events
-                    </span>
-                  )}
-                </p>
-                {doc && style ? (
-                  <span
-                    className={`mt-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${style.cls}`}
-                  >
-                    <style.Icon className="h-3 w-3" />
-                    {style.label}
-                  </span>
-                ) : (
-                  <span className="mt-1 inline-block text-[10px] italic text-text-secondary">
-                    Not provided
-                  </span>
-                )}
-              </div>
-
-              <div className="flex shrink-0 items-center gap-1.5">
-                {doc && (
-                  <button
-                    onClick={() => handleOpen(doc)}
-                    className="flex items-center gap-1 rounded-lg border border-border-subtle px-2.5 py-1.5 text-[10px] font-bold text-text-secondary transition-colors hover:bg-surface-container-low"
-                  >
-                    <ExternalLink className="h-3 w-3" /> View
-                  </button>
-                )}
-                <button
-                  onClick={() => inputs.current[type]?.click()}
-                  disabled={busy}
-                  className="flex items-center gap-1 rounded-lg bg-secondary px-2.5 py-1.5 text-[10px] font-bold text-white transition-colors hover:bg-secondary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Upload className="h-3 w-3" />
-                  {busy ? "Uploading..." : doc ? "Replace" : "Upload"}
-                </button>
-                <input
-                  ref={(el) => {
-                    inputs.current[type] = el;
-                  }}
-                  type="file"
-                  accept="application/pdf,image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={(e) => {
-                    handleFile(type, e.target.files?.[0]);
-                    // Clear the value so picking the SAME file again still fires
-                    // a change event.
-                    e.target.value = "";
-                  }}
-                />
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-
-      <p className="mt-3 text-[10px] leading-relaxed text-text-secondary">
-        PDF, PNG or JPG, up to 10MB each. Previous versions are kept so an auditor can see what
-        changed.
-      </p>
+            return (
+              <DocumentSlot
+                key={type}
+                idPrefix="account-doc"
+                slot={slot}
+                doc={doc ? toSlotFile(doc) : null}
+                criteria={CRITERIA_SINGLE}
+                accept={ACCEPT}
+                busy={busyType === type}
+                error={slotError[type]}
+                onFile={(file) => handleFile(type, file)}
+                onView={() => doc && handleView(type, doc)}
+                onDelete={doc ? () => handleDelete(type, doc) : undefined}
+              />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

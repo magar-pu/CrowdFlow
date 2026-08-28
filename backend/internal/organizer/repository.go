@@ -179,15 +179,15 @@ func (r *PostgresRepository) Create(ctx context.Context, app *OrganizerApplicati
 
 	queryDoc := `
 		INSERT INTO organizer_documents (
-			application_id, document_type, file_path, status
-		) VALUES ($1, $2, $3, $4)
+			application_id, document_type, file_path, status, file_name, file_size
+		) VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, uploaded_at
 	`
 	for _, doc := range docs {
 		doc.ApplicationID = app.ID
 		err = tx.QueryRowContext(
 			ctx, queryDoc,
-			doc.ApplicationID, doc.DocumentType, doc.FilePath, doc.Status,
+			doc.ApplicationID, doc.DocumentType, doc.FilePath, doc.Status, doc.FileName, doc.FileSize,
 		).Scan(&doc.ID, &doc.UploadedAt)
 		if err != nil {
 			return err
@@ -206,11 +206,25 @@ func (r *PostgresRepository) ListAccountDocuments(ctx context.Context, userID in
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
+	// The lateral pulls the auditor's reason for a rejection, which lives in
+	// auditor_document_reviews rather than on the document. LIMIT 1 on
+	// reviewed_at DESC because a document can be reviewed more than once — only
+	// the decision that produced the CURRENT status is actionable. Restricted to
+	// rejected rows: a note attached to an approval is an internal remark, not
+	// something to put in front of the organizer.
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT od.id, od.application_id, od.document_type, od.file_path,
-		       od.status::text, od.uploaded_at, od.is_current
+		       od.status::text, od.uploaded_at, od.is_current,
+		       od.file_name, od.file_size, rev.notes
 		FROM organizer_documents od
 		JOIN organizer_applications oa ON oa.id = od.application_id
+		LEFT JOIN LATERAL (
+			SELECT adr.notes
+			FROM auditor_document_reviews adr
+			WHERE adr.document_id = od.id AND adr.decision = 'rejected'
+			ORDER BY adr.reviewed_at DESC
+			LIMIT 1
+		) rev ON od.status = 'rejected'
 		WHERE oa.user_id = $1 AND od.is_current
 		ORDER BY od.document_type
 	`, userID)
@@ -222,9 +236,14 @@ func (r *PostgresRepository) ListAccountDocuments(ctx context.Context, userID in
 	docs := []*OrganizerDocument{}
 	for rows.Next() {
 		var d OrganizerDocument
+		var notes sql.NullString
 		if err := rows.Scan(&d.ID, &d.ApplicationID, &d.DocumentType, &d.FilePath,
-			&d.Status, &d.UploadedAt, &d.IsCurrent); err != nil {
+			&d.Status, &d.UploadedAt, &d.IsCurrent, &d.FileName, &d.FileSize, &notes); err != nil {
 			return nil, err
+		}
+		if notes.Valid && strings.TrimSpace(notes.String) != "" {
+			trimmed := strings.TrimSpace(notes.String)
+			d.ReviewNotes = &trimmed
 		}
 		docs = append(docs, &d)
 	}
@@ -373,10 +392,10 @@ func (r *PostgresRepository) ReplaceAccountDocument(ctx context.Context, userID 
 	// A replaced document always re-enters review: the auditor verified the
 	// file that was there before, not this one.
 	err = tx.QueryRowContext(ctx, `
-		INSERT INTO organizer_documents (application_id, document_type, file_path, status, is_current)
-		VALUES ($1, $2, $3, 'pending_verification', TRUE)
+		INSERT INTO organizer_documents (application_id, document_type, file_path, status, is_current, file_name, file_size)
+		VALUES ($1, $2, $3, 'pending_verification', TRUE, $4, $5)
 		RETURNING id, uploaded_at, status::text, is_current
-	`, appID, doc.DocumentType, doc.FilePath).Scan(&doc.ID, &doc.UploadedAt, &doc.Status, &doc.IsCurrent)
+	`, appID, doc.DocumentType, doc.FilePath, doc.FileName, doc.FileSize).Scan(&doc.ID, &doc.UploadedAt, &doc.Status, &doc.IsCurrent)
 	if err != nil {
 		return err
 	}
@@ -409,6 +428,40 @@ func (r *PostgresRepository) GetAccountDocumentPath(ctx context.Context, userID,
 		return "", err
 	}
 	return path, nil
+}
+
+// DeleteAccountDocument removes one document and returns the object key to
+// purge, so the private bucket does not accumulate files nothing references.
+//
+// Two conditions beyond the id, both load-bearing:
+//
+//   - oa.user_id — an id belonging to another organizer must not resolve at all,
+//     the same reason the ownership check sits inside GetAccountDocumentPath's
+//     query rather than after it.
+//   - od.is_current — superseded rows are the record an auditor's earlier
+//     decision was made against. Deleting one rewrites review history, and the
+//     console never offers it: only the current row has a Remove button.
+//
+// No status check. Removing a VERIFIED document is allowed even though KTP/NPWP/
+// NIB gate event submission — the gate re-reads the documents on every submit,
+// so the organizer only blocks themselves, and refusing here would leave someone
+// who uploaded the wrong file to the wrong slot with no way to correct it.
+func (r *PostgresRepository) DeleteAccountDocument(ctx context.Context, userID, docID int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var filePath string
+	err := r.db.QueryRowContext(ctx, `
+		DELETE FROM organizer_documents od
+		USING organizer_applications oa
+		WHERE od.application_id = oa.id
+		  AND od.id = $1 AND oa.user_id = $2 AND od.is_current
+		RETURNING od.file_path
+	`, docID, userID).Scan(&filePath)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrDocumentNotFound
+	}
+	return filePath, err
 }
 
 func (r *PostgresRepository) GetByUserID(ctx context.Context, userID int) (*OrganizerApplication, error) {
@@ -805,6 +858,40 @@ func (r *PostgresRepository) GetDashboardData(ctx context.Context, organizerID i
 	}, nil
 }
 
+// delegatedEventAccess matches events a co-organizer may manage through an
+// active delegation. `$1` is the acting user; `e` must be the events table.
+//
+// A deliberate copy of middleware.eventAccessQuery's delegation half rather than
+// a shared helper: that one answers "may this user touch event X" for a single
+// id, this one filters a set, and the two are naturally shaped differently. They
+// must agree, though — if this is narrower, the console lists an event whose
+// workspace then 403s; if it is wider, it lists one the workspace refuses to
+// open. See docs/co-organizer-delegation-design.md §4.1.
+//
+// Ownership itself is NOT included here: every caller spells out
+// `e.organizer_id = $1 OR <this>` so the owner path stays visible at the call
+// site.
+const delegatedEventAccess = `
+	EXISTS (
+		SELECT 1
+		  FROM organizer_delegations d
+		 WHERE d.delegate_id = $1
+		   AND d.status = 'active'
+		   AND (
+		        (d.scope = 'all'      AND d.owner_id = e.organizer_id)
+		     OR (d.scope = 'specific' AND EXISTS (
+		           SELECT 1 FROM organizer_delegation_events de
+		            WHERE de.delegation_id = d.id AND de.event_id = e.id))
+		   )
+	)`
+
+// ListOrganizerEvents returns the events the caller may manage: their own, plus
+// any an owner has delegated to them as a co-organizer.
+//
+// Delegated events were invisible here until now. RequireEventOwnership has
+// honoured delegations since the feature shipped, so a co-organizer could open a
+// workspace they were handed the URL for, but had no way to FIND one — the whole
+// point of delegating.
 func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerID int, archived bool) ([]*OrganizerEvent, error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -815,17 +902,23 @@ func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerI
 		       COALESCE((SELECT SUM(allocation_limit) FROM ticket_tiers WHERE event_id = e.id), 0) as capacity,
 		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = e.id), 0) as sold,
 		       COALESCE((SELECT SUM(gross_amount) FROM orders WHERE event_id = e.id AND status = 'paid'), 0) as revenue,
-		       (e.archived_at IS NOT NULL) as is_archived
+		       (e.archived_at IS NOT NULL) as is_archived,
+		       e.organizer_id, COALESCE(NULLIF(TRIM(op.full_name), ''), ow.email)
 		FROM events e
 		-- LEFT: venue-less drafts must still be listed. VenueID comes back 0.
 		LEFT JOIN venues v ON e.venue_id = v.id
 		JOIN event_types et ON e.event_type_id = et.id
+		-- The owner, for labelling delegated events. INNER on users because
+		-- events.organizer_id is NOT NULL and references it; the profile is the
+		-- optional half.
+		JOIN users ow ON ow.id = e.organizer_id
+		LEFT JOIN user_profiles op ON op.user_id = e.organizer_id
 		-- One list, two views: active by default, archived on request. There is
 		-- no "everything" mode on purpose — an archived event showing up beside
 		-- live ones is exactly what archiving exists to prevent.
 		-- GetOrganizerEvent deliberately does NOT filter, so a direct link to an
 		-- archived event's workspace still opens and can un-archive it.
-		WHERE e.organizer_id = $1
+		WHERE (e.organizer_id = $1 OR `+delegatedEventAccess+`)
 		  AND ($2::boolean = (e.archived_at IS NOT NULL))
 		ORDER BY e.created_at DESC
 	`, organizerID, archived)
@@ -840,8 +933,13 @@ func (r *PostgresRepository) ListOrganizerEvents(ctx context.Context, organizerI
 		var start, end time.Time
 		var statusVal string
 		var isArchived bool
-		err = rows.Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue, &isArchived)
+		var ownerID int
+		err = rows.Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue, &isArchived, &ownerID, &e.OwnerName)
 		if err == nil {
+			// Derived from the row rather than trusted from the client: the
+			// console shows whose event this is, and a co-organizer must be able
+			// to tell someone else's portfolio from their own.
+			e.Delegated = ownerID != organizerID
 			e.StartDate = start.Format("2006-01-02")
 			e.StartTime = start.Format("15:04:05")
 			e.EndDate = end.Format("2006-01-02")
@@ -886,6 +984,7 @@ func (r *PostgresRepository) GetOrganizerEvent(ctx context.Context, eventID int,
 	var start, end time.Time
 	var statusVal string
 	var isArchived bool
+	var ownerID int
 	err := r.db.QueryRowContext(ctx, `
 		SELECT e.id, e.event_name, et.event_type, e.description, e.event_start, e.event_end, e.status, COALESCE(e.cover_image_url, ''), (e.published_at IS NOT NULL),
 		       COALESCE(v.id, 0), COALESCE(v.name, ''), COALESCE(v.address, ''), COALESCE(v.city, ''),
@@ -893,20 +992,27 @@ func (r *PostgresRepository) GetOrganizerEvent(ctx context.Context, eventID int,
 		       COALESCE((SELECT SUM(tickets_sold) FROM ticket_tiers WHERE event_id = e.id), 0) as sold,
 		       COALESCE((SELECT SUM(gross_amount) FROM orders WHERE event_id = e.id AND status = 'paid'), 0) as revenue,
 		       (e.archived_at IS NOT NULL) as is_archived,
-		       e.max_tickets_per_order
+		       e.max_tickets_per_order,
+		       e.organizer_id, COALESCE(NULLIF(TRIM(op.full_name), ''), ow.email)
 		FROM events e
 		-- LEFT: the workspace opens on venue-less drafts; that is where the
 		-- organizer goes to set the venue in the first place.
 		LEFT JOIN venues v ON e.venue_id = v.id
 		JOIN event_types et ON e.event_type_id = et.id
-		WHERE e.id = $1 AND e.organizer_id = $2
-	`, eventID, organizerID).Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue, &isArchived, &e.MaxTicketsPerOrder)
+		JOIN users ow ON ow.id = e.organizer_id
+		LEFT JOIN user_profiles op ON op.user_id = e.organizer_id
+		-- Delegated events open too, or the list above would show a co-organizer
+		-- events that 404 the moment they click one. $1 is the acting user and
+		-- $2 the event, matching delegatedEventAccess's placeholder.
+		WHERE e.id = $2 AND (e.organizer_id = $1 OR `+delegatedEventAccess+`)
+	`, organizerID, eventID).Scan(&e.ID, &e.Name, &e.Category, &e.Description, &start, &end, &statusVal, &e.Image, &e.Published, &e.VenueID, &e.VenueName, &e.LocationAddress, &e.VenueCity, &e.Capacity, &e.Sold, &e.Revenue, &isArchived, &e.MaxTicketsPerOrder, &ownerID, &e.OwnerName)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, sql.ErrNoRows
 		}
 		return nil, err
 	}
+	e.Delegated = ownerID != organizerID
 
 	e.StartDate = start.Format("2006-01-02")
 	e.StartTime = start.Format("15:04:05")
