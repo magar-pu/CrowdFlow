@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +29,21 @@ const (
 	familyIDBytes = 16 // 128-bit session id
 	secretBytes   = 32 // 256-bit bearer secret
 	tokenSep      = "."
+
+	// defaultGraceWindow is how long the just-superseded secret stays
+	// acceptable after a rotation. It exists because the browser holds ONE
+	// refresh cookie but runs one refresh coordinator per tab
+	// (utils/api.ts inflightRefresh is module-scoped), so two tabs waking
+	// from idle together both present the same secret. Without a grace
+	// window the second one is indistinguishable from a replay and the
+	// whole family is destroyed — the user is logged out of every device
+	// for the crime of keeping two tabs open.
+	//
+	// 10s is far longer than that race (both requests are already in
+	// flight) and far shorter than any useful replay: a token lifted from
+	// a log or a proxy is presented minutes or days later, and still
+	// revokes the family.
+	defaultGraceWindow = 10 * time.Second
 )
 
 var (
@@ -46,18 +62,35 @@ var (
 type SessionStore struct {
 	redis *redis.Client
 	ttl   time.Duration // absolute session lifetime (refresh-token TTL)
+
+	// grace and now are fields rather than constants so tests can drive the
+	// window deterministically: miniredis fast-forwards its own clock for
+	// TTLs, but rotated_at is stamped from Go, so a test that needs to be
+	// "past the window" has to move this clock, not Redis's.
+	grace time.Duration
+	now   func() time.Time
 }
 
 func NewSessionStore(client *redis.Client, ttl time.Duration) *SessionStore {
-	return &SessionStore{redis: client, ttl: ttl}
+	return &SessionStore{
+		redis: client,
+		ttl:   ttl,
+		grace: defaultGraceWindow,
+		now:   time.Now,
+	}
 }
 
 // rotateScript atomically validates-and-rotates a session's secret so two
 // concurrent refreshes can't both "win". Returns {status, user_id}:
 //
 //	 1 = rotated OK (secret_hash swapped to ARGV[2])
+//	 2 = rotated OK via the grace window (ARGV[1] was the previous secret,
+//	     replayed within ARGV[4] seconds of the last rotation)
 //	 0 = session not found (expired/revoked)
 //	-1 = reuse detected (family DELeted)
+//
+// KEYS[1] session key. ARGV: [1] presented secret hash, [2] new secret hash,
+// [3] now as unix seconds, [4] grace window in seconds.
 //
 // HSET on an existing key preserves the key's TTL, so the session keeps its
 // original absolute expiry across rotations (no sliding renewal).
@@ -67,12 +100,30 @@ if not current then
 	return {0, ''}
 end
 local uid = redis.call('HGET', KEYS[1], 'user_id')
-if current ~= ARGV[1] then
-	redis.call('DEL', KEYS[1])
-	return {-1, uid}
+
+-- Normal path: the live secret was presented.
+if current == ARGV[1] then
+	redis.call('HSET', KEYS[1], 'secret_hash', ARGV[2], 'prev_hash', current, 'rotated_at', ARGV[3])
+	return {1, uid}
 end
-redis.call('HSET', KEYS[1], 'secret_hash', ARGV[2])
-return {1, uid}
+
+-- Grace path: the secret this rotation just superseded, replayed within the
+-- window. Rotate again and slide prev_hash forward, so a third tab in the same
+-- burst is still covered.
+local prev = redis.call('HGET', KEYS[1], 'prev_hash')
+local rotated = redis.call('HGET', KEYS[1], 'rotated_at')
+if prev and rotated and prev == ARGV[1] then
+	local age = tonumber(ARGV[3]) - tonumber(rotated)
+	if age >= 0 and age <= tonumber(ARGV[4]) then
+		redis.call('HSET', KEYS[1], 'secret_hash', ARGV[2], 'prev_hash', current, 'rotated_at', ARGV[3])
+		return {2, uid}
+	end
+end
+
+-- Anything else is a replay of a secret we retired long ago, or one we never
+-- issued. Destroy the family.
+redis.call('DEL', KEYS[1])
+return {-1, uid}
 `)
 
 // Create opens a new session for userID and returns its refresh token.
@@ -112,11 +163,11 @@ func (s *SessionStore) Create(ctx context.Context, userID int) (string, error) {
 // returns ErrRefreshTokenReuse (family already revoked); on any other failure,
 // ErrInvalidRefreshToken.
 //
-// Concurrent refreshes of the same token are intentionally strict here: the
-// first rotates, any in-flight second sees a stale secret and trips reuse
-// detection. The frontend serializes refreshes through a single in-flight
-// request (Step 5) so legitimate clients never double-refresh; a short grace
-// window is a possible future hardening if that ever proves too aggressive.
+// A refresh presented within defaultGraceWindow of the previous rotation is
+// accepted rather than treated as theft: the frontend serializes refreshes
+// per tab, not per browser, so two tabs share one cookie and legitimately
+// double-refresh. Outside that window a stale secret still destroys the
+// family.
 func (s *SessionStore) ValidateAndRotate(ctx context.Context, rawToken string) (int, string, error) {
 	familyID, secret, ok := splitToken(rawToken)
 	if !ok {
@@ -131,6 +182,7 @@ func (s *SessionStore) ValidateAndRotate(ctx context.Context, rawToken string) (
 	res, err := rotateScript.Run(ctx, s.redis,
 		[]string{sessionKey(familyID)},
 		hashSecret(secret), hashSecret(newSecret),
+		s.now().Unix(), int64(s.grace/time.Second),
 	).Result()
 	if err != nil {
 		return 0, "", err
@@ -144,6 +196,12 @@ func (s *SessionStore) ValidateAndRotate(ctx context.Context, rawToken string) (
 
 	switch status {
 	case 1:
+		return atoiUserID(vals[1]), familyID + tokenSep + newSecret, nil
+	case 2:
+		// Accepted inside the grace window. Logged distinctly so a genuine
+		// attack pattern stays visible instead of being silently absorbed:
+		// an occasional line is tab overlap, a steady stream is not.
+		log.Printf("[SECURITY] refresh accepted via grace window (family %s)", familyID)
 		return atoiUserID(vals[1]), familyID + tokenSep + newSecret, nil
 	case -1:
 		// Family already DELeted by the script; drop the now-dangling index entry.

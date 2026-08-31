@@ -82,6 +82,21 @@ services:
   redis:
     image: redis:7-alpine
     restart: always
+    # Redis is not a cache here — it holds every refresh-token session
+    # (internal/auth/session.go). Without persistence, recreating this
+    # container logs out every user on every device, which is what used to
+    # happen on any `docker compose down` or image bump. AOF gives per-second
+    # durability; `command:` overrides the image CMD, which is a bare
+    # `redis-server`, so nothing else is lost.
+    #
+    # Two things this does NOT protect against, both worth knowing:
+    #   * a manual FLUSHDB still wipes every session — that command is not a
+    #     debugging convenience here, it is a mass logout.
+    #   * the FIRST `up -d` after this change recreates the container and so
+    #     ends all existing sessions once. One time, and the last time.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
     networks:
       - crowdflow-net
     healthcheck:
@@ -109,3 +124,8 @@ services:
 networks:
   crowdflow-net:
     driver: bridge
+
+# Named volume for the Redis AOF. Survives `down`/`up` and image bumps; removed
+# only by an explicit `docker compose down -v`, which IS a mass logout.
+volumes:
+  redis-data:

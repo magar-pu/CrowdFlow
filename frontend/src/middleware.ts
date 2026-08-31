@@ -20,8 +20,26 @@ const SMART_REDIRECT_ALIASES: Record<string, string> = {
 };
 
 export function middleware(request: NextRequest) {
+  // TWO cookies on purpose — do not "simplify" this to access_token alone.
+  //
+  // access_token lives ~15m (ACCESS_TOKEN_TTL), so the browser drops it after a
+  // short idle and the edge would then bounce a perfectly valid session to
+  // /login on the next navigation. csrf_token is the durable signal: Path=/,
+  // MaxAge tied to the 30-day refresh token, and non-HttpOnly so middleware can
+  // actually read it. The server expires it through clearAuthCookies on logout
+  // and on any failed refresh, so it goes stale exactly when the session does.
+  //
+  // 4dbff21 introduced this pairing; 3f53c65 (an unrelated UI-routing change)
+  // silently dropped the csrf_token half and reintroduced the 15-minute
+  // phantom logout. API calls hid it, because utils/api.ts silently refreshes
+  // on 401 — only navigation broke, which is why it read as random.
+  //
+  // This check is a HINT, not authorization. A lingering cookie over a dead
+  // server session just means AuthGuard's getMe() 401s and redirects a beat
+  // later; the real checks live in the Go middleware.
   const accessToken = request.cookies.get("access_token")?.value;
-  const hasSessionSignal = Boolean(accessToken);
+  const csrfToken = request.cookies.get("csrf_token")?.value;
+  const hasSessionSignal = Boolean(accessToken || csrfToken);
 
   const { pathname } = request.nextUrl;
   const lowerPath = pathname.toLowerCase().replace(/\/$/, "");
