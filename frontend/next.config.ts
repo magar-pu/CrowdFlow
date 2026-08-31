@@ -23,6 +23,21 @@ const nextConfig: NextConfig = {
     }
     return rules;
   },
+  // M6 link hygiene (plan_2026-08-30_dynamic_qr_ticketman.md): the booking
+  // link IS the credential, so nothing must cause the browser to leak the
+  // URL onward or let it get indexed. No third-party scripts are loaded on
+  // these pages either — see BookingWatermark / the booking page components.
+  async headers() {
+    return [
+      {
+        source: '/booking/:path*',
+        headers: [
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
+    ];
+  },
   images: {
     remotePatterns: [
       {

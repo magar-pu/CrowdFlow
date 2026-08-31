@@ -1,20 +1,17 @@
 "use client";
 
 import React from 'react';
-import { Event, Transaction, Scanner } from '@/types/admin';
+import { Event, Transaction } from '@/types/admin';
 
 interface WorkspaceLiveTrackerTabProps {
   event: Event;
-  scanners: Scanner[];
   transactions: Transaction[];
 }
 
-export default function WorkspaceLiveTrackerTab({ event, scanners, transactions }: WorkspaceLiveTrackerTabProps) {
-  const activeScannersCount = scanners.filter(s => s.status !== 'Offline').length;
-
+export default function WorkspaceLiveTrackerTab({ event, transactions }: WorkspaceLiveTrackerTabProps) {
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
         <div className="rounded-lg border border-border-subtle bg-surface-white p-5 shadow-sm">
           <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">Total Sales</span>
           <p className="mt-1 text-lg font-bold text-text-primary">${event.totalRevenue.toLocaleString()}</p>
@@ -24,11 +21,6 @@ export default function WorkspaceLiveTrackerTab({ event, scanners, transactions 
           <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">Capacity Sold</span>
           <p className="mt-1 text-lg font-bold text-text-primary">{Math.round((event.ticketsSold / event.capacity) * 100)}%</p>
           <span className="text-[10px] text-secondary">{event.ticketsSold} seats claimed</span>
-        </div>
-        <div className="rounded-lg border border-border-subtle bg-surface-white p-5 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">Connected Scanners</span>
-          <p className="mt-1 text-lg font-bold text-text-primary">{activeScannersCount} Devices</p>
-          <span className="text-[10px] text-success">Operational</span>
         </div>
         <div className="rounded-lg border border-border-subtle bg-surface-white p-5 shadow-sm">
           <span className="text-[10px] font-bold uppercase tracking-wide text-text-secondary">Average Validation</span>

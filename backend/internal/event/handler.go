@@ -304,11 +304,14 @@ func (h *Handler) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
-	// 1. Enforce strict request body size limit to prevent DoS attacks
-	r.Body = http.MaxBytesReader(w, r.Body, 10 << 20) // 10MB limit
+	// 1. Enforce strict request body size limit to prevent DoS attacks.
+	// 5MB: the only file this request carries is the cover image, capped at
+	// 5MB below — see storage.ValidateImage's call. R2's free tier is 10GB
+	// total, so per-upload caps matter; cover art doesn't need 10MB.
+	r.Body = http.MaxBytesReader(w, r.Body, 5 << 20) // 5MB limit
 
 	// 2. Parse Multipart Form
-	err := r.ParseMultipartForm(10 << 20)
+	err := r.ParseMultipartForm(5 << 20)
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse multipart form: Payload too large or malformed")
 		return
@@ -373,7 +376,7 @@ func (h *Handler) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 		defer file.Close()
 
 		// Validate file type via secure mime signature sniffing and enforce size limit
-		contentType, err := storage.ValidateImage(file, 10 << 20)
+		contentType, err := storage.ValidateImage(file, 5 << 20)
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, "INVALID_FILE", "Cover image validation failed: "+err.Error())
 			return

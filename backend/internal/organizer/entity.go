@@ -126,9 +126,9 @@ type EventDocument struct {
 	FileName     string    `json:"file_name"`
 	FileSize     int64     `json:"file_size"`
 	ContentType  string    `json:"content_type"`
-	Status      string    `json:"status"`
-	ReviewNotes *string   `json:"review_notes,omitempty"`
-	UploadedAt  time.Time `json:"uploaded_at"`
+	Status       string    `json:"status"`
+	ReviewNotes  *string   `json:"review_notes,omitempty"`
+	UploadedAt   time.Time `json:"uploaded_at"`
 }
 
 // EventDocumentURL is a freshly minted view link. Never embedded in a list
@@ -214,7 +214,7 @@ type OrganizerDocument struct {
 	// IsCurrent is false on superseded uploads. The organizer console only ever
 	// shows current rows; the history exists so an auditor can see that an
 	// earlier version was rejected.
-	IsCurrent     bool      `json:"is_current"`
+	IsCurrent bool `json:"is_current"`
 }
 
 // AccountDocumentTypes are the account-level documents an organizer can file.
@@ -621,6 +621,37 @@ type OrganizerOrder struct {
 	Amount        float64 `json:"amount"`
 	Status        string  `json:"status"`
 	Time          string  `json:"time"`
+
+	// AccessDeviceCount and AccessOutlier are M5 access telemetry (plan
+	// mitigation M5: "accessed by N distinct devices" per order) — a device
+	// is approximated as one distinct (hashed IP, hashed user-agent) pair
+	// recorded against booking_access_log by every GET
+	// /order-access/{orderId}/tickets/{ticketId} fetch. Populated ONLY by
+	// GetOrderDetails (a single-order lookup); left at zero value by
+	// ListOrders/ListEventOrders to avoid an extra join per row on a list
+	// that can be long. AccessOutlier is a simple heuristic (more distinct
+	// devices than tickets on the order) — not fingerprinting, just the
+	// count the log already stores.
+	AccessDeviceCount int  `json:"accessDeviceCount"`
+	AccessOutlier     bool `json:"accessOutlier"`
+
+	// Tickets is the per-attendee breakdown for the order-detail screen
+	// (/organizer/events/[id]/orders/[orderId]) — tier, seat, status, and
+	// what a per-ticket revoke button needs. Populated ONLY by
+	// GetOrderDetails, same rule as AccessDeviceCount/AccessOutlier above.
+	Tickets []*OrganizerOrderTicket `json:"tickets,omitempty"`
+}
+
+// OrganizerOrderTicket is one ticket on an order, as the organizer sees it —
+// tier and seat label, no NIK (organizer sees decrypted NIK only at the gate
+// via check-in, plan decision 23 — this is the pre-scan order-management
+// view, not that).
+type OrganizerOrderTicket struct {
+	TicketID         string `json:"ticketId"`
+	AttendeeFullName string `json:"attendeeFullName"`
+	TierName         string `json:"tierName"`
+	SeatLabel        string `json:"seatLabel"`
+	TicketStatus     string `json:"ticketStatus"`
 }
 
 // Organizer Refund model
@@ -683,8 +714,8 @@ type OrganizerAnalytics struct {
 // scanner_logs. The scanner package exposes similar numbers but its routes carry
 // no auth middleware, so the organizer console reads them through here instead.
 type EventCheckInStats struct {
-	TotalCheckedIn int                `json:"totalCheckedIn"`
-	TotalTickets   int                `json:"totalTickets"`
+	TotalCheckedIn int `json:"totalCheckedIn"`
+	TotalTickets   int `json:"totalTickets"`
 	// Mean scanner round-trip in milliseconds; 0 when nothing has been scanned.
 	AvgScanMs int                  `json:"avgScanMs"`
 	Gates     []GateCheckInStat    `json:"gates"`
@@ -765,6 +796,9 @@ type Repository interface {
 	GetEventSeating(ctx context.Context, eventID int, organizerID int) (*EventSeatingResponse, error)
 	SeedEventSeating(ctx context.Context, eventID int, organizerID int, assignments []SeatingAssignment) error
 	CheckInAttendee(ctx context.Context, eventID int, organizerID int, qrToken string) (*CheckInResponse, error)
+	// TicketBelongsToEvent is the ownership check M4's organizer rotation
+	// path runs before rotating anything — see OrganizerService.RotateTicketSecret.
+	TicketBelongsToEvent(ctx context.Context, ticketID string, eventID int, organizerID int) (bool, error)
 	ListNotifications(ctx context.Context, userID int) ([]*Notification, error)
 	MarkNotificationsRead(ctx context.Context, userID int, notificationIDs []int) error
 	GetEventRevisions(ctx context.Context, eventID int, organizerID int) (*EventRevisionFeedback, error)
@@ -808,6 +842,10 @@ type Service interface {
 	GetEventSeating(ctx context.Context, eventID int, organizerID int) (*EventSeatingResponse, error)
 	SeedEventSeating(ctx context.Context, eventID int, organizerID int, req SeedSeatingRequest) error
 	CheckInAttendee(ctx context.Context, eventID int, organizerID int, qrToken string) (*CheckInResponse, error)
+	// RotateTicketSecret is M4's organizer-authorized panic-revoke path.
+	// Verifies (ticketID, eventID, organizerID) ownership itself before
+	// calling through to the injected SecretRotator — see service.go.
+	RotateTicketSecret(ctx context.Context, eventID int, organizerID int, ticketID string) (string, error)
 	ListTicketTiers(ctx context.Context, eventID int, organizerID int) ([]*OrganizerTicketTier, error)
 	CreateTicketTier(ctx context.Context, eventID int, organizerID int, tier *OrganizerTicketTier) error
 	UpdateTicketTier(ctx context.Context, eventID int, organizerID int, tierID int, tier *OrganizerTicketTier) error

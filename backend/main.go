@@ -16,6 +16,7 @@ import (
 	"crowdflow-backend/internal/config"
 	"crowdflow-backend/internal/delegation"
 	"crowdflow-backend/internal/event"
+	"crowdflow-backend/internal/eventstaff"
 	"crowdflow-backend/internal/mail"
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/organizer"
@@ -27,6 +28,7 @@ import (
 	"crowdflow-backend/internal/scanner"
 	"crowdflow-backend/internal/storage"
 	"crowdflow-backend/internal/ticket"
+	"crowdflow-backend/internal/ticketman"
 	"crowdflow-backend/internal/venuelayout"
 
 	"golang.org/x/oauth2"
@@ -121,6 +123,37 @@ func main() {
 		}
 		jwtSecret = "crowdflow_dev_jwt_secret"
 	}
+
+	// Ticketman sessions are signed with their own secret, entirely separate
+	// from JWT_SECRET above. This is deliberate isolation, not an oversight:
+	// aud is not validated anywhere the platform's own Authenticate/
+	// OptionalAuthenticate middleware runs, so a ticketman token signed with
+	// the platform key would be accepted by ordinary user routes with the
+	// staff id read as a user id. A distinct secret makes that impossible by
+	// construction — a ticketman token simply does not verify against
+	// JWT_SECRET, and vice versa.
+	ticketmanJWTSecret := os.Getenv("TICKETMAN_JWT_SECRET")
+	if ticketmanJWTSecret == "" {
+		if !devMode {
+			log.Fatalf("TICKETMAN_JWT_SECRET environment variable is required in production")
+		}
+		ticketmanJWTSecret = "crowdflow_dev_ticketman_jwt_secret"
+	}
+
+	// e-ticket emails (internal/payment's webhook dispatch) link to
+	// {FRONTEND_URL}/booking/<order_uuid> and .../t/<ticket_uuid> — since the
+	// PDF/QR-image fallback is gone (plan decision 24), that link is the ONLY
+	// way a buyer reaches their ticket. A missing FRONTEND_URL must not
+	// silently degrade to a localhost link nobody's phone can open; mirrors
+	// the JWT_SECRET check above exactly, same devMode-only escape hatch.
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		if !devMode {
+			log.Fatalf("FRONTEND_URL environment variable is required outside local dev (set DEV_MODE via APP_ENV=local to use the http://localhost:3000 development fallback) — e-ticket emails are the only ticket-delivery path left and link to this value")
+		}
+		frontendURL = "http://localhost:3000"
+	}
+
 	googleClientID := os.Getenv("GOOGLE_CLIENT_ID")
 	if googleClientID == "" {
 		googleClientID = "91716845059-1l96nahbcu7nb39k1sa9r4ev8p2nitdu.apps.googleusercontent.com"
@@ -181,9 +214,19 @@ func main() {
 	// Register Authentication routes
 	authHandler.RegisterRoutes(apiV1, authMounter.Authenticate, loginRateLimit, refreshRateLimit)
 
+	// Initialize Ticket dependencies (My Tickets, order-access secret delivery,
+	// rotation) ahead of Admin/Organizer below — both consume ticketService as
+	// their SecretRotator for M4's panic-revoke paths (see organizer/service.go,
+	// admin/service.go). ticketHandler itself is still constructed and its
+	// routes registered further down, alongside the rate limiters they need.
+	ticketRepo := ticket.NewPostgresRepository(db)
+	ticketService := ticket.NewService(ticketRepo, mailService)
+
 	// Initialize Admin console dependencies
 	adminRepo := admin.NewPostgresRepository(db)
-	adminService := admin.NewAdminService(adminRepo)
+	// ticketService satisfies admin.SecretRotator structurally — see M4's
+	// admin panic-revoke path in internal/admin/service.go.
+	adminService := admin.NewAdminService(adminRepo, ticketService)
 	adminHandler := admin.NewHandler(adminService)
 
 	// Register Admin console routes (Super Admin only)
@@ -197,13 +240,23 @@ func main() {
 	// Register Booking routes
 	bookingHandler.RegisterRoutes(apiV1, authMounter.Authenticate)
 
-	// Initialize Ticket dependencies (My Tickets + Dynamic 10-Min QR Tokens)
-	ticketRepo := ticket.NewPostgresRepository(db)
-	ticketService := ticket.NewService(ticketRepo, mailService)
+	// ticketRepo/ticketService are constructed earlier (see above, ahead of
+	// Admin/Organizer) — only the handler and route registration live here.
 	ticketHandler := ticket.NewHandler(ticketService)
 
+	// /order-access/* is the only unauthenticated secret-bearing surface in
+	// the codebase (link-as-credential, plan decision 4) — UUID entropy makes
+	// brute force impractical, but every other sensitive route here has a
+	// limiter, so this does too.
+	orderAccessRateLimit := middleware.RateLimit(redisClient, "order-access", 60, 5*time.Minute)
+	// Secret rotation (M3/M4) is a much rarer, more sensitive write than a
+	// read — a purchaser panic-revokes once when they suspect a leak, not
+	// every few seconds like a rotating QR poll. A tighter ceiling than the
+	// GET routes' 60/5min.
+	orderAccessRotateRateLimit := middleware.RateLimit(redisClient, "order-access-rotate", 10, 15*time.Minute)
+
 	// Register Ticket routes
-	ticketHandler.RegisterRoutes(apiV1, authMounter.Authenticate)
+	ticketHandler.RegisterRoutes(apiV1, authMounter.Authenticate, orderAccessRateLimit, orderAccessRotateRateLimit)
 
 	// Initialize Venue Layout dependencies (saved seat-map plans + geometry)
 	venueLayoutRepo := venuelayout.NewPostgresRepository(db)
@@ -218,7 +271,10 @@ func main() {
 	// bookingService is passed in as payment's HoldReader: the hold is the
 	// authority on what an order contains and what it costs, so pricing is
 	// re-derived from it server-side rather than trusted from the request body.
-	paymentService := payment.NewPaymentService(paymentRepo, mailService, bookingService)
+	// ticketService is passed in as payment's TicketIssuer: both the Midtrans
+	// webhook and the buyer-triggered complete-payment endpoint mint tickets
+	// through this one implementation — see payment.TicketIssuer.
+	paymentService := payment.NewPaymentService(paymentRepo, mailService, bookingService, ticketService, frontendURL)
 	paymentHandler := payment.NewHandler(paymentService)
 
 	// Register Payment routes
@@ -232,11 +288,36 @@ func main() {
 
 	// Initialize Organizer onboarding dependencies
 	organizerRepo := organizer.NewPostgresRepository(db)
-	organizerService := organizer.NewOrganizerService(organizerRepo, s3Storage)
+	// ticketService satisfies organizer.SecretRotator structurally — see
+	// M4's organizer panic-revoke path in internal/organizer/service.go.
+	organizerService := organizer.NewOrganizerService(organizerRepo, s3Storage, ticketService)
 	organizerHandler := organizer.NewHandler(organizerService)
 
 	// Register Organizer routes
 	organizerHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole, authMounter.RequireEventOwnership)
+
+	// Initialize Event Staff (ticketman) CRUD dependencies — organizer console
+	// only; the ticketman's own login/session lives in a separate package.
+	eventStaffRepo := eventstaff.NewPostgresRepository(db)
+	eventStaffService := eventstaff.NewService(eventStaffRepo)
+	eventStaffHandler := eventstaff.NewHandler(eventStaffService)
+
+	// Register Event Staff routes
+	eventStaffHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole, authMounter.RequireEventOwnership)
+
+	// Initialize Ticketman (scanner staff) auth dependencies — its own JWT
+	// secret and its own middleware, isolated from the platform auth stack.
+	ticketmanAuthMounter := middleware.NewTicketmanAuthMiddleware(ticketmanJWTSecret, db)
+	ticketmanRepo := ticketman.NewPostgresRepository(db)
+	ticketmanAccessTTL := getDurationEnv("TICKETMAN_ACCESS_TOKEN_TTL", 12*time.Hour)
+	ticketmanService := ticketman.NewAuthService(ticketmanRepo, ticketmanJWTSecret, ticketmanAccessTTL)
+	ticketmanHandler := ticketman.NewHandler(ticketmanService, isSecure, ticketmanAccessTTL)
+
+	// Same login-abuse ceiling as the platform login, per-IP.
+	ticketmanLoginRateLimit := middleware.RateLimit(redisClient, "ticketman_login", 10, 15*time.Minute)
+
+	// Register Ticketman auth routes
+	ticketmanHandler.RegisterRoutes(mux, ticketmanAuthMounter.RequireTicketman, ticketmanLoginRateLimit)
 
 	// Initialize Co-Organizer Delegation dependencies (owner-driven delegation + approval)
 	delegationRepo := delegation.NewPostgresRepository(db)
@@ -267,9 +348,12 @@ func main() {
 	// Register Bank Account routes (nested under /api/users/me/)
 	bankAccountHandler.RegisterRoutes(mux, authMounter.Authenticate)
 
-	// Initialize and Register Scanner routes
+	// Initialize and Register Scanner routes. Every scan-side route requires a
+	// ticketman session (RequireTicketman); gate CRUD stays on the organizer
+	// console guard chain. No unauthenticated path remains.
 	scannerHandler := scanner.NewHandler(db)
-	scannerHandler.RegisterRoutes(mux)
+	scanRateLimit := middleware.RateLimit(redisClient, "scan", 120, time.Minute)
+	scannerHandler.RegisterRoutes(mux, ticketmanAuthMounter.RequireTicketman, scanRateLimit, authMounter.Authenticate, authMounter.RequirePlatformRole, authMounter.RequireEventOwnership)
 
 	// Initialize Resale Marketplace dependencies
 	resaleRepo := resale.NewPostgresRepository(db)

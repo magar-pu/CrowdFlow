@@ -1,6 +1,19 @@
 import { apiRequest } from "@/utils/api";
 import { ApiResponse } from "@/types/api";
 
+/** One ticket's attendee capture, submitted with the order. */
+export interface AttendeeInput {
+  /** Present only for an assigned-seating slot; absent for GA. */
+  seat_id?: number;
+  ticket_tier_id: number;
+  full_name: string;
+  nik: string;
+  email: string;
+  phone: string;
+  /** yyyy-mm-dd */
+  dob: string;
+}
+
 export interface CreateOrderRequest {
   event_id: number;
   payment_method?: string; // "virtual_account" | "qris" | "credit_card"
@@ -19,6 +32,13 @@ export interface CreateOrderRequest {
     quantity: number;
     currency: string;
   }[];
+  /**
+   * One entry per ticket in the hold — the backend rejects the order unless
+   * this exactly covers every seat/GA unit the hold contains. Written to
+   * order_attendees, which ticket issuance later reads to mint one ticket
+   * per attendee.
+   */
+  attendees: AttendeeInput[];
 }
 
 /**

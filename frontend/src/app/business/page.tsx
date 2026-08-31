@@ -20,11 +20,12 @@ import { Turnstile } from "@/components/common/Turnstile";
 // place the user can be told which files to trim.
 import {
   ACCEPT,
-  CRITERIA,
-  MAX_FILE_MB,
   MAX_REQUEST_BYTES,
   MAX_REQUEST_MB,
+  compressImageIfNeeded,
+  criteriaForType,
   formatSize,
+  maxFileMBForType,
   validateDocument,
 } from "@/lib/documentUpload";
 
@@ -158,18 +159,22 @@ export default function BusinessPage() {
    * selection: leaving the old file in place while showing an error reads as
    * "your new file was accepted" on the next glance.
    */
-  const handlePickDocument = (
+  const handlePickDocument = async (
     slot: DocumentSlot,
     setter: (f: File | null) => void,
-    file: File | null
+    pickedFile: File | null
   ) => {
     setErrorMsg("");
-    if (!file) {
+    if (!pickedFile) {
       setter(null);
       setDocErrors((prev) => ({ ...prev, [slot]: undefined }));
       return;
     }
-    const problem = validateDocument(file);
+    // Shrink phone-photo-sized images before the size check, so a 4MB photo
+    // succeeds silently instead of being rejected and handed back to the
+    // user to compress by hand. PDFs pass through untouched.
+    const file = await compressImageIfNeeded(pickedFile);
+    const problem = validateDocument(file, slot.toUpperCase());
     setDocErrors((prev) => ({ ...prev, [slot]: problem ?? undefined }));
     setter(problem ? null : file);
   };
@@ -201,7 +206,7 @@ export default function BusinessPage() {
       const breakdown = attached.map(([label, file]) => `${label} ${formatSize(file.size)}`).join(", ");
       setErrorMsg(
         `Your documents total ${formatSize(totalBytes)}, over the ${MAX_REQUEST_MB}MB limit for one submission (${breakdown}). ` +
-          `Each file may be up to ${MAX_FILE_MB}MB, but they are uploaded together. Remove or compress one and try again.`
+          `Each file may be up to ${maxFileMBForType("KTP")}MB, but they are uploaded together. Remove or compress one and try again.`
       );
       setActionLoading(false);
       return;
@@ -597,7 +602,7 @@ export default function BusinessPage() {
                   <div className="border-t border-border-subtle pt-6 space-y-4">
                     <h3 className="font-semibold text-text-primary flex items-center gap-1.5"><FileText size={18} /> Document Re-uploads</h3>
                     <p className="text-xs text-text-secondary">Upload new versions of documents only if corrections were requested. Existing files remain in place.</p>
-                    <p className="text-xs text-text-secondary">{CRITERIA}</p>
+                    <p className="text-xs text-text-secondary">{criteriaForType("KTP")}</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {/* Document Item: KTP */}
                       <div className="border border-border-subtle p-4 rounded-lg flex items-center justify-between gap-4">
@@ -782,7 +787,7 @@ export default function BusinessPage() {
 
               <div className="border-t border-border-subtle pt-6 space-y-4">
                 <h3 className="font-semibold text-text-primary flex items-center gap-1.5"><UploadCloud size={18} /> Legal Verification Documents</h3>
-                <p className="text-xs text-text-secondary">{CRITERIA}</p>
+                <p className="text-xs text-text-secondary">{criteriaForType("KTP")}</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Document Item: KTP */}
                   <div className="border border-border-subtle p-4 rounded-lg flex items-center justify-between gap-4">

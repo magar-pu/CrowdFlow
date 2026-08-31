@@ -27,7 +27,7 @@ import DocumentSlot, {
   type DocumentSlotFile,
   type DocumentSlotSpec,
 } from "@/components/documents/DocumentSlot";
-import { ACCEPT, CRITERIA_SINGLE, validateDocument } from "@/lib/documentUpload";
+import { ACCEPT, compressImageIfNeeded, criteriaSingleForType, validateDocument } from "@/lib/documentUpload";
 import {
   deleteEventDocument,
   getEventDocumentUrl,
@@ -121,13 +121,18 @@ export default function WorkspaceDocuments({ eventId, readOnly = false }: Worksp
     load();
   }, [load]);
 
-  const handleFile = async (type: string, file: File) => {
+  const handleFile = async (type: string, pickedFile: File) => {
     setSlotError((prev) => ({ ...prev, [type]: undefined }));
 
-    // Checked here as well as server-side purely to save the user a 10MB round
+    // Shrink phone-photo-sized images before the size check, so a 4MB photo
+    // succeeds silently instead of being rejected and handed back to the
+    // user to compress by hand. PDFs pass through untouched.
+    const file = await compressImageIfNeeded(pickedFile);
+
+    // Checked here as well as server-side purely to save the user a round
     // trip; the backend rejects it either way. Same rules as every other
     // document surface, from one module.
-    const problem = validateDocument(file);
+    const problem = validateDocument(file, type);
     if (problem) {
       setSlotError((prev) => ({ ...prev, [type]: problem }));
       return;
@@ -221,8 +226,10 @@ export default function WorkspaceDocuments({ eventId, readOnly = false }: Worksp
               privately; View creates a link that expires within a couple of minutes.
             </p>
             {/* Always on screen, including once every slot is filled — the
-                rules matter just as much when replacing a rejected file. */}
-            <p className="font-mono text-[10px] text-text-secondary">{CRITERIA_SINGLE}</p>
+                rules matter just as much when replacing a rejected file.
+                The per-file limit differs by document (2-10MB), so it's
+                shown on each slot below rather than as one number here. */}
+            <p className="font-mono text-[10px] text-text-secondary">PDF, PNG, JPG/JPEG, or WebP — limit shown per document below</p>
           </div>
           {!loading && data && (
             data.complete ? (
@@ -272,7 +279,7 @@ export default function WorkspaceDocuments({ eventId, readOnly = false }: Worksp
                   idPrefix="event-doc"
                   slot={slot}
                   doc={doc ? toSlotFile(doc) : null}
-                  criteria={CRITERIA_SINGLE}
+                  criteria={criteriaSingleForType(slot.type)}
                   accept={ACCEPT}
                   busy={busyType === slot.type}
                   readOnly={readOnly}

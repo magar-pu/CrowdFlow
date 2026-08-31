@@ -1,29 +1,22 @@
 "use client";
 
 import React, { useState } from 'react';
-import { ArrowLeft, Check, ShieldAlert, X, Zap, Shield, Activity, Ticket, Smartphone, Settings, FileEdit } from 'lucide-react';
+import { ArrowLeft, Check, X, Activity, Ticket, Settings, FileEdit } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { ApiResponse, Event, Scanner, TicketTier, VenueSection, Transaction } from '@/types/admin';
+import { ApiResponse, Event, TicketTier, Transaction } from '@/types/admin';
 import RejectReasonModal from '@/components/admin/shared/RejectReasonModal';
 import WorkspaceLiveTrackerTab from './WorkspaceLiveTrackerTab';
 import WorkspaceTicketTiersTab from './WorkspaceTicketTiersTab';
-import WorkspaceScannerAppTab from './WorkspaceScannerAppTab';
 import WorkspaceSettingsTab from './WorkspaceSettingsTab';
 import WorkspaceDetailsTab from './WorkspaceDetailsTab';
 
 interface EventWorkspaceViewProps {
   event: Event;
-  scanners: Scanner[];
   ticketTiers: TicketTier[];
-  venueSections: VenueSection[];
   transactions: Transaction[];
   onBack: () => void;
-  onAddScanner: (newScanner: Scanner) => void;
-  onDeleteScanner: (id: string) => void;
-  onUpdateSections: (updatedSections: VenueSection[]) => void;
   onUpdateTiers: (updatedTiers: TicketTier[]) => Promise<ApiResponse<void>>;
   onDeleteTier: (tierId: string) => void;
-  onUpdateScanners: (updatedScanners: Scanner[]) => void;
   onSetDraft: (id: string) => void;
   onSetPendingReview: (id: string) => void;
   onApproveEvent: (id: string) => void;
@@ -31,7 +24,7 @@ interface EventWorkspaceViewProps {
   onDetailsSaved: () => void | Promise<void>;
 }
 
-type WorkspaceTab = 'overview' | 'tickets' | 'scanners' | 'details' | 'settings';
+type WorkspaceTab = 'overview' | 'tickets' | 'details' | 'settings';
 
 const STATUS_BADGE_CLASS: Record<Event['status'], string> = {
   Active: 'bg-success/10 text-success border-success/20',
@@ -43,17 +36,11 @@ const STATUS_BADGE_CLASS: Record<Event['status'], string> = {
 
 export default function EventWorkspaceView({
   event,
-  scanners,
   ticketTiers,
-  venueSections,
   transactions,
   onBack,
-  onAddScanner,
-  onDeleteScanner,
-  onUpdateSections,
   onUpdateTiers,
   onDeleteTier,
-  onUpdateScanners,
   onSetDraft,
   onSetPendingReview,
   onApproveEvent,
@@ -62,56 +49,9 @@ export default function EventWorkspaceView({
 }: EventWorkspaceViewProps) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('overview');
   const [showRejectModal, setShowRejectModal] = useState(false);
-  const [validationResult, setValidationResult] = useState<{
-    show: boolean;
-    success: boolean;
-    message: string;
-    holder?: string;
-    tier?: string;
-  } | null>(null);
-
-  const triggerScanSimulation = (forceSuccess: boolean) => {
-    setValidationResult({
-      show: true,
-      success: forceSuccess,
-      message: forceSuccess ? "TICKET VERIFIED" : "DUPLICATE TICKET SIGNATURE",
-      holder: forceSuccess ? "Sarah Jenkins" : "Unknown / Blacklisted Wallet",
-      tier: forceSuccess ? "VIP All-Access Pass" : "GA Phase 2 (Copied)"
-    });
-
-    setTimeout(() => {
-      setValidationResult(null);
-    }, 4000);
-  };
 
   return (
     <div className="space-y-6 relative">
-      {/* Validation Animation Overlay Popups */}
-      {validationResult && (
-        <div className="fixed top-6 right-6 z-50">
-          <div className={`flex w-80 items-start gap-3 rounded-lg border p-4 shadow-overlay backdrop-blur-md ${
-            validationResult.success 
-              ? 'border-success/20 bg-success/10 text-success' 
-              : 'border-danger/20 bg-danger/10 text-danger'
-          }`}>
-            <div className={`rounded-xl p-2 ${validationResult.success ? 'bg-emerald-500/20' : 'bg-rose-500/20'}`}>
-              {validationResult.success ? <Check className="h-5 w-5 text-emerald-400" /> : <ShieldAlert className="h-5 w-5 text-rose-400" />}
-            </div>
-            <div className="flex-1">
-              <h4 className="text-xs font-bold uppercase tracking-wide">{validationResult.message}</h4>
-              <p className="mt-1 text-[11px] font-semibold text-text-primary">Holder: {validationResult.holder}</p>
-              <p className="text-[10px] text-text-secondary">Tier: {validationResult.tier}</p>
-              <div className="mt-2.5 h-1 w-full overflow-hidden rounded bg-surface-container">
-                <div className={`h-full animate-pulse ${validationResult.success ? 'bg-emerald-400' : 'bg-rose-400'}`} style={{ width: '100%' }} />
-              </div>
-            </div>
-            <button onClick={() => setValidationResult(null)} className="text-text-secondary hover:text-text-primary cursor-pointer">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Header breadcrumb & info */}
       <div className="flex flex-col gap-4 border-b border-border-subtle pb-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
@@ -133,26 +73,6 @@ export default function EventWorkspaceView({
             </div>
             <h1 className="mt-1 text-xl font-bold tracking-normal text-text-primary sm:text-2xl">{event.name}</h1>
           </div>
-        </div>
-
-        {/* Workspace Quick Simulator Trigger */}
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <button
-            onClick={() => triggerScanSimulation(true)}
-            className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-success/20 bg-success/10 px-3.5 py-2 text-xs font-semibold text-success transition-all hover:bg-success hover:text-on-success cursor-pointer"
-            title="Simulate a Valid Ticket Scanning"
-          >
-            <Zap className="h-3.5 w-3.5" />
-            <span>Simulate Success Scan</span>
-          </button>
-          <button
-            onClick={() => triggerScanSimulation(false)}
-            className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-danger/20 bg-danger/10 px-3.5 py-2 text-xs font-semibold text-danger transition-all hover:bg-danger hover:text-on-error cursor-pointer"
-            title="Simulate an Anti-Counterfeit Failure"
-          >
-            <Shield className="h-3.5 w-3.5" />
-            <span>Simulate Failed Scan</span>
-          </button>
         </div>
       </div>
 
@@ -207,7 +127,6 @@ export default function EventWorkspaceView({
         {([
           { id: 'overview', name: 'Live Tracker', icon: Activity },
           { id: 'tickets', name: 'Ticket Tiers', icon: Ticket },
-          { id: 'scanners', name: 'Handheld Scanners', icon: Smartphone },
           { id: 'details', name: 'Event Details', icon: FileEdit },
           { id: 'settings', name: 'Security Config', icon: Settings },
         ] satisfies { id: WorkspaceTab; name: string; icon: LucideIcon }[]).map((tab) => {
@@ -234,22 +153,11 @@ export default function EventWorkspaceView({
       {activeTab === 'overview' && (
         <WorkspaceLiveTrackerTab
           event={event}
-          scanners={scanners}
           transactions={transactions.filter((tx) => tx.eventName === event.name)}
         />
       )}
       {activeTab === 'tickets' && (
         <WorkspaceTicketTiersTab ticketTiers={ticketTiers} onUpdateTiers={onUpdateTiers} onDeleteTier={onDeleteTier} />
-      )}
-      {activeTab === 'scanners' && (
-        <WorkspaceScannerAppTab 
-          scanners={scanners} 
-          venueSections={venueSections}
-          onAddScanner={onAddScanner}
-          onDeleteScanner={onDeleteScanner}
-          onUpdateScanners={onUpdateScanners}
-          onUpdateSections={onUpdateSections}
-        />
       )}
       {activeTab === 'details' && (
         <WorkspaceDetailsTab event={event} onSaved={onDetailsSaved} />

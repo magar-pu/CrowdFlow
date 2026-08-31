@@ -97,11 +97,11 @@ type Transaction struct {
 	Date         string  `json:"date"`
 }
 
-// Scanner, VerificationApplication, and SecurityAlert have no backing tables
-// yet. Structs kept here so handler.go can return correctly shaped
-// placeholder payloads - see service.go for the TODO covering real
-// implementations once the underlying schema exists. Payout and Activity are
-// now backed by the payouts/activity_log tables (migrations/0001_payouts_and_activity_log.sql).
+// VerificationApplication and SecurityAlert have no backing tables yet.
+// Structs kept here so handler.go can return correctly shaped placeholder
+// payloads - see service.go for the TODO covering real implementations once
+// the underlying schema exists. Payout and Activity are now backed by the
+// payouts/activity_log tables (migrations/0001_payouts_and_activity_log.sql).
 
 type Payout struct {
 	ID            string  `json:"id"`
@@ -110,17 +110,6 @@ type Payout struct {
 	Amount        float64 `json:"amount"`
 	Status        string  `json:"status"`
 	RequestedDate string  `json:"requestedDate"`
-}
-
-type Scanner struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	DeviceName      string `json:"deviceName"`
-	Status          string `json:"status"`
-	ScansCount      int    `json:"scansCount"`
-	LastSync        string `json:"lastSync"`
-	BatteryLevel    int    `json:"batteryLevel"`
-	AssignedSection string `json:"assignedSection"`
 }
 
 type VerificationApplication struct {
@@ -252,6 +241,10 @@ type Service interface {
 	MarkNotificationsRead(userID int, notificationIDs []int) error
 
 	// Placeholder-backed - see service.go
-	ListScanners(eventID int) ([]*Scanner, error)
 	ListSecurityAlerts() ([]*SecurityAlert, error)
+
+	// RotateTicketSecret is M4's admin-authorized panic-revoke path — no
+	// ownership check beyond the ticket existing (Super Admin can rotate any
+	// ticket platform-wide). See service.go.
+	RotateTicketSecret(ticketID string) (string, error)
 }

@@ -2,17 +2,16 @@ package organizer
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha1"
 	"database/sql"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
+
+	"crowdflow-backend/internal/ticketqr"
 )
 
 type PostgresRepository struct {
@@ -44,91 +43,6 @@ func cleanQRToken(rawToken string) string {
 	}
 
 	return rawToken
-}
-
-func base32Decode(s string) ([]byte, error) {
-	const base32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
-	s = strings.ToUpper(strings.TrimSpace(s))
-	if len(s) == 0 {
-		return nil, fmt.Errorf("empty secret")
-	}
-
-	var bits uint32
-	var bitCount int
-	var result []byte
-
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '=' {
-			break
-		}
-		idx := strings.IndexByte(base32Alphabet, c)
-		if idx < 0 {
-			continue
-		}
-		bits = (bits << 5) | uint32(idx)
-		bitCount += 5
-		if bitCount >= 8 {
-			bitCount -= 8
-			result = append(result, byte(bits>>bitCount))
-		}
-	}
-	return result, nil
-}
-
-func generateTOTPCode(secret []byte, step int64) string {
-	buf := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf, uint64(step))
-
-	mac := hmac.New(sha1.New, secret)
-	mac.Write(buf)
-	hash := mac.Sum(nil)
-
-	offset := hash[len(hash)-1] & 0x0f
-	binaryCode := (int32(hash[offset]&0x7f) << 24) |
-		(int32(hash[offset+1]&0xff) << 16) |
-		(int32(hash[offset+2]&0xff) << 8) |
-		(int32(hash[offset+3] & 0xff))
-
-	otp := binaryCode % 1000000
-	return fmt.Sprintf("%06d", otp)
-}
-
-func verifyTOTP(base32Secret string, clientCode string, interval int64, windowTolerance int64) bool {
-	clientCode = strings.TrimSpace(clientCode)
-	if len(clientCode) != 6 {
-		return false
-	}
-	now := time.Now().Unix()
-	currentStep := now / interval
-
-	secretBytes, err := base32Decode(base32Secret)
-	if err != nil || len(secretBytes) == 0 {
-		return false
-	}
-
-	for i := -windowTolerance; i <= windowTolerance; i++ {
-		step := currentStep + i
-		if generateTOTPCode(secretBytes, step) == clientCode {
-			return true
-		}
-	}
-	return false
-}
-
-func deriveDefaultSecret(ticketID string) string {
-	var sb strings.Builder
-	upper := strings.ToUpper(ticketID)
-	for _, r := range upper {
-		if (r >= 'A' && r <= 'Z') || (r >= '2' && r <= '7') {
-			sb.WriteRune(r)
-		}
-	}
-	cleaned := sb.String()
-	if len(cleaned) < 32 {
-		cleaned = cleaned + strings.Repeat("J", 32-len(cleaned))
-	}
-	return cleaned[:32]
 }
 
 func (r *PostgresRepository) Create(ctx context.Context, app *OrganizerApplication, docs []*OrganizerDocument) error {
@@ -1493,6 +1407,57 @@ func (r *PostgresRepository) GetOrderDetails(ctx context.Context, orderID string
 	}
 	o.PaymentMethod = string(payType)
 	o.TicketType = "General Admission"
+
+	// Per-ticket breakdown for the order-detail screen. Deliberately its own
+	// query joining through seats (s.row_number/s.seat_number) rather than
+	// event_seats_matrix's own columns — event_seats_matrix does NOT have
+	// section_name/row_name/seat_number (dropped by migration 0011); a
+	// couple of other queries in this file (e.g. ListEventAttendees) still
+	// reference those non-existent columns and will error if hit. Not fixed
+	// here — out of scope for this change, flagging in case it needs its own
+	// pass.
+	ticketRows, err := r.db.QueryContext(ctx, `
+		SELECT
+			t.id::text,
+			t.attendee_full_name,
+			tt.name,
+			COALESCE('Row ' || s.row_number || ' Seat ' || s.seat_number, 'General Admission'),
+			t.ticket_status::text
+		FROM tickets t
+		JOIN ticket_tiers tt ON tt.id = t.ticket_tier_id
+		LEFT JOIN event_seats_matrix esm ON esm.id = t.event_seats_matrix_id
+		LEFT JOIN seats s ON s.id = esm.seat_id
+		WHERE t.order_id::text = $1
+		ORDER BY t.created_at ASC
+	`, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load order tickets: %w", err)
+	}
+	defer ticketRows.Close()
+
+	o.Tickets = []*OrganizerOrderTicket{}
+	for ticketRows.Next() {
+		var t OrganizerOrderTicket
+		if err := ticketRows.Scan(&t.TicketID, &t.AttendeeFullName, &t.TierName, &t.SeatLabel, &t.TicketStatus); err != nil {
+			return nil, err
+		}
+		o.Tickets = append(o.Tickets, &t)
+	}
+	if err := ticketRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// M5 access telemetry — best-effort: a query failure here must not hide
+	// the rest of the order's details, so errors are swallowed and the count
+	// stays at its zero value rather than failing the whole request.
+	ticketCount := len(o.Tickets)
+	var deviceCount int
+	if err := r.db.QueryRowContext(ctx,
+		"SELECT COUNT(DISTINCT (ip_hash, ua_hash)) FROM booking_access_log WHERE order_id = $1", orderID,
+	).Scan(&deviceCount); err == nil {
+		o.AccessDeviceCount = deviceCount
+		o.AccessOutlier = deviceCount > ticketCount
+	}
 
 	return &o, nil
 }
@@ -2904,10 +2869,15 @@ func (r *PostgresRepository) CheckInAttendee(ctx context.Context, eventID int, o
 	var esmID *int
 	var secretKey string
 
-	if strings.Contains(qrToken, "|") {
-		parts := strings.Split(qrToken, "|")
-		targetTicketID := strings.TrimSpace(parts[0])
-		clientTOTP := strings.TrimSpace(parts[1])
+	if qrPayload, ok := ticketqr.Parse(qrToken); ok {
+		// The frozen CF1 contract, via the one canonical implementation
+		// (internal/ticketqr) shared with the ticketman scanner — this used
+		// to be its own ad-hoc `ticketId|totp` format on a 300s/±2 window,
+		// a second, independently-drifting copy of the same rule. A real
+		// ticket's QR has emitted CF1 since Job A Phase 1 shipped, so the
+		// old pipe format is no longer produced by anything and is not
+		// accepted here any more.
+		targetTicketID := qrPayload.TicketID
 
 		err = tx.QueryRowContext(ctx, `
 			SELECT t.id::text, t.attendee_full_name, tt.name, t.ticket_status::text, t.event_seats_matrix_id, COALESCE(t.secret_key, '')
@@ -2921,19 +2891,8 @@ func (r *PostgresRepository) CheckInAttendee(ctx context.Context, eventID int, o
 			return nil, fmt.Errorf("ticket not found or not authorized for this event scan")
 		}
 
-		valid := false
-		if secretKey != "" {
-			valid = verifyTOTP(secretKey, clientTOTP, 300, 2)
-		}
-		if !valid {
-			fallbackSecret := deriveDefaultSecret(targetTicketID)
-			valid = verifyTOTP(fallbackSecret, clientTOTP, 300, 2)
-		}
-		if !valid && (targetTicketID == "a04bb786-f3b2-45a3-af5e-49ea4cef4570" || clientTOTP == "123456") {
-			valid = true
-		}
-		if !valid {
-			return nil, fmt.Errorf("invalid or expired dynamic TOTP QR code (rotates every 5m)")
+		if result := ticketqr.Verify(qrPayload, secretKey, time.Now().Unix()); result != ticketqr.Valid {
+			return nil, fmt.Errorf("invalid or expired dynamic QR code")
 		}
 	} else {
 		err = tx.QueryRowContext(ctx, `
@@ -3002,6 +2961,28 @@ func (r *PostgresRepository) CheckInAttendee(ctx context.Context, eventID int, o
 		SeatNumber:   seatLabel,
 		Status:       "checked_in",
 	}, nil
+}
+
+// TicketBelongsToEvent is the ownership check for M4's organizer rotation
+// path — same join shape as CheckInAttendee's ownership lookup above.
+func (r *PostgresRepository) TicketBelongsToEvent(ctx context.Context, ticketID string, eventID int, organizerID int) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	var exists bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM tickets t
+			JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
+			JOIN events e ON tt.event_id = e.id
+			WHERE t.id::text = $1 AND e.id = $2 AND e.organizer_id = $3
+		)
+	`, ticketID, eventID, organizerID).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
 }
 
 func (r *PostgresRepository) ListNotifications(ctx context.Context, userID int) ([]*Notification, error) {

@@ -1,8 +1,6 @@
 package ticket
 
 import (
-	"log"
-
 	"crowdflow-backend/internal/mail"
 )
 
@@ -26,18 +24,18 @@ func (s *TicketService) GetTicketByID(ticketID string, userID int) (*Ticket, err
 	return s.repo.GetTicketByID(ticketID, userID)
 }
 
-func (s *TicketService) GetTicketQR(ticketID string, userID int) (*TicketQRResponse, error) {
-	// First verify ownership
-	_, err := s.repo.GetTicketByID(ticketID, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	return s.repo.GetOrCreateDynamicToken(ticketID)
+// IssueForPaidOrder issues tickets for an already-paid order — the single
+// shared implementation used by both callers that can mark an order paid:
+// CompletePayment below (the buyer-triggered POST /orders/complete-payment
+// path) and internal/payment's Midtrans webhook, which calls this through
+// the narrow payment.TicketIssuer interface it defines so the two packages
+// don't need to import each other.
+func (s *TicketService) IssueForPaidOrder(orderID string) (int, error) {
+	return s.repo.GenerateTicketsForPaidOrder(orderID)
 }
 
 func (s *TicketService) CompletePayment(orderID string) (*CompletePaymentResponse, error) {
-	count, err := s.repo.GenerateTicketsForPaidOrder(orderID)
+	count, err := s.IssueForPaidOrder(orderID)
 	if err != nil {
 		return nil, err
 	}
@@ -50,42 +48,39 @@ func (s *TicketService) CompletePayment(orderID string) (*CompletePaymentRespons
 	}, nil
 }
 
-func (s *TicketService) RequestOTP(ticketID string, userID int, email string) (*RequestOTPResponse, error) {
-	otpCode, err := s.repo.RequestTicketOTP(ticketID, userID, email)
-	if err != nil {
-		return nil, err
-	}
-
-	if s.mailService != nil && email != "" {
-		go func(to string, code string) {
-			if err := s.mailService.SendOTP(to, code, "Klaim Tiket Event"); err != nil {
-				log.Printf("[TICKET OTP ERROR] Failed to send OTP email to %s: %v", to, err)
-			} else {
-				log.Printf("[TICKET OTP SUCCESS] Verification OTP sent to %s via Resend", to)
-			}
-		}(email, otpCode)
-	}
-
-	// The OTP is deliberately NOT echoed back in the response: the whole point
-	// of the mail round-trip is to prove the caller controls the mailbox.
-	// In development the code is still recoverable from the backend log.
-	return &RequestOTPResponse{
-		Message: "OTP sent successfully to " + email,
-	}, nil
+// GetOrderAccess and GetTicketAccess back the no-login /order-access/*
+// endpoints the /booking/<order_uuid>* frontend pages call. See the
+// OrderAccessResponse/TicketAccessResponse doc comments in entity.go for
+// why neither of these takes a userID.
+func (s *TicketService) GetOrderAccess(orderID string) (*OrderAccessResponse, error) {
+	return s.repo.GetOrderAccess(orderID)
 }
 
-func (s *TicketService) VerifyOTP(ticketID string, userID int, email string, otpCode string) (*VerifyOTPResponse, error) {
-	verified, vaultToken, err := s.repo.VerifyTicketOTP(ticketID, userID, email, otpCode)
-	if err != nil {
-		return nil, err
-	}
-	return &VerifyOTPResponse{
-		Verified:   verified,
-		VaultToken: vaultToken,
-		Message:    "OTP verified successfully",
-	}, nil
+func (s *TicketService) GetTicketAccess(orderID string, ticketID string) (*TicketAccessResponse, error) {
+	return s.repo.GetTicketAccess(orderID, ticketID)
 }
 
-func (s *TicketService) GetTicketVault(ticketID string, userID int) (*TicketVaultResponse, error) {
-	return s.repo.GetTicketVaultData(ticketID, userID)
+// RotateSecretForOrderTicket is the purchaser-authorized rotation path (M3/M4)
+// exposed on the order-access routes — see repository.go's doc comment.
+func (s *TicketService) RotateSecretForOrderTicket(orderID string, ticketID string) error {
+	return s.repo.RotateSecretForOrderTicket(orderID, ticketID)
+}
+
+// RotateSecret is the unscoped primitive internal/organizer and
+// internal/admin call through their own SecretRotator interfaces, AFTER
+// each has independently verified the caller is allowed to touch this
+// ticket. TicketService performs no authorization here — see
+// PostgresRepository.RotateSecret.
+func (s *TicketService) RotateSecret(ticketID string) (string, error) {
+	return s.repo.RotateSecret(ticketID)
+}
+
+// RecordBookingAccess and CountDistinctBookingAccessDevices back M5 access
+// telemetry — see the matching repository methods.
+func (s *TicketService) RecordBookingAccess(orderID string, ticketID string, ipHash string, uaHash string) error {
+	return s.repo.RecordBookingAccess(orderID, ticketID, ipHash, uaHash)
+}
+
+func (s *TicketService) CountDistinctBookingAccessDevices(orderID string) (int, error) {
+	return s.repo.CountDistinctBookingAccessDevices(orderID)
 }

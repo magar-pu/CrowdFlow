@@ -1,25 +1,26 @@
 /**
  * components/your-ticket/TicketActions.tsx
  *
- * "Add to Apple Wallet" + "Download PDF Ticket" primary actions, and a
- * "Share Event Details" link underneath. Matches your_ticket Stitch
- * markup exactly. Handlers are passed in — actual Wallet pass generation
- * and PDF export are backend/Go concerns, not implemented here yet.
+ * "Add to Apple Wallet" primary action, and a "Share Event Details" link
+ * underneath. Matches your_ticket Stitch markup. The PDF ticket download
+ * button was removed with the PDF ticket generator (plan decision 16): a
+ * PDF can only carry a frozen QR, which contradicts the whole rotating-QR
+ * design, and generateTicketPdf.ts also shipped the ticket payload to a
+ * third party (api.qrserver.com). Handlers are passed in — actual Wallet
+ * pass generation is a backend/Go concern, not implemented here yet.
  */
 
-import { Smartphone, Download, Share2 } from "lucide-react";
+import { Smartphone, Share2 } from "lucide-react";
 
 interface TicketActionsProps {
   on_add_to_wallet?: () => void;
   on_add_shortcut?: () => void;
-  on_download_pdf: () => void;
   on_share: () => void;
 }
 
 export function TicketActions({
   on_add_to_wallet,
   on_add_shortcut,
-  on_download_pdf,
   on_share,
 }: TicketActionsProps) {
   const handleShortcutClick = on_add_shortcut || on_add_to_wallet || (() => {
@@ -36,14 +37,6 @@ export function TicketActions({
         >
           <Smartphone size={20} />
           Add Shortcut to Home Screen
-        </button>
-        <button
-          type="button"
-          onClick={on_download_pdf}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-white py-3.5 font-label-md text-label-md text-text-primary shadow-sm transition-colors hover:bg-surface-container-low"
-        >
-          <Download size={20} />
-          Download PDF Ticket
         </button>
       </div>
 

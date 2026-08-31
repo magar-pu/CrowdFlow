@@ -18,6 +18,29 @@ type CreateOrderRequest struct {
 	// still sends it and removing it would be a breaking API change, but
 	// nothing in the payment path may read it for value.
 	CartItems []CartItem `json:"cart_items"`
+
+	// Attendees is the identity captured at checkout for every ticket the
+	// hold contains — one entry per held seat, or per unit of quantity for
+	// general admission. Required: an order without a matching attendee for
+	// every ticket is rejected, see resolveAttendees.
+	Attendees []AttendeeInput `json:"attendees"`
+}
+
+// AttendeeInput is one ticket's worth of attendee capture, as submitted by
+// the checkout form. NIK arrives in plaintext over the request body (HTTPS)
+// and is encrypted before it ever reaches the database or a log line — see
+// resolveAttendees and internal/nik.
+type AttendeeInput struct {
+	// SeatID identifies which held seat this attendee is for. Nil for a
+	// general-admission ticket, which has no seat to attach to.
+	SeatID       *int   `json:"seat_id,omitempty"`
+	TicketTierID int    `json:"ticket_tier_id"`
+	FullName     string `json:"full_name"`
+	NIK          string `json:"nik"`
+	Email        string `json:"email"`
+	Phone        string `json:"phone"`
+	// DOB is yyyy-mm-dd.
+	DOB string `json:"dob"`
 }
 
 type CartItem struct {

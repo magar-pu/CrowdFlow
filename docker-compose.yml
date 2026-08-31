@@ -58,6 +58,17 @@ services:
       # development mode — relaxed Secure-cookie flag, no required JWT_SECRET —
       # and no amount of editing backend/.env on the prod host could override
       # it. APP_ENV is per-host and belongs in backend/.env alone.
+      #
+      # Same rule for FRONTEND_URL (e-ticket email links — see backend/main.go
+      # and backend/.env.example): it differs per host exactly like APP_ENV
+      # does, so it lives in backend/.env, loaded above via env_file. Every
+      # host's backend/.env needs FRONTEND_URL set (backend/main.go refuses to
+      # boot without it unless APP_ENV=local) — for this docker-compose stack
+      # that means plain http://localhost (no port), matching NGINX_PORT=80 in
+      # the root .env: local OAuth also requires the origin to be exactly
+      # http://localhost, not :3000 or :8080, so this is not just cosmetic.
+      # If NGINX_PORT is changed from 80 on a given host, FRONTEND_URL must be
+      # updated to match.
     depends_on:
       redis:
         condition: service_healthy

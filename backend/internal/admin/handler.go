@@ -86,15 +86,15 @@ func (h *Handler) RegisterRoutes(
 	// should be pointed at those existing endpoints rather than a new v1
 	// duplicate - see conversation summary.
 
-	mux.Handle("GET /events/{id}/scanners", admin(h.handleListScanners))
-	mux.Handle("POST /events/{id}/scanners", admin(h.handleNotImplemented))
-	mux.Handle("DELETE /events/{id}/scanners/{scannerId}", admin(h.handleNotImplemented))
-
 	// Bonus reads - not yet called by the frontend service files (only PUT is),
 	// included so a future "load current tiers/sections" fetch has somewhere to go.
 	mux.Handle("GET /events/{id}/ticket-tiers", admin(h.handleGetTicketTiers))
 	mux.Handle("PUT /events/{id}/ticket-tiers", admin(h.handleUpdateTicketTiers))
 	mux.Handle("DELETE /events/{id}/ticket-tiers/{tierId}", admin(h.handleDeleteTicketTier))
+
+	// M4: admin-authorized panic-revoke, platform-wide, no ownership check
+	// beyond the ticket existing — Super Admin only, via the `admin` closure.
+	mux.Handle("POST /tickets/{ticketId}/rotate-secret", admin(h.handleRotateTicketSecret))
 
 	mux.Handle("GET /finance/transactions", admin(h.handleListTransactions))
 	mux.Handle("GET /finance/payouts", admin(h.handleListPayouts))
@@ -112,7 +112,7 @@ func (h *Handler) RegisterRoutes(
 }
 
 // handleNotImplemented is returned for actions on resources with no backing
-// table yet (scanners, payouts, verification applications). It responds with
+// table yet (payouts, verification applications). It responds with
 // the standard error envelope rather than a fabricated success, so the
 // frontend surfaces a real error state instead of silently lying.
 func (h *Handler) handleNotImplemented(w http.ResponseWriter, r *http.Request) {
@@ -308,20 +308,6 @@ func (h *Handler) handleListEventStatusLog(w http.ResponseWriter, r *http.Reques
 	response.JSON(w, http.StatusOK, entries)
 }
 
-func (h *Handler) handleListScanners(w http.ResponseWriter, r *http.Request) {
-	eventID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
-		return
-	}
-	scanners, err := h.service.ListScanners(eventID)
-	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load scanners")
-		return
-	}
-	response.JSON(w, http.StatusOK, scanners)
-}
-
 func (h *Handler) handleGetTicketTiers(w http.ResponseWriter, r *http.Request) {
 	eventID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
@@ -378,6 +364,19 @@ func (h *Handler) handleDeleteTicketTier(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Ticket tier deleted"})
+}
+
+func (h *Handler) handleRotateTicketSecret(w http.ResponseWriter, r *http.Request) {
+	ticketID := r.PathValue("ticketId")
+	if ticketID == "" {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Ticket ID is required")
+		return
+	}
+	if _, err := h.service.RotateTicketSecret(ticketID); err != nil {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "Ticket not found")
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]interface{}{"ticketId": ticketID, "rotated": true})
 }
 
 func (h *Handler) handleListTransactions(w http.ResponseWriter, r *http.Request) {

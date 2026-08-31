@@ -11,12 +11,34 @@ import (
 // repository/DB errors (whose raw text must not reach the client).
 var ErrValidation = errors.New("validation failed")
 
-type AdminService struct {
-	repo Repository
+// SecretRotator is the narrow capability internal/ticket's TicketService
+// provides for M4's admin panic-revoke path — mirrors organizer.SecretRotator
+// and payment.TicketIssuer: the interface lives in the consumer package,
+// internal/ticket never imports internal/admin. TicketService.RotateSecret
+// satisfies this structurally; wired in main.go.
+type SecretRotator interface {
+	RotateSecret(ticketID string) (string, error)
 }
 
-func NewAdminService(repo Repository) *AdminService {
-	return &AdminService{repo: repo}
+type AdminService struct {
+	repo    Repository
+	rotator SecretRotator
+}
+
+func NewAdminService(repo Repository, rotator SecretRotator) *AdminService {
+	return &AdminService{repo: repo, rotator: rotator}
+}
+
+// RotateTicketSecret is M4's admin-authorized panic-revoke path. Super
+// Admin only (enforced by the route's requirePlatformRole, not here) and no
+// per-event ownership check — admin is platform-wide by design. The actual
+// write is delegated to rotator so internal/admin, like internal/organizer,
+// never writes tickets.secret_key itself.
+func (s *AdminService) RotateTicketSecret(ticketID string) (string, error) {
+	if s.rotator == nil {
+		return "", fmt.Errorf("secret rotation is not configured")
+	}
+	return s.rotator.RotateSecret(ticketID)
 }
 
 func (s *AdminService) GetPlatformAnalytics(rangeKey string) (*PlatformAnalytics, error) {
@@ -156,18 +178,13 @@ func (s *AdminService) MarkNotificationsRead(userID int, notificationIDs []int) 
 // ---------------------------------------------------------------------------
 // PLACEHOLDERS - no backing tables exist yet for the features below.
 //
-//   - Scanners:       check-in device registry has no table.
 //   - SecurityAlerts: fraud/anomaly detection has no table.
 //
-// These return empty slices (correct envelope, zero data) rather than
+// This returns an empty slice (correct envelope, zero data) rather than
 // fabricated rows, so the frontend can safely switch from local mock state to
-// real fetches today without rendering fake numbers. Replace each with a real
+// a real fetch today without rendering fake numbers. Replace with a real
 // repository method once its table is designed and migrated.
 // ---------------------------------------------------------------------------
-
-func (s *AdminService) ListScanners(eventID int) ([]*Scanner, error) {
-	return []*Scanner{}, nil
-}
 
 func (s *AdminService) ListSecurityAlerts() ([]*SecurityAlert, error) {
 	return []*SecurityAlert{}, nil

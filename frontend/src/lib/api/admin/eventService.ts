@@ -1,5 +1,5 @@
 import { apiRequest } from '@/utils/api';
-import { ApiResponse, Event, EventDetail, EventStatusLogEntry, EventType, Scanner, TicketTier, UpdateEventPayload, Venue, VenueSection } from '@/types/admin';
+import { ApiResponse, Event, EventDetail, EventStatusLogEntry, EventType, TicketTier, UpdateEventPayload, Venue } from '@/types/admin';
 
 export async function listEvents(limit?: number, offset?: number): Promise<ApiResponse<Event[]>> {
   let query = "";
@@ -90,25 +90,6 @@ export async function listEventStatusLog(id: string): Promise<ApiResponse<EventS
   });
 }
 
-export async function listScanners(eventId: string): Promise<ApiResponse<Scanner[]>> {
-  return apiRequest<Scanner[]>(`/api/v1/admin/events/${eventId}/scanners`, {
-    method: "GET",
-  });
-}
-
-export async function addScanner(eventId: string, data: any): Promise<ApiResponse<Scanner>> {
-  return apiRequest<Scanner>(`/api/v1/admin/events/${eventId}/scanners`, {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-}
-
-export async function deleteScanner(eventId: string, scannerId: string): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/v1/admin/events/${eventId}/scanners/${scannerId}`, {
-    method: "DELETE",
-  });
-}
-
 export async function getTicketTiers(eventId: string): Promise<ApiResponse<TicketTier[]>> {
   return apiRequest<TicketTier[]>(`/api/v1/admin/events/${eventId}/ticket-tiers`, {
     method: "GET",
@@ -128,9 +109,3 @@ export async function deleteTicketTier(eventId: string, tierId: string): Promise
   });
 }
 
-export async function updateVenueSections(eventId: string, sections: VenueSection[]): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/v1/admin/events/${eventId}/venue-sections`, {
-    method: "PUT",
-    body: JSON.stringify(sections),
-  });
-}

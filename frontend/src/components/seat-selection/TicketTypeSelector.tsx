@@ -33,6 +33,13 @@ export interface SelectableTier {
   available: boolean;
   /** General admission tiers are bought by quantity, not by seat. */
   is_general_admission: boolean;
+  /**
+   * GA only — shown on the tier-selection card grid that fills the main area
+   * when an event has no seat map. Undefined for assigned/seated tiers,
+   * which don't carry a single "remaining" scalar the same way.
+   */
+  description?: string;
+  quota_remaining?: number;
 }
 
 export type SelectionMode = "seats" | "ga";

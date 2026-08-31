@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 import { DollarSign, Ticket, Gauge, RotateCcw, ArrowUpRight } from "lucide-react";
 import { EventItem, LogEntry } from "../../types";
 import type { AnalyticsPoint, OrganizerOrder } from "@/lib/api/eorganizer";
@@ -204,11 +205,36 @@ export default function WorkspaceOverview({
             <tbody className="font-sans text-xs text-text-primary">
               {orders.slice(0, 6).map((tx) => (
                 <tr key={tx.id} className="border-b border-border-subtle last:border-0 hover:bg-surface-container-low transition-colors">
-                  {/* Order ids are uuids — show a readable prefix, full value on hover. */}
-                  <td className="p-3 font-mono font-bold text-text-primary" title={tx.id}>{tx.id.slice(0, 8)}</td>
-                  <td className="p-3 text-text-secondary">{tx.customerName}</td>
-                  <td className="p-3 font-medium text-text-primary">{tx.ticketType || '—'}</td>
-                  <td className="p-3 text-right font-mono font-semibold">{formatIDR(tx.amount)}</td>
+                  {/* Order ids are uuids — show a readable prefix, full value on hover. The
+                      whole row drills into the order-detail screen (telemetry + per-ticket
+                      revoke), so every cell's content sits inside the same Link. */}
+                  <td className="p-0">
+                    <Link
+                      href={`/organizer/events/${event.id}/orders/${tx.id}`}
+                      className="block p-3 font-mono font-bold text-text-primary hover:underline"
+                      title={tx.id}
+                    >
+                      {tx.id.slice(0, 8)}
+                    </Link>
+                  </td>
+                  <td className="p-0">
+                    <Link href={`/organizer/events/${event.id}/orders/${tx.id}`} className="block p-3 text-text-secondary">
+                      {tx.customerName}
+                    </Link>
+                  </td>
+                  <td className="p-0">
+                    <Link href={`/organizer/events/${event.id}/orders/${tx.id}`} className="block p-3 font-medium text-text-primary">
+                      {tx.ticketType || '—'}
+                    </Link>
+                  </td>
+                  <td className="p-0">
+                    <Link
+                      href={`/organizer/events/${event.id}/orders/${tx.id}`}
+                      className="block p-3 text-right font-mono font-semibold"
+                    >
+                      {formatIDR(tx.amount)}
+                    </Link>
+                  </td>
                   <td className="p-3 text-right">
                     <span className={`px-2 py-0.5 rounded font-mono text-[8px] font-bold border ${statusStyle(tx.status)}`}>
                       {tx.status}

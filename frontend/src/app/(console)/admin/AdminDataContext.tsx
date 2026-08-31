@@ -2,10 +2,9 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
-  initialScanners,
   initialSecurityAlerts,
 } from '@/lib/mock/admin';
-import { ApiResponse, Event, EventType, User, Scanner, Transaction, Payout, VerificationApplication, SecurityAlert, Activity, TicketTier, VenueSection } from '@/types/admin';
+import { ApiResponse, Event, EventType, User, Transaction, Payout, VerificationApplication, SecurityAlert, Activity, TicketTier } from '@/types/admin';
 import {
   listUsers,
   toggleUserStatus,
@@ -88,19 +87,15 @@ interface AdminDataValue {
   setPayoutsPage: React.Dispatch<React.SetStateAction<number>>;
   payoutsHasNext: boolean;
 
-  // Activities + alerts + scanners
+  // Activities + alerts
   activities: Activity[];
   securityAlerts: SecurityAlert[];
   clearAlert: (id: string) => void;
-  scanners: Scanner[];
-  setScanners: React.Dispatch<React.SetStateAction<Scanner[]>>;
 
-  // Workspace (per-event tiers/sections)
+  // Workspace (per-event tiers)
   selectedEventId: string | null;
   openWorkspace: (eventId: string) => void;
   ticketTiers: TicketTier[];
-  venueSections: VenueSection[];
-  setVenueSections: React.Dispatch<React.SetStateAction<VenueSection[]>>;
   workspaceLoading: boolean;
   workspaceError: string | null;
 
@@ -119,8 +114,6 @@ interface AdminDataValue {
   handleUpdateTransactionStatus: (txId: string, newStatus: 'Success' | 'Refunded') => Promise<void>;
   handleUpdateTiers: (updatedTiers: TicketTier[]) => Promise<ApiResponse<void>>;
   handleDeleteTier: (tierId: string) => Promise<void>;
-  handleAddScanner: (newScanner: Scanner) => void;
-  handleDeleteScanner: (id: string) => void;
   refreshEventDetails: () => Promise<void>;
 }
 
@@ -133,7 +126,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   const [eventsPage, setEventsPage] = useState(0);
   const [eventsHasNext, setEventsHasNext] = useState(false);
   const [eventTypes, setEventTypes] = useState<EventType[]>([]);
-  const [scanners, setScanners] = useState<Scanner[]>(initialScanners);
   const [securityAlerts, setSecurityAlerts] = useState<SecurityAlert[]>(initialSecurityAlerts);
 
   // Transactions, payouts, and activities are backed by the real
@@ -198,14 +190,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   // Ticket tiers are backed by the real /api/v1/events/{id}/ticket-tiers
   // endpoint, fetched per event when its workspace is opened (see
   // refreshWorkspaceData below).
-  //
-  // venueSections is now LOCAL-ONLY demo state for the scanner simulator.
-  // Venue sections were removed from the schema: a venue layout is an untiered
-  // reusable template and tier grouping is per-seat and event-scoped, so there
-  // is no /venue-sections endpoint to read any more.
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [ticketTiers, setTicketTiers] = useState<TicketTier[]>([]);
-  const [venueSections, setVenueSections] = useState<VenueSection[]>([]);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
 
@@ -240,9 +226,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     refreshWorkspaceData(eventId);
   }, [refreshWorkspaceData]);
 
-  // setVenueSections is a local-only setter feeding the scanner simulator's
-  // block/simulate-entries demo. Only ticket tier edits are wired to a real
-  // mutation below.
   const handleUpdateTiers = async (updatedTiers: TicketTier[]): Promise<ApiResponse<void>> => {
     if (!selectedEventId) return { success: false, error: { code: 'NO_EVENT', message: 'No event selected.' } };
     const result = await updateTicketTiers(selectedEventId, updatedTiers);
@@ -436,16 +419,6 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const handleAddScanner = (newScanner: Scanner) => {
-    setScanners(prev => [...prev, newScanner]);
-    alert(`Scanner ${newScanner.id} has been registered.`);
-  };
-
-  const handleDeleteScanner = (id: string) => {
-    setScanners(prev => prev.filter(s => s.id !== id));
-    alert(`Scanner access has been revoked.`);
-  };
-
   const clearAlert = (id: string) => setSecurityAlerts(prev => prev.filter(a => a.id !== id));
 
   const value: AdminDataValue = {
@@ -454,13 +427,13 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     pendingVerificationsCount: verifications.filter(v => v.status === 'Pending').length,
     transactions, transactionsLoading, transactionsError, transactionsPage, setTransactionsPage, transactionsHasNext,
     payouts, payoutsLoading, payoutsError, payoutsPage, setPayoutsPage, payoutsHasNext,
-    activities, securityAlerts, clearAlert, scanners, setScanners,
-    selectedEventId, openWorkspace, ticketTiers, venueSections, setVenueSections, workspaceLoading, workspaceError,
+    activities, securityAlerts, clearAlert,
+    selectedEventId, openWorkspace, ticketTiers, workspaceLoading, workspaceError,
     handleApproveVerification, handleRejectVerification,
     handleApproveEvent, handleRejectEvent, handleSetEventDraft, handleSetEventPendingReview,
     handleToggleUserStatus, handleGrantRole, handleRevokeRole,
     handleProcessPayout, handleRejectPayout, handleUpdateTransactionStatus,
-    handleUpdateTiers, handleDeleteTier, handleAddScanner, handleDeleteScanner,
+    handleUpdateTiers, handleDeleteTier,
     refreshEventDetails: refreshEvents,
   };
 

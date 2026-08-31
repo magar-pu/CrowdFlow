@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"strconv"
 	"strings"
 )
 
@@ -68,57 +68,100 @@ func (r *PostgresRepository) CreateOrderItems(ctx context.Context, orderID strin
 	return err
 }
 
+// CreateOrderAttendees writes the identity captured at checkout for every
+// ticket in the order. Mirrors CreateOrderItems: one multi-row INSERT so a
+// partial write cannot under-capture attendees for some tickets and not
+// others.
+func (r *PostgresRepository) CreateOrderAttendees(ctx context.Context, orderID string, attendees []Attendee) error {
+	if len(attendees) == 0 {
+		return nil
+	}
+
+	placeholders := make([]string, 0, len(attendees))
+	args := make([]interface{}, 0, 1+len(attendees)*7)
+	args = append(args, orderID)
+	for i, a := range attendees {
+		base := i*7 + 2 // $1 is order_id
+		placeholders = append(placeholders, fmt.Sprintf(
+			"($1, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+			base, base+1, base+2, base+3, base+4, base+5, base+6,
+		))
+		args = append(args, a.TicketTierID, a.SeatMatrixID, a.FullName, a.NIKEnc, a.Email, a.Phone, a.DOB)
+	}
+
+	query := `
+		INSERT INTO order_attendees (
+			order_id, ticket_tier_id, event_seats_matrix_id, full_name, nik_enc, email, phone, dob
+		) VALUES ` + strings.Join(placeholders, ", ")
+
+	_, err := r.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+// ResolveSeatMatrixIDs maps each seat id to the event_seats_matrix row id
+// tickets.event_seats_matrix_id actually references (not the same as the
+// seat id itself). Scoped to the event, same as booking's ResolveSeatTiers,
+// so a seat id from another event cannot resolve here either.
+func (r *PostgresRepository) ResolveSeatMatrixIDs(ctx context.Context, eventID int, seatIDs []int) (map[int]int, error) {
+	result := make(map[int]int, len(seatIDs))
+	if len(seatIDs) == 0 {
+		return result, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT seat_id, id
+		FROM event_seats_matrix
+		WHERE event_id = $1 AND seat_id = ANY($2::int[])
+	`, eventID, intArrayLiteral(seatIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var seatID, matrixID int
+		if err := rows.Scan(&seatID, &matrixID); err != nil {
+			return nil, err
+		}
+		result[seatID] = matrixID
+	}
+	return result, rows.Err()
+}
+
+// intArrayLiteral renders ids as a Postgres array literal for use with
+// ANY($n::int[]). Mirrors internal/booking's helper of the same name —
+// payment does not import booking beyond the narrow HoldReader interface,
+// so this is kept local rather than exported from there.
+func intArrayLiteral(ids []int) string {
+	if len(ids) == 0 {
+		return "{}"
+	}
+	var b strings.Builder
+	b.WriteByte('{')
+	for i, id := range ids {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.Itoa(id))
+	}
+	b.WriteByte('}')
+	return b.String()
+}
+
+// UpdateOrderStatus only updates the order row. Ticket issuance used to
+// happen here too, in a second, SQL-only implementation that diverged from
+// internal/ticket.GenerateTicketsForPaidOrder — it knew nothing about
+// order_attendees (every ticket got the purchaser's own name/email) and
+// generated secret_key as md5-hex instead of base32, which a base32 decoder
+// silently truncates rather than rejects. Both callers that can mark an
+// order paid now share the one Go implementation — see
+// PaymentService.HandleMidtransWebhook, which calls it via the TicketIssuer
+// interface after this returns.
 func (r *PostgresRepository) UpdateOrderStatus(ctx context.Context, orderID string, status string, externalTransactionID string) error {
 	query := `UPDATE orders SET status = $1, external_transaction_id = $2 WHERE id = $3`
 	_, err := r.db.ExecContext(ctx, query, status, externalTransactionID, orderID)
 	if err != nil {
 		return err
-	}
-
-	if status == "paid" {
-		// Issue one ticket per ticket bought, against the tier it was actually
-		// bought from, by expanding order_items.
-		//
-		// This previously inserted exactly ONE row per order regardless of
-		// quantity, and picked the tier with
-		//   COALESCE((SELECT id FROM ticket_tiers WHERE event_id = o.event_id
-		//             LIMIT 1),
-		//            (SELECT id FROM ticket_tiers LIMIT 1), 1)
-		// — an arbitrary tier of the right event, falling back to an arbitrary
-		// tier of ANY event, falling back to the literal id 1. A buyer of four
-		// tickets got one, and it could be attributed to a different event
-		// entirely. generate_series expands each order_items row into its
-		// quantity, and unit_price is the price that tier actually sold for
-		// rather than the whole order's net_amount.
-		genQuery := `
-			INSERT INTO tickets (order_id, ticket_tier_id, attendee_full_name, attendee_email, ticket_status, unit_price, secret_key, created_at, updated_at)
-			SELECT
-				o.id,
-				oi.ticket_tier_id,
-				COALESCE(up.full_name, 'Ticket Holder'),
-				u.email,
-				'issued'::ticket_status,
-				oi.unit_price,
-				md5(random()::text || clock_timestamp()::text),
-				NOW(),
-				NOW()
-			FROM orders o
-			JOIN order_items oi ON oi.order_id = o.id
-			JOIN users u ON o.purchaser_id = u.id
-			LEFT JOIN user_profiles up ON u.id = up.user_id
-			CROSS JOIN generate_series(1, oi.quantity)
-			WHERE o.id = $1 AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.order_id = o.id)
-			ON CONFLICT DO NOTHING
-		`
-		if _, err := r.db.ExecContext(ctx, genQuery, orderID); err != nil {
-			// Previously discarded with `_, _ =`. A buyer who has paid and
-			// received no ticket is the worst failure this system has, so it
-			// must at least reach the log. Returning the error here would tell
-			// Midtrans the webhook failed and invite a retry that re-runs the
-			// (idempotent) insert, which is the behaviour we want.
-			log.Printf("[PAYMENT TICKET ERROR] order %s marked paid but ticket issuance failed: %v", orderID, err)
-			return fmt.Errorf("ticket issuance failed for order %s: %w", orderID, err)
-		}
 	}
 
 	return nil
@@ -160,6 +203,29 @@ func (r *PostgresRepository) GetOrderDetailsForMail(ctx context.Context, orderID
 	if err != nil {
 		return nil, err
 	}
+
+	// One row per issued ticket, so the caller can address the e-ticket
+	// email to each attendee separately rather than sending everyone the
+	// purchaser's own link (plan decision 24).
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id::text, attendee_email FROM tickets WHERE order_id = $1 ORDER BY created_at ASC
+	`, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load tickets for mail: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var t OrderMailTicket
+		if err := rows.Scan(&t.TicketID, &t.AttendeeEmail); err != nil {
+			return nil, err
+		}
+		details.Tickets = append(details.Tickets, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return details, nil
 }
 

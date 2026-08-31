@@ -1,6 +1,6 @@
-import { 
-  Event, User, Scanner, Transaction, Payout, 
-  VerificationApplication, SecurityAlert, Activity, TicketTier, VenueSection 
+import {
+  Event, User, Transaction, Payout,
+  VerificationApplication, SecurityAlert, Activity, TicketTier
 } from '@/types/admin';
 
 export const initialEvents: Event[] = [
@@ -136,49 +136,6 @@ export const initialUsers: User[] = [
     joinedAt: '2026-06-28',
     transactionsCount: 0,
     profilePic: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=150&auto=format&fit=crop'
-  }
-];
-
-export const initialScanners: Scanner[] = [
-  {
-    id: 'SC-801',
-    name: 'Gate A Main Ingress',
-    deviceName: 'Apple iPhone 15 Pro',
-    status: 'Online',
-    scansCount: 412,
-    lastSync: '2 min ago',
-    batteryLevel: 82,
-    assignedSection: 'General Admission'
-  },
-  {
-    id: 'SC-802',
-    name: 'VIP Lounge Fast Track',
-    deviceName: 'Samsung Galaxy S24 Ultra',
-    status: 'Scanning',
-    scansCount: 240,
-    lastSync: 'Active',
-    batteryLevel: 94,
-    assignedSection: 'VIP Lounge'
-  },
-  {
-    id: 'SC-803',
-    name: 'Grandstands Balcony Access',
-    deviceName: 'Google Pixel 8 Pro',
-    status: 'Offline',
-    scansCount: 120,
-    lastSync: '1 hour ago',
-    batteryLevel: 15,
-    assignedSection: 'Grandstands Balcony'
-  },
-  {
-    id: 'SC-804',
-    name: 'Gate B Secondary Ingress',
-    deviceName: 'Apple iPhone SE (Staff Edition)',
-    status: 'Online',
-    scansCount: 310,
-    lastSync: '5 min ago',
-    batteryLevel: 76,
-    assignedSection: 'General Admission'
   }
 ];
 
@@ -388,10 +345,3 @@ export const initialTicketTiers: TicketTier[] = [
   }
 ];
 
-export const initialVenueSections: VenueSection[] = [
-  { id: 'SEC-A', name: 'VIP Front Row Seating', capacity: 300, occupied: 290, color: 'bg-pink-500' },
-  { id: 'SEC-B', name: 'Main Floor GA Standing', capacity: 5000, occupied: 4120, color: 'bg-cyan-500' },
-  { id: 'SEC-C', name: 'West Wing Balcony A', capacity: 1200, occupied: 940, color: 'bg-indigo-500' },
-  { id: 'SEC-D', name: 'East Wing Balcony B', capacity: 1200, occupied: 820, color: 'bg-purple-500' },
-  { id: 'SEC-E', name: 'Terrace Boxes', capacity: 500, occupied: 480, color: 'bg-amber-500' }
-];

@@ -11,7 +11,12 @@ import (
 type Service interface {
 	SendOTP(toEmail string, code string, purpose string) error
 	SendPasswordReset(toEmail string, resetURL string) error
-	SendETicket(toEmail string, eventTitle string, dateVenue string, qrCodeURL string, ticketTier string) error
+	// bookingURL points at the /booking/<order_uuid> or
+	// /booking/<order_uuid>/t/<ticket_uuid> page — link only, per plan
+	// decision 24: no QR image, no attachment. The QR itself is generated
+	// entirely client-side from the ticket's vaulted secret_key once the
+	// recipient opens the link, so it never has to travel through email.
+	SendETicket(toEmail string, eventTitle string, dateVenue string, bookingURL string, ticketTier string) error
 }
 
 type resendService struct {
@@ -84,7 +89,7 @@ func (s *resendService) SendPasswordReset(toEmail string, resetURL string) error
 	return s.sendMail(toEmail, subject, html)
 }
 
-func (s *resendService) SendETicket(toEmail string, eventTitle string, dateVenue string, qrCodeURL string, ticketTier string) error {
+func (s *resendService) SendETicket(toEmail string, eventTitle string, dateVenue string, bookingURL string, ticketTier string) error {
 	subject := fmt.Sprintf("[CrowdFlow] E-Tiket Resmi: %s", eventTitle)
 	html := fmt.Sprintf(`
 <!DOCTYPE html>
@@ -99,16 +104,17 @@ func (s *resendService) SendETicket(toEmail string, eventTitle string, dateVenue
     <div style="padding: 24px;">
       <h2 style="color: #0b132b; margin: 0 0 8px 0; font-size: 20px;">%s</h2>
       <p style="color: #6b7280; margin: 0 0 16px 0; font-size: 14px;">📅 %s</p>
-      
-      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; p: 16px; margin-bottom: 24px; text-align: center;">
-        <span style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: bold; margin-bottom: 12px;">TIER: %s</span>
-        <div style="margin: 12px 0;">
-          <img src="%s" alt="QR Code Ticket" style="width: 180px; height: 180px; border-radius: 8px; border: 1px solid #cbd5e1;" />
+
+      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 24px; text-align: center;">
+        <span style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: bold; margin-bottom: 16px;">TIER: %s</span>
+        <div style="margin: 16px 0;">
+          <a href="%s" style="display: inline-block; background-color: #0b132b; color: #ffffff; padding: 12px 28px; border-radius: 9999px; font-weight: bold; text-decoration: none; font-size: 15px;">Buka Tiket Saya</a>
         </div>
-        <p style="font-size: 12px; color: #64748b; margin: 0;">Tunjukkan QR Code ini kepada petugas gate saat masuk lokasi event.</p>
+        <p style="font-size: 12px; color: #64748b; margin: 12px 0 0 0; word-break: break-all;">%s</p>
+        <p style="font-size: 12px; color: #64748b; margin: 8px 0 0 0;">Tautan ini menampilkan QR Code Anda yang selalu berotasi — tunjukkan langsung dari HP Anda kepada petugas gate saat masuk lokasi event.</p>
       </div>
 
-      <p style="font-size: 13px; color: #6b7280;">E-Tiket ini dilindungi oleh teknologi re-issue unik CrowdFlow untuk menjamin keaslian kepemilikan Anda.</p>
+      <p style="font-size: 13px; color: #6b7280;">Tautan ini adalah kredensial tiket Anda — jangan bagikan ke orang lain. Setiap peserta menerima tautannya masing-masing.</p>
     </div>
     <div style="background-color: #f1f5f9; padding: 16px; text-align: center; border-top: 1px solid #e2e8f0;">
       <p style="font-size: 12px; color: #94a3b8; margin: 0;">&copy; CrowdFlow - Next-Generation Event Ticketing Platform</p>
@@ -116,7 +122,7 @@ func (s *resendService) SendETicket(toEmail string, eventTitle string, dateVenue
   </div>
 </body>
 </html>
-`, eventTitle, dateVenue, ticketTier, qrCodeURL)
+`, eventTitle, dateVenue, ticketTier, bookingURL, bookingURL)
 
 	return s.sendMail(toEmail, subject, html)
 }

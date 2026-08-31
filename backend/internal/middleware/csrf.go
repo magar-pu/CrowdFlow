@@ -24,8 +24,7 @@ func CSRF(next http.Handler) http.Handler {
 			path == "/api/v1/auth/reset-password" ||
 			path == "/api/v1/payment/webhook" || strings.HasPrefix(path, "/api/v1/payment/") ||
 			strings.HasPrefix(path, "/api/scanner/") || strings.HasPrefix(path, "/api/v1/scanner/") ||
-			strings.HasPrefix(path, "/api/v1/resale") || strings.HasPrefix(path, "/api/v1/tickets") ||
-			strings.Contains(path, "/request-otp") || strings.Contains(path, "/verify-otp") {
+			strings.HasPrefix(path, "/api/v1/resale") || strings.HasPrefix(path, "/api/v1/tickets") {
 			next.ServeHTTP(w, r)
 			return
 		}

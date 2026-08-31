@@ -30,7 +30,10 @@ interface StepBasicInfoProps {
 // Matches the backend's accepted set. The service sniffs the real content type
 // regardless; this is a convenience check, not the guard.
 const ACCEPTED_COVER_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
-const MAX_COVER_BYTES = 10 * 1024 * 1024;
+// 5MB — mirrors the backend's cover-image cap (event/handler.go). See
+// backend/internal/organizer/service.go's documentTypeLimits comment for
+// why 2-10MB is the right range for this app's document/image uploads.
+const MAX_COVER_BYTES = 5 * 1024 * 1024;
 
 // Shown up front rather than only as an error after a rejected file. Derived
 // from MAX_COVER_BYTES so the copy can't drift from the check. Kept identical

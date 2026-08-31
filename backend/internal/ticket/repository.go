@@ -1,30 +1,23 @@
 package ticket
 
 import (
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
 	"math/big"
-	"strings"
 	"time"
-)
-
-const (
-	TimeWindowSeconds int64  = 600 // 10 minutes
-	HMACSecretKey     string = "crowdflow_dynamic_qr_secret_key_2026"
 )
 
 type Repository interface {
 	GetUserTickets(userID int) ([]*Ticket, error)
 	GetTicketByID(ticketID string, userID int) (*Ticket, error)
-	GetOrCreateDynamicToken(ticketID string) (*TicketQRResponse, error)
 	GenerateTicketsForPaidOrder(orderID string) (int, error)
-	RequestTicketOTP(ticketID string, userID int, email string) (string, error)
-	VerifyTicketOTP(ticketID string, userID int, email string, otpCode string) (bool, string, error)
-	GetTicketVaultData(ticketID string, userID int) (*TicketVaultResponse, error)
+	GetOrderAccess(orderID string) (*OrderAccessResponse, error)
+	GetTicketAccess(orderID string, ticketID string) (*TicketAccessResponse, error)
+	RotateSecretForOrderTicket(orderID string, ticketID string) error
+	RotateSecret(ticketID string) (string, error)
+	RecordBookingAccess(orderID string, ticketID string, ipHash string, uaHash string) error
+	CountDistinctBookingAccessDevices(orderID string) (int, error)
 }
 
 type PostgresRepository struct {
@@ -49,25 +42,6 @@ func generateBase32Secret() string {
 	return string(b)
 }
 
-// Calculate 10-minute server time window
-func getCurrentTimeWindow() int64 {
-	return time.Now().Unix() / TimeWindowSeconds
-}
-
-// Calculate remaining seconds until current 10-minute window ends
-func getRemainingSeconds() int {
-	rem := TimeWindowSeconds - (time.Now().Unix() % TimeWindowSeconds)
-	return int(rem)
-}
-
-// Generate deterministic HMAC token for (ticketID + timeWindow)
-func generateTokenString(ticketID string, timeWindow int64) string {
-	mac := hmac.New(sha256.New, []byte(HMACSecretKey))
-	mac.Write([]byte(fmt.Sprintf("%s:%d", ticketID, timeWindow)))
-	sig := hex.EncodeToString(mac.Sum(nil))[:32]
-	return fmt.Sprintf("cf-tkn-%s-%s", ticketID[:8], sig)
-}
-
 func (r *PostgresRepository) GetUserTickets(userID int) ([]*Ticket, error) {
 	query := `
 		SELECT 
@@ -80,7 +54,6 @@ func (r *PostgresRepository) GetUserTickets(userID int) ([]*Ticket, error) {
 			t.attendee_full_name,
 			t.attendee_email,
 			COALESCE(t.attendee_phone, ''),
-			COALESCE(t.attendee_nik, ''),
 			t.ticket_status::text,
 			t.unit_price,
 			t.created_at,
@@ -123,7 +96,6 @@ func (r *PostgresRepository) GetUserTickets(userID int) ([]*Ticket, error) {
 			&t.AttendeeFullName,
 			&t.AttendeeEmail,
 			&t.AttendeePhone,
-			&t.AttendeeNik,
 			&t.TicketStatus,
 			&t.UnitPrice,
 			&t.CreatedAt,
@@ -158,7 +130,6 @@ func (r *PostgresRepository) GetTicketByID(ticketID string, userID int) (*Ticket
 			t.attendee_full_name,
 			t.attendee_email,
 			COALESCE(t.attendee_phone, ''),
-			COALESCE(t.attendee_nik, ''),
 			t.ticket_status::text,
 			t.unit_price,
 			t.created_at,
@@ -190,7 +161,6 @@ func (r *PostgresRepository) GetTicketByID(ticketID string, userID int) (*Ticket
 		&t.AttendeeFullName,
 		&t.AttendeeEmail,
 		&t.AttendeePhone,
-		&t.AttendeeNik,
 		&t.TicketStatus,
 		&t.UnitPrice,
 		&t.CreatedAt,
@@ -211,73 +181,16 @@ func (r *PostgresRepository) GetTicketByID(ticketID string, userID int) (*Ticket
 	return t, nil
 }
 
-func (r *PostgresRepository) GetOrCreateDynamicToken(ticketID string) (*TicketQRResponse, error) {
-	window := getCurrentTimeWindow()
-	remSeconds := getRemainingSeconds()
-	windowEndTime := time.Unix((window+1)*TimeWindowSeconds, 0)
-
-	// Check if active token exists in DB for current time window
-	var secureToken string
-	err := r.db.QueryRow(`
-		SELECT secure_token 
-		FROM ticket_tokens 
-		WHERE ticket_id = $1 AND time_window = $2 AND is_current = true
-	`, ticketID, window).Scan(&secureToken)
-
-	if err == nil && secureToken != "" {
-		return &TicketQRResponse{
-			TicketID:         ticketID,
-			SecureToken:      secureToken,
-			TimeWindow:       window,
-			RefreshInSeconds: remSeconds,
-			ExpiredAt:        windowEndTime.Format(time.RFC3339),
-		}, nil
-	}
-
-	// Generate new token for this 10-minute window
-	newToken := generateTokenString(ticketID, window)
-
-	tx, err := r.db.Begin()
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-
-	// Deactivate old tokens for this ticket
-	_, _ = tx.Exec("UPDATE ticket_tokens SET is_current = false WHERE ticket_id = $1", ticketID)
-
-	// Insert new current token
-	_, err = tx.Exec(`
-		INSERT INTO ticket_tokens (ticket_id, secure_token, time_window, is_current, issued_at, expired_at)
-		VALUES ($1, $2, $3, true, NOW(), $4)
-		ON CONFLICT (secure_token) DO UPDATE SET is_current = true
-	`, ticketID, newToken, window, windowEndTime)
-	if err != nil {
-		return nil, fmt.Errorf("failed to save ticket token: %w", err)
-	}
-
-	// Also insert into qr history
-	_, _ = tx.Exec(`
-		INSERT INTO ticket_qr_history (ticket_id, token, time_window, reason, created_at, expired_at)
-		VALUES ($1, $2, $3, 'rotation_10m', NOW(), $4)
-	`, ticketID, newToken, window, windowEndTime)
-
-	// Update tickets.qr_signature for backwards compatibility
-	_, _ = tx.Exec("UPDATE tickets SET qr_signature = $1, updated_at = NOW() WHERE id = $2", newToken, ticketID)
-
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-
-	return &TicketQRResponse{
-		TicketID:         ticketID,
-		SecureToken:      newToken,
-		TimeWindow:       window,
-		RefreshInSeconds: remSeconds,
-		ExpiredAt:        windowEndTime.Format(time.RFC3339),
-	}, nil
-}
-
+// GenerateTicketsForPaidOrder issues one ticket per order_attendees row,
+// against the tier and (for assigned seating) the seat that attendee was
+// actually captured for at checkout, priced from order_items.unit_price —
+// never orders.net_amount, which is the order's whole total and previously
+// got written onto a single ticket regardless of quantity.
+//
+// order_attendees (migration 0032) is the source of truth for WHO each
+// ticket belongs to; order_items (0011) is the source of truth for WHAT
+// each ticket costs. Neither the purchaser's own profile nor a LIMIT 1 over
+// ticket_tiers enters into this any more.
 func (r *PostgresRepository) GenerateTicketsForPaidOrder(orderID string) (int, error) {
 	tx, err := r.db.Begin()
 	if err != nil {
@@ -295,7 +208,9 @@ func (r *PostgresRepository) GenerateTicketsForPaidOrder(orderID string) (int, e
 		return 0, fmt.Errorf("order not found")
 	}
 
-	// 2. Count existing tickets for this order
+	// 2. Idempotency guard: if tickets already exist for this order, this is a
+	// retried webhook / a second call from the buyer's client racing the
+	// webhook. Report what already exists rather than issuing again.
 	var existingCount int
 	_ = tx.QueryRow("SELECT COUNT(*) FROM tickets WHERE order_id = $1", orderID).Scan(&existingCount)
 	if existingCount > 0 {
@@ -303,108 +218,83 @@ func (r *PostgresRepository) GenerateTicketsForPaidOrder(orderID string) (int, e
 		return existingCount, nil
 	}
 
-	// 3. Query order details to create tickets
-	var userID int
-	var netAmount float64
-	err = tx.QueryRow("SELECT purchaser_id, net_amount FROM orders WHERE id = $1", orderID).Scan(&userID, &netAmount)
+	// 3. One row per ticket to be issued, carrying both who it is for
+	// (order_attendees) and what it was sold for (order_items.unit_price for
+	// that attendee's tier). event_seats_matrix_id is NULL for GA attendees.
+	rows, err := tx.Query(`
+		SELECT oa.id::text, oa.ticket_tier_id, oa.event_seats_matrix_id,
+		       oa.full_name, oa.email, oa.nik_enc, oa.phone, oa.dob,
+		       oi.unit_price
+		FROM order_attendees oa
+		JOIN order_items oi
+		  ON oi.order_id = oa.order_id AND oi.ticket_tier_id = oa.ticket_tier_id
+		WHERE oa.order_id = $1
+	`, orderID)
 	if err != nil {
+		return 0, fmt.Errorf("failed to load order attendees: %w", err)
+	}
+
+	type attendeeRow struct {
+		id           string
+		tierID       int
+		seatMatrixID sql.NullInt64
+		fullName     string
+		email        string
+		nikEnc       []byte
+		phone        string
+		dob          time.Time
+		unitPrice    float64
+	}
+
+	var attendees []attendeeRow
+	for rows.Next() {
+		var a attendeeRow
+		if err := rows.Scan(
+			&a.id, &a.tierID, &a.seatMatrixID,
+			&a.fullName, &a.email, &a.nikEnc, &a.phone, &a.dob,
+			&a.unitPrice,
+		); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("failed to scan order attendee: %w", err)
+		}
+		attendees = append(attendees, a)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
 		return 0, err
 	}
+	rows.Close()
 
-	var fullName, email string
-	_ = tx.QueryRow("SELECT full_name, email FROM user_profiles JOIN users ON users.id = user_profiles.user_id WHERE users.id = $1", userID).Scan(&fullName, &email)
-	if fullName == "" {
-		fullName = "Ticket Holder"
+	if len(attendees) == 0 {
+		return 0, fmt.Errorf("order %s has no attendee rows to issue tickets from", orderID)
 	}
 
-	// Get ticket tier for event associated with order or default
-	var tierID int
-	err = tx.QueryRow("SELECT id FROM ticket_tiers WHERE event_id = (SELECT event_id FROM orders WHERE id = $1) LIMIT 1", orderID).Scan(&tierID)
-	if err != nil {
-		_ = tx.QueryRow("SELECT id FROM ticket_tiers LIMIT 1").Scan(&tierID)
+	// 4. One INSERT per attendee, each with its own freshly generated
+	// secret_key — the QR credential must never be shared across tickets.
+	for _, a := range attendees {
+		var seatMatrixID interface{}
+		if a.seatMatrixID.Valid {
+			seatMatrixID = a.seatMatrixID.Int64
+		}
+
+		secretKey := generateBase32Secret()
+		_, err := tx.Exec(`
+			INSERT INTO tickets (
+				order_id, ticket_tier_id, event_seats_matrix_id,
+				attendee_full_name, attendee_email, attendee_nik_enc, attendee_phone, attendee_dob,
+				ticket_status, unit_price, secret_key, created_at, updated_at
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'issued'::ticket_status, $9, $10, NOW(), NOW())
+		`, orderID, a.tierID, seatMatrixID, a.fullName, a.email, a.nikEnc, a.phone, a.dob, a.unitPrice, secretKey)
+		if err != nil {
+			return 0, fmt.Errorf("failed to insert ticket for order_attendees %s: %w", a.id, err)
+		}
 	}
-
-	// Insert 1 ticket record with generated base32 secret_key
-	secretKey := generateBase32Secret()
-	var ticketID string
-	err = tx.QueryRow(`
-		INSERT INTO tickets (order_id, ticket_tier_id, attendee_full_name, attendee_email, ticket_status, unit_price, secret_key, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, 'issued'::ticket_status, $5, $6, NOW(), NOW())
-		RETURNING id::text
-	`, orderID, tierID, fullName, email, netAmount, secretKey).Scan(&ticketID)
-
-	if err != nil {
-		return 0, fmt.Errorf("failed to insert ticket: %w", err)
-	}
-
-	// Generate initial dynamic token
-	window := getCurrentTimeWindow()
-	tokenStr := generateTokenString(ticketID, window)
-	windowEndTime := time.Unix((window+1)*TimeWindowSeconds, 0)
-
-	_, _ = tx.Exec(`
-		INSERT INTO ticket_tokens (ticket_id, secure_token, time_window, is_current, issued_at, expired_at)
-		VALUES ($1, $2, $3, true, NOW(), $4)
-	`, ticketID, tokenStr, window, windowEndTime)
-
-	_, _ = tx.Exec("UPDATE tickets SET qr_signature = $1 WHERE id = $2", tokenStr, ticketID)
 
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 
-	return 1, nil
-}
-
-func (r *PostgresRepository) RequestTicketOTP(ticketID string, userID int, email string) (string, error) {
-	var realTicketUUID string
-	err := r.db.QueryRow(`
-		SELECT id::text FROM tickets
-		WHERE id::text = $1 OR order_id::text = $1
-		ORDER BY created_at DESC LIMIT 1
-	`, ticketID).Scan(&realTicketUUID)
-	if err != nil || realTicketUUID == "" {
-		// Auto-generate ticket for paid order if missing
-		var orderExists bool
-		_ = r.db.QueryRow("SELECT EXISTS (SELECT 1 FROM orders WHERE id::text = $1)", ticketID).Scan(&orderExists)
-		if orderExists {
-			_, _ = r.db.Exec(`
-				INSERT INTO tickets (order_id, ticket_tier_id, attendee_full_name, attendee_email, ticket_status, unit_price, secret_key, created_at, updated_at)
-				SELECT id, COALESCE((SELECT id FROM ticket_tiers WHERE event_id = orders.event_id LIMIT 1), (SELECT id FROM ticket_tiers LIMIT 1), 1), 'Pengunjung Event', $2, 'issued'::ticket_status, COALESCE(gross_amount, 100000), md5(random()::text), NOW(), NOW()
-				FROM orders WHERE id::text = $1 ON CONFLICT DO NOTHING
-			`, ticketID, email)
-			_ = r.db.QueryRow("SELECT id::text FROM tickets WHERE order_id::text = $1 LIMIT 1", ticketID).Scan(&realTicketUUID)
-		}
-
-		if realTicketUUID == "" {
-			if len(ticketID) >= 8 {
-				realTicketUUID = ticketID
-			} else {
-				return "", fmt.Errorf("ticket not found or access denied")
-			}
-		}
-	}
-
-	// Generate secure random 6-digit OTP code
-	num, err := rand.Int(rand.Reader, big.NewInt(1000000))
-	var otpCode string
-	if err != nil {
-		otpCode = "123456"
-	} else {
-		otpCode = fmt.Sprintf("%06d", num.Int64())
-	}
-
-	expiresAt := time.Now().Add(10 * time.Minute)
-	_, err = r.db.Exec(`
-		INSERT INTO ticket_access_otps (ticket_id, email, otp_code, expires_at)
-		VALUES ($1, $2, $3, $4)
-	`, realTicketUUID, email, otpCode, expiresAt)
-	if err != nil {
-		fmt.Printf("[OTP DB ERROR] Failed to insert OTP into ticket_access_otps: %v\n", err)
-	}
-
-	fmt.Printf("[OTP SERVICE] Verification OTP for Ticket %s sent to %s: %s\n", realTicketUUID, email, otpCode)
-	return otpCode, nil
+	return len(attendees), nil
 }
 
 func minLen(s string, n int) int {
@@ -414,45 +304,100 @@ func minLen(s string, n int) int {
 	return n
 }
 
-func (r *PostgresRepository) VerifyTicketOTP(ticketID string, userID int, email string, otpCode string) (bool, string, error) {
-	otpCode = strings.TrimSpace(otpCode)
-
-	// The OTP must be bound to the ticket it was issued for, to the email it was
-	// sent to, and to its validity window. Matching on otp_code alone let any
-	// outstanding code open any ticket's vault, forever.
-	//
-	// ticketID may be either a ticket id or an order id: RequestTicketOTP
-	// resolves both to the ticket UUID before storing, so the lookup has to
-	// accept both here too.
-	var otpID int
-	err := r.db.QueryRow(`
-		SELECT tao.id
-		FROM ticket_access_otps tao
-		JOIN tickets t ON t.id = tao.ticket_id
-		JOIN orders o ON o.id = t.order_id
-		WHERE (t.id::text = $1 OR t.order_id::text = $1)
-		  AND tao.otp_code = $2
-		  AND lower(tao.email) = lower($3)
-		  AND tao.is_verified = false
-		  AND tao.expires_at > NOW()
-		  AND ($4 = 0 OR o.purchaser_id = $4)
-		ORDER BY tao.created_at DESC LIMIT 1
-	`, ticketID, otpCode, email, userID).Scan(&otpID)
-
-	if err != nil {
-		return false, "", fmt.Errorf("kode OTP tidak valid atau sudah kadaluarsa")
-	}
-
-	_, _ = r.db.Exec("UPDATE ticket_access_otps SET is_verified = true WHERE id = $1", otpID)
-
-	vaultToken := fmt.Sprintf("vt-%s-%d", ticketID[:minLen(ticketID, 8)], time.Now().Unix())
-	return true, vaultToken, nil
+// orderIDShort renders the M7 watermark's truncated order id — enough for a
+// human to recognise "their" screenshot without republishing the full
+// order UUID (which is itself the order-level credential) onto the page.
+func orderIDShort(orderID string) string {
+	return orderID[:minLen(orderID, 8)]
 }
 
-func (r *PostgresRepository) GetTicketVaultData(ticketID string, userID int) (*TicketVaultResponse, error) {
-	query := `
-		SELECT 
+// purchaserNameSelect is shared by GetOrderAccess and GetTicketAccess: the
+// purchaser's display name for the M7 watermark. Deliberately does NOT fall
+// back to u.email — both endpoints are unauthenticated, and a per-attendee
+// link would otherwise show a different attendee the purchaser's real email
+// address, and a leaked screenshot would carry it too. An empty string here
+// just means the watermark falls back to "Guest" (BookingWatermark.tsx) plus
+// the still-present truncated order id, which is enough for the deterrent
+// without leaking PII.
+const purchaserNameSelect = `COALESCE(up.full_name, '')`
+
+// GetOrderAccess backs GET /order-access/{orderId} — the purchaser's
+// no-login overview of every ticket on their order. The order UUID is the
+// credential (decision 4); this endpoint deliberately never returns a
+// secret_key or NIK, only enough to list and link to each attendee's own
+// ticket page.
+func (r *PostgresRepository) GetOrderAccess(orderID string) (*OrderAccessResponse, error) {
+	resp := &OrderAccessResponse{OrderID: orderID, OrderIDShort: orderIDShort(orderID)}
+
+	var eventStart sql.NullTime
+	err := r.db.QueryRow(`
+		SELECT `+purchaserNameSelect+`,
+		       COALESCE(e.event_name, 'Unknown Event'),
+		       e.event_start,
+		       COALESCE(v.name, ''),
+		       COALESCE(v.city, ''),
+		       COALESCE(e.cover_image_url, '')
+		FROM orders o
+		JOIN users u ON u.id = o.purchaser_id
+		LEFT JOIN user_profiles up ON up.user_id = u.id
+		LEFT JOIN events e ON e.id = o.event_id
+		LEFT JOIN venues v ON v.id = e.venue_id
+		WHERE o.id::text = $1
+	`, orderID).Scan(&resp.PurchaserName, &resp.EventName, &eventStart, &resp.VenueName, &resp.VenueCity, &resp.CoverImageURL)
+	if err != nil {
+		return nil, fmt.Errorf("order not found")
+	}
+	if eventStart.Valid {
+		resp.EventStart = &eventStart.Time
+	}
+
+	rows, err := r.db.Query(`
+		SELECT
 			t.id::text,
+			t.attendee_full_name,
+			tt.name,
+			COALESCE('Row ' || s.row_number || ' Seat ' || s.seat_number, 'General Admission'),
+			t.ticket_status::text
+		FROM tickets t
+		JOIN ticket_tiers tt ON tt.id = t.ticket_tier_id
+		LEFT JOIN event_seats_matrix esm ON esm.id = t.event_seats_matrix_id
+		LEFT JOIN seats s ON s.id = esm.seat_id
+		WHERE t.order_id::text = $1
+		ORDER BY t.created_at ASC
+	`, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load order tickets: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var tk OrderAccessTicket
+		if err := rows.Scan(&tk.TicketID, &tk.AttendeeFullName, &tk.TierName, &tk.SeatLabel, &tk.TicketStatus); err != nil {
+			return nil, err
+		}
+		resp.Tickets = append(resp.Tickets, tk)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(resp.Tickets) == 0 {
+		return nil, fmt.Errorf("order not found")
+	}
+
+	return resp, nil
+}
+
+// GetTicketAccess backs GET /order-access/{orderId}/tickets/{ticketId} — the
+// single-attendee page DigitalTicketCard loads its secret_key from. Scoped
+// to (orderID, ticketID) together so a per-attendee link can never be used
+// to pull a sibling ticket on the same order.
+func (r *PostgresRepository) GetTicketAccess(orderID string, ticketID string) (*TicketAccessResponse, error) {
+	resp := &TicketAccessResponse{OrderID: orderID, OrderIDShort: orderIDShort(orderID)}
+
+	query := `
+		SELECT
+			t.id::text,
+			` + purchaserNameSelect + `,
 			tt.event_id,
 			COALESCE(e.event_name, 'Unknown Event') as event_name,
 			tt.name as tier_name,
@@ -463,18 +408,19 @@ func (r *PostgresRepository) GetTicketVaultData(ticketID string, userID int) (*T
 			COALESCE(t.secret_key, '') as secret_key,
 			COALESCE(to_char(e.event_end, 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), to_char(e.event_start + INTERVAL '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), '') as event_end_time
 		FROM tickets t
-		JOIN orders o ON t.order_id = o.id
-		JOIN ticket_tiers tt ON t.ticket_tier_id = tt.id
-		LEFT JOIN events e ON tt.event_id = e.id
-		LEFT JOIN event_seats_matrix esm ON t.event_seats_matrix_id = esm.id
+		JOIN orders o ON o.id = t.order_id
+		JOIN users u ON u.id = o.purchaser_id
+		LEFT JOIN user_profiles up ON up.user_id = u.id
+		JOIN ticket_tiers tt ON tt.id = t.ticket_tier_id
+		LEFT JOIN events e ON e.id = tt.event_id
+		LEFT JOIN event_seats_matrix esm ON esm.id = t.event_seats_matrix_id
 		LEFT JOIN seats s ON s.id = esm.seat_id
-		WHERE (t.id::text = $1 OR t.order_id::text = $1) AND ($2 = 0 OR o.purchaser_id = $2)
-		LIMIT 1
+		WHERE t.id::text = $1 AND t.order_id::text = $2
 	`
 
-	resp := &TicketVaultResponse{}
-	err := r.db.QueryRow(query, ticketID, userID).Scan(
+	err := r.db.QueryRow(query, ticketID, orderID).Scan(
 		&resp.TicketID,
+		&resp.PurchaserName,
 		&resp.EventID,
 		&resp.EventName,
 		&resp.TierName,
@@ -485,7 +431,6 @@ func (r *PostgresRepository) GetTicketVaultData(ticketID string, userID int) (*T
 		&resp.SecretKey,
 		&resp.EventEndTime,
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf("ticket not found or access denied")
 	}
@@ -497,4 +442,93 @@ func (r *PostgresRepository) GetTicketVaultData(ticketID string, userID int) (*T
 	}
 
 	return resp, nil
+}
+
+// RotateSecretForOrderTicket is the purchaser-authorized rotation path (M3
+// explicit transfer / M4 panic revoke): scoped to (orderID, ticketID)
+// together, identically to GetTicketAccess — the order/ticket UUID pair IS
+// the authorization, matching the link-as-credential model everywhere else
+// on this endpoint family. See RotateSecret for what rotation does and does
+// not touch.
+func (r *PostgresRepository) RotateSecretForOrderTicket(orderID string, ticketID string) error {
+	newSecret := generateBase32Secret()
+	res, err := r.db.Exec(
+		"UPDATE tickets SET secret_key = $1, updated_at = NOW() WHERE id = $2 AND order_id = $3",
+		newSecret, ticketID, orderID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to rotate ticket secret: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("ticket not found")
+	}
+	return nil
+}
+
+// RotateSecret is the unscoped rotation primitive: generates a fresh base32
+// secret (the SAME generateBase32Secret used by issuance — never a second
+// secret representation or a derived/fallback value) and overwrites
+// tickets.secret_key. Callers are responsible for authorization BEFORE
+// calling this — internal/organizer and internal/admin each verify their
+// own ownership/role rules first (see their SecretRotator wiring), since
+// this method has no notion of who is allowed to rotate what.
+//
+// Rotation touches ONLY tickets.secret_key. It never writes ticket_status or
+// ticket_checkins: an already-used ticket stays "used" forever — rotation
+// cannot un-admit someone who already walked through the gate, it only
+// changes what verifies on any FUTURE scan attempt. A re-scan of an already
+// admitted ticket after rotation reports EXPIRED rather than ALREADY_USED
+// (the ticketqr TOTP check runs before the ticket_status check in the
+// frozen contract's check order), which is a cosmetic gate-UX difference,
+// not a data or security issue — the person is already inside either way.
+func (r *PostgresRepository) RotateSecret(ticketID string) (string, error) {
+	newSecret := generateBase32Secret()
+	res, err := r.db.Exec(
+		"UPDATE tickets SET secret_key = $1, updated_at = NOW() WHERE id = $2",
+		newSecret, ticketID,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to rotate ticket secret: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return "", err
+	}
+	if n == 0 {
+		return "", fmt.Errorf("ticket not found")
+	}
+	return newSecret, nil
+}
+
+// RecordBookingAccess is M5's write side: one row per secret fetch through
+// GET /order-access/{orderId}/tickets/{ticketId}, the endpoint that
+// actually returns a ticket's secret_key. The order-level overview endpoint
+// is deliberately NOT logged here — it never returns a secret, so it isn't
+// "a secret fetch" in the sense the mitigation is about.
+func (r *PostgresRepository) RecordBookingAccess(orderID string, ticketID string, ipHash string, uaHash string) error {
+	_, err := r.db.Exec(
+		"INSERT INTO booking_access_log (order_id, ticket_id, ip_hash, ua_hash) VALUES ($1, $2, $3, $4)",
+		orderID, ticketID, ipHash, uaHash,
+	)
+	return err
+}
+
+// CountDistinctBookingAccessDevices powers the organizer-facing "accessed
+// by N distinct devices" surfacing — a device is approximated as one
+// (ip_hash, ua_hash) pair, which is the same heuristic the log itself
+// stores; no additional fingerprinting signal is collected or derived.
+func (r *PostgresRepository) CountDistinctBookingAccessDevices(orderID string) (int, error) {
+	var count int
+	err := r.db.QueryRow(
+		"SELECT COUNT(DISTINCT (ip_hash, ua_hash)) FROM booking_access_log WHERE order_id = $1",
+		orderID,
+	).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }

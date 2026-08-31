@@ -39,11 +39,6 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-export function deriveDefaultSecret(ticketId: string): string {
-  const cleaned = (ticketId || "TICKET").toUpperCase().replace(/[^A-Z2-7]/g, "A");
-  return (cleaned + "J".repeat(32)).slice(0, 32);
-}
-
 export function base32ToBytes(base32: string): Uint8Array {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
   const cleaned = base32.toUpperCase().replace(/[^A-Z2-7]/g, "");
