@@ -1,31 +1,37 @@
 services:
   frontend:
-    build:
-      context: ./frontend
-      # NEXT_PUBLIC_* must be supplied at BUILD time, not runtime: Next inlines
-      # them into the client bundle during `npm run build`, and frontend/.env is
-      # excluded by frontend/.dockerignore so the build never sees it. Before
-      # these args existed the checkout page shipped with data-client-key
-      # literally undefined in every containerised deploy — it only worked under
-      # `npm run dev`, which reads frontend/.env directly.
-      #
-      # Values come from the ROOT .env (see .env.example), because compose
-      # interpolates ${...} from there — not from frontend/.env.
-      args:
-        - BACKEND_URL=http://backend:8080
-        - NEXT_PUBLIC_APP_ENV=${APP_ENV:-local}
-        - NEXT_PUBLIC_MIDTRANS_CLIENT_KEY=${NEXT_PUBLIC_MIDTRANS_CLIENT_KEY:-}
-        - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
+    image: ghcr.io/${GHCR_OWNER:-crowdflow}/crowdflow-frontend:${IMAGE_TAG:-latest}
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
     restart: always
     networks:
       - crowdflow-net
-    env_file:
-      - ./frontend/.env
+    # frontend/.env is READ ONLY by `npm run dev` (Next loads it directly,
+    # bypassing Docker entirely) — it is NOT wired in here via env_file. It
+    # used to be irrelevant to this service because the three NEXT_PUBLIC_*
+    # values were build args; now that they're read at container start (see
+    # docker-entrypoint.sh below) it would be a real hazard: a host can
+    # perfectly well have real values in frontend/.env for local dev while
+    # the root .env this file interpolates from has none, and if
+    # `env_file: ./frontend/.env` were listed here, compose's `environment:`
+    # (below) would win over it — so a bare `${NEXT_PUBLIC_MIDTRANS_CLIENT_KEY:-}`
+    # (empty on such a host) would SHADOW the real key from frontend/.env with
+    # an empty string, silently, exactly the trap the backend service's
+    # comment below warns about. Keeping frontend/.env out of this service
+    # entirely (not just out of `environment:`) is what makes that
+    # impossible rather than merely unlikely.
     environment:
       - NODE_ENV=production
       - BACKEND_URL=http://backend:8080
+      # NEXT_PUBLIC_* now arrive at container START, not image build — see
+      # frontend/docker-entrypoint.sh and src/lib/runtimeEnv.ts. One frontend
+      # image (ghcr.io/.../crowdflow-frontend) now serves every environment;
+      # only these three lines differ between prod and sandbox stacks. They
+      # must be set in the ROOT .env (see .env.example) for a containerised
+      # deploy — frontend/.env is not consulted here at all, see above.
+      - NEXT_PUBLIC_APP_ENV=${APP_ENV:-local}
+      - NEXT_PUBLIC_MIDTRANS_CLIENT_KEY=${NEXT_PUBLIC_MIDTRANS_CLIENT_KEY:-}
+      - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/"]
       interval: 5s

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, memo } from "react";
+import { getRuntimeEnv } from "@/lib/runtimeEnv";
 
 interface TurnstileProps {
   onVerify: (token: string) => void;
@@ -32,7 +33,23 @@ declare global {
 // Cloudflare Turnstile Site Keys
 // 1x00000000000000000000AA is Cloudflare's official dummy sitekey that always passes
 const DEV_SITE_KEY = "1x00000000000000000000AA";
-const PROD_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "0x4AAAAAAEAEX6a9UFtsReh-";
+// Read at module scope, same as before, but now from runtime config (see
+// lib/runtimeEnv.ts) instead of a build-time env var. There is deliberately
+// no hardcoded production key fallback here any more — a live key baked into
+// source that silently masks a missing NEXT_PUBLIC_TURNSTILE_SITE_KEY is
+// exactly the kind of "loud failure" this migration exists to guarantee, not
+// avoid. getRuntimeEnv() already console.errors if window.__ENV__ itself is
+// missing; the check below covers the narrower case where it loaded fine but
+// this one key was left unset.
+const PROD_SITE_KEY = getRuntimeEnv().NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+if (typeof window !== "undefined" && !PROD_SITE_KEY) {
+  console.error(
+    "[Turnstile] NEXT_PUBLIC_TURNSTILE_SITE_KEY is not set for this deployment. " +
+      "Production hosts will fall back to Cloudflare's always-pass dev key, which " +
+      "means Turnstile is not actually verifying anyone — fix the deployment's env, " +
+      "do not rely on this fallback."
+  );
+}
 
 export const Turnstile = memo(function Turnstile({
   onVerify,
