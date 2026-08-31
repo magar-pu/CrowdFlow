@@ -23,7 +23,6 @@ import {
 import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/Navbar";
 import { getMe, updateProfile, logoutAllDevices, UserProfileResponse } from "@/lib/api/auth";
-import { BankAccountManager } from "@/components/profile/BankAccountManager";
 import Modal from "@/components/ui/Modal";
 import { useAuthStore } from "@/lib/store/authStore";
 
@@ -403,9 +402,6 @@ export default function ProfilePage() {
                 )}
               </div>
             </div>
-
-            {/* Bank Accounts */}
-            <BankAccountManager />
 
             {/* My Events */}
             <div className="rounded-xl border border-border-subtle bg-white shadow-sm">

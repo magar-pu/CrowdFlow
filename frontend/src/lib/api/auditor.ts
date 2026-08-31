@@ -473,19 +473,66 @@ export async function updatePayoutNotes(
   });
 }
 
-/** Confirm the bank account this payout will be sent to.
+/** Confirm an organizer's payout bank account.
+ *
+ *  Scoped to the ORGANIZER APPLICATION, not to a payout. The old
+ *  payouts/{id}/verify-bank route made the feature unreachable for any
+ *  organizer who had never requested a payout — there was no other entry point.
  *
  *  The account number shown on screen is echoed back and checked server-side:
  *  the organizer may have changed it since the page loaded, and an auditor must
  *  not end up verifying an account they never saw. */
-export async function verifyPayoutBankAccount(
-  payoutId: number | string,
+export async function verifyOrganizerBankAccount(
+  applicationId: number | string,
   accountNumber: string,
 ): Promise<ApiResponse<void>> {
-  return apiRequest<void>(`/api/v1/auditor/payouts/${payoutId}/verify-bank`, {
+  return apiRequest<void>(`/api/v1/auditor/organizers/${applicationId}/verify-bank`, {
     method: "POST",
     body: JSON.stringify({ accountNumber }),
   });
+}
+
+/** One row of the auditor's bank-verification queue. */
+export interface BankVerificationDTO {
+  applicationId: number;
+  organizerId: number;
+  organizerName: string;
+  businessName: string;
+  businessEmail: string;
+  applicationStatus: string;
+  bankName: string;
+  bankAccountNumber: string;
+  bankAccountHolder: string;
+  /** Raw column value: "unverified" or "verified". */
+  verificationStatus: string;
+  /** Verified once, then edited by the organizer — the case that needs a
+   *  re-check, and the reason those rows sort to the top. */
+  detailsChanged: boolean;
+  bankDetailsUpdatedAt: string;
+  verifiedBy: string;
+  verifiedAt: string;
+  pendingPayouts: number;
+}
+
+/** The bank-verification queue. status is "", "unverified", "verified" or
+ *  "changed"; anything else is refused by the server rather than widening the
+ *  list to every organizer. */
+export async function listBankVerifications(params: {
+  status?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+} = {}): Promise<ApiResponse<BankVerificationDTO[]>> {
+  const q = new URLSearchParams();
+  if (params.status) q.set("status", params.status);
+  if (params.search) q.set("search", params.search);
+  if (params.page) q.set("page", String(params.page));
+  if (params.limit) q.set("limit", String(params.limit));
+  const qs = q.toString();
+  return apiRequest<BankVerificationDTO[]>(
+    `/api/v1/auditor/bank-verifications${qs ? `?${qs}` : ""}`,
+    { method: "GET" },
+  );
 }
 
 /**

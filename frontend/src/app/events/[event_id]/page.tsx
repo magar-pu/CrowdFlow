@@ -30,6 +30,8 @@ import { formatIDR } from "@/lib/pricing";
 import { getEvent, listTicketTiers, type PublicTicketTier } from "@/lib/api/events";
 import { Event } from "@/types/ticket";
 import { Footer } from "@/components/layout/Footer";
+import { useAuthStore } from "@/lib/store/authStore";
+import { canPurchase, BUYER_BLOCKED_MESSAGE } from "@/lib/buyerGate";
 
 export default function EventDetailPage() {
   const router = useRouter();
@@ -42,6 +44,7 @@ export default function EventDetailPage() {
   const [tiers_loading, set_tiers_loading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const user = useAuthStore((s) => s.user);
 
   useEffect(() => {
     if (!event_id) return;
@@ -156,6 +159,9 @@ export default function EventDetailPage() {
               starting_price_label={starting_price_label}
               has_tickets_on_sale={purchasable_tiers.length > 0}
               on_continue={handle_continue}
+              purchase_blocked_reason={
+                canPurchase(user) ? null : BUYER_BLOCKED_MESSAGE
+              }
             />
             {currentEvent.organizer && (
               <OrganizerInfoCard organizer={currentEvent.organizer} />

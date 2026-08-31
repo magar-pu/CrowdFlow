@@ -20,6 +20,7 @@ const SECTION_TITLES: Record<AuditorView, string> = {
   payouts: 'Payout Verification',
   'view-organizer': 'Organizer Audit',
   'view-payout': 'Payout Audit',
+  'bank-verifications': 'Bank Verification',
   events: 'Master Event List',
 };
 
@@ -32,7 +33,7 @@ const DETAIL_TITLES: Partial<Record<AuditorView, string>> = {
 
 function sectionFromPathname(pathname: string): AuditorView {
   const segment = pathname.replace(/^\/auditor\/?/, '').split('/')[0];
-  if (segment === 'reviews' || segment === 'documents' || segment === 'organizers' || segment === 'payouts' || segment === 'settings' || segment === 'events') {
+  if (segment === 'reviews' || segment === 'documents' || segment === 'organizers' || segment === 'payouts' || segment === 'settings' || segment === 'events' || segment === 'bank-verifications') {
     return segment as AuditorView;
   }
   return 'dashboard';

@@ -11,7 +11,6 @@ import (
 	"crowdflow-backend/internal/admin"
 	"crowdflow-backend/internal/auditor"
 	"crowdflow-backend/internal/auth"
-	"crowdflow-backend/internal/bankaccount"
 	"crowdflow-backend/internal/booking"
 	"crowdflow-backend/internal/config"
 	"crowdflow-backend/internal/delegation"
@@ -210,9 +209,34 @@ func main() {
 	// Refresh is legitimate ~once per access-token lifetime per session; keep a
 	// generous per-IP ceiling to blunt abuse without harming users behind NAT.
 	refreshRateLimit := middleware.RateLimit(redisClient, "refresh", 60, 15*time.Minute)
+	// Loose on purpose: Indonesian mobile carriers use CGNAT heavily and
+	// campuses NAT behind one IP, so a tight per-IP ceiling on signup would
+	// punish legitimate users sharing an address, not an attacker.
+	registerRateLimit := middleware.RateLimit(redisClient, "register", 10, time.Hour)
+	// forgot-password and send-otp each send an email per call; IP-keyed
+	// ceilings here bound the cost of one caller hammering many addresses.
+	forgotPasswordRateLimit := middleware.RateLimit(redisClient, "forgot-password", 3, 15*time.Minute)
+	// reset-password takes a mailed token; this bounds token brute-forcing.
+	resetPasswordRateLimit := middleware.RateLimit(redisClient, "reset-password", 10, 15*time.Minute)
+	sendOTPRateLimit := middleware.RateLimit(redisClient, "send-otp", 5, 15*time.Minute)
+	// Email-keyed companions: an IP-keyed limit alone can't see a distributed
+	// mail-bomb aimed at one address arriving from many different IPs.
+	forgotPasswordRateLimitByEmail := middleware.RateLimitBy(redisClient, "forgot-password-email", 5, time.Hour, middleware.EmailBodyKey)
+	sendOTPRateLimitByEmail := middleware.RateLimitBy(redisClient, "send-otp-email", 5, time.Hour, middleware.EmailBodyKey)
 
 	// Register Authentication routes
-	authHandler.RegisterRoutes(apiV1, authMounter.Authenticate, loginRateLimit, refreshRateLimit)
+	authHandler.RegisterRoutes(
+		apiV1,
+		authMounter.Authenticate,
+		loginRateLimit,
+		refreshRateLimit,
+		registerRateLimit,
+		forgotPasswordRateLimit,
+		resetPasswordRateLimit,
+		sendOTPRateLimit,
+		forgotPasswordRateLimitByEmail,
+		sendOTPRateLimitByEmail,
+	)
 
 	// Initialize Ticket dependencies (My Tickets, order-access secret delivery,
 	// rotation) ahead of Admin/Organizer below — both consume ticketService as
@@ -238,7 +262,7 @@ func main() {
 	bookingHandler := booking.NewHandler(bookingService)
 
 	// Register Booking routes
-	bookingHandler.RegisterRoutes(apiV1, authMounter.Authenticate)
+	bookingHandler.RegisterRoutes(apiV1, authMounter.Authenticate, authMounter.RequireBuyer)
 
 	// ticketRepo/ticketService are constructed earlier (see above, ahead of
 	// Admin/Organizer) — only the handler and route registration live here.
@@ -277,8 +301,12 @@ func main() {
 	paymentService := payment.NewPaymentService(paymentRepo, mailService, bookingService, ticketService, frontendURL)
 	paymentHandler := payment.NewHandler(paymentService)
 
+	// On-sale retries are normal (a popular tier selling out mid-checkout
+	// causes legitimate resubmits), so this stays generous per-IP.
+	orderRateLimit := middleware.RateLimit(redisClient, "orders", 20, 5*time.Minute)
+
 	// Register Payment routes
-	paymentHandler.RegisterRoutes(apiV1, authMounter.Authenticate)
+	paymentHandler.RegisterRoutes(apiV1, authMounter.Authenticate, authMounter.RequireBuyer, orderRateLimit)
 
 	// Mount the versioned sub-routers onto the root mux. ServeMux matches the
 	// more specific /api/v1/admin/ pattern ahead of /api/v1/, so admin console
@@ -293,8 +321,12 @@ func main() {
 	organizerService := organizer.NewOrganizerService(organizerRepo, s3Storage, ticketService)
 	organizerHandler := organizer.NewHandler(organizerService)
 
+	// Document uploads cost R2 storage/egress; both account-level and
+	// event-level upload routes share this ceiling.
+	organizerUploadRateLimit := middleware.RateLimit(redisClient, "organizer-upload", 30, time.Hour)
+
 	// Register Organizer routes
-	organizerHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole, authMounter.RequireEventOwnership)
+	organizerHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole, authMounter.RequireEventOwnership, organizerUploadRateLimit)
 
 	// Initialize Event Staff (ticketman) CRUD dependencies — organizer console
 	// only; the ticketman's own login/session lives in a separate package.
@@ -339,14 +371,6 @@ func main() {
 
 	// Register Auditor routes (Auditor + Super Admin roles)
 	auditorHandler.RegisterRoutes(mux, authMounter.Authenticate, authMounter.RequirePlatformRole)
-
-	// Initialize Bank Account dependencies
-	bankAccountRepo := bankaccount.NewBankAccountRepository(db)
-	bankAccountService := bankaccount.NewBankAccountService(bankAccountRepo)
-	bankAccountHandler := bankaccount.NewBankAccountHandler(bankAccountService)
-
-	// Register Bank Account routes (nested under /api/users/me/)
-	bankAccountHandler.RegisterRoutes(mux, authMounter.Authenticate)
 
 	// Initialize and Register Scanner routes. Every scan-side route requires a
 	// ticketman session (RequireTicketman); gate CRUD stays on the organizer

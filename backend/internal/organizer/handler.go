@@ -28,6 +28,7 @@ func (h *Handler) RegisterRoutes(
 	authenticate func(http.Handler) http.Handler,
 	requirePlatformRole func(allowedRoles ...string) func(http.Handler) http.Handler,
 	requireEventOwnership func(http.Handler) http.Handler,
+	uploadRateLimit func(http.Handler) http.Handler,
 ) {
 	// Organizer Application Onboarding routes (authenticated users applying to become organizers)
 	mux.Handle("POST /api/organizer/apply", authenticate(http.HandlerFunc(h.handleApply)))
@@ -40,7 +41,7 @@ func (h *Handler) RegisterRoutes(
 	// but NOT behind verifiedOrganizer: an applicant whose documents were
 	// rejected has no verified role yet and is exactly who needs to re-file.
 	mux.Handle("GET /api/organizer/documents", authenticate(http.HandlerFunc(h.handleListAccountDocuments)))
-	mux.Handle("POST /api/organizer/documents", authenticate(http.HandlerFunc(h.handleUploadAccountDocument)))
+	mux.Handle("POST /api/organizer/documents", authenticate(uploadRateLimit(http.HandlerFunc(h.handleUploadAccountDocument))))
 	mux.Handle("GET /api/organizer/documents/{docId}/url", authenticate(http.HandlerFunc(h.handleGetAccountDocumentURL)))
 	mux.Handle("DELETE /api/organizer/documents/{docId}", authenticate(http.HandlerFunc(h.handleDeleteAccountDocument)))
 	// Readiness is read by the event workspace to disable Submit with a reason.
@@ -84,7 +85,7 @@ func (h *Handler) RegisterRoutes(
 
 	// Per-event document submissions
 	mux.Handle("GET /api/organizer/events/{id}/documents", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleListEventDocuments)))))
-	mux.Handle("POST /api/organizer/events/{id}/documents", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleUploadEventDocument)))))
+	mux.Handle("POST /api/organizer/events/{id}/documents", authenticate(verifiedOrganizer(requireEventOwnership(uploadRateLimit(http.HandlerFunc(h.handleUploadEventDocument))))))
 	mux.Handle("GET /api/organizer/events/{id}/documents/{docId}/url", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetEventDocumentURL)))))
 	mux.Handle("DELETE /api/organizer/events/{id}/documents/{docId}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleDeleteEventDocument)))))
 

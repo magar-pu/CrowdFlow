@@ -187,11 +187,18 @@ type ReviewTicketTier struct {
 	Status          string `json:"status"` // Available, Sold Out
 }
 
-// ReviewPayout is the organizer's payout destination. Sourced from
-// user_bank_accounts (which carries a real verification flag) and falling back
-// to the bank columns on organizer_applications. Empty strings mean the
-// organizer has not provided one — the console must say so rather than invent
-// an account.
+// Bank verification states on organizer_applications.bank_verification_status,
+// constrained by migration 0022. An organizer edit resets the row to
+// unverified; only an auditor sets verified.
+const (
+	bankVerificationUnverified = "unverified"
+	bankVerificationVerified   = "verified"
+)
+
+// ReviewPayout is the organizer's payout destination, sourced solely from the
+// bank columns on organizer_applications — the same row the payout machinery
+// pays out to and the verify endpoint writes. Empty strings mean the organizer
+// has not provided one — the console must say so rather than invent an account.
 type ReviewPayout struct {
 	Bank            string  `json:"bank"`
 	AccountName     string  `json:"accountName"`
@@ -460,7 +467,47 @@ type UpdatePayoutNotesRequest struct {
 	OrganizerNotes string `json:"financeNotes"`
 }
 
-// VerifyBankAccountRequest confirms the bank account a payout will be sent to.
+// ---- Bank Verification Queue ----
+
+// BankVerificationFilters narrows the auditor's bank-verification queue.
+//
+// Status is one of "", "unverified", "verified", or "changed". "changed" means
+// an account an auditor once verified whose details the organizer has edited
+// since — bank_details_updated_at later than bank_verified_at. That is the case
+// migration 0022 exists to catch: whoever controls the organizer login controls
+// where the money lands, so a moved destination must resurface for review.
+type BankVerificationFilters struct {
+	Status string
+	Search string
+	Page   int
+	Limit  int
+}
+
+// BankVerificationItem is one row of the queue. Sourced entirely from
+// organizer_applications, the single source of payout bank details.
+type BankVerificationItem struct {
+	ApplicationID     int    `json:"applicationId"`
+	OrganizerID       int    `json:"organizerId"`
+	OrganizerName     string `json:"organizerName"`
+	BusinessName      string `json:"businessName"`
+	BusinessEmail     string `json:"businessEmail"`
+	ApplicationStatus string `json:"applicationStatus"`
+	BankName          string `json:"bankName"`
+	BankAccountNumber string `json:"bankAccountNumber"`
+	BankAccountHolder string `json:"bankAccountHolder"`
+	// VerificationStatus is the raw column value: "unverified" or "verified".
+	// DetailsChanged is the third state the column cannot express on its own.
+	VerificationStatus string `json:"verificationStatus"`
+	DetailsChanged     bool   `json:"detailsChanged"`
+	BankDetailsUpdated string `json:"bankDetailsUpdatedAt"`
+	VerifiedBy         string `json:"verifiedBy"`
+	VerifiedAt         string `json:"verifiedAt"`
+	// PendingPayouts is how many payouts are waiting on this account. A queue
+	// sorted only by staleness would bury the one organizer actually blocked.
+	PendingPayouts int `json:"pendingPayouts"`
+}
+
+// VerifyBankAccountRequest confirms an organizer's payout bank account.
 //
 // AccountNumber is echoed back by the console and checked against what is on
 // file: an auditor verifies the account they were shown, and the organizer may
@@ -636,7 +683,8 @@ type Repository interface {
 	RevisePayout(ctx context.Context, payoutID, actorID int, req RevisePayoutRequest) error
 	UpdatePayoutCheck(ctx context.Context, payoutID, actorID int, req UpdatePayoutCheckRequest) error
 	UpdatePayoutNotes(ctx context.Context, payoutID, actorID int, req UpdatePayoutNotesRequest) error
-	VerifyPayoutBankAccount(ctx context.Context, payoutID, actorID int, req VerifyBankAccountRequest) error
+	VerifyOrganizerBankAccount(ctx context.Context, appID, actorID int, req VerifyBankAccountRequest) error
+	ListBankVerifications(ctx context.Context, filters BankVerificationFilters) ([]*BankVerificationItem, error)
 
 	// Notifications
 	ListNotifications(ctx context.Context, userID int) ([]*AuditorNotification, error)
@@ -692,7 +740,8 @@ type Service interface {
 	RevisePayout(ctx context.Context, payoutID, actorID int, req RevisePayoutRequest) error
 	UpdatePayoutCheck(ctx context.Context, payoutID, actorID int, req UpdatePayoutCheckRequest) error
 	UpdatePayoutNotes(ctx context.Context, payoutID, actorID int, req UpdatePayoutNotesRequest) error
-	VerifyPayoutBankAccount(ctx context.Context, payoutID, actorID int, req VerifyBankAccountRequest) error
+	VerifyOrganizerBankAccount(ctx context.Context, appID, actorID int, req VerifyBankAccountRequest) error
+	ListBankVerifications(ctx context.Context, filters BankVerificationFilters) ([]*BankVerificationItem, error)
 
 	// Notifications
 	ListNotifications(ctx context.Context, userID int) ([]*AuditorNotification, error)

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import PayoutDetailView from "../../components/PayoutDetailView";
 import { useAuditorData } from "../../AuditorDataContext";
-import { getPayout, verifyPayoutBankAccount } from "@/lib/api/auditor";
+import { getPayout, verifyOrganizerBankAccount } from "@/lib/api/auditor";
 import { PayoutRequest } from "../../types";
 import { mapPayoutStatus } from "../../payoutMapping";
 
@@ -143,8 +143,8 @@ export default function AuditorPayoutDetailPage() {
   // screen is echoed back so the server can refuse if the organizer changed it
   // after this page loaded — otherwise the auditor would be confirming an
   // account they never saw.
-  const handleVerifyBankAccount = async (id: string, accountNumber: string) => {
-    const res = await verifyPayoutBankAccount(id, accountNumber);
+  const handleVerifyBankAccount = async (applicationId: number, accountNumber: string) => {
+    const res = await verifyOrganizerBankAccount(applicationId, accountNumber);
     if (!res.success) {
       alert(res.error?.message || "Could not verify the bank account. It may have changed since this page loaded — reload and check the details again.");
       return false;

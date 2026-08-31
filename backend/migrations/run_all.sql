@@ -158,7 +158,14 @@ SELECT v, 'adopted: artifact already present' FROM (VALUES
     ('0032_order_attendees.sql',                          pg_temp.tbl('public.order_attendees')),
     ('0033_booking_access_log.sql',                       pg_temp.tbl('public.booking_access_log')),
     ('0036_event_staff.sql',                              pg_temp.tbl('public.event_staff')),
-    ('0037_ticket_checkins_scanner_logs_event_staff.sql',  pg_temp.col('ticket_checkins', 'event_staff_id'))
+    ('0037_ticket_checkins_scanner_logs_event_staff.sql',  pg_temp.col('ticket_checkins', 'event_staff_id')),
+    -- 0038 DROPS user_bank_accounts, so its artifact is ABSENCE, not presence
+    -- — the inverse of every other probe here. This is sound under the same
+    -- rule as the rest of adoption: the migration is a no-op when the table
+    -- is already gone, so marking it adopted on an empty-ledger database that
+    -- has no such table (never existed, or already dropped by hand) is
+    -- correct either way — running it later would do nothing.
+    ('0038_drop_user_bank_accounts.sql',                  NOT pg_temp.tbl('public.user_bank_accounts'))
 ) AS probe(v, present)
 WHERE present
 ON CONFLICT (version) DO NOTHING;
@@ -488,6 +495,15 @@ SELECT NOT EXISTS (SELECT 1 FROM crowdflow_migrations WHERE version = :'f') AS r
 \if :run_it
 \echo '  applying 0037_ticket_checkins_scanner_logs_event_staff.sql'
 \ir 0037_ticket_checkins_scanner_logs_event_staff.sql
+INSERT INTO crowdflow_migrations (version) VALUES (:'f');
+\endif
+
+-- 0038 drops user_bank_accounts (guarded — refuses if the table has rows).
+\set f '0038_drop_user_bank_accounts.sql'
+SELECT NOT EXISTS (SELECT 1 FROM crowdflow_migrations WHERE version = :'f') AS run_it \gset
+\if :run_it
+\echo '  applying 0038_drop_user_bank_accounts.sql'
+\ir 0038_drop_user_bank_accounts.sql
 INSERT INTO crowdflow_migrations (version) VALUES (:'f');
 \endif
 

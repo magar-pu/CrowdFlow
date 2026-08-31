@@ -74,6 +74,9 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("POST /api/v1/auditor/organizers/{id}/approve", auditor(http.HandlerFunc(h.handleApproveOrganizer)))
 	mux.Handle("POST /api/v1/auditor/organizers/{id}/reject", auditor(http.HandlerFunc(h.handleRejectOrganizer)))
 	mux.Handle("PATCH /api/v1/auditor/organizers/{id}/status", auditor(http.HandlerFunc(h.handleUpdateOrganizerStatus)))
+	// {id} is the organizer_applications id, as on every other organizer route.
+	mux.Handle("POST /api/v1/auditor/organizers/{id}/verify-bank", auditor(http.HandlerFunc(h.handleVerifyOrganizerBankAccount)))
+	mux.Handle("GET /api/v1/auditor/bank-verifications", auditor(http.HandlerFunc(h.handleListBankVerifications)))
 
 	// Payout Verification
 	mux.Handle("GET /api/v1/auditor/payouts", auditor(http.HandlerFunc(h.handleListPayouts)))
@@ -83,7 +86,6 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("POST /api/v1/auditor/payouts/{id}/hold", auditor(http.HandlerFunc(h.handleHoldPayout)))
 	mux.Handle("POST /api/v1/auditor/payouts/{id}/revision", auditor(http.HandlerFunc(h.handleRevisePayout)))
 	mux.Handle("PATCH /api/v1/auditor/payouts/{id}/notes", auditor(http.HandlerFunc(h.handleUpdatePayoutNotes)))
-	mux.Handle("POST /api/v1/auditor/payouts/{id}/verify-bank", auditor(http.HandlerFunc(h.handleVerifyPayoutBankAccount)))
 	mux.Handle("PATCH /api/v1/auditor/payouts/{id}/checks", auditor(http.HandlerFunc(h.handleUpdatePayoutCheck)))
 
 	// Notifications
@@ -644,10 +646,14 @@ func (h *Handler) handleUpdatePayoutNotes(w http.ResponseWriter, r *http.Request
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Notes saved"})
 }
 
-func (h *Handler) handleVerifyPayoutBankAccount(w http.ResponseWriter, r *http.Request) {
+// handleVerifyOrganizerBankAccount verifies the organizer's payout account.
+// {id} is the organizer_applications id — the same id every other
+// /auditor/organizers route takes, and the one the payout detail response
+// carries as applicationId.
+func (h *Handler) handleVerifyOrganizerBankAccount(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathIntParam(r, "id")
 	if !ok {
-		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Payout ID must be a positive integer")
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Organizer application ID must be a positive integer")
 		return
 	}
 	actorID, ok := h.actorID(r)
@@ -659,11 +665,31 @@ func (h *Handler) handleVerifyPayoutBankAccount(w http.ResponseWriter, r *http.R
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := h.service.VerifyPayoutBankAccount(r.Context(), id, actorID, req); err != nil {
-		handleServiceError(w, "handleVerifyPayoutBankAccount", err)
+	if err := h.service.VerifyOrganizerBankAccount(r.Context(), id, actorID, req); err != nil {
+		handleServiceError(w, "handleVerifyOrganizerBankAccount", err)
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Bank account verified"})
+}
+
+// handleListBankVerifications backs the bank-verification queue — the entry
+// point that did not exist while verification was scoped to a payout id.
+func (h *Handler) handleListBankVerifications(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	filters := BankVerificationFilters{
+		Status: q.Get("status"),
+		Search: q.Get("search"),
+		Page:   page,
+		Limit:  limit,
+	}
+	data, err := h.service.ListBankVerifications(r.Context(), filters)
+	if err != nil {
+		handleServiceError(w, "handleListBankVerifications", err)
+		return
+	}
+	response.JSON(w, http.StatusOK, data)
 }
 
 // handleUpdatePayoutCheck ticks or unticks a single checklist item.

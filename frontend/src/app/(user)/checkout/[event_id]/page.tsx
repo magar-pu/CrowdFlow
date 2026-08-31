@@ -36,6 +36,7 @@ import { getHold, type HoldDetail } from "@/lib/api/booking";
 import { getEvent } from "@/lib/api/events";
 import { createOrder } from "@/lib/api/payment";
 import { useAuthStore } from "@/lib/store/authStore";
+import { canPurchase, BUYER_BLOCKED_MESSAGE } from "@/lib/buyerGate";
 import { useHoldCountdown } from "@/lib/hooks/useHoldCountdown";
 import { storeHoldToken } from "@/lib/holdStorage";
 import type { CartItem, Event } from "@/types/ticket";
@@ -99,6 +100,13 @@ function CheckoutContent() {
   const [is_submitting, set_is_submitting] = useState(false);
   const [attendees, set_attendees] = useState<AttendeeFormValue[]>([]);
   const [attendee_step_done, set_attendee_step_done] = useState(false);
+
+  // A hold created before a role change (or the read-only GET path, which
+  // isn't buyer-gated) can still land an ineligible account here. POST
+  // /orders would 403 either way — this just surfaces the reason instead of
+  // letting them fill in attendee details toward a payment that can't happen.
+  const user = useAuthStore((s) => s.user);
+  const purchase_blocked = !canPurchase(user);
 
   useEffect(() => {
     if (!hold_token) return;
@@ -195,6 +203,7 @@ function CheckoutContent() {
     // Expiry mid-click: the effect above is about to swap this page out, and
     // the seats are gone either way.
     if (!hold || hold_expired) return;
+    if (purchase_blocked) return;
     if (!attendeesValid(attendees)) return;
     set_is_submitting(true);
 
@@ -315,6 +324,11 @@ function CheckoutContent() {
       </div>
 
       <div className="mx-auto max-w-container-max px-margin-mobile pt-6 md:px-margin-desktop">
+        {purchase_blocked && (
+          <div className="mb-4 rounded-xl border border-border-subtle bg-surface-bright p-4 text-center font-body-sm text-body-sm text-text-secondary">
+            {BUYER_BLOCKED_MESSAGE}
+          </div>
+        )}
         {!attendee_step_done ? (
           <>
             <AttendeeDetailsForm
@@ -325,7 +339,7 @@ function CheckoutContent() {
             <div className="mt-4 flex justify-end">
               <button
                 type="button"
-                disabled={!attendeesValid(attendees)}
+                disabled={!attendeesValid(attendees) || purchase_blocked}
                 onClick={() => set_attendee_step_done(true)}
                 className="rounded-xl bg-primary px-6 py-3 font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -344,7 +358,7 @@ function CheckoutContent() {
         )}
       </div>
 
-      {attendee_step_done && (
+      {attendee_step_done && !purchase_blocked && (
         <CheckoutSummary
           event={event}
           cart_items={cart_items}

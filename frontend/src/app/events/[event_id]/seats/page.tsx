@@ -52,6 +52,7 @@ import {
 import { getEvent, listTicketTiers, type PublicTicketTier } from "@/lib/api/events";
 import { tierColor } from "@/lib/tierColors";
 import { useAuthStore } from "@/lib/store/authStore";
+import { canPurchase, BUYER_BLOCKED_MESSAGE } from "@/lib/buyerGate";
 import type { Event } from "@/types/ticket";
 import { cn } from "@/lib/utils";
 
@@ -389,6 +390,14 @@ export default function SeatSelectionPage() {
     // that response.
     if (!useAuthStore.getState().is_authenticated) {
       login_redirect();
+      return;
+    }
+
+    // Same check the server makes (RequireBuyer) — caught here so the buyer
+    // sees the reason immediately instead of a hold request round-tripping
+    // just to come back with the same 403.
+    if (!canPurchase(useAuthStore.getState().user)) {
+      set_hold_error(BUYER_BLOCKED_MESSAGE);
       return;
     }
 

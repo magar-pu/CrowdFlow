@@ -21,10 +21,15 @@ func NewHandler(service Service) *Handler {
 func (h *Handler) RegisterRoutes(
 	mux *http.ServeMux,
 	authenticate func(http.Handler) http.Handler,
+	requireBuyer func(http.Handler) http.Handler,
 ) {
 	mux.Handle("GET /events/{id}/ticket-tiers", http.HandlerFunc(h.handleListTicketTiers))
 	mux.Handle("GET /events/{id}/seatmap", http.HandlerFunc(h.handleGetSeatMap))
-	mux.Handle("POST /booking/holds", authenticate(http.HandlerFunc(h.handleCreateHold)))
+	// Creating a hold reserves inventory, not just a purchase record — a
+	// non-buyer account left free here could lock seats out of sale without
+	// ever completing an order, so requireBuyer gates the write here too, not
+	// just at POST /orders.
+	mux.Handle("POST /booking/holds", authenticate(requireBuyer(http.HandlerFunc(h.handleCreateHold))))
 	mux.Handle("GET /booking/holds/{token}", authenticate(http.HandlerFunc(h.handleGetHold)))
 	mux.Handle("DELETE /booking/holds/{token}", authenticate(http.HandlerFunc(h.handleReleaseHold)))
 }

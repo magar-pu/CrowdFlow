@@ -369,14 +369,36 @@ func (s *AuditorService) UpdatePayoutCheck(ctx context.Context, payoutID, actorI
 	return s.repo.UpdatePayoutCheck(ctx, payoutID, actorID, req)
 }
 
-func (s *AuditorService) VerifyPayoutBankAccount(ctx context.Context, payoutID, actorID int, req VerifyBankAccountRequest) error {
-	if payoutID <= 0 || actorID <= 0 {
+// ListBankVerifications backs the auditor's bank-verification queue.
+//
+// Status is validated here rather than passed through: an unrecognised filter
+// must not silently widen the queue to every organizer on the platform.
+func (s *AuditorService) ListBankVerifications(ctx context.Context, filters BankVerificationFilters) ([]*BankVerificationItem, error) {
+	if filters.Limit <= 0 {
+		filters.Limit = 20
+	}
+	if filters.Limit > 100 {
+		filters.Limit = 100
+	}
+	if filters.Page <= 0 {
+		filters.Page = 1
+	}
+	switch filters.Status {
+	case "", bankVerificationUnverified, bankVerificationVerified, "changed":
+	default:
+		return nil, fmt.Errorf("%w: unknown status filter %q", ErrValidation, filters.Status)
+	}
+	return s.repo.ListBankVerifications(ctx, filters)
+}
+
+func (s *AuditorService) VerifyOrganizerBankAccount(ctx context.Context, appID, actorID int, req VerifyBankAccountRequest) error {
+	if appID <= 0 || actorID <= 0 {
 		return ErrValidation
 	}
 	if strings.TrimSpace(req.AccountNumber) == "" {
 		return ErrValidation
 	}
-	return s.repo.VerifyPayoutBankAccount(ctx, payoutID, actorID, req)
+	return s.repo.VerifyOrganizerBankAccount(ctx, appID, actorID, req)
 }
 
 func (s *AuditorService) RejectPayout(ctx context.Context, payoutID, actorID int, req RejectPayoutRequest) error {
