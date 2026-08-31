@@ -24,6 +24,13 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { CheckoutSummary } from "@/components/checkout/CheckoutSummary";
+import {
+  AttendeeDetailsForm,
+  slotsFromHold,
+  emptyAttendee,
+  attendeesValid,
+  type AttendeeFormValue,
+} from "@/components/checkout/AttendeeDetailsForm";
 import { HoldTimer } from "@/components/booking/HoldTimer";
 import { getHold, type HoldDetail } from "@/lib/api/booking";
 import { getEvent } from "@/lib/api/events";
@@ -90,6 +97,8 @@ function CheckoutContent() {
   const [loading, set_loading] = useState(Boolean(hold_token));
   const [load_error, set_load_error] = useState<string | null>(null);
   const [is_submitting, set_is_submitting] = useState(false);
+  const [attendees, set_attendees] = useState<AttendeeFormValue[]>([]);
+  const [attendee_step_done, set_attendee_step_done] = useState(false);
 
   useEffect(() => {
     if (!hold_token) return;
@@ -108,6 +117,7 @@ function CheckoutContent() {
         }
 
         set_hold(res.data);
+        set_attendees(slotsFromHold(res.data).map(emptyAttendee));
 
         // The event id comes from the hold, not the route: the hold is the
         // authority on what is being bought.
@@ -185,6 +195,7 @@ function CheckoutContent() {
     // Expiry mid-click: the effect above is about to swap this page out, and
     // the seats are gone either way.
     if (!hold || hold_expired) return;
+    if (!attendeesValid(attendees)) return;
     set_is_submitting(true);
 
     try {
@@ -195,6 +206,7 @@ function CheckoutContent() {
         // still goes along for display but no longer decides anything.
         hold_token: hold.hold_token,
         cart_items,
+        attendees,
       });
 
       if (!res.success || !res.data?.snap_token) {
@@ -302,12 +314,44 @@ function CheckoutContent() {
         />
       </div>
 
-      <CheckoutSummary
-        event={event}
-        cart_items={cart_items}
-        is_submitting={is_submitting}
-        on_confirm={handle_confirm}
-      />
+      <div className="mx-auto max-w-container-max px-margin-mobile pt-6 md:px-margin-desktop">
+        {!attendee_step_done ? (
+          <>
+            <AttendeeDetailsForm
+              hold={hold}
+              value={attendees}
+              on_change={set_attendees}
+            />
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                disabled={!attendeesValid(attendees)}
+                onClick={() => set_attendee_step_done(true)}
+                className="rounded-xl bg-primary px-6 py-3 font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Continue to Payment
+              </button>
+            </div>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => set_attendee_step_done(false)}
+            className="mb-4 font-label-sm text-label-sm text-text-secondary underline hover:text-text-primary"
+          >
+            Edit attendee details
+          </button>
+        )}
+      </div>
+
+      {attendee_step_done && (
+        <CheckoutSummary
+          event={event}
+          cart_items={cart_items}
+          is_submitting={is_submitting}
+          on_confirm={handle_confirm}
+        />
+      )}
     </div>
   );
 }

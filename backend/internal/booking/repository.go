@@ -40,7 +40,7 @@ func (r *PostgresRedisRepository) ListTicketTiers(eventID int) ([]*TicketTier, e
 	}
 	defer rows.Close()
 
-	var tiers []*TicketTier
+	tiers := make([]*TicketTier, 0)
 	for rows.Next() {
 		var t TicketTier
 		var allocationLimit, ticketsSold int

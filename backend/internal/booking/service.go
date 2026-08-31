@@ -23,12 +23,12 @@ func NewBookingService(repo Repository, mailService mail.Service) *BookingServic
 	return &BookingService{repo: repo, mailService: mailService}
 }
 
-func (s *BookingService) SendETicketEmail(toEmail string, eventTitle string, dateVenue string, qrCodeURL string, ticketTier string) {
+func (s *BookingService) SendETicketEmail(toEmail string, eventTitle string, dateVenue string, bookingURL string, ticketTier string) {
 	if s.mailService == nil {
 		return
 	}
 	go func() {
-		if err := s.mailService.SendETicket(toEmail, eventTitle, dateVenue, qrCodeURL, ticketTier); err != nil {
+		if err := s.mailService.SendETicket(toEmail, eventTitle, dateVenue, bookingURL, ticketTier); err != nil {
 			log.Printf("[BOOKING MAIL ERROR] Failed to send E-Ticket email to %s: %v", toEmail, err)
 		}
 	}()

@@ -154,7 +154,11 @@ SELECT v, 'adopted: artifact already present' FROM (VALUES
     ('0028_payout_review_checks.sql',                     pg_temp.tbl('public.payout_review_checks')),
     ('0029_event_google_maps_url.sql',                    pg_temp.col('events', 'google_maps_url')),
     ('0030_event_max_tickets_per_order.sql',              pg_temp.col('events', 'max_tickets_per_order')),
-    ('0031_organizer_document_file_metadata.sql',         pg_temp.col('organizer_documents', 'file_name'))
+    ('0031_organizer_document_file_metadata.sql',         pg_temp.col('organizer_documents', 'file_name')),
+    ('0032_order_attendees.sql',                          pg_temp.tbl('public.order_attendees')),
+    ('0033_booking_access_log.sql',                       pg_temp.tbl('public.booking_access_log')),
+    ('0036_event_staff.sql',                              pg_temp.tbl('public.event_staff')),
+    ('0037_ticket_checkins_scanner_logs_event_staff.sql',  pg_temp.col('ticket_checkins', 'event_staff_id'))
 ) AS probe(v, present)
 WHERE present
 ON CONFLICT (version) DO NOTHING;
@@ -446,6 +450,44 @@ SELECT NOT EXISTS (SELECT 1 FROM crowdflow_migrations WHERE version = :'f') AS r
 \if :run_it
 \echo '  applying 0031_organizer_document_file_metadata.sql (backfills data)'
 \ir 0031_organizer_document_file_metadata.sql
+INSERT INTO crowdflow_migrations (version) VALUES (:'f');
+\endif
+
+-- 0032 is pure DDL — it does NOT finish the attendee_nik migration. Run
+-- `go run ./backend/cmd/backfill_nik` afterwards to encrypt existing
+-- plaintext tickets.attendee_nik into attendee_nik_enc and null the source
+-- column; this SQL file cannot do that (AES-GCM needs NIK_ENC_KEY, an
+-- application secret psql must never see).
+\set f '0032_order_attendees.sql'
+SELECT NOT EXISTS (SELECT 1 FROM crowdflow_migrations WHERE version = :'f') AS run_it \gset
+\if :run_it
+\echo '  applying 0032_order_attendees.sql (DDL only — run cmd/backfill_nik after)'
+\ir 0032_order_attendees.sql
+INSERT INTO crowdflow_migrations (version) VALUES (:'f');
+\endif
+
+-- 0033 adds booking_access_log (M5 access telemetry, no data migration needed).
+\set f '0033_booking_access_log.sql'
+SELECT NOT EXISTS (SELECT 1 FROM crowdflow_migrations WHERE version = :'f') AS run_it \gset
+\if :run_it
+\echo '  applying 0033_booking_access_log.sql'
+\ir 0033_booking_access_log.sql
+INSERT INTO crowdflow_migrations (version) VALUES (:'f');
+\endif
+
+\set f '0036_event_staff.sql'
+SELECT NOT EXISTS (SELECT 1 FROM crowdflow_migrations WHERE version = :'f') AS run_it \gset
+\if :run_it
+\echo '  applying 0036_event_staff.sql'
+\ir 0036_event_staff.sql
+INSERT INTO crowdflow_migrations (version) VALUES (:'f');
+\endif
+
+\set f '0037_ticket_checkins_scanner_logs_event_staff.sql'
+SELECT NOT EXISTS (SELECT 1 FROM crowdflow_migrations WHERE version = :'f') AS run_it \gset
+\if :run_it
+\echo '  applying 0037_ticket_checkins_scanner_logs_event_staff.sql'
+\ir 0037_ticket_checkins_scanner_logs_event_staff.sql
 INSERT INTO crowdflow_migrations (version) VALUES (:'f');
 \endif
 

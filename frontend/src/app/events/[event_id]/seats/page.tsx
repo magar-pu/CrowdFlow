@@ -31,6 +31,7 @@ import {
   type SelectableTier,
   type SelectionMode,
 } from "@/components/seat-selection/TicketTypeSelector";
+import { GaTierCards } from "@/components/seat-selection/GaTierCards";
 import { MapLegend } from "@/components/seat-selection/MapLegend";
 import { MapZoomControls } from "@/components/seat-selection/MapZoomControls";
 import { SelectionPanel } from "@/components/seat-selection/SelectionPanel";
@@ -123,14 +124,19 @@ export default function SeatSelectionPage() {
       is_general_admission: false,
     }));
 
-    const ga = seat_map.ga_tiers.map((tier, i) => ({
-      ticket_tier_id: tier.ticket_tier_id,
-      name: tier.name,
-      price: tier.price,
-      color: tierColor(null, seat_map.tiers.length + i),
-      available: (quota_of(tier.ticket_tier_id) ?? tier.quota_remaining) > 0,
-      is_general_admission: true,
-    }));
+    const ga = seat_map.ga_tiers.map((tier, i) => {
+      const remaining = quota_of(tier.ticket_tier_id) ?? tier.quota_remaining;
+      return {
+        ticket_tier_id: tier.ticket_tier_id,
+        name: tier.name,
+        price: tier.price,
+        color: tierColor(null, seat_map.tiers.length + i),
+        available: remaining > 0,
+        is_general_admission: true,
+        description: tier.description,
+        quota_remaining: remaining,
+      };
+    });
 
     return [...assigned, ...ga];
   }, [seat_map, public_tiers]);
@@ -479,13 +485,20 @@ export default function SeatSelectionPage() {
         on_close={() => router.push(`/events/${event_id}`)}
       />
 
-      <TicketTypeSelector
-        tiers={tiers}
-        mode={mode}
-        active_ga_tier_id={ga_tier_id}
-        on_choose_seats={handle_choose_seats}
-        on_choose_ga={handle_choose_ga}
-      />
+      {/* Redundant once the GA card grid fills the main area AND there is no
+          seated option to switch to: the same chips would appear twice with
+          nothing left for the strip to uniquely offer. Kept for a mixed
+          event, where it still carries the one thing the cards cannot
+          express — the Reserved Seats / GA mode switch. */}
+      {has_seated && (
+        <TicketTypeSelector
+          tiers={tiers}
+          mode={mode}
+          active_ga_tier_id={ga_tier_id}
+          on_choose_seats={handle_choose_seats}
+          on_choose_ga={handle_choose_ga}
+        />
+      )}
 
       <main className="relative flex min-h-0 flex-1 overflow-hidden">
         <div className="relative h-full flex-1">
@@ -504,15 +517,11 @@ export default function SeatSelectionPage() {
               </p>
             </div>
           ) : mode === "ga" && active_ga_tier ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-              <p className="font-headline-sm text-headline-sm font-bold text-text-primary">
-                {active_ga_tier.name}
-              </p>
-              <p className="max-w-sm font-body-sm text-body-sm text-text-secondary">
-                This ticket type has no assigned seat. Choose how many you want in the
-                panel, then continue to payment.
-              </p>
-            </div>
+            <GaTierCards
+              tiers={tiers.filter((t) => t.is_general_admission)}
+              active_tier_id={ga_tier_id}
+              on_choose={handle_choose_ga}
+            />
           ) : renderable ? (
             <div
               className={cn("h-full w-full", "cursor-grab active:cursor-grabbing")}

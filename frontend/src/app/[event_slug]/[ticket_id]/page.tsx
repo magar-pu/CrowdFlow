@@ -7,7 +7,6 @@ import { PurchaseSuccessHeader } from "@/components/your-ticket/PurchaseSuccessH
 import { DigitalTicketCard } from "@/components/your-ticket/DigitalTicketCard";
 import { TicketActions } from "@/components/your-ticket/TicketActions";
 import { getMyTickets, UserTicket } from "@/lib/api/tickets";
-import { generateTicketPdf } from "@/utils/generateTicketPdf";
 import type { PurchasedTicket } from "@/types/ticket";
 
 export default function EventTicketSlugPage() {
@@ -87,10 +86,6 @@ export default function EventTicketSlugPage() {
     console.log("Add to Apple Wallet:", currentTicket.ticket_id);
   }
 
-  function handle_download_pdf() {
-    generateTicketPdf(currentTicket, orderAmount, userEmail);
-  }
-
   async function handle_share() {
     const share_data = {
       title: currentTicket.event_title,
@@ -121,7 +116,6 @@ export default function EventTicketSlugPage() {
 
         <TicketActions
           on_add_to_wallet={handle_add_to_wallet}
-          on_download_pdf={handle_download_pdf}
           on_share={handle_share}
         />
       </main>

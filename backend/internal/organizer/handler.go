@@ -75,6 +75,7 @@ func (h *Handler) RegisterRoutes(
 	mux.Handle("PATCH /api/organizer/events/{id}/publish", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handlePublishEvent)))))
 	mux.Handle("DELETE /api/organizer/events/{id}", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleDeleteEvent)))))
 	mux.Handle("POST /api/organizer/events/{id}/checkin", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleCheckInAttendee)))))
+	mux.Handle("POST /api/organizer/events/{id}/tickets/{ticketId}/rotate-secret", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleRotateTicketSecret)))))
 	mux.Handle("GET /api/organizer/events/{id}/analytics", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetEventAnalytics)))))
 	mux.Handle("GET /api/organizer/events/{id}/checkin-stats", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleGetEventCheckInStats)))))
 	mux.Handle("GET /api/organizer/events/{id}/orders", authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(h.handleListEventOrders)))))
@@ -1567,6 +1568,39 @@ func (h *Handler) handleCheckInAttendee(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	response.JSON(w, http.StatusOK, res)
+}
+
+func (h *Handler) handleRotateTicketSecret(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User context not found")
+		return
+	}
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid user identifier in claims")
+		return
+	}
+
+	eventID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_ID", "Event ID must be a valid integer")
+		return
+	}
+
+	ticketID := r.PathValue("ticketId")
+	if ticketID == "" {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Ticket ID is required")
+		return
+	}
+
+	if _, err := h.service.RotateTicketSecret(r.Context(), eventID, userID, ticketID); err != nil {
+		log.Printf("RotateTicketSecret error: %v", err)
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "Ticket not found or not authorized for this event")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]interface{}{"ticketId": ticketID, "rotated": true})
 }
 
 func (h *Handler) handleListNotifications(w http.ResponseWriter, r *http.Request) {

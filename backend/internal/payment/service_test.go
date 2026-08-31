@@ -312,10 +312,195 @@ func TestCreateMidtransTransaction_RequiresHold(t *testing.T) {
 	})
 }
 
+func TestResolveAttendees(t *testing.T) {
+	seatHold := &booking.HoldDetail{
+		EventID: 42,
+		Items: []booking.HoldItem{
+			{
+				TicketTierID: 7,
+				Seats:        []booking.HoldSeat{{SeatID: 101}, {SeatID: 102}},
+			},
+			{TicketTierID: 9, Quantity: 2}, // GA
+		},
+	}
+
+	baseAttendees := func() []AttendeeInput {
+		return []AttendeeInput{
+			{SeatID: intPtr(101), TicketTierID: 7, FullName: "Budi", NIK: "3174012509900001", Email: "budi@example.com", Phone: "+62812", DOB: "1990-09-25"},
+			{SeatID: intPtr(102), TicketTierID: 7, FullName: "Siti", NIK: "3174012509900002", Email: "siti@example.com", Phone: "+62813", DOB: "1992-01-01"},
+			{TicketTierID: 9, FullName: "Ga One", NIK: "3174012509900003", Email: "ga1@example.com", Phone: "+62814", DOB: "1995-05-05"},
+			{TicketTierID: 9, FullName: "Ga Two", NIK: "3174012509900004", Email: "ga2@example.com", Phone: "+62815", DOB: "1996-06-06"},
+		}
+	}
+
+	t.Setenv("NIK_ENC_KEY", "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=")
+	s := &PaymentService{repo: &capturingRepo{}}
+
+	t.Run("exact coverage succeeds and encrypts NIK", func(t *testing.T) {
+		got, err := s.resolveAttendees(context.Background(), seatHold, baseAttendees())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 4 {
+			t.Fatalf("got %d attendees, want 4", len(got))
+		}
+		for _, a := range got {
+			if string(a.NIKEnc) == "3174012509900001" {
+				t.Fatal("NIK was written in plaintext")
+			}
+		}
+		if got[0].SeatMatrixID == nil || *got[0].SeatMatrixID != 1101 {
+			t.Errorf("seat attendee SeatMatrixID = %v, want 1101", got[0].SeatMatrixID)
+		}
+		if got[2].SeatMatrixID != nil {
+			t.Errorf("GA attendee SeatMatrixID = %v, want nil", got[2].SeatMatrixID)
+		}
+	})
+
+	t.Run("missing attendee for a held seat is rejected", func(t *testing.T) {
+		attendees := baseAttendees()[:3] // drop seat 102's attendee
+		_, err := s.resolveAttendees(context.Background(), seatHold, attendees)
+		if !errors.Is(err, ErrInvalidAttendees) {
+			t.Fatalf("got %v, want ErrInvalidAttendees", err)
+		}
+	})
+
+	t.Run("bad NIK format is rejected", func(t *testing.T) {
+		attendees := baseAttendees()
+		attendees[0].NIK = "123"
+		_, err := s.resolveAttendees(context.Background(), seatHold, attendees)
+		if !errors.Is(err, ErrInvalidAttendees) {
+			t.Fatalf("got %v, want ErrInvalidAttendees", err)
+		}
+	})
+
+	t.Run("seat not in the hold is rejected", func(t *testing.T) {
+		attendees := baseAttendees()
+		attendees[0].SeatID = intPtr(999)
+		_, err := s.resolveAttendees(context.Background(), seatHold, attendees)
+		if !errors.Is(err, ErrInvalidAttendees) {
+			t.Fatalf("got %v, want ErrInvalidAttendees", err)
+		}
+	})
+
+	t.Run("too many GA attendees for the tier is rejected", func(t *testing.T) {
+		attendees := append(baseAttendees(), AttendeeInput{
+			TicketTierID: 9, FullName: "Extra", NIK: "3174012509900005",
+			Email: "extra@example.com", Phone: "+62816", DOB: "1990-01-01",
+		})
+		_, err := s.resolveAttendees(context.Background(), seatHold, attendees)
+		if !errors.Is(err, ErrInvalidAttendees) {
+			t.Fatalf("got %v, want ErrInvalidAttendees", err)
+		}
+	})
+}
+
+func intPtr(i int) *int { return &i }
+
+// stubIssuer is a TicketIssuer test double that mimics the real idempotency
+// guard in ticket.GenerateTicketsForPaidOrder: the first call for an order
+// "issues" tickets, every later call for the same orderID returns the same
+// count without doing new work.
+type stubIssuer struct {
+	calls     int
+	issuedFor map[string]int
+	err       error
+}
+
+func (s *stubIssuer) IssueForPaidOrder(orderID string) (int, error) {
+	s.calls++
+	if s.err != nil {
+		return 0, s.err
+	}
+	if s.issuedFor == nil {
+		s.issuedFor = map[string]int{}
+	}
+	if n, ok := s.issuedFor[orderID]; ok {
+		return n, nil
+	}
+	s.issuedFor[orderID] = 3
+	return 3, nil
+}
+
+// TestHandleMidtransWebhook_IssuesTicketsThroughSharedIssuer pins the
+// consolidation: the webhook must call the shared TicketIssuer (the same Go
+// implementation the buyer-triggered complete-payment path uses) rather than
+// the old SQL-only INSERT that used to live inside UpdateOrderStatus. It also
+// proves the idempotency property a retried Midtrans notification relies on:
+// a second call for the same order must not issue a second batch.
+func TestHandleMidtransWebhook_IssuesTicketsThroughSharedIssuer(t *testing.T) {
+	issuer := &stubIssuer{}
+	// serverKey is left empty, which verifyMidtransSignature treats as
+	// "verification disabled" (see TestVerifyMidtransSignature) — the
+	// signature machinery is exercised separately, this test is about
+	// what happens once the payload is accepted.
+	s := &PaymentService{repo: &capturingRepo{}, issuer: issuer}
+
+	payload := map[string]interface{}{
+		"order_id":           "order-1",
+		"transaction_status": "settlement",
+	}
+
+	if err := s.HandleMidtransWebhook(context.Background(), payload); err != nil {
+		t.Fatalf("webhook failed: %v", err)
+	}
+	if issuer.calls != 1 {
+		t.Fatalf("issuer called %d times, want 1", issuer.calls)
+	}
+
+	// Midtrans retries notifications; the webhook must be safe to call again
+	// for the same order.
+	if err := s.HandleMidtransWebhook(context.Background(), payload); err != nil {
+		t.Fatalf("second (retried) webhook call failed: %v", err)
+	}
+	if issuer.calls != 2 {
+		t.Fatalf("issuer called %d times after a retry, want 2 (idempotent no-op each time)", issuer.calls)
+	}
+	if got := issuer.issuedFor["order-1"]; got != 3 {
+		t.Fatalf("ticket count drifted across retries: got %d, want 3", got)
+	}
+}
+
+// TestHandleMidtransWebhook_IssuanceFailureIsReturned pins the preserved
+// behaviour: a buyer who paid and got no ticket must cause the webhook to
+// fail, so Midtrans retries into the idempotent issuance rather than the
+// failure being silently swallowed.
+func TestHandleMidtransWebhook_IssuanceFailureIsReturned(t *testing.T) {
+	issuer := &stubIssuer{err: errors.New("db exploded")}
+	s := &PaymentService{repo: &capturingRepo{}, issuer: issuer}
+
+	payload := map[string]interface{}{
+		"order_id":           "order-2",
+		"transaction_status": "settlement",
+	}
+	if err := s.HandleMidtransWebhook(context.Background(), payload); err == nil {
+		t.Fatal("expected the webhook to fail when issuance fails, so Midtrans retries")
+	}
+}
+
+// TestHandleMidtransWebhook_NonPaidStatusSkipsIssuance ensures a pending or
+// failed notification never triggers issuance.
+func TestHandleMidtransWebhook_NonPaidStatusSkipsIssuance(t *testing.T) {
+	issuer := &stubIssuer{}
+	s := &PaymentService{repo: &capturingRepo{}, issuer: issuer}
+
+	payload := map[string]interface{}{
+		"order_id":           "order-3",
+		"transaction_status": "pending",
+	}
+	if err := s.HandleMidtransWebhook(context.Background(), payload); err != nil {
+		t.Fatalf("webhook failed: %v", err)
+	}
+	if issuer.calls != 0 {
+		t.Fatalf("issuer was called for a non-paid status")
+	}
+}
+
 // capturingRepo records what the service tried to persist.
 type capturingRepo struct {
-	order *Order
-	items []OrderItem
+	order     *Order
+	items     []OrderItem
+	attendees []Attendee
 }
 
 func (r *capturingRepo) CreateOrder(_ context.Context, o *Order) error {
@@ -334,4 +519,17 @@ func (r *capturingRepo) GetOrderDetailsForMail(context.Context, string) (*OrderM
 }
 func (r *capturingRepo) GetUserForPayment(context.Context, int) (string, string, error) {
 	return "b@example.com", "Buyer", nil
+}
+func (r *capturingRepo) CreateOrderAttendees(_ context.Context, _ string, attendees []Attendee) error {
+	r.attendees = attendees
+	return nil
+}
+func (r *capturingRepo) ResolveSeatMatrixIDs(_ context.Context, _ int, seatIDs []int) (map[int]int, error) {
+	// Seat matrix row id is deterministically seat id + 1000, distinct enough
+	// from the seat id itself to catch a test that mixes the two up.
+	result := make(map[int]int, len(seatIDs))
+	for _, id := range seatIDs {
+		result[id] = id + 1000
+	}
+	return result, nil
 }

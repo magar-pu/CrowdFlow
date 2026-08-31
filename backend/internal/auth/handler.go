@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
+	"crowdflow-backend/internal/config"
 	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/response"
 	"crowdflow-backend/pkg/turnstile"
@@ -117,13 +119,41 @@ func (h *Handler) clearAuthCookies(w http.ResponseWriter) {
 	}
 }
 
+// resolveFrontendURL returns the frontend origin to use in a password-reset
+// email link or a post-OAuth-login redirect.
+//
+// FRONTEND_URL, when set, is trusted outright — it's operator configuration,
+// never attacker input. Absent that, the caller's declared origin (the
+// Origin header, then Host/X-Forwarded-Host) is validated against an
+// allowlist before being trusted at all. nginx's `server_name _` accepts any
+// Host and `proxy_set_header Host $host` forwards it verbatim, so those
+// headers are attacker-controlled: trusting them unvalidated is exactly how
+// this function used to let an unauthenticated POST to
+// /auth/forgot-password with a spoofed Host email the victim a working
+// reset link (with a live token) pointing at an attacker's domain. No match
+// against the allowlist -> "" (fail closed). Callers MUST treat "" as
+// "cannot determine a safe origin" and refuse to build a link from it —
+// never fall back to the unvalidated value.
+//
+// The allowlist is ALLOWED_FRONTEND_ORIGINS (comma-separated full origins,
+// e.g. "https://crowdflow.id,https://sandbox.crowdflow.id"), mirroring
+// FRONTEND_URL's shape. If it's unset AND this process is running in local
+// dev (config.IsLocal()), a hardcoded localhost allowlist is used instead,
+// so a fresh checkout keeps working with zero configuration — matching the
+// previous hardcoded "http://localhost:3000" default this function fell
+// back to. Outside local dev, an unset allowlist means nothing is allowed:
+// fail closed, not "trust whatever Host the request claims" like before.
 func resolveFrontendURL(r *http.Request) string {
 	if envURL := os.Getenv("FRONTEND_URL"); envURL != "" {
 		return envURL
 	}
-	if origin := r.Header.Get("Origin"); origin != "" {
+
+	allowed, isDefaultDevAllowlist := allowedFrontendOrigins()
+
+	if origin := r.Header.Get("Origin"); origin != "" && allowed[origin] {
 		return origin
 	}
+
 	scheme := "http"
 	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 		scheme = "https"
@@ -132,10 +162,64 @@ func resolveFrontendURL(r *http.Request) string {
 	if host == "" {
 		host = r.Host
 	}
-	if host != "" && host != "localhost" && host != "127.0.0.1" && host != "backend:8080" {
-		return scheme + "://" + host
+	if host != "" {
+		if candidate := scheme + "://" + host; allowed[candidate] {
+			return candidate
+		}
 	}
-	return "http://localhost:3000"
+
+	// Nothing in the request matched, but nobody configured
+	// ALLOWED_FRONTEND_ORIGINS either — this is the built-in local-dev
+	// allowlist, not an operator-declared one, so it's safe to fall back to
+	// the conventional Next.js dev server origin instead of failing closed.
+	// A request that DID configure ALLOWED_FRONTEND_ORIGINS and still
+	// doesn't match gets no such grace: fail closed.
+	if isDefaultDevAllowlist {
+		return "http://localhost:3000"
+	}
+
+	return ""
+}
+
+// allowedFrontendOrigins returns the set of origins resolveFrontendURL may
+// trust from request headers, and whether that set is the built-in local-dev
+// default (as opposed to an operator-configured ALLOWED_FRONTEND_ORIGINS) —
+// the caller uses that distinction to decide whether an unmatched request
+// still gets a zero-config dev fallback or fails closed.
+func allowedFrontendOrigins() (allowed map[string]bool, isDefaultDevAllowlist bool) {
+	if raw := strings.TrimSpace(os.Getenv("ALLOWED_FRONTEND_ORIGINS")); raw != "" {
+		set := make(map[string]bool)
+		for _, origin := range strings.Split(raw, ",") {
+			origin = strings.TrimSpace(origin)
+			if origin != "" {
+				set[origin] = true
+			}
+		}
+		return set, false
+	}
+
+	if config.IsLocal() {
+		return map[string]bool{
+			// Next.js dev server, run directly (no compose).
+			"http://localhost:3000": true,
+			"http://127.0.0.1:3000": true,
+			// nginx fronting the compose stack directly on :80 (i.e.
+			// NGINX_PORT explicitly set to 80).
+			"http://localhost": true,
+			"http://127.0.0.1": true,
+			// nginx via docker-compose.yml's published port, taking the
+			// documented default (NGINX_PORT unset -> "127.0.0.1:8000:80").
+			// Hardcoded rather than read from NGINX_PORT: this allowlist is
+			// already a fixed convenience set for the un-configured case: an
+			// operator who customises NGINX_PORT should set
+			// ALLOWED_FRONTEND_ORIGINS instead, not have this list start
+			// reading env vars of its own.
+			"http://localhost:8000": true,
+			"http://127.0.0.1:8000": true,
+		}, true
+	}
+
+	return map[string]bool{}, false
 }
 
 // resolveRoleName returns the user's highest-privilege platform role (roles
@@ -303,6 +387,16 @@ func (h *Handler) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	frontendURL := resolveFrontendURL(r)
+	if frontendURL == "" {
+		// The session cookies are already set at this point, so the user IS
+		// logged in — we just can't determine a safe place to send their
+		// browser. Refusing to redirect (rather than trusting the request's
+		// Origin/Host) is the fix: this is the exact code path the
+		// Host-header-spoofing account-takeover used to reach.
+		log.Printf("[WARN] auth: google oauth callback has no allowlisted frontend origin (Origin=%q Host=%q X-Forwarded-Host=%q) - refusing to redirect; set FRONTEND_URL or ALLOWED_FRONTEND_ORIGINS", r.Header.Get("Origin"), r.Host, r.Header.Get("X-Forwarded-Host"))
+		response.Error(w, http.StatusInternalServerError, "CONFIGURATION_ERROR", "Signed in, but the server could not determine a safe redirect target. Contact the site administrator.")
+		return
+	}
 
 	targetPath := "/"
 	switch roleName {
@@ -521,9 +615,16 @@ func (h *Handler) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resetBaseURL := resolveFrontendURL(r)
-
-	_ = h.service.RequestPasswordReset(req.Email, resetBaseURL)
+	// The response below is the same generic "if this email is registered"
+	// message regardless of what happens here, by design — it must not leak
+	// whether req.Email exists. An unresolvable origin just means we skip
+	// actually sending anything rather than emailing a reset link built from
+	// an unvalidated (and previously exploitable) request Host/Origin.
+	if resetBaseURL := resolveFrontendURL(r); resetBaseURL != "" {
+		_ = h.service.RequestPasswordReset(req.Email, resetBaseURL)
+	} else {
+		log.Printf("[WARN] auth: forgot-password request has no allowlisted frontend origin (Origin=%q Host=%q X-Forwarded-Host=%q) - not sending a reset email; set FRONTEND_URL or ALLOWED_FRONTEND_ORIGINS", r.Header.Get("Origin"), r.Host, r.Header.Get("X-Forwarded-Host"))
+	}
 
 	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "Jika email terdaftar, instruksi reset password telah dikirim ke email Anda.",

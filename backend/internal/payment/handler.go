@@ -21,7 +21,7 @@ func NewHandler(service Service) *Handler {
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux, authMiddleware func(http.Handler) http.Handler) {
 	mux.Handle("POST /orders", authMiddleware(http.HandlerFunc(h.createOrder)))
-	
+
 	// Webhook is public so midtrans can reach it
 	mux.HandleFunc("POST /payment/webhook", h.handleWebhook)
 }
@@ -50,6 +50,14 @@ func (h *Handler) createOrder(w http.ResponseWriter, r *http.Request) {
 	// 3. Call service
 	resp, err := h.service.CreateMidtransTransaction(r.Context(), userID, &req)
 	if err != nil {
+		// Attendee validation is a buyer mistake, not a server fault — surfaced
+		// as 400 with the specific reason so the checkout form can point at
+		// what to fix, rather than the generic 500 every other failure here
+		// gets collapsed into.
+		if errors.Is(err, ErrInvalidAttendees) {
+			response.Error(w, http.StatusBadRequest, "INVALID_ATTENDEES", err.Error())
+			return
+		}
 		log.Printf("Order creation failed for user %d: %v", userID, err)
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to process payment transaction")
 		return

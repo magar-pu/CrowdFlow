@@ -67,6 +67,9 @@ DEVELOPER.md
 # ...except docs/, the one place documentation is version-controlled.
 !docs/**
 
+# ...and .agents/, the agent operating manuals AGENTS.md points at.
+!.agents/**
+
 # UI Materials
 bahan ui/
 bahan/

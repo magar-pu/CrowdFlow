@@ -144,6 +144,14 @@ export interface VenueSection {
   gate: string;
 }
 
+export interface OrganizerOrderTicket {
+  ticketId: string;
+  attendeeFullName: string;
+  tierName: string;
+  seatLabel: string;
+  ticketStatus: string;
+}
+
 export interface OrganizerOrder {
   id: string;
   customerName: string;
@@ -154,6 +162,21 @@ export interface OrganizerOrder {
   amount: number;
   status: string;
   time: string;
+  /**
+   * M5 access telemetry (plan mitigation M5). accessDeviceCount counts
+   * distinct (hashed IP, hashed user-agent) pairs that have fetched a
+   * secret on this order — an OBSERVATION, not proof of anything: the same
+   * buyer opening their link on a phone, then a laptop, then again after
+   * their mobile carrier rotates their IP, is already 3 "devices" for one
+   * legitimate ticket. accessOutlier is a simple threshold (more distinct
+   * devices than tickets on the order) meant to prompt a look, not a verdict.
+   * Both are populated ONLY by getOrderDetails — absent/zero on list
+   * endpoints.
+   */
+  accessDeviceCount?: number;
+  accessOutlier?: boolean;
+  /** Per-attendee breakdown — populated ONLY by getOrderDetails. */
+  tickets?: OrganizerOrderTicket[];
 }
 
 export interface OrganizerRefund {
@@ -457,6 +480,28 @@ export async function listEventOrders(eventId: number): Promise<ApiResponse<Orga
 export async function getOrderDetails(orderId: string): Promise<ApiResponse<OrganizerOrder>> {
   return apiRequest<OrganizerOrder>(`/api/organizer/orders/${orderId}`, {
     method: "GET",
+  });
+}
+
+export interface RotateTicketSecretResponse {
+  ticketId: string;
+  rotated: boolean;
+}
+
+/**
+ * M4 organizer-authorized panic-revoke: rotates one ticket's secret_key.
+ * This breaks the QR on the ATTENDEE's own device too, not just any leaked
+ * copy — there is no purchaser-side auto-refresh triggered by this call.
+ * The buyer must reopen their booking link while online to pick up the new
+ * secret before the gate. Surface that consequence in the UI before calling
+ * this, not after.
+ */
+export async function rotateOrganizerTicketSecret(
+  eventId: number,
+  ticketId: string
+): Promise<ApiResponse<RotateTicketSecretResponse>> {
+  return apiRequest<RotateTicketSecretResponse>(`/api/organizer/events/${eventId}/tickets/${ticketId}/rotate-secret`, {
+    method: "POST",
   });
 }
 

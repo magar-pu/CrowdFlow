@@ -10,19 +10,13 @@ export default function AdminEventWorkspacePage() {
   const router = useRouter();
   const {
     events,
-    scanners,
     ticketTiers,
-    venueSections,
     transactions,
     workspaceLoading,
     workspaceError,
     openWorkspace,
-    setVenueSections,
     handleUpdateTiers,
     handleDeleteTier,
-    handleAddScanner,
-    handleDeleteScanner,
-    setScanners,
     handleSetEventDraft,
     handleSetEventPendingReview,
     handleApproveEvent,
@@ -50,17 +44,11 @@ export default function AdminEventWorkspacePage() {
       ) : (
         <EventWorkspaceView
           event={selectedEvent}
-          scanners={scanners}
           ticketTiers={ticketTiers}
-          venueSections={venueSections}
           transactions={transactions}
           onBack={() => router.push('/admin/events')}
-          onAddScanner={handleAddScanner}
-          onDeleteScanner={handleDeleteScanner}
-          onUpdateSections={setVenueSections}
           onUpdateTiers={handleUpdateTiers}
           onDeleteTier={handleDeleteTier}
-          onUpdateScanners={setScanners}
           onSetDraft={handleSetEventDraft}
           onSetPendingReview={handleSetEventPendingReview}
           onApproveEvent={handleApproveEvent}

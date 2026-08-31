@@ -108,17 +108,6 @@ export interface User {
   profilePic: string;
 }
 
-export interface Scanner {
-  id: string;
-  name: string;
-  deviceName: string;
-  status: 'Online' | 'Offline' | 'Scanning';
-  scansCount: number;
-  lastSync: string;
-  batteryLevel: number;
-  assignedSection: string;
-}
-
 export interface Transaction {
   id: string;
   customerName: string;
@@ -173,14 +162,6 @@ export interface TicketTier {
   capacity: number;
   sold: number;
   priceCap: number;
-  color: string;
-}
-
-export interface VenueSection {
-  id: string;
-  name: string;
-  capacity: number;
-  occupied: number;
   color: string;
 }
 

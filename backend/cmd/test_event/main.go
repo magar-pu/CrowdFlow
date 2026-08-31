@@ -23,7 +23,7 @@ func main() {
 
 	repo := organizer.NewPostgresRepository(db)
 	s3Store, _ := storage.NewS3Storage()
-	service := organizer.NewOrganizerService(repo, s3Store)
+	service := organizer.NewOrganizerService(repo, s3Store, nil)
 
 	ctx := context.Background()
 

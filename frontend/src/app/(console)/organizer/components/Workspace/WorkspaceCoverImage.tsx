@@ -17,7 +17,10 @@ interface WorkspaceCoverImageProps {
 // it costs a round trip. The backend still sniffs the real type — this is a
 // convenience, not the guard.
 const ACCEPTED = ["image/png", "image/jpeg", "image/webp"];
-const MAX_BYTES = 10 * 1024 * 1024;
+// 5MB — mirrors the backend's cover-image cap (event/handler.go). See
+// backend/internal/organizer/service.go's documentTypeLimits comment for
+// why 2-10MB is the right range for this app's document/image uploads.
+const MAX_BYTES = 5 * 1024 * 1024;
 
 // Rendered wherever the picker is shown, so the rules are visible BEFORE a file
 // is chosen rather than only in an error after a rejected upload. Derived from

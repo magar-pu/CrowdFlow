@@ -15,13 +15,44 @@ import (
 	"crowdflow-backend/internal/storage"
 )
 
+// SecretRotator is the narrow capability internal/ticket's TicketService
+// provides for M4's organizer panic-revoke path, mirroring how
+// internal/payment consumes internal/ticket as a TicketIssuer — the
+// interface lives here, in the consumer, and internal/ticket never imports
+// internal/organizer. TicketService.RotateSecret satisfies this
+// structurally; wired in main.go.
+type SecretRotator interface {
+	RotateSecret(ticketID string) (string, error)
+}
+
 type OrganizerService struct {
 	repo    Repository
 	storage *storage.S3Storage
+	rotator SecretRotator
 }
 
-func NewOrganizerService(repo Repository, storage *storage.S3Storage) *OrganizerService {
-	return &OrganizerService{repo: repo, storage: storage}
+func NewOrganizerService(repo Repository, storage *storage.S3Storage, rotator SecretRotator) *OrganizerService {
+	return &OrganizerService{repo: repo, storage: storage, rotator: rotator}
+}
+
+// RotateTicketSecret is M4's organizer-authorized panic-revoke path.
+// Ownership is verified here, against THIS ticket and THIS event/organizer,
+// before the actual write is delegated to rotator — the organizer package
+// never writes tickets.secret_key itself, so there is exactly one place in
+// the codebase that generates a rotated secret (internal/ticket), no matter
+// which of purchaser/organizer/admin triggered it.
+func (s *OrganizerService) RotateTicketSecret(ctx context.Context, eventID int, organizerID int, ticketID string) (string, error) {
+	owned, err := s.repo.TicketBelongsToEvent(ctx, ticketID, eventID, organizerID)
+	if err != nil {
+		return "", err
+	}
+	if !owned {
+		return "", fmt.Errorf("ticket not found or not authorized for this event")
+	}
+	if s.rotator == nil {
+		return "", fmt.Errorf("secret rotation is not configured")
+	}
+	return s.rotator.RotateSecret(ticketID)
 }
 
 func (s *OrganizerService) Apply(ctx context.Context, userID int, req ApplyRequest, docs []*DocumentUpload) (*OrganizerApplication, error) {
@@ -357,8 +388,10 @@ func validateDocumentUpload(doc *DocumentUpload) error {
 	if len(doc.Content) == 0 {
 		return fmt.Errorf("%w: %s file is empty", ErrValidation, doc.Type)
 	}
-	if len(doc.Content) > maxDocumentBytes {
-		return fmt.Errorf("%w: %s exceeds the 10MB limit", ErrValidation, doc.Type)
+	docType := strings.ToUpper(strings.TrimSpace(doc.Type))
+	maxBytes := maxBytesForDocumentType(docType)
+	if len(doc.Content) > maxBytes {
+		return fmt.Errorf("%w: %s exceeds the %dMB limit", ErrValidation, doc.Type, maxBytes>>20)
 	}
 	return nil
 }
@@ -374,14 +407,56 @@ func (s *OrganizerService) isValidDocumentType(contentType string) bool {
 // Per-event documents
 // ============================================================================
 
-// maxDocumentBytes caps a SINGLE uploaded file. Documents are scans of
-// paperwork, not media; 10MB is generous for a multi-page PDF. Applies to both
-// account-level application documents (KTP/NPWP/NIB) and per-event documents.
-const maxDocumentBytes = 10 << 20
+// documentTypeLimits caps a SINGLE uploaded file, per document type, across
+// both account-level application documents (KTP/NPWP/NIB/SIUP/BUSINESS_LICENSE)
+// and per-event documents (EVENT_PROPOSAL/CROWD_PERMIT/PIC_ID/VENUE_PERMIT).
+// Mirrored exactly in frontend/src/lib/documentUpload.ts's DOCUMENT_TYPE_LIMITS
+// — that module exists specifically so the two sides cannot drift.
+//
+// A single flat 10MB cap for every type used to invite a worst case far out of
+// proportion to the typical case: this app runs on Cloudflare R2's free 10GB
+// tier, where one organizer uploading uncompressed phone photos at the flat
+// cap costs what fifty careful ones do. Per-type limits bound the worst case
+// instead of just the average one.
+//
+// 2MB for identity/tax/business-registration documents: that is exactly what
+// Indonesia's own DJP Online (NPWP) and OSS (NIB) portals accept for the same
+// document, and ten times what SSCASN accepts for a KTP (200KB) — every
+// organizer already has documents that fit, especially once the client-side
+// image compression in documentUpload.ts runs on a phone photo before it gets
+// here. 5MB for the permits: scanned government paperwork, sometimes
+// multi-page. 10MB for the event proposal: the one document meant to be a
+// long-form write-up rather than a scanned form.
+var documentTypeLimits = map[string]int{
+	"KTP":              2 << 20,
+	"PIC_ID":           2 << 20,
+	"NPWP":             2 << 20,
+	"NIB":              2 << 20,
+	"SIUP":             2 << 20,
+	"BUSINESS_LICENSE": 2 << 20,
+	"CROWD_PERMIT":     5 << 20,
+	"VENUE_PERMIT":     5 << 20,
+	"EVENT_PROPOSAL":   10 << 20,
+}
 
-// maxUploadRequestBytes caps a whole multipart request. Deliberately only 2MB
-// above the per-file cap: it is headroom for multipart framing, not room for
-// several 10MB files. It must stay <= nginx's client_max_body_size, or oversized
+// defaultDocumentMaxBytes is used only for a type not in the table above —
+// should never happen for a type IsValidAccountDocumentType/
+// IsValidEventDocumentType already accepted, but keeps this total (a safe
+// answer) rather than a zero limit that rejects everything.
+const defaultDocumentMaxBytes = 2 << 20
+
+func maxBytesForDocumentType(docType string) int {
+	if limit, ok := documentTypeLimits[docType]; ok {
+		return limit
+	}
+	return defaultDocumentMaxBytes
+}
+
+// maxUploadRequestBytes caps a whole multipart request. The wizard is the one
+// caller that can send several files in a request; the per-file limits above
+// now bound it well below this on their own (four account documents at 2MB
+// each is 8MB), so this stays the same 12MB rather than needing per-request
+// tuning too. It must stay <= nginx's client_max_body_size, or oversized
 // uploads die at the proxy with an HTML 413 instead of a readable 422.
 const maxUploadRequestBytes = 12 << 20
 
@@ -440,8 +515,9 @@ func (s *OrganizerService) UploadEventDocument(ctx context.Context, eventID int,
 	if len(upload.Content) == 0 {
 		return nil, fmt.Errorf("%w: %s file is empty", ErrValidation, EventDocumentLabel(docType))
 	}
-	if len(upload.Content) > maxDocumentBytes {
-		return nil, fmt.Errorf("%w: %s exceeds the 10MB limit", ErrValidation, EventDocumentLabel(docType))
+	maxBytes := maxBytesForDocumentType(docType)
+	if len(upload.Content) > maxBytes {
+		return nil, fmt.Errorf("%w: %s exceeds the %dMB limit", ErrValidation, EventDocumentLabel(docType), maxBytes>>20)
 	}
 
 	contentType := http.DetectContentType(upload.Content)
@@ -796,7 +872,7 @@ func validateVenueSelection(event *OrganizerEvent) error {
 
 // maxCoverImageBytes caps a cover upload. Matches the event package's own cover
 // handler so the two entry points can't disagree on what's acceptable.
-const maxCoverImageBytes = 10 << 20
+const maxCoverImageBytes = 5 << 20
 
 // UploadEventCover stores new cover art in the PUBLIC bucket and points the
 // event at it. The creation wizard only ever carried the picked file's *name*
@@ -811,7 +887,7 @@ func (s *OrganizerService) UploadEventCover(ctx context.Context, eventID int, or
 		return "", fmt.Errorf("%w: cover image is empty", ErrValidation)
 	}
 	if len(upload.Content) > maxCoverImageBytes {
-		return "", fmt.Errorf("%w: cover image exceeds the 10MB limit", ErrValidation)
+		return "", fmt.Errorf("%w: cover image exceeds the 5MB limit", ErrValidation)
 	}
 
 	// Sniff the real type rather than trusting the extension or the client's

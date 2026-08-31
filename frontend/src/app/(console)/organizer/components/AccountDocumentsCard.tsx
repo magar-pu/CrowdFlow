@@ -42,7 +42,7 @@ import {
   type AccountDocumentReadiness,
   type OrganizerAccountDocument,
 } from "@/lib/api/eorganizer";
-import { ACCEPT, CRITERIA_SINGLE, validateDocument } from "@/lib/documentUpload";
+import { ACCEPT, compressImageIfNeeded, criteriaSingleForType, validateDocument } from "@/lib/documentUpload";
 
 /** What each document is and why it is being asked for. Mirrors the depth of the
  *  event workspace's slots — "NPWP (Tax ID)" alone told an organizer nothing
@@ -135,14 +135,19 @@ export default function AccountDocumentsCard() {
     load();
   }, [load]);
 
-  const handleFile = async (documentType: string, file: File) => {
+  const handleFile = async (documentType: string, pickedFile: File) => {
     setSlotError((prev) => ({ ...prev, [documentType]: undefined }));
+
+    // Shrink phone-photo-sized images before the size check, so a 4MB photo
+    // succeeds silently instead of being rejected and handed back to the
+    // user to compress by hand. PDFs pass through untouched.
+    const file = await compressImageIfNeeded(pickedFile);
 
     // Rejected here rather than after the upload. The card once claimed a 10MB
     // limit while checking nothing, so an oversized file was transferred in full
     // before the server refused it — the user waited out the whole upload to be
     // told no. Same rules as the /business wizard, from one module.
-    const problem = validateDocument(file);
+    const problem = validateDocument(file, documentType);
     if (problem) {
       setSlotError((prev) => ({ ...prev, [documentType]: problem }));
       return;
@@ -229,7 +234,11 @@ export default function AccountDocumentsCard() {
             privately; View creates a link that expires within a couple of minutes. Replacing a
             document sends it back for review and keeps the previous version on the record.
           </p>
-          <p className="font-mono text-[10px] text-text-secondary">{CRITERIA_SINGLE}</p>
+          {/* Every account document type carries the same per-file cap
+              today, so one number is accurate here — but it's still read
+              from the same per-type table each slot uses below, not
+              hardcoded, so it can't drift if that ever changes. */}
+          <p className="font-mono text-[10px] text-text-secondary">{criteriaSingleForType("KTP")}</p>
         </div>
         {!loading && readiness && !readiness.exempt && (
           readiness.ready ? (
@@ -297,7 +306,7 @@ export default function AccountDocumentsCard() {
                 idPrefix="account-doc"
                 slot={slot}
                 doc={doc ? toSlotFile(doc) : null}
-                criteria={CRITERIA_SINGLE}
+                criteria={criteriaSingleForType(type)}
                 accept={ACCEPT}
                 busy={busyType === type}
                 error={slotError[type]}

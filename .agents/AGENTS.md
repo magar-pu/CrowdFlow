@@ -6,6 +6,8 @@ Any agent executing tasks in this codebase must adhere to the rules defined in t
 - [03. API Clean Code Guidelines](file:///.agents/03_api_clean_code.md) (Mandatory for any changes involving frontend/backend API calls, response models, or proxy configuration)
 - [04. Authentication and Redirection Patterns](file:///.agents/04_authentication_and_redirection_patterns.md) (Mandatory for any changes to user login, signup, redirects, or session flow)
 - [05. Database Migration Rules](file:///.agents/05_database_migrations.md) (Mandatory whenever a file is added to `backend/migrations/` — every migration must be registered in `run_all.sql`)
+- [06. Upload Limits and the VPS Edge nginx](file:///.agents/06_upload_limits_and_edge_nginx.md) (Mandatory before changing any upload size limit — the limit that actually bites is on the VPS host nginx, not in this repo)
+- [07. Deployment Checklist](file:///.agents/07_deployment_checklist.md) (Run before and after every sandbox/production deploy — env keys the backend fatals without, migrations, the selective data wipe and its lockout hazard, the edge nginx, and post-deploy smoke tests)
 
 ## Docker Deployment Rule
 - **NEVER** run `docker compose up --build -d` or any other `docker` / `docker compose` command automatically.

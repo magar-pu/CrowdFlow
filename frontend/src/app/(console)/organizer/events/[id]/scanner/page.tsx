@@ -1,52 +1,47 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import EventWorkspaceShell from "../../../components/EventWorkspaceShell";
-import WorkspaceScanner from "../../../components/Workspace/WorkspaceScanner";
-import { useOrganizerData } from "../../../OrganizerDataContext";
-import { checkInAttendee, getEventCheckInStats, type GateCheckInStat } from "@/lib/api/eorganizer";
+import WorkspaceStaff from "../../../components/Workspace/WorkspaceStaff";
+import { getEventCheckInStats, type GateCheckInStat } from "@/lib/api/eorganizer";
+import { listEventGates, createEventGate } from "@/lib/api/scanner";
+import { listTicketTiers, OrganizerTicketTier } from "@/lib/api/eorganizer";
 import {
-  listEventGates,
-  createEventGate,
-  listScannerDevices,
-  registerScannerDevice,
-  deleteScannerDevice
-} from "@/lib/api/scanner";
-import { Gate, ScannerDevice, Staff } from "../../../types";
+  listEventStaff,
+  updateStaffStatus,
+  deleteEventStaff,
+  resetStaffCredentials,
+  EventStaffMember,
+} from "@/lib/api/eventstaff";
+import { Gate } from "../../../types";
 
 export default function OrganizerEventScannerPage() {
   const params = useParams<{ id: string }>();
   const eventIdNum = Number(params.id);
-  const router = useRouter();
 
-  const { staffList, handleLogActivity } = useOrganizerData();
-
-  // Local state connected to database
   const [gates, setGates] = useState<Gate[]>([]);
-  const [devices, setDevices] = useState<ScannerDevice[]>([]);
+  const [tiers, setTiers] = useState<OrganizerTicketTier[]>([]);
+  const [staff, setStaff] = useState<EventStaffMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [gatesRes, devicesRes, statsRes] = await Promise.all([
+      const [gatesRes, statsRes, tiersRes, staffRes] = await Promise.all([
         listEventGates(eventIdNum),
-        listScannerDevices(eventIdNum),
         getEventCheckInStats(eventIdNum),
+        listTicketTiers(eventIdNum),
+        listEventStaff(eventIdNum),
       ]);
 
-      // Real per-gate check-in counts and device counts, keyed by gate id.
       const statsByGate = new Map<number, GateCheckInStat>();
-      const scansByDevice = new Map<number, number>();
       if (statsRes.success && statsRes.data) {
         for (const g of statsRes.data.gates) statsByGate.set(g.gateId, g);
-        for (const d of statsRes.data.devices) scansByDevice.set(d.deviceId, d.scans);
       }
 
       let currentGates: Gate[] = [];
       if (gatesRes.success && gatesRes.data) {
-        // Map from backend EventGate
         currentGates = gatesRes.data.map((g: any) => ({
           id: String(g.id),
           name: g.name,
@@ -56,7 +51,6 @@ export default function OrganizerEventScannerPage() {
         }));
       }
 
-      // Auto-create default gates if none exist
       if (currentGates.length === 0) {
         const defaults = ["Gate A - Main", "Gate B - VIP", "Gate C - General"];
         const createdGates: Gate[] = [];
@@ -64,38 +58,17 @@ export default function OrganizerEventScannerPage() {
           const createRes = await createEventGate(eventIdNum, name);
           if (createRes.success && createRes.data) {
             const g = createRes.data;
-            createdGates.push({
-              id: String(g.id),
-              name: g.name,
-              scans: 0,
-              status: (g.status === "active" ? "online" : "offline") as "online" | "offline",
-              staffCount: 0,
-            });
+            createdGates.push({ id: String(g.id), name: g.name, scans: 0, status: g.status === "active" ? "online" : "offline", staffCount: 0 });
           }
         }
         currentGates = createdGates;
       }
 
       setGates(currentGates);
-
-      if (devicesRes.success && devicesRes.data) {
-        const mappedDevices: ScannerDevice[] = devicesRes.data.map((d: any) => ({
-          id: String(d.id),
-          name: d.deviceName,
-          staff: d.staffName || "Staff Scanner",
-          gate: d.gateName || "General",
-          status: d.status === "online" ? "online" : "offline",
-          battery: 100,
-          lastSync: "Just now",
-          scans: scansByDevice.get(d.id) ?? 0,
-          role: d.role as any,
-          permissions: ["Scan Tickets"],
-          deviceToken: d.deviceToken,
-        }));
-        setDevices(mappedDevices);
-      }
+      if (tiersRes.success && tiersRes.data) setTiers(tiersRes.data);
+      if (staffRes.success && staffRes.data) setStaff(staffRes.data);
     } catch (err) {
-      console.error("Failed to load scanner data from DB:", err);
+      console.error("Failed to load staff/scanner data from DB:", err);
     } finally {
       setIsLoading(false);
     }
@@ -103,88 +76,40 @@ export default function OrganizerEventScannerPage() {
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventIdNum]);
 
-  const handleAddDevice = async (deviceInput: any) => {
-    // Locate the gate object from the database list by its name to get its actual integer ID
-    const matchedGate = gates.find(g => g.name === deviceInput.gate);
-    const gateId = matchedGate ? Number(matchedGate.id) : null;
-
-    try {
-      const res = await registerScannerDevice(
-        eventIdNum,
-        deviceInput.name,
-        gateId,
-        deviceInput.staff,
-        deviceInput.role
-      );
-
-      if (res.success && res.data) {
-        const fullURL = `${window.location.origin}${res.data.scannerUrl}`;
-        await loadData();
-        return {
-          token: res.data.deviceToken,
-          url: fullURL,
-        };
-      }
-    } catch (err) {
-      console.error("Failed to register scanner device:", err);
-    }
-    return null;
+  const handleToggleStatus = async (staffId: number, next: "active" | "suspended") => {
+    const res = await updateStaffStatus(eventIdNum, staffId, next);
+    if (res.success) await loadData();
   };
 
-  const handleDeleteDevice = async (deviceId: string) => {
-    setIsLoading(true);
-    try {
-      await deleteScannerDevice(eventIdNum, Number(deviceId));
-      await loadData();
-    } catch (err) {
-      console.error("Failed to delete device:", err);
-    } finally {
-      setIsLoading(false);
-    }
+  const handleDelete = async (staffId: number) => {
+    const res = await deleteEventStaff(eventIdNum, staffId);
+    if (res.success) await loadData();
   };
 
-  const handleCheckIn = async (qrToken: string) => {
-    const res = await checkInAttendee(eventIdNum, qrToken);
-    if (res.success && res.data) {
-      return {
-        success: true,
-        attendeeName: res.data.attendeeName,
-        ticketType: res.data.ticketType,
-        seatNumber: res.data.seatNumber,
-        message: "Check-in successful",
-      };
-    } else {
-      return {
-        success: false,
-        message: res.error?.message || "Check-in failed",
-      };
-    }
-  };
-
-  const handleIncrementScan = (deviceId: string, gateName: string) => {
-    setDevices(prev => prev.map(d => d.id === deviceId ? { ...d, scans: d.scans + 1 } : d));
-    setGates(prev => prev.map(g => g.name === gateName ? { ...g, scans: g.scans + 1 } : g));
+  const handleResetCredentials = async (staffId: number) => {
+    const res = await resetStaffCredentials(eventIdNum, staffId);
+    return res.success && res.data ? res.data : null;
   };
 
   return (
     <EventWorkspaceShell eventId={params.id} activeTab="scanner">
       {isLoading && gates.length === 0 ? (
         <div className="bg-white border border-border-subtle rounded-xl p-10 text-center soft-shadow">
-          <p className="text-sm font-bold text-text-primary">Loading live scanner devices...</p>
+          <p className="text-sm font-bold text-text-primary">Loading staff and gate data...</p>
         </div>
       ) : (
-        <WorkspaceScanner
-          devices={devices}
+        <WorkspaceStaff
+          eventId={eventIdNum}
           gates={gates}
-          staffList={staffList}
-          onAddDevice={handleAddDevice}
-          onUpdateDevice={() => {}}
-          onDeleteDevice={handleDeleteDevice}
-          onLogActivity={handleLogActivity}
-          onIncrementScan={handleIncrementScan}
-          onCheckIn={handleCheckIn}
+          tiers={tiers}
+          staff={staff}
+          onRefresh={loadData}
+          onToggleStatus={handleToggleStatus}
+          onDelete={handleDelete}
+          onResetCredentials={handleResetCredentials}
         />
       )}
     </EventWorkspaceShell>

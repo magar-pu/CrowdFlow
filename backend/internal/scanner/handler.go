@@ -3,10 +3,12 @@ package scanner
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
 
+	"crowdflow-backend/internal/middleware"
 	"crowdflow-backend/internal/response"
 )
 
@@ -20,51 +22,75 @@ func NewHandler(db *sql.DB) *Handler {
 	return &Handler{service: svc}
 }
 
-func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	// Public scanner endpoints (no organizer auth required)
-	mux.Handle("POST /api/scanner/checkin/{eventId}", http.HandlerFunc(h.handleCheckIn))
-	mux.Handle("POST /api/v1/scanner/checkin/{eventId}", http.HandlerFunc(h.handleCheckIn))
+// RegisterRoutes mounts the ticketman-facing scan endpoints behind
+// requireTicketman (checkin, reject, dashboard, my scan log — every one of
+// them re-checks the caller's own session on every request) and the
+// organizer-facing gate CRUD behind the usual organizer console guard chain.
+// There is no unauthenticated path left anywhere in this package.
+func (h *Handler) RegisterRoutes(
+	mux *http.ServeMux,
+	requireTicketman func(http.Handler) http.Handler,
+	scanRateLimit func(http.Handler) http.Handler,
+	authenticate func(http.Handler) http.Handler,
+	requirePlatformRole func(allowedRoles ...string) func(http.Handler) http.Handler,
+	requireEventOwnership func(http.Handler) http.Handler,
+) {
+	ticketman := func(f http.HandlerFunc) http.Handler {
+		return requireTicketman(scanRateLimit(http.HandlerFunc(f)))
+	}
 
-	mux.Handle("GET /api/scanner/status/{eventId}", http.HandlerFunc(h.handleGetStatus))
-	mux.Handle("GET /api/v1/scanner/status/{eventId}", http.HandlerFunc(h.handleGetStatus))
+	mux.Handle("POST /api/v1/scanner/checkin/{eventId}", ticketman(h.handleCheckIn))
+	mux.Handle("POST /api/v1/scanner/checkin/{eventId}/reject", ticketman(h.handleReject))
+	mux.Handle("GET /api/v1/scanner/dashboard/{eventId}", ticketman(h.handleGetDashboard))
+	mux.Handle("GET /api/v1/scanner/my-log", requireTicketman(http.HandlerFunc(h.handleMyScanLog)))
 
-	mux.Handle("GET /api/scanner/dashboard/{eventId}", http.HandlerFunc(h.handleGetDashboard))
-	mux.Handle("GET /api/v1/scanner/dashboard/{eventId}", http.HandlerFunc(h.handleGetDashboard))
+	verifiedOrganizer := requirePlatformRole("Event Organizer")
+	organizerGuard := func(f http.HandlerFunc) http.Handler {
+		return authenticate(verifiedOrganizer(requireEventOwnership(http.HandlerFunc(f))))
+	}
 
-	// Scanner event info & verification (for standalone scanner page)
-	mux.Handle("GET /api/scanner/event/{eventId}", http.HandlerFunc(h.handleGetEventInfo))
-	mux.Handle("GET /api/v1/scanner/event/{eventId}", http.HandlerFunc(h.handleGetEventInfo))
+	mux.Handle("POST /api/scanner/events/{eventId}/gates", organizerGuard(h.handleCreateGate))
+	mux.Handle("GET /api/scanner/events/{eventId}/gates", organizerGuard(h.handleListGates))
+	mux.Handle("DELETE /api/scanner/events/{eventId}/gates/{gateId}", organizerGuard(h.handleDeleteGate))
+}
 
-	mux.Handle("POST /api/scanner/verify-device", http.HandlerFunc(h.handleVerifyDevice))
-	mux.Handle("POST /api/v1/scanner/verify-device", http.HandlerFunc(h.handleVerifyDevice))
+// requireOwnEvent checks that the {eventId} path segment matches the
+// authenticated ticketman's own event_id from RequireTicketman's DB-verified
+// claims. Without this, a ticketman could scan or read another event's
+// dashboard just by editing the URL — the session proves who they are, this
+// proves they are looking at their own event.
+func requireOwnEvent(r *http.Request) (eventID int, ok bool) {
+	claims, present := middleware.GetTicketmanClaims(r.Context())
+	if !present {
+		return 0, false
+	}
+	pathEventID, err := strconv.Atoi(r.PathValue("eventId"))
+	if err != nil {
+		return 0, false
+	}
+	return pathEventID, pathEventID == claims.EventID
+}
 
-	// Gate management (these will also be callable from organizer context)
-	mux.Handle("POST /api/scanner/events/{eventId}/gates", http.HandlerFunc(h.handleCreateGate))
-	mux.Handle("POST /api/v1/scanner/events/{eventId}/gates", http.HandlerFunc(h.handleCreateGate))
-
-	mux.Handle("GET /api/scanner/events/{eventId}/gates", http.HandlerFunc(h.handleListGates))
-	mux.Handle("GET /api/v1/scanner/events/{eventId}/gates", http.HandlerFunc(h.handleListGates))
-
-	mux.Handle("DELETE /api/scanner/events/{eventId}/gates/{gateId}", http.HandlerFunc(h.handleDeleteGate))
-	mux.Handle("DELETE /api/v1/scanner/events/{eventId}/gates/{gateId}", http.HandlerFunc(h.handleDeleteGate))
-
-	// Device management
-	mux.Handle("POST /api/scanner/events/{eventId}/devices", http.HandlerFunc(h.handleRegisterDevice))
-	mux.Handle("POST /api/v1/scanner/events/{eventId}/devices", http.HandlerFunc(h.handleRegisterDevice))
-
-	mux.Handle("GET /api/scanner/events/{eventId}/devices", http.HandlerFunc(h.handleListDevices))
-	mux.Handle("GET /api/v1/scanner/events/{eventId}/devices", http.HandlerFunc(h.handleListDevices))
-
-	mux.Handle("DELETE /api/scanner/events/{eventId}/devices/{deviceId}", http.HandlerFunc(h.handleDeleteDevice))
-	mux.Handle("DELETE /api/v1/scanner/events/{eventId}/devices/{deviceId}", http.HandlerFunc(h.handleDeleteDevice))
+func staffIDFromContext(r *http.Request) (int, bool) {
+	claims, ok := middleware.GetTicketmanClaims(r.Context())
+	if !ok {
+		return 0, false
+	}
+	id, err := strconv.Atoi(claims.StaffID)
+	return id, err == nil
 }
 
 // ──────────── Check-In ────────────
 
 func (h *Handler) handleCheckIn(w http.ResponseWriter, r *http.Request) {
-	eventID, err := strconv.Atoi(r.PathValue("eventId"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid event ID")
+	eventID, ok := requireOwnEvent(r)
+	if !ok {
+		response.Error(w, http.StatusForbidden, "FORBIDDEN", "You are not assigned to this event")
+		return
+	}
+	staffID, ok := staffIDFromContext(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Not authenticated")
 		return
 	}
 
@@ -74,42 +100,53 @@ func (h *Handler) handleCheckIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.CheckIn(eventID, &req)
+	result, err := h.service.CheckIn(eventID, staffID, &req)
 	if err != nil {
+		if errors.Is(err, ErrGateRequired) || errors.Is(err, ErrGateNotGranted) {
+			response.Error(w, http.StatusForbidden, "FORBIDDEN", err.Error())
+			return
+		}
 		log.Printf("Scanner CheckIn error: %v", err)
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Check-in processing failed")
 		return
 	}
 
-	// Return 200 for all responses (including ALREADY_USED, INVALID, etc.)
-	// The frontend uses the `status` field to determine the outcome
+	// Always 200 for a decided outcome (VALID, ALREADY_USED, WRONG_TIER, ...);
+	// 401/403 above are reserved for auth failures, per the frozen contract.
 	response.JSON(w, http.StatusOK, result)
 }
 
-// ──────────── Status ────────────
-
-func (h *Handler) handleGetStatus(w http.ResponseWriter, r *http.Request) {
-	eventID, err := strconv.Atoi(r.PathValue("eventId"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid event ID")
+func (h *Handler) handleReject(w http.ResponseWriter, r *http.Request) {
+	eventID, ok := requireOwnEvent(r)
+	if !ok {
+		response.Error(w, http.StatusForbidden, "FORBIDDEN", "You are not assigned to this event")
+		return
+	}
+	staffID, ok := staffIDFromContext(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Not authenticated")
 		return
 	}
 
-	status, err := h.service.GetStatus(eventID)
-	if err != nil {
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+	var req RejectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
 		return
 	}
 
-	response.JSON(w, http.StatusOK, status)
+	if err := h.service.Reject(eventID, staffID, &req); err != nil {
+		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Rejection recorded"})
 }
 
-// ──────────── Dashboard ────────────
+// ──────────── Dashboard / Own Log ────────────
 
 func (h *Handler) handleGetDashboard(w http.ResponseWriter, r *http.Request) {
-	eventID, err := strconv.Atoi(r.PathValue("eventId"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid event ID")
+	eventID, ok := requireOwnEvent(r)
+	if !ok {
+		response.Error(w, http.StatusForbidden, "FORBIDDEN", "You are not assigned to this event")
 		return
 	}
 
@@ -118,29 +155,22 @@ func (h *Handler) handleGetDashboard(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", err.Error())
 		return
 	}
-
 	response.JSON(w, http.StatusOK, dashboard)
 }
 
-// ──────────── Event Info ────────────
-
-func (h *Handler) handleGetEventInfo(w http.ResponseWriter, r *http.Request) {
-	eventID, err := strconv.Atoi(r.PathValue("eventId"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid event ID")
+func (h *Handler) handleMyScanLog(w http.ResponseWriter, r *http.Request) {
+	staffID, ok := staffIDFromContext(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "Not authenticated")
 		return
 	}
 
-	name, err := h.service.repo.GetEventInfo(eventID)
+	entries, err := h.service.GetOwnScanLog(staffID)
 	if err != nil {
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", "Event not found")
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
-
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"eventId":   eventID,
-		"eventName": name,
-	})
+	response.JSON(w, http.StatusOK, entries)
 }
 
 // ──────────── Gate CRUD ────────────
@@ -163,7 +193,6 @@ func (h *Handler) handleCreateGate(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
-
 	response.JSON(w, http.StatusCreated, gate)
 }
 
@@ -179,7 +208,6 @@ func (h *Handler) handleListGates(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
-
 	response.JSON(w, http.StatusOK, gates)
 }
 
@@ -195,93 +223,9 @@ func (h *Handler) handleDeleteGate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.service.DeleteGate(gateID, eventID)
-	if err != nil {
+	if err := h.service.DeleteGate(gateID, eventID); err != nil {
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
-
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Gate deleted"})
-}
-
-// ──────────── Device CRUD ────────────
-
-func (h *Handler) handleRegisterDevice(w http.ResponseWriter, r *http.Request) {
-	eventID, err := strconv.Atoi(r.PathValue("eventId"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid event ID")
-		return
-	}
-
-	var req RegisterDeviceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
-		return
-	}
-
-	resp, err := h.service.RegisterDevice(eventID, &req)
-	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
-		return
-	}
-
-	response.JSON(w, http.StatusCreated, resp)
-}
-
-func (h *Handler) handleListDevices(w http.ResponseWriter, r *http.Request) {
-	eventID, err := strconv.Atoi(r.PathValue("eventId"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid event ID")
-		return
-	}
-
-	devices, err := h.service.ListDevices(eventID)
-	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
-		return
-	}
-
-	response.JSON(w, http.StatusOK, devices)
-}
-
-func (h *Handler) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
-	eventID, err := strconv.Atoi(r.PathValue("eventId"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid event ID")
-		return
-	}
-	deviceID, err := strconv.Atoi(r.PathValue("deviceId"))
-	if err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid device ID")
-		return
-	}
-
-	err = h.service.DeleteDevice(deviceID, eventID)
-	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
-		return
-	}
-
-	response.JSON(w, http.StatusOK, map[string]string{"message": "Device deleted"})
-}
-
-func (h *Handler) handleVerifyDevice(w http.ResponseWriter, r *http.Request) {
-	var req VerifyDeviceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
-		return
-	}
-
-	result, err := h.service.VerifyDevice(req.Token)
-	if err != nil {
-		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Verification failed")
-		return
-	}
-
-	if !result.Valid {
-		response.JSON(w, http.StatusUnauthorized, result)
-		return
-	}
-
-	response.JSON(w, http.StatusOK, result)
 }

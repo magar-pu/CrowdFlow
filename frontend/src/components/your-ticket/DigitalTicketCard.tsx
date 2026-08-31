@@ -1,9 +1,21 @@
 "use client";
 
+/**
+ * The QR this card renders is the whole point of the dynamic-ticket
+ * project: CF1:<ticket_uuid>:<totp>:<unix_ts>, recomputed every second from
+ * a step = floor(now/20), HMAC-SHA1, 6-digit HOTP over the ticket's own
+ * secret_key — the FROZEN CONTRACT (see plan_2026-08-30_dynamic_qr_ticketman
+ * and CONTRACT.md). Previously `setQrToken` had zero call sites: the QR
+ * always encoded either a hardcoded mock payload or the bare ticket UUID,
+ * and the "DYNAMIC PASS ... rotates in 4m 12s" text was computed but never
+ * actually put in the QR. There is no fallback secret and no test code —
+ * deriveDefaultSecret and the OTP "123456" backdoor that used it are gone.
+ */
+
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { RefreshCw, ShieldCheck, Clock, Lock, KeyRound, CheckCircle2, AlertTriangle, Info } from "lucide-react";
-import { getTicketQR, requestTicketOTP, verifyTicketOTP, getTicketVaultData } from "@/lib/api/tickets";
+import { RefreshCw, AlertTriangle } from "lucide-react";
+import { getTicketAccess, rotateTicketAccess } from "@/lib/api/orderAccess";
 import {
   importSecretKey,
   generateSubtleTOTP,
@@ -11,11 +23,12 @@ import {
   getVaultTicket,
   deleteVaultTicket,
   checkAndRunSelfDestruct,
-  deriveDefaultSecret,
-  VaultTicketRecord
 } from "@/lib/ticketVault";
 import type { PurchasedTicket } from "@/types/ticket";
-import { useAuthStore } from "@/lib/store/authStore";
+
+// The frozen contract's rotation step, in seconds. Matches the server's
+// `step = floor(claimed_ts / 20)` exactly — see CONTRACT.md section 1.
+const TOTP_STEP_SECONDS = 20;
 
 interface DigitalTicketCardProps {
   ticket: PurchasedTicket;
@@ -38,24 +51,27 @@ function formatTicketDateTime(iso_datetime: string): string {
 
 export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
   const ticketId = ticket.ticket_id;
-  const initialPayload = ticket.qr_payload && !ticket.qr_payload.includes("sig=mock") && !ticket.qr_payload.includes("cf:order")
-    ? ticket.qr_payload
-    : ticketId;
-  const [qrToken, setQrToken] = useState<string>(initialPayload);
+
+  // The live QR payload, recomputed every second. Empty until the first
+  // secret is available (from IndexedDB or the network) — the card shows a
+  // loading state rather than ever falling back to a static or default
+  // payload.
+  const [qrToken, setQrToken] = useState<string>("");
   const [totpCode, setTotpCode] = useState<string>("");
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(15);
-  const [isVaulted, setIsVaulted] = useState<boolean>(false);
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(TOTP_STEP_SECONDS);
   const [cryptoKey, setCryptoKey] = useState<CryptoKey | null>(null);
   const [isExpired, setIsExpired] = useState<boolean>(false);
-
-  // OTP Modal states
-  const [showOtpModal, setShowOtpModal] = useState<boolean>(false);
-  const [otpCodeInput, setOtpCodeInput] = useState<string>("");
-  const [otpStep, setOtpStep] = useState<"IDLE" | "SENT" | "VERIFYING">("IDLE");
-  const [otpError, setOtpError] = useState<string>("");
+  const [loadError, setLoadError] = useState<string>("");
 
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isCached, setIsCached] = useState<boolean>(false);
+
+  // M3/M4 panic-revoke: bumped after a successful rotation to force the load
+  // effect below to re-run and fetch the freshly rotated secret, since
+  // ticketId/order_id themselves don't change.
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [isRotating, setIsRotating] = useState(false);
+  const [rotateMessage, setRotateMessage] = useState<string>("");
 
   // Register SW & Listen for PWA Install Prompt
   useEffect(() => {
@@ -101,173 +117,44 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
     }
   }
 
-  // Handle OTP request for high-friction vault activation
-  async function handleRequestOTP() {
-    setOtpError("");
-    try {
-      const targetEmail = useAuthStore.getState().user?.email || "dragonvenomid15@gmail.com";
-      const res = await requestTicketOTP(ticketId, targetEmail);
-      if (res.success) {
-        setOtpStep("SENT");
-      } else {
-        setOtpError(res.error?.message || "Gagal mengirimkan OTP ke email");
-      }
-    } catch (err: any) {
-      setOtpError(err.message || "Gagal menghubungi server OTP");
-    }
-  }
-
+  // Load the ticket's secret_key — from the IndexedDB vault first (so the
+  // card works immediately offline), then always refreshed from the network
+  // when reachable so a rotated secret (M3/M4 panic-revoke) is picked up.
+  // No login-gate beyond this page's own auth, no OTP, no fallback secret:
+  // if neither source has a key, the card shows a loading/error state
+  // instead of ever encoding a payload that isn't backed by a real secret.
   useEffect(() => {
-    if (!ticketId) return;
-
+    if (!ticketId || !ticket.order_id) return;
     let isMounted = true;
-    async function initVault() {
+
+    async function loadFromVault() {
       try {
         const vaulted = await getVaultTicket(ticketId);
-        if (vaulted) {
-          const expired = await checkAndRunSelfDestruct(ticketId, vaulted.eventEndTime);
-          if (expired) {
-            if (isMounted) setIsExpired(true);
-            return;
-          }
+        if (!vaulted) return false;
 
-          const key = await importSecretKey(vaulted.rawSecretKey);
-          if (isMounted) {
-            setCryptoKey(key);
-            setIsVaulted(true);
-          }
-        } else {
-          // Auto trigger OTP email dispatch when card opens for unvaulted ticket
-          handleRequestOTP();
+        const expired = await checkAndRunSelfDestruct(ticketId, vaulted.eventEndTime);
+        if (expired) {
+          if (isMounted) setIsExpired(true);
+          return true;
         }
+
+        const key = await importSecretKey(vaulted.rawSecretKey);
+        if (isMounted) setCryptoKey(key);
+        return true;
       } catch (err) {
-        console.warn("IndexedDB init failed:", err);
+        console.warn("IndexedDB vault read failed:", err);
+        return false;
       }
     }
 
-    initVault();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [ticketId]);
-
-  // 5-minute offline TOTP calculation loop (always active and rotating live every 300s)
-  useEffect(() => {
-    if (!ticketId) return;
-    let interval: NodeJS.Timeout;
-
-    async function updateTOTP() {
-      const nowSec = Math.floor(Date.now() / 1000);
-      const rem = 300 - (nowSec % 300);
-      setSecondsRemaining(rem);
-
+    async function loadFromNetwork() {
       try {
-        if (cryptoKey) {
-          const code = await generateSubtleTOTP(cryptoKey, 300);
-          setTotpCode(code);
-        }
-      } catch (e) {
-        console.warn("TOTP calc error:", e);
-      }
-    }
+        const res = await getTicketAccess(ticket.order_id, ticketId);
+        if (!res.success || !res.data?.secretKey) return false;
 
-    updateTOTP();
-    interval = setInterval(updateTOTP, 1000);
-
-    return () => clearInterval(interval);
-  }, [ticketId, cryptoKey]);
-
-  // Handle OTP verification & vault storing
-  async function handleVerifyOTP() {
-    const codeToVerify = otpCodeInput.trim() || "123456";
-
-    setOtpStep("VERIFYING");
-    setOtpError("");
-
-    // Auto-trigger PWA offline caching
-    if (typeof window !== "undefined" && "caches" in window) {
-      caches.open("crowdflow-ticket-v1").then((cache) => {
-        cache.add(window.location.href).catch(() => {});
-      });
-    }
-
-    if (codeToVerify === "123456") {
-      try {
-        const vaultRes = await getTicketVaultData(ticketId);
-        let secretKeyToUse = deriveDefaultSecret(ticketId);
-        let eventEndTime = "";
-        let eventName = ticket.event_title;
-        let attendeeName = "Admin Test";
-        let tierName = ticket.event_category_label;
-        let seatLabel = ticket.seat_number;
-        let ticketStatus = "ready";
-
-        if (vaultRes.success && vaultRes.data && vaultRes.data.secretKey) {
-          secretKeyToUse = vaultRes.data.secretKey;
-          eventEndTime = vaultRes.data.eventEndTime || "";
-          eventName = vaultRes.data.eventName || eventName;
-          attendeeName = vaultRes.data.attendeeFullName || attendeeName;
-          tierName = vaultRes.data.tierName || tierName;
-          seatLabel = vaultRes.data.seatLabel || seatLabel;
-          ticketStatus = vaultRes.data.ticketStatus || ticketStatus;
-        }
-
-        const key = await importSecretKey(secretKeyToUse);
-        setCryptoKey(key);
-
-        await saveVaultTicket({
-          ticketId: ticketId,
-          cryptoKey: key,
-          rawSecretKey: secretKeyToUse,
-          eventEndTime,
-          eventName,
-          attendeeName,
-          tierName,
-          seatLabel,
-          ticketStatus,
-        });
-
-        setIsVaulted(true);
-        setShowOtpModal(false);
-        setOtpStep("IDLE");
-        return;
-      } catch (err) {
-        const fallbackSecret = deriveDefaultSecret(ticketId);
-        const fallbackKey = await importSecretKey(fallbackSecret);
-        setCryptoKey(fallbackKey);
-        await saveVaultTicket({
-          ticketId: ticketId,
-          cryptoKey: fallbackKey,
-          rawSecretKey: fallbackSecret,
-          eventEndTime: "",
-          eventName: ticket.event_title,
-          attendeeName: "Admin Test",
-          tierName: ticket.event_category_label,
-          seatLabel: ticket.seat_number,
-          ticketStatus: "ready",
-        });
-        setIsVaulted(true);
-        setShowOtpModal(false);
-        setOtpStep("IDLE");
-        return;
-      }
-    }
-
-    try {
-      const targetEmail = useAuthStore.getState().user?.email || "dragonvenomid15@gmail.com";
-      const verifyRes = await verifyTicketOTP(ticketId, codeToVerify, targetEmail);
-      if (!verifyRes.success || !verifyRes.data?.verified) {
-        setOtpError(verifyRes.error?.message || "Invalid OTP code");
-        setOtpStep("SENT");
-        return;
-      }
-
-      const vaultRes = await getTicketVaultData(ticketId);
-      if (vaultRes.success && vaultRes.data) {
-        const data = vaultRes.data;
+        const data = res.data;
         const key = await importSecretKey(data.secretKey);
-        setCryptoKey(key);
+        if (isMounted) setCryptoKey(key);
 
         await saveVaultTicket({
           ticketId: data.ticketId,
@@ -280,39 +167,93 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
           seatLabel: data.seatLabel,
           ticketStatus: data.ticketStatus,
         });
-
-        setIsVaulted(true);
-        setShowOtpModal(false);
-      } else {
-        const fallbackSecret = deriveDefaultSecret(ticketId);
-        const fallbackKey = await importSecretKey(fallbackSecret);
-        setCryptoKey(fallbackKey);
-        await saveVaultTicket({
-          ticketId: ticketId,
-          cryptoKey: fallbackKey,
-          rawSecretKey: fallbackSecret,
-          eventEndTime: "",
-          eventName: ticket.event_title,
-          attendeeName: "Admin Test",
-          tierName: ticket.event_category_label,
-          seatLabel: ticket.seat_number,
-          ticketStatus: "ready",
-        });
-        setIsVaulted(true);
-        setShowOtpModal(false);
+        return true;
+      } catch (err) {
+        console.warn("Ticket secret fetch failed:", err);
+        return false;
       }
-    } catch (err: any) {
-      setOtpError(err.message || "Failed to verify OTP");
-      setOtpStep("SENT");
     }
-  }
 
-  async function handleResetVault() {
+    async function init() {
+      const hadVault = await loadFromVault();
+      const hadNetwork = await loadFromNetwork();
+      if (isMounted && !hadVault && !hadNetwork) {
+        setLoadError("Couldn't load this ticket's secure key. Check your connection and try again.");
+      }
+    }
+
+    init();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [ticketId, ticket.order_id, refreshTrigger]);
+
+  // The rotation loop: recomputes CF1:<ticket_uuid>:<totp>:<unix_ts> every
+  // second from the current 20-second step. Zero API calls — this is what
+  // lets the QR keep rotating with the backend unreachable.
+  useEffect(() => {
+    if (!ticketId || !cryptoKey) return;
+    const key = cryptoKey;
+    let interval: ReturnType<typeof setInterval>;
+
+    async function updatePayload() {
+      const now = Math.floor(Date.now() / 1000);
+      setSecondsRemaining(TOTP_STEP_SECONDS - (now % TOTP_STEP_SECONDS));
+
+      try {
+        const totp = await generateSubtleTOTP(key, TOTP_STEP_SECONDS);
+        setTotpCode(totp);
+        setQrToken(`CF1:${ticketId}:${totp}:${now}`);
+      } catch (e) {
+        console.warn("TOTP calc error:", e);
+      }
+    }
+
+    updatePayload();
+    interval = setInterval(updatePayload, 1000);
+
+    return () => clearInterval(interval);
+  }, [ticketId, cryptoKey]);
+
+  async function handleClearOfflineCache() {
     await deleteVaultTicket(ticketId);
     setCryptoKey(null);
-    setIsVaulted(false);
-    setOtpCodeInput("");
-    alert("🔒 Device vault reset! You can now test OTP verification again.");
+    setQrToken("");
+    setTotpCode("");
+  }
+
+  // M3/M4: purchaser panic-revoke. Rotates this ticket's secret_key
+  // server-side (killing every previously cached/screenshotted QR and any
+  // copy of this per-ticket link that's been forwarded), then drops this
+  // device's own now-stale cached secret and re-fetches the new one so this
+  // device keeps working — only OTHER devices/screenshots are broken.
+  async function handlePanicRevoke() {
+    if (!ticket.order_id || !ticketId || isRotating) return;
+    const confirmed = window.confirm(
+      "This issues a new secure key for this ticket. Any other copy of this ticket's QR or link — including ones you may have forwarded — will stop working immediately. Continue?"
+    );
+    if (!confirmed) return;
+
+    setIsRotating(true);
+    setRotateMessage("");
+    try {
+      const res = await rotateTicketAccess(ticket.order_id, ticketId);
+      if (res.success) {
+        await deleteVaultTicket(ticketId);
+        setCryptoKey(null);
+        setQrToken("");
+        setTotpCode("");
+        setRefreshTrigger((n) => n + 1);
+        setRotateMessage("Done — this ticket has a new secure key. Old copies of its QR or link no longer work.");
+      } else {
+        setRotateMessage(res.error?.message || "Couldn't issue a new key. Check your connection and try again.");
+      }
+    } catch {
+      setRotateMessage("Couldn't issue a new key. Check your connection and try again.");
+    } finally {
+      setIsRotating(false);
+    }
   }
 
   if (isExpired) {
@@ -327,66 +268,23 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
     );
   }
 
-  // REQUIRE OTP VERIFICATION BEFORE REVEALING TICKET IF NOT VAULTED YET
-  if (!isVaulted) {
+  // Not yet vaulted and not yet loaded — a brief loading state while the
+  // secret comes from IndexedDB or the network, no gate the buyer has to
+  // clear. An error only shows if BOTH sources failed. Also covers the one
+  // frame between the key arriving and the first async TOTP computation
+  // resolving, so the QR never briefly renders an empty payload.
+  if (!cryptoKey || !qrToken) {
     return (
       <div className="relative flex w-full max-w-[420px] flex-col rounded-2xl border border-border-subtle bg-white p-6 shadow-xl text-center select-none">
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-neutral-100 border border-neutral-200 text-neutral-900">
-          <Lock className="h-7 w-7" />
+          {loadError ? <AlertTriangle className="h-7 w-7 text-red-500" /> : <RefreshCw className="h-7 w-7 animate-spin" />}
         </div>
         <h2 className="text-xl font-bold text-text-primary mb-1">
-          Ticket Verification (Email OTP)
+          {loadError ? "Couldn't load ticket" : "Loading your ticket…"}
         </h2>
-        <p className="text-xs text-text-secondary leading-relaxed mb-4">
-          To prevent scalping and unauthorized ticket transfers, enter the 6-digit OTP code sent to your email to unlock your ticket for offline access.
+        <p className="text-xs text-text-secondary leading-relaxed">
+          {loadError || "Fetching your secure ticket key."}
         </p>
-
-        <div className="mb-4 rounded-lg bg-amber-50 p-3 border border-amber-200 text-left text-amber-800">
-          <div className="flex items-center gap-1.5 font-bold mb-1 text-xs">
-            <Info className="h-4 w-4 text-amber-600 shrink-0" />
-            <span>Important Notice:</span>
-          </div>
-          <p className="text-[11px] leading-relaxed">
-            OTP verification is only required once. Afterwards, this ticket is automatically saved offline on your device and can be accessed anytime without internet connection or OTP.
-          </p>
-        </div>
-
-
-        {otpError && (
-          <div className="mb-3 rounded-lg bg-red-50 p-2.5 text-xs font-semibold text-red-600 border border-red-200">
-            {otpError}
-          </div>
-        )}
-
-        <div className="mb-4">
-          <label className="block text-xs font-bold text-text-primary mb-1 text-left">
-            OTP Code (6-Digit)
-          </label>
-          <input
-            type="text"
-            maxLength={6}
-            value={otpCodeInput}
-            onChange={(e) => setOtpCodeInput(e.target.value)}
-            placeholder="123456"
-            className="w-full text-center tracking-[0.4em] font-mono text-xl font-bold py-3 border border-border-subtle rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900 bg-surface-container-low"
-          />
-        </div>
-
-        <button
-          onClick={handleVerifyOTP}
-          disabled={otpStep === "VERIFYING"}
-          className="w-full bg-neutral-900 hover:bg-black text-white font-bold text-sm py-3 rounded-xl transition-all shadow-md cursor-pointer mb-2 flex items-center justify-center gap-2"
-        >
-          <Lock className="w-4 h-4" />
-          <span>{otpStep === "VERIFYING" ? "Verifying..." : "Unlock & Save Ticket Offline"}</span>
-        </button>
-
-        <button
-          onClick={handleRequestOTP}
-          className="text-xs text-neutral-700 font-medium hover:text-black hover:underline py-1 cursor-pointer"
-        >
-          Resend OTP to Email
-        </button>
       </div>
     );
   }
@@ -495,87 +393,34 @@ export function DigitalTicketCard({ ticket }: DigitalTicketCardProps) {
             <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-3.5 py-1.5 rounded-full text-emerald-700 font-mono text-xs font-bold shadow-xs">
               <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-500" />
               <span>
-                DYNAMIC PASS: <strong>{totpCode}</strong> (Rotates in {Math.floor(secondsRemaining / 60)}m {secondsRemaining % 60}s)
+                DYNAMIC PASS: <strong>{totpCode}</strong> (Rotates in {secondsRemaining}s)
               </span>
             </div>
           )}
         </div>
 
-        {isVaulted && (
-          <div className="mt-4 w-full flex flex-col gap-2 pt-3 border-t border-border-subtle">
-            <p className="text-[10px] text-emerald-600 font-medium text-center">
-              🔒 Ticket key securely saved on your device (Offline ready for venue entry)
-            </p>
-            <button
-              onClick={handleResetVault}
-              className="w-full mt-1 text-[10px] text-gray-400 hover:text-red-600 font-medium text-center py-1 hover:underline cursor-pointer"
-            >
-              🔄 Reset Local Vault (Test Re-Auth)
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* High-Friction OTP Auth Modal */}
-      {showOtpModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-xl bg-surface-white p-6 shadow-2xl border border-border-subtle">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2 text-primary font-bold text-base">
-                <Lock className="w-5 h-5 text-neutral-900" />
-                <span>Otentikasi Tiket (OTP)</span>
-              </div>
-              <button
-                onClick={() => setShowOtpModal(false)}
-                className="text-text-secondary hover:text-text-primary text-sm font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <p className="text-xs text-text-secondary mb-4 leading-relaxed">
-              Untuk mencegah calo dan pembajakan tiket, verifikasi kode OTP yang dikirimkan ke email Anda untuk menyimpan kunci rahasia ke brankas HP Anda.
-            </p>
-
-
-            {otpError && (
-              <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">
-                {otpError}
-              </div>
-            )}
-
-            <div className="mb-4">
-              <label className="block text-xs font-semibold text-text-primary mb-1">
-                Kode OTP (6-Digit)
-              </label>
-              <input
-                type="text"
-                maxLength={6}
-                value={otpCodeInput}
-                onChange={(e) => setOtpCodeInput(e.target.value)}
-                placeholder="123456"
-                className="w-full text-center tracking-[0.5em] font-mono text-lg font-bold py-2 border border-border-subtle rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-900"
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleVerifyOTP}
-                disabled={otpStep === "VERIFYING"}
-                className="flex-1 bg-neutral-900 hover:bg-black text-white text-xs font-bold py-2.5 rounded-lg transition-colors cursor-pointer"
-              >
-                {otpStep === "VERIFYING" ? "Memverifikasi..." : "Verifikasi & Simpan Tiket"}
-              </button>
-              <button
-                onClick={handleRequestOTP}
-                className="px-3 py-2.5 border border-border-subtle hover:bg-surface-container-low text-xs text-text-secondary rounded-lg font-medium cursor-pointer"
-              >
-                Kirim Ulang
-              </button>
-            </div>
-          </div>
+        <div className="mt-4 w-full flex flex-col gap-2 pt-3 border-t border-border-subtle">
+          <p className="text-[10px] text-emerald-600 font-medium text-center">
+            🔒 Ticket key saved on your device — works offline at the gate
+          </p>
+          <button
+            onClick={handleClearOfflineCache}
+            className="w-full mt-1 text-[10px] text-gray-400 hover:text-red-600 font-medium text-center py-1 hover:underline cursor-pointer"
+          >
+            Clear offline cache on this device
+          </button>
+          <button
+            onClick={handlePanicRevoke}
+            disabled={isRotating}
+            className="w-full text-[10px] text-gray-400 hover:text-red-600 font-medium text-center py-1 hover:underline cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+          >
+            {isRotating ? "Issuing new key…" : "This ticket's link leaked — issue a new key"}
+          </button>
+          {rotateMessage && (
+            <p className="text-[10px] text-center text-text-secondary">{rotateMessage}</p>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Inset border highlight */}
       <div className="pointer-events-none absolute left-0 top-0 h-full w-full rounded-xl border border-border-subtle shadow-[inset_0_0_0_1px_rgba(255,255,255,0.5)]" />
