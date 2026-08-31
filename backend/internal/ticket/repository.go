@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"math/big"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -271,6 +273,17 @@ func (r *PostgresRepository) GenerateTicketsForPaidOrder(orderID string) (int, e
 
 	// 4. One INSERT per attendee, each with its own freshly generated
 	// secret_key — the QR credential must never be shared across tickets.
+	//
+	// soldSeatIDs and gaCountByTier are built from rows actually inserted in
+	// THIS pass, not from the attendees slice loaded in step 3: the whole
+	// function returns early at step 2 on a retried webhook, so this loop —
+	// and everything counted from it — only ever runs once per order. That
+	// early return is what makes the tickets_sold increment below idempotent
+	// against Midtrans's at-least-once webhook delivery; it is not
+	// re-derived here, only relied on.
+	soldSeatIDs := make([]int64, 0, len(attendees))
+	gaCountByTier := map[int]int{}
+
 	for _, a := range attendees {
 		var seatMatrixID interface{}
 		if a.seatMatrixID.Valid {
@@ -288,6 +301,35 @@ func (r *PostgresRepository) GenerateTicketsForPaidOrder(orderID string) (int, e
 		if err != nil {
 			return 0, fmt.Errorf("failed to insert ticket for order_attendees %s: %w", a.id, err)
 		}
+
+		if a.seatMatrixID.Valid {
+			soldSeatIDs = append(soldSeatIDs, a.seatMatrixID.Int64)
+		} else {
+			gaCountByTier[a.tierID]++
+		}
+	}
+
+	// 5. Commit inventory in the SAME transaction as the tickets: a seat this
+	// order paid for must never be readable as available again once the Redis
+	// hold's TTL lapses, and a GA tier's remaining count must reflect this
+	// sale from the moment the order is paid, not "eventually, once someone
+	// notices". Both statements are no-ops (WHERE matches nothing) if
+	// attendees is empty, but attendees is never empty here (checked above).
+	if len(soldSeatIDs) > 0 {
+		if _, err := tx.Exec(`
+			UPDATE event_seats_matrix
+			SET current_state = 'sold'
+			WHERE id = ANY($1::int[])
+		`, int64ArrayLiteral(soldSeatIDs)); err != nil {
+			return 0, fmt.Errorf("failed to mark seats sold: %w", err)
+		}
+	}
+	for tierID, qty := range gaCountByTier {
+		if _, err := tx.Exec(`
+			UPDATE ticket_tiers SET tickets_sold = tickets_sold + $1 WHERE id = $2
+		`, qty, tierID); err != nil {
+			return 0, fmt.Errorf("failed to increment tickets_sold for tier %d: %w", tierID, err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -295,6 +337,28 @@ func (r *PostgresRepository) GenerateTicketsForPaidOrder(orderID string) (int, e
 	}
 
 	return len(attendees), nil
+}
+
+// int64ArrayLiteral renders ids as a Postgres array literal ("{1,2,3}") for
+// use with `= ANY($n::int[])`. The project drives pgx through database/sql,
+// where a plain []int64 is not a valid driver value, and lib/pq (whose
+// pq.Array would do this) is not a dependency — same reasoning as
+// organizer/seating.go's intArrayLiteral. The literal is still bound as a
+// parameter, not interpolated into the query.
+func int64ArrayLiteral(ids []int64) string {
+	if len(ids) == 0 {
+		return "{}"
+	}
+	var b strings.Builder
+	b.WriteByte('{')
+	for i, id := range ids {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.FormatInt(id, 10))
+	}
+	b.WriteByte('}')
+	return b.String()
 }
 
 func minLen(s string, n int) int {

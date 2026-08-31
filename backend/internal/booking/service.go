@@ -220,7 +220,7 @@ func (s *BookingService) CreateHold(req HoldRequest) (*Hold, error) {
 			)
 		}
 	} else {
-		ok, err := s.repo.AcquireGAHold(req.TicketTierID, req.Quantity)
+		ok, err := s.repo.AcquireGAHold(req.TicketTierID, req.Quantity, holdToken, holdTTL)
 		if err != nil {
 			return nil, err
 		}
@@ -238,7 +238,7 @@ func (s *BookingService) CreateHold(req HoldRequest) (*Hold, error) {
 		if assigned {
 			_ = s.repo.ReleaseSeatHolds(req.EventID, req.SeatIDs, holdToken)
 		} else {
-			_ = s.repo.ReleaseGAHold(req.TicketTierID, req.Quantity)
+			_ = s.repo.ReleaseGAHold(req.TicketTierID, holdToken)
 		}
 		return nil, err
 	}
@@ -293,7 +293,7 @@ func (s *BookingService) ReleaseHold(holdToken string) error {
 			return err
 		}
 	} else {
-		if err := s.repo.ReleaseGAHold(req.TicketTierID, req.Quantity); err != nil {
+		if err := s.repo.ReleaseGAHold(req.TicketTierID, holdToken); err != nil {
 			return err
 		}
 	}
