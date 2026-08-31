@@ -165,7 +165,10 @@ SELECT v, 'adopted: artifact already present' FROM (VALUES
     -- is already gone, so marking it adopted on an empty-ledger database that
     -- has no such table (never existed, or already dropped by hand) is
     -- correct either way — running it later would do nothing.
-    ('0038_drop_user_bank_accounts.sql',                  NOT pg_temp.tbl('public.user_bank_accounts'))
+    ('0038_drop_user_bank_accounts.sql',                  NOT pg_temp.tbl('public.user_bank_accounts')),
+    ('0039_payment_method_snap.sql',                      pg_temp.enum_has('payment_method', 'snap')),
+    ('0040_inventory_db_backstop.sql',                     pg_temp.tbl('public.idx_tickets_one_per_seat')
+                                                             AND pg_temp.con('ticket_tiers_tickets_sold_within_allocation'))
 ) AS probe(v, present)
 WHERE present
 ON CONFLICT (version) DO NOTHING;
@@ -504,6 +507,28 @@ SELECT NOT EXISTS (SELECT 1 FROM crowdflow_migrations WHERE version = :'f') AS r
 \if :run_it
 \echo '  applying 0038_drop_user_bank_accounts.sql'
 \ir 0038_drop_user_bank_accounts.sql
+INSERT INTO crowdflow_migrations (version) VALUES (:'f');
+\endif
+
+-- 0039 adds the 'snap' payment_method label (see 0023's note on ADD VALUE and
+-- same-transaction use).
+\set f '0039_payment_method_snap.sql'
+SELECT NOT EXISTS (SELECT 1 FROM crowdflow_migrations WHERE version = :'f') AS run_it \gset
+\if :run_it
+\echo '  applying 0039_payment_method_snap.sql'
+\ir 0039_payment_method_snap.sql
+INSERT INTO crowdflow_migrations (version) VALUES (:'f');
+\endif
+
+-- 0040 is the database-level overselling backstop (partial unique index on
+-- tickets(event_seats_matrix_id), CHECK on ticket_tiers.tickets_sold). Fails
+-- to apply if either constraint is already violated by existing rows — see
+-- the file's header for the queries to run first if it does.
+\set f '0040_inventory_db_backstop.sql'
+SELECT NOT EXISTS (SELECT 1 FROM crowdflow_migrations WHERE version = :'f') AS run_it \gset
+\if :run_it
+\echo '  applying 0040_inventory_db_backstop.sql'
+\ir 0040_inventory_db_backstop.sql
 INSERT INTO crowdflow_migrations (version) VALUES (:'f');
 \endif
 
