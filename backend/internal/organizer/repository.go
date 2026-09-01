@@ -780,7 +780,7 @@ func (r *PostgresRepository) GetDashboardData(ctx context.Context, organizerID i
 // id, this one filters a set, and the two are naturally shaped differently. They
 // must agree, though — if this is narrower, the console lists an event whose
 // workspace then 403s; if it is wider, it lists one the workspace refuses to
-// open. See docs/co-organizer-delegation-design.md §4.1.
+// open. See docs/architecture/delegation.md ("Authorization").
 //
 // Ownership itself is NOT included here: every caller spells out
 // `e.organizer_id = $1 OR <this>` so the owner path stays visible at the call
