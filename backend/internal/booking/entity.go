@@ -168,10 +168,19 @@ type Repository interface {
 	AcquireSeatHolds(eventID int, seatIDs []int, holdToken string, ttl time.Duration) (ok bool, err error)
 	ReleaseSeatHolds(eventID int, seatIDs []int, holdToken string) error
 
-	// AcquireGAHold atomically decrements the tier's live remaining-capacity
-	// counter (seeded from allocation_limit - tickets_sold on first use).
-	AcquireGAHold(ticketTierID int, quantity int) (ok bool, err error)
-	ReleaseGAHold(ticketTierID int, quantity int) error
+	// AcquireGAHold reserves quantity units of a GA tier under holdToken, TTL'd
+	// like a seat lock (see AcquireSeatHolds) rather than drawn from a cached
+	// counter: remaining is always allocation_limit - tickets_sold (read fresh
+	// from Postgres) minus the live sum of other still-active GA holds for this
+	// tier (tracked as individual Redis keys, one per hold, that expire on
+	// their own). A hold that is never explicitly released — the buyer
+	// abandons checkout, or simply pays and the hold is left to lapse the same
+	// way a seat lock is — self-heals when its key's TTL runs out, instead of
+	// leaking capacity forever the way a plain decremented counter did.
+	AcquireGAHold(ticketTierID int, quantity int, holdToken string, ttl time.Duration) (ok bool, err error)
+	// ReleaseGAHold gives back one hold's quantity early (explicit cancel), by
+	// deleting that hold's own key rather than incrementing a shared counter.
+	ReleaseGAHold(ticketTierID int, holdToken string) error
 
 	// Hold metadata lets DELETE /api/booking/holds/{token} release a hold
 	// knowing only the token - it looks up what to release rather than

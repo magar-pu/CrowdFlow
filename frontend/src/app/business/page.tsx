@@ -846,14 +846,19 @@ export default function BusinessPage() {
               {/* Turnstile CAPTCHA */}
               <Turnstile onVerify={(token) => setTurnstileToken(token)} />
 
-              <div className="border-t border-border-subtle pt-6 flex justify-end">
-                <button
-                  type="submit"
-                  disabled={actionLoading}
-                  className="bg-primary hover:bg-primary/95 text-white font-semibold px-8 py-3 rounded-lg transition-colors cursor-pointer disabled:opacity-50 text-sm"
-                >
-                  {actionLoading ? "Submitting Application..." : "Submit Verification Application"}
-                </button>
+              <div className="border-t border-border-subtle pt-6 space-y-4">
+                <p className="text-xs text-text-secondary bg-surface-container-low border border-border-subtle rounded-lg p-3">
+                  Once approved, this account becomes an Organizer account and can no longer buy tickets on CrowdFlow — organizer accounts are for managing events only. If you also want to attend events, use a separate personal account to purchase tickets.
+                </p>
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={actionLoading}
+                    className="bg-primary hover:bg-primary/95 text-white font-semibold px-8 py-3 rounded-lg transition-colors cursor-pointer disabled:opacity-50 text-sm"
+                  >
+                    {actionLoading ? "Submitting Application..." : "Submit Verification Application"}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

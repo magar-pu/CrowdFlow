@@ -22,12 +22,20 @@ interface TicketCtaCardProps {
   /** False when no tier is currently public and inside its sales window. */
   has_tickets_on_sale: boolean;
   on_continue: () => void;
+  /**
+   * Set when the signed-in account can't buy (organizer/auditor/staff — see
+   * lib/buyerGate.ts). Replaces the CTA button with this explanation instead
+   * of leaving a dead button; unset (signed-out or a buyer account) leaves
+   * the normal flow untouched.
+   */
+  purchase_blocked_reason?: string | null;
 }
 
 export function TicketCtaCard({
   starting_price_label,
   has_tickets_on_sale,
   on_continue,
+  purchase_blocked_reason,
 }: TicketCtaCardProps) {
   return (
     <div className="overflow-hidden rounded-2xl border border-border-subtle bg-surface-white shadow-[0_8px_30px_-10px_rgba(15,23,42,0.1)]">
@@ -52,21 +60,32 @@ export function TicketCtaCard({
           </div>
 
           <div className="border-t border-border-subtle bg-surface-bright p-6">
-            <button
-              type="button"
-              onClick={on_continue}
-              className="group flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-4 font-label-md text-label-md text-on-primary shadow-sm transition-all duration-200 hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
-            >
-              Choose tickets &amp; seats
-              <ArrowRight
-                size={18}
-                className="transition-transform group-hover:translate-x-1"
-              />
-            </button>
-            <p className="mt-3 flex items-center justify-center gap-1 text-center font-body-sm text-body-sm text-text-secondary">
-              <Lock size={14} />
-              Secure transaction powered by CrowdFlow
-            </p>
+            {purchase_blocked_reason ? (
+              <div className="flex flex-col items-center gap-2 rounded-xl border border-border-subtle bg-surface-white p-4 text-center">
+                <Ban size={20} className="text-text-secondary" />
+                <p className="font-body-sm text-body-sm text-text-secondary">
+                  {purchase_blocked_reason}
+                </p>
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={on_continue}
+                  className="group flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-4 font-label-md text-label-md text-on-primary shadow-sm transition-all duration-200 hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
+                >
+                  Choose tickets &amp; seats
+                  <ArrowRight
+                    size={18}
+                    className="transition-transform group-hover:translate-x-1"
+                  />
+                </button>
+                <p className="mt-3 flex items-center justify-center gap-1 text-center font-body-sm text-body-sm text-text-secondary">
+                  <Lock size={14} />
+                  Secure transaction powered by CrowdFlow
+                </p>
+              </>
+            )}
           </div>
         </>
       ) : (

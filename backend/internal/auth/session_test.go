@@ -51,6 +51,11 @@ func TestReuseDetectionRevokesFamily(t *testing.T) {
 	store, _ := newTestStore(t)
 	ctx := context.Background()
 
+	// Drive the clock by hand: a replay is only theft once it lands OUTSIDE
+	// the grace window, and we are not going to sleep 10s to prove it.
+	clock := time.Now()
+	store.now = func() time.Time { return clock }
+
 	token, err := store.Create(ctx, 7)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -61,7 +66,8 @@ func TestReuseDetectionRevokesFamily(t *testing.T) {
 		t.Fatalf("first rotate: %v", err)
 	}
 
-	// Replaying the original (now stale) token is reuse.
+	// Well past the grace window, replaying the original token is reuse.
+	clock = clock.Add(defaultGraceWindow + time.Second)
 	_, _, err = store.ValidateAndRotate(ctx, token)
 	if !errors.Is(err, ErrRefreshTokenReuse) {
 		t.Fatalf("replay error = %v, want ErrRefreshTokenReuse", err)
@@ -72,10 +78,95 @@ func TestReuseDetectionRevokesFamily(t *testing.T) {
 	// (Grab a fresh chain to prove the family is gone.)
 	token2, _ := store.Create(ctx, 7)
 	_, newToken2, _ := store.ValidateAndRotate(ctx, token2)
-	// Simulate reuse on chain 2, then confirm newToken2 is dead.
+	clock = clock.Add(defaultGraceWindow + time.Second)
 	_, _, _ = store.ValidateAndRotate(ctx, token2) // stale replay -> revokes family
 	if _, _, err := store.ValidateAndRotate(ctx, newToken2); !errors.Is(err, ErrInvalidRefreshToken) {
 		t.Fatalf("post-reuse rotated token error = %v, want ErrInvalidRefreshToken", err)
+	}
+}
+
+// The two-tabs case: one browser, one cookie, two independent refresh
+// coordinators presenting the same secret moments apart. Both must survive.
+func TestGraceWindowAcceptsConcurrentRefresh(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+
+	clock := time.Now()
+	store.now = func() time.Time { return clock }
+
+	token, err := store.Create(ctx, 99)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Tab A refreshes first and wins the rotation.
+	uidA, tokenA, err := store.ValidateAndRotate(ctx, token)
+	if err != nil {
+		t.Fatalf("tab A rotate: %v", err)
+	}
+
+	// Tab B's request was already in flight with the same original secret.
+	clock = clock.Add(time.Second)
+	uidB, tokenB, err := store.ValidateAndRotate(ctx, token)
+	if err != nil {
+		t.Fatalf("tab B rotate inside grace window: %v", err)
+	}
+	if uidA != 99 || uidB != 99 {
+		t.Fatalf("grace rotate returned users %d/%d, want 99", uidA, uidB)
+	}
+	if tokenB == tokenA {
+		t.Fatalf("grace rotate reissued tab A's token")
+	}
+
+	// The family is intact and the newest token still works.
+	if _, _, err := store.ValidateAndRotate(ctx, tokenB); err != nil {
+		t.Fatalf("token from grace rotate not usable: %v", err)
+	}
+}
+
+// The window slides with each rotation, so a third tab in the same burst is
+// still covered rather than falling off the end.
+func TestGraceWindowSlidesAcrossRotations(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+
+	clock := time.Now()
+	store.now = func() time.Time { return clock }
+
+	token, _ := store.Create(ctx, 5)
+	if _, _, err := store.ValidateAndRotate(ctx, token); err != nil {
+		t.Fatalf("first rotate: %v", err)
+	}
+
+	clock = clock.Add(2 * time.Second)
+	_, second, err := store.ValidateAndRotate(ctx, token) // grace hit
+	if err != nil {
+		t.Fatalf("second rotate: %v", err)
+	}
+
+	// The secret issued by the grace rotation is the live one and must work.
+	clock = clock.Add(2 * time.Second)
+	if _, _, err := store.ValidateAndRotate(ctx, second); err != nil {
+		t.Fatalf("post-grace live token rejected: %v", err)
+	}
+}
+
+// A secret the store never issued is theft at any distance, grace or not.
+func TestUnknownSecretRevokesImmediately(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+
+	token, _ := store.Create(ctx, 3)
+	familyID, _, _ := splitToken(token)
+
+	forged := familyID + tokenSep + "not-a-secret-we-ever-issued"
+	if _, _, err := store.ValidateAndRotate(ctx, forged); !errors.Is(err, ErrRefreshTokenReuse) {
+		t.Fatalf("forged secret error = %v, want ErrRefreshTokenReuse", err)
+	}
+
+	// Family destroyed: the real token is dead too.
+	if _, _, err := store.ValidateAndRotate(ctx, token); !errors.Is(err, ErrInvalidRefreshToken) {
+		t.Fatalf("post-forgery real token error = %v, want ErrInvalidRefreshToken", err)
 	}
 }
 

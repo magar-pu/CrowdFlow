@@ -1,5 +1,5 @@
 -- Migration 0009: Co-Organizer Delegations
--- Backs the co-organizer delegation & approval feature (docs/co-organizer-delegation-design.md).
+-- Backs the co-organizer delegation & approval feature (docs/architecture/delegation.md).
 -- An event owner (organizer_id / "author") delegates management of their events to
 -- co-organizers. A delegation is only effective once status = 'active' (owner approval).
 -- Payouts are unaffected: events.organizer_id stays the sole payee (design D4).

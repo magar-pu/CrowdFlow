@@ -1,31 +1,37 @@
 services:
   frontend:
-    build:
-      context: ./frontend
-      # NEXT_PUBLIC_* must be supplied at BUILD time, not runtime: Next inlines
-      # them into the client bundle during `npm run build`, and frontend/.env is
-      # excluded by frontend/.dockerignore so the build never sees it. Before
-      # these args existed the checkout page shipped with data-client-key
-      # literally undefined in every containerised deploy — it only worked under
-      # `npm run dev`, which reads frontend/.env directly.
-      #
-      # Values come from the ROOT .env (see .env.example), because compose
-      # interpolates ${...} from there — not from frontend/.env.
-      args:
-        - BACKEND_URL=http://backend:8080
-        - NEXT_PUBLIC_APP_ENV=${APP_ENV:-local}
-        - NEXT_PUBLIC_MIDTRANS_CLIENT_KEY=${NEXT_PUBLIC_MIDTRANS_CLIENT_KEY:-}
-        - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
+    image: ghcr.io/${GHCR_OWNER:-crowdflow}/crowdflow-frontend:${IMAGE_TAG:-latest}
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
     restart: always
     networks:
       - crowdflow-net
-    env_file:
-      - ./frontend/.env
+    # frontend/.env is READ ONLY by `npm run dev` (Next loads it directly,
+    # bypassing Docker entirely) — it is NOT wired in here via env_file. It
+    # used to be irrelevant to this service because the three NEXT_PUBLIC_*
+    # values were build args; now that they're read at container start (see
+    # docker-entrypoint.sh below) it would be a real hazard: a host can
+    # perfectly well have real values in frontend/.env for local dev while
+    # the root .env this file interpolates from has none, and if
+    # `env_file: ./frontend/.env` were listed here, compose's `environment:`
+    # (below) would win over it — so a bare `${NEXT_PUBLIC_MIDTRANS_CLIENT_KEY:-}`
+    # (empty on such a host) would SHADOW the real key from frontend/.env with
+    # an empty string, silently, exactly the trap the backend service's
+    # comment below warns about. Keeping frontend/.env out of this service
+    # entirely (not just out of `environment:`) is what makes that
+    # impossible rather than merely unlikely.
     environment:
       - NODE_ENV=production
       - BACKEND_URL=http://backend:8080
+      # NEXT_PUBLIC_* now arrive at container START, not image build — see
+      # frontend/docker-entrypoint.sh and src/lib/runtimeEnv.ts. One frontend
+      # image (ghcr.io/.../crowdflow-frontend) now serves every environment;
+      # only these three lines differ between prod and sandbox stacks. They
+      # must be set in the ROOT .env (see .env.example) for a containerised
+      # deploy — frontend/.env is not consulted here at all, see above.
+      - NEXT_PUBLIC_APP_ENV=${APP_ENV:-local}
+      - NEXT_PUBLIC_MIDTRANS_CLIENT_KEY=${NEXT_PUBLIC_MIDTRANS_CLIENT_KEY:-}
+      - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/"]
       interval: 5s
@@ -34,7 +40,7 @@ services:
       start_period: 10s
 
   backend:
-    build: ./backend
+    image: ghcr.io/${GHCR_OWNER:-crowdflow}/crowdflow-backend:${IMAGE_TAG:-latest}
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
     restart: always
@@ -82,6 +88,21 @@ services:
   redis:
     image: redis:7-alpine
     restart: always
+    # Redis is not a cache here — it holds every refresh-token session
+    # (internal/auth/session.go). Without persistence, recreating this
+    # container logs out every user on every device, which is what used to
+    # happen on any `docker compose down` or image bump. AOF gives per-second
+    # durability; `command:` overrides the image CMD, which is a bare
+    # `redis-server`, so nothing else is lost.
+    #
+    # Two things this does NOT protect against, both worth knowing:
+    #   * a manual FLUSHDB still wipes every session — that command is not a
+    #     debugging convenience here, it is a mass logout.
+    #   * the FIRST `up -d` after this change recreates the container and so
+    #     ends all existing sessions once. One time, and the last time.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
     networks:
       - crowdflow-net
     healthcheck:
@@ -91,10 +112,19 @@ services:
       retries: 5
       
   nginx:
-    image: nginx:alpine
-    pull_policy: never
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    # Was `image: nginx:alpine` + a bind-mounted nginx/nginx.conf with
+    # `pull_policy: never`, which required a git checkout of this repo on the
+    # VPS just to have nginx.conf on disk to mount. Now baked into its own
+    # image (see nginx/Dockerfile) so the VPS needs nothing but this compose
+    # file and .env. `pull_policy: never` is gone on purpose — it would
+    # refuse to pull this registry image at all.
+    #
+    # NOTE: this is NOT the VPS edge nginx that terminates TLS in front of
+    # this whole stack and separately caps uploads at 1MB (see
+    # handoff_2026-07-28e in project memory) — baking this image does nothing
+    # for that limit, which lives in a different nginx config outside this
+    # repo entirely.
+    image: ghcr.io/${GHCR_OWNER:-crowdflow}/crowdflow-nginx:${IMAGE_TAG:-latest}
     ports:
       - "127.0.0.1:${NGINX_PORT:-8000}:80"
     restart: always
@@ -109,3 +139,8 @@ services:
 networks:
   crowdflow-net:
     driver: bridge
+
+# Named volume for the Redis AOF. Survives `down`/`up` and image bumps; removed
+# only by an explicit `docker compose down -v`, which IS a mass logout.
+volumes:
+  redis-data:

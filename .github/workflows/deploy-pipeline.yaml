@@ -1,23 +1,168 @@
-name: Deployment
+name: Build, Push & Deploy
 
+# Two independent flows, matching how images and environments are meant to
+# relate (see docker-compose.yml's `image:` lines and .env.example's
+# IMAGE_TAG):
+#
+#   push to dev        -> build+push :sha-<short>, sandbox auto-deploys it
+#   git tag vX.Y.Z      -> PROMOTE the already-built :sha-<short> for that
+#                          exact commit to :vX.Y.Z (a registry-side retag, no
+#                          rebuild), production deploys it behind the
+#                          existing approval gate
+#
+# The whole point of moving NEXT_PUBLIC_* to runtime config (see
+# frontend/docker-entrypoint.sh, src/lib/runtimeEnv.ts) was so ONE image can
+# serve every environment. A promotion job that rebuilt from source instead
+# of retagging would quietly reintroduce "prod and sandbox technically ran
+# different bits" even with identical source, so promote-production below
+# uses `docker buildx imagetools create` — a registry-to-registry manifest
+# copy, not a build — and FAILS if the sha-tagged image doesn't already exist
+# rather than silently falling back to a rebuild. In practice that means: tag
+# the exact commit that was already pushed to dev (a fast-forward merge from
+# dev to main keeps the SHA identical); tagging a brand new merge commit that
+# was never built via dev will fail this job on purpose.
 on:
   push:
-    branches: [main, dev]
+    branches: [dev]
+    tags: ["v*.*.*"]
 
-# One job per environment rather than one job branching on github.ref_name.
-# The previous single job picked its path with `if [ "$ref" = "main"]` — the
-# missing space before `]` makes bash fail the test instead of matching, so
-# every push fell through to the else branch and main deployed dev's code to
-# the sandbox. Splitting the jobs removes that class of mistake: each one names
-# its own branch, path and script, and `environment:` can differ between them.
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
 jobs:
-  deploy-production:
-    if: github.ref_name == 'main'
+  # ---------------------------------------------------------------------
+  # Runs on every push to dev. Builds all three images once per commit and
+  # tags them sha-<short> — the tag promote-production later looks for.
+  # ---------------------------------------------------------------------
+  build:
+    if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
-    # Pauses the run until a required reviewer approves it. Needs a one-time
-    # setup: Settings → Environments → New environment → "production", then add
-    # yourself under "Required reviewers". Without that environment the job runs
-    # unpaused, so create it before relying on the gate.
+    outputs:
+      image_tag: ${{ steps.vars.outputs.image_tag }}
+      owner_lc: ${{ steps.vars.outputs.owner_lc }}
+    strategy:
+      matrix:
+        include:
+          - image: crowdflow-backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+          - image: crowdflow-frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+          - image: crowdflow-nginx
+            context: ./nginx
+            dockerfile: ./nginx/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image tag and lowercase owner
+        id: vars
+        run: |
+          echo "image_tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "owner_lc=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.image }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          # BACKEND_URL is unrelated to the NEXT_PUBLIC_* runtime-config
+          # change (it's a plain, non-public build arg the frontend build
+          # step has always taken) — left exactly as docker-compose.yml
+          # used to pass it, not part of this migration.
+          build-args: |
+            BACKEND_URL=http://backend:8080
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.vars.outputs.owner_lc }}/${{ matrix.image }}:${{ steps.vars.outputs.image_tag }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  deploy-sandbox:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script_stop: true
+          envs: IMAGE_TAG,GHCR_OWNER
+          script: |
+            cd /var/www/crowdflow-sandbox/app
+            bash deploy-dev.sh
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+          GHCR_OWNER: ${{ needs.build.outputs.owner_lc }}
+
+      - name: Summary
+        run: |
+          echo "Deployed **sandbox** — image tag \`${{ needs.build.outputs.image_tag }}\` (\`${{ github.sha }}\`)" >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------
+  # Runs on every `git tag vX.Y.Z` push. Retags the image already built for
+  # this exact commit — never rebuilds. See the workflow-level comment above
+  # for why, and what has to be true of your git flow for this to find the
+  # source image.
+  # ---------------------------------------------------------------------
+  promote-production:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.vars.outputs.image_tag }}
+      owner_lc: ${{ steps.vars.outputs.owner_lc }}
+    strategy:
+      matrix:
+        image: [crowdflow-backend, crowdflow-frontend, crowdflow-nginx]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute tags and lowercase owner
+        id: vars
+        run: |
+          echo "image_tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          echo "source_tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "owner_lc=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Retag ${{ matrix.image }} sha -> ${{ github.ref_name }} (no rebuild)
+        run: |
+          SRC="${{ env.REGISTRY }}/${{ steps.vars.outputs.owner_lc }}/${{ matrix.image }}:${{ steps.vars.outputs.source_tag }}"
+          DST="${{ env.REGISTRY }}/${{ steps.vars.outputs.owner_lc }}/${{ matrix.image }}:${{ steps.vars.outputs.image_tag }}"
+          echo "Promoting $SRC -> $DST (registry-side copy, no rebuild)"
+          docker buildx imagetools create --tag "$DST" "$SRC"
+
+  deploy-production:
+    needs: promote-production
+    runs-on: ubuntu-latest
+    # Pauses the run until a required reviewer approves it. One-time setup:
+    # Settings -> Environments -> New environment -> "production", then add
+    # yourself under "Required reviewers". Without that environment the job
+    # runs unpaused, so create it before relying on the gate.
     environment: production
     steps:
       - name: Deploy via SSH
@@ -27,33 +172,15 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          # Abort on the first failing command instead of running on and
-          # reporting success.
           script_stop: true
+          envs: IMAGE_TAG,GHCR_OWNER
           script: |
             cd /var/www/crowdflow-production/app
             bash deploy-main.sh
+        env:
+          IMAGE_TAG: ${{ needs.promote-production.outputs.image_tag }}
+          GHCR_OWNER: ${{ needs.promote-production.outputs.owner_lc }}
 
       - name: Summary
         run: |
-          echo "Deployed **production** from \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
-
-  deploy-sandbox:
-    if: github.ref_name == 'dev'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script_stop: true
-          script: |
-            cd /var/www/crowdflow-sandbox/app
-            bash deploy-dev.sh
-
-      - name: Summary
-        run: |
-          echo "Deployed **sandbox** from \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deployed **production** — image tag \`${{ needs.promote-production.outputs.image_tag }}\`" >> "$GITHUB_STEP_SUMMARY"

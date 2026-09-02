@@ -361,8 +361,20 @@ func seatLockKey(eventID, seatID int) string {
 	return fmt.Sprintf("lock:event:%d:seat:%d", eventID, seatID)
 }
 
-func gaCapacityKey(ticketTierID int) string {
-	return fmt.Sprintf("event:ticket_tier:%d:capacity", ticketTierID)
+// gaHoldKey is one GA hold's own TTL'd key, the way seat locks already have
+// one key per held seat. Its value is the quantity that hold reserved.
+func gaHoldKey(ticketTierID int, holdToken string) string {
+	return fmt.Sprintf("hold:ga:%d:%s", ticketTierID, holdToken)
+}
+
+// gaHoldIndexKey is a per-tier SET of the full gaHoldKey names currently
+// outstanding for that tier — the only way to sum "active GA holds" without
+// an unbounded KEYS/SCAN over the whole keyspace. Membership can lag reality
+// (a hold's own key can expire while it is still listed here); every read
+// prunes stale members it finds, so the set never grows without bound and
+// never needs a separate sweep.
+func gaHoldIndexKey(ticketTierID int) string {
+	return fmt.Sprintf("event:ticket_tier:%d:ga_holds", ticketTierID)
 }
 
 func holdMetadataKey(holdToken string) string {
@@ -411,54 +423,83 @@ func (r *PostgresRedisRepository) ReleaseSeatHolds(eventID int, seatIDs []int, h
 	return nil
 }
 
-// decrementIfEnoughScript atomically checks the counter has enough remaining
-// capacity before decrementing it - a plain DECRBY would happily go negative
-// under concurrent requests.
-var decrementIfEnoughScript = redis.NewScript(`
-local current = tonumber(redis.call("GET", KEYS[1]))
-local qty = tonumber(ARGV[1])
-if current >= qty then
-	redis.call("DECRBY", KEYS[1], qty)
+// acquireGAHoldScript is the atomic core of AcquireGAHold: sum the tier's
+// still-live holds (pruning any whose own key has already expired as it
+// goes), and if base capacity minus that sum covers the request, reserve it
+// by adding one more TTL'd key to the set. Everything from the read of
+// SMEMBERS to the final SADD runs as a single Redis command, so two
+// concurrent acquires against the same tier can never both observe capacity
+// that only one of them can actually have — the second call's script always
+// sees the first call's hold already counted, even though the base capacity
+// (ARGV[1]) each call passed in was read from Postgres slightly earlier and
+// independently.
+var acquireGAHoldScript = redis.NewScript(`
+local index_key = KEYS[1]
+local base = tonumber(ARGV[1])
+local qty = tonumber(ARGV[2])
+local hold_key = ARGV[3]
+local ttl = tonumber(ARGV[4])
+
+local members = redis.call('SMEMBERS', index_key)
+local held = 0
+for _, k in ipairs(members) do
+	local v = redis.call('GET', k)
+	if v then
+		held = held + tonumber(v)
+	else
+		redis.call('SREM', index_key, k)
+	end
+end
+
+if base - held >= qty then
+	redis.call('SET', hold_key, qty, 'EX', ttl)
+	redis.call('SADD', index_key, hold_key)
 	return 1
 else
 	return 0
 end
 `)
 
-func (r *PostgresRedisRepository) AcquireGAHold(ticketTierID int, quantity int) (bool, error) {
+func (r *PostgresRedisRepository) AcquireGAHold(ticketTierID int, quantity int, holdToken string, ttl time.Duration) (bool, error) {
 	ctx := context.Background()
-	key := gaCapacityKey(ticketTierID)
 
-	exists, err := r.redis.Exists(ctx, key).Result()
+	// Read fresh every call, never cached: caching this behind a seeded
+	// counter is exactly the reseed hazard the old design had (a Redis flush
+	// reseeded from allocation_limit - tickets_sold and forgot every sale
+	// since). tickets_sold is now written transactionally at settlement
+	// (ticket.GenerateTicketsForPaidOrder), so this read is always current as
+	// of the last committed sale.
+	dbCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	var base int
+	err := r.db.QueryRowContext(dbCtx, `
+		SELECT allocation_limit - tickets_sold FROM ticket_tiers WHERE id = $1
+	`, ticketTierID).Scan(&base)
+	cancel()
 	if err != nil {
 		return false, err
 	}
-	if exists == 0 {
-		dbCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		var remaining int
-		err := r.db.QueryRowContext(dbCtx, `
-			SELECT allocation_limit - tickets_sold FROM ticket_tiers WHERE id = $1
-		`, ticketTierID).Scan(&remaining)
-		cancel()
-		if err != nil {
-			return false, err
-		}
-		// SETNX so a concurrent seeder never clobbers an already-seeded value.
-		if err := r.redis.SetNX(ctx, key, remaining, 0).Err(); err != nil {
-			return false, err
-		}
-	}
 
-	result, err := decrementIfEnoughScript.Run(ctx, r.redis, []string{key}, quantity).Int()
+	result, err := acquireGAHoldScript.Run(ctx, r.redis,
+		[]string{gaHoldIndexKey(ticketTierID)},
+		base, quantity, gaHoldKey(ticketTierID, holdToken), int(ttl.Seconds()),
+	).Int()
 	if err != nil {
 		return false, err
 	}
 	return result == 1, nil
 }
 
-func (r *PostgresRedisRepository) ReleaseGAHold(ticketTierID int, quantity int) error {
+func (r *PostgresRedisRepository) ReleaseGAHold(ticketTierID int, holdToken string) error {
 	ctx := context.Background()
-	return r.redis.IncrBy(ctx, gaCapacityKey(ticketTierID), int64(quantity)).Err()
+	key := gaHoldKey(ticketTierID, holdToken)
+	if err := r.redis.Del(ctx, key).Err(); err != nil {
+		return err
+	}
+	// Best-effort: an index entry outlasting its hold key is self-healed by
+	// the next AcquireGAHold's prune, so a failure here is not worth the
+	// caller's attention.
+	_ = r.redis.SRem(ctx, gaHoldIndexKey(ticketTierID), key).Err()
+	return nil
 }
 
 func (r *PostgresRedisRepository) StoreHoldMetadata(holdToken string, req HoldRequest, ttl time.Duration) error {

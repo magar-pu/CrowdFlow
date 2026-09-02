@@ -21,7 +21,9 @@ interface PayoutDetailViewProps {
     financialChecklist: PayoutRequest['financialChecklist'],
     complianceChecklist: PayoutRequest['complianceChecklist']
   ) => void;
-  onVerifyBankAccount: (id: string, accountNumber: string) => Promise<boolean>;
+  /** Takes the ORGANIZER APPLICATION id, not the payout id — verification
+   *  belongs to the organizer's account, not to one payout request. */
+  onVerifyBankAccount: (applicationId: number, accountNumber: string) => Promise<boolean>;
 }
 
 const statusColors: Record<PayoutStatus, string> = {
@@ -95,7 +97,7 @@ export default function PayoutDetailView({
 
   const handleVerifyBank = async () => {
     setVerifyingBank(true);
-    await onVerifyBankAccount(payout.id, payout.bankAccountNumber);
+    await onVerifyBankAccount(payout.applicationId, payout.bankAccountNumber);
     setVerifyingBank(false);
   };
 
@@ -276,7 +278,7 @@ export default function PayoutDetailView({
 
                   {/* One-way: an auditor confirms, and only an organizer edit
                       resets it. Withheld when there is no account to confirm. */}
-                  {!bankVerified && payout.bankAccountNumber?.trim() && (
+                  {!bankVerified && payout.bankAccountNumber?.trim() && payout.applicationId > 0 && (
                     <button
                       onClick={handleVerifyBank}
                       disabled={verifyingBank}

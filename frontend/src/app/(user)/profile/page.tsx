@@ -18,10 +18,13 @@ import {
   ChevronRight,
   BadgeCheck,
   Pencil,
+  ShieldAlert,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/Navbar";
-import { getMe, updateProfile, UserProfileResponse } from "@/lib/api/auth";
-import { BankAccountManager } from "@/components/profile/BankAccountManager";
+import { getMe, updateProfile, logoutAllDevices, UserProfileResponse } from "@/lib/api/auth";
+import Modal from "@/components/ui/Modal";
+import { useAuthStore } from "@/lib/store/authStore";
 
 // ── Stat card data mapping ──────────────────────────────────────────────────
 
@@ -38,6 +41,27 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<UserProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [signOutAllOpen, setSignOutAllOpen] = useState(false);
+  const [signingOutAll, setSigningOutAll] = useState(false);
+  const [signOutAllError, setSignOutAllError] = useState<string | null>(null);
+  const router = useRouter();
+  const clearSession = useAuthStore((s) => s.clear_session);
+
+  // Revoking every session revokes THIS one too, so there is no "stay here"
+  // path afterwards — drop the persisted store and send the user to /login
+  // rather than leaving a shell that 401s on its next call.
+  async function handleSignOutAll() {
+    setSigningOutAll(true);
+    setSignOutAllError(null);
+    const res = await logoutAllDevices();
+    if (!res.success) {
+      setSignOutAllError(res.error?.message || "Could not sign out other devices. Try again.");
+      setSigningOutAll(false);
+      return;
+    }
+    clearSession();
+    router.replace("/login");
+  }
   const [editing, set_editing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
@@ -379,9 +403,6 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* Bank Accounts */}
-            <BankAccountManager />
-
             {/* My Events */}
             <div className="rounded-xl border border-border-subtle bg-white shadow-sm">
               <div className="flex items-center justify-between border-b border-border-subtle px-6 py-4">
@@ -443,9 +464,72 @@ export default function ProfilePage() {
                 )}
               </div>
             </div>
+
+            {/* Security */}
+            <div className="rounded-xl border border-border-subtle bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-border-subtle px-6 py-4">
+                <h3 className="font-headline-sm text-headline-sm font-bold text-text-primary">
+                  Security
+                </h3>
+              </div>
+              <div className="flex flex-col gap-4 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <h4 className="font-label-md text-label-md text-text-primary">
+                    Sign out of all devices
+                  </h4>
+                  <p className="mt-1 font-body-sm text-body-sm text-text-secondary">
+                    Ends every signed-in session, including this one. Use this if you
+                    signed in on a shared computer or think someone else has access.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSignOutAllError(null);
+                    setSignOutAllOpen(true);
+                  }}
+                  className="shrink-0 rounded-lg border border-error/30 px-4 py-2 font-label-sm text-label-sm text-error transition-colors hover:bg-error/5"
+                >
+                  Sign out everywhere
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </main>
+
+      <Modal
+        open={signOutAllOpen}
+        onClose={signingOutAll ? undefined : () => setSignOutAllOpen(false)}
+        size="sm"
+        icon={<ShieldAlert className="h-6 w-6 text-error" />}
+        title="Sign out of all devices?"
+        description="Every device signed in to this account will be signed out, including the one you are using now. You will need to log in again."
+      >
+        {signOutAllError && (
+          <p className="mb-4 rounded-lg bg-error/10 px-3 py-2 font-body-sm text-body-sm text-error">
+            {signOutAllError}
+          </p>
+        )}
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => setSignOutAllOpen(false)}
+            disabled={signingOutAll}
+            className="rounded-lg border border-border-subtle px-4 py-2 font-label-sm text-label-sm text-text-primary transition-colors hover:bg-surface-container-high disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSignOutAll}
+            disabled={signingOutAll}
+            className="rounded-lg bg-error px-4 py-2 font-label-sm text-label-sm text-white transition-colors hover:bg-error/90 disabled:opacity-50"
+          >
+            {signingOutAll ? "Signing out..." : "Sign out everywhere"}
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

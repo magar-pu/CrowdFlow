@@ -11,6 +11,7 @@ export type AuditorView =
   | 'payouts'
   | 'view-organizer'
   | 'view-payout'
+  | 'bank-verifications'
   | 'events';
 
 

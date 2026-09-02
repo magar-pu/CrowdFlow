@@ -19,10 +19,12 @@ func NewHandler(service Service) *Handler {
 	return &Handler{service: service}
 }
 
-func (h *Handler) RegisterRoutes(mux *http.ServeMux, authMiddleware func(http.Handler) http.Handler) {
-	mux.Handle("POST /orders", authMiddleware(http.HandlerFunc(h.createOrder)))
+func (h *Handler) RegisterRoutes(mux *http.ServeMux, authMiddleware func(http.Handler) http.Handler, requireBuyer func(http.Handler) http.Handler, orderRateLimit func(http.Handler) http.Handler) {
+	mux.Handle("POST /orders", authMiddleware(requireBuyer(orderRateLimit(http.HandlerFunc(h.createOrder)))))
 
-	// Webhook is public so midtrans can reach it
+	// Webhook is public so midtrans can reach it. Deliberately unlimited:
+	// Midtrans retries from a small set of IPs, and throttling it here would
+	// mean a paid order silently never gets marked paid.
 	mux.HandleFunc("POST /payment/webhook", h.handleWebhook)
 }
 

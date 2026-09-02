@@ -4,7 +4,7 @@ import React from 'react';
 import { AuditorView } from '../types';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store/authStore';
-import { LayoutDashboard, ClipboardCheck, Bell, Settings, ShieldCheck, X, Users2, DollarSign, Database, LogOut } from 'lucide-react';
+import { LayoutDashboard, ClipboardCheck, Bell, Settings, ShieldCheck, X, Users2, DollarSign, Database, Landmark, LogOut } from 'lucide-react';
 
 interface MobileNavDrawerProps {
   isOpen: boolean;
@@ -28,6 +28,7 @@ const NAV_ITEMS = [
   { view: 'documents' as const, label: 'Notifications', icon: Bell },
   { view: 'organizers' as const, label: 'Organizers', icon: Users2 },
   { view: 'payouts' as const, label: 'Payouts', icon: DollarSign },
+  { view: 'bank-verifications' as const, label: 'Bank Accounts', icon: Landmark },
   { view: 'settings' as const, label: 'Settings', icon: Settings },
 ];
 

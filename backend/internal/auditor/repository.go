@@ -669,41 +669,35 @@ func (r *PostgresAuditorRepository) GetEventReview(ctx context.Context, eventID 
 	taxAmount := projectedRev * (taxRate / 100)
 	netPayout := projectedRev - platformFee - gatewayFee - taxAmount
 
-	// The organizer's real payout destination. user_bank_accounts is preferred
-	// because it is the only source carrying a verification flag; the bank
-	// columns on organizer_applications (migration 0006) are the fallback for
-	// organizers who only ever filled in their application.
+	// The organizer's real payout destination: organizer_applications, the one
+	// and only source. This used to prefer a user_bank_accounts row and fall
+	// back to the application columns, which was a live bug — nothing in the
+	// backend ever wrote user_bank_accounts.is_verified, so this screen read
+	// "unverified" forever no matter what an auditor did, and the preference
+	// meant the DISPLAYED account could be one the auditor's verify button did
+	// not write to. That table is gone; verification is bank_verification_status
+	// (migration 0022), the same flag the verify endpoint sets.
 	payout := ReviewPayout{EstimatedPayout: netPayout}
-	var bankName, bankNumber, bankHolder sql.NullString
-	var bankVerified sql.NullBool
+	var bankName, bankNumber, bankHolder, bankStatus sql.NullString
 	err = r.db.QueryRowContext(ctx, `
 		SELECT
-			COALESCE(uba.bank_name, oa.bank_name),
-			COALESCE(uba.account_number, oa.bank_account_number),
-			COALESCE(uba.account_holder_name, oa.bank_account_holder),
-			uba.is_verified
+			oa.bank_name,
+			oa.bank_account_number,
+			oa.bank_account_holder,
+			oa.bank_verification_status
 		FROM events e
 		LEFT JOIN organizer_applications oa ON oa.user_id = e.organizer_id
-		LEFT JOIN LATERAL (
-			SELECT bank_name, account_number, account_holder_name, is_verified
-			FROM user_bank_accounts
-			WHERE user_id = e.organizer_id
-			ORDER BY is_verified DESC, created_at DESC
-			LIMIT 1
-		) uba ON TRUE
 		WHERE e.id = $1
-	`, eventID).Scan(&bankName, &bankNumber, &bankHolder, &bankVerified)
+	`, eventID).Scan(&bankName, &bankNumber, &bankHolder, &bankStatus)
 	if err != nil && err != sql.ErrNoRows {
 		return nil, err
 	}
-	if bankName.Valid || bankNumber.Valid {
+	if strings.TrimSpace(bankName.String) != "" || strings.TrimSpace(bankNumber.String) != "" {
 		payout.HasAccount = true
 		payout.Bank = bankName.String
 		payout.AccountNumber = bankNumber.String
 		payout.AccountName = bankHolder.String
-		// Only user_bank_accounts can attest verification. An account known
-		// solely from the application row is unverified by definition.
-		payout.Verified = bankVerified.Valid && bankVerified.Bool
+		payout.Verified = bankStatus.String == bankVerificationVerified
 	}
 
 	rev.Finance = ReviewFinance{
@@ -2549,7 +2543,133 @@ func (r *PostgresAuditorRepository) UpdatePayoutNotes(ctx context.Context, payou
 	return nil
 }
 
-// VerifyPayoutBankAccount marks the organizer's account confirmed.
+// ListBankVerifications backs the auditor's bank-verification queue.
+//
+// Rows without any bank details at all are excluded: there is nothing to
+// verify, and an organizer who never filled the form is an application problem,
+// not a bank one.
+//
+// Ordering is the point of the screen. Accounts an auditor already verified and
+// the organizer has since EDITED come first, because that is a payout
+// redirected out from under a completed review. Never-verified accounts follow,
+// oldest edit first, then everything already settled.
+func (r *PostgresAuditorRepository) ListBankVerifications(ctx context.Context, filters BankVerificationFilters) ([]*BankVerificationItem, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	if filters.Limit <= 0 {
+		filters.Limit = 20
+	}
+	if filters.Page <= 0 {
+		filters.Page = 1
+	}
+	offset := (filters.Page - 1) * filters.Limit
+
+	// changed_since_verified is computed once and reused by the filter and the
+	// sort so the two can never disagree. A verified row with a NULL
+	// bank_verified_at is grandfathered by migration 0022 and counts as settled.
+	query := `
+		SELECT
+			oa.id,
+			oa.user_id,
+			COALESCE(up.full_name, 'Unknown user'),
+			oa.business_name,
+			oa.business_email,
+			oa.status::text,
+			COALESCE(oa.bank_name, ''),
+			COALESCE(oa.bank_account_number, ''),
+			COALESCE(oa.bank_account_holder, ''),
+			COALESCE(oa.bank_verification_status, 'unverified'),
+			(
+				oa.bank_verification_status = 'verified'
+				AND oa.bank_details_updated_at IS NOT NULL
+				AND oa.bank_verified_at IS NOT NULL
+				AND oa.bank_details_updated_at > oa.bank_verified_at
+			) AS changed_since_verified,
+			COALESCE(to_char(oa.bank_details_updated_at, 'YYYY-MM-DD HH24:MI'), ''),
+			COALESCE(vb.full_name, ''),
+			COALESCE(to_char(oa.bank_verified_at, 'YYYY-MM-DD HH24:MI'), ''),
+			COALESCE((
+				SELECT COUNT(*) FROM payouts p
+				JOIN events e ON e.id = p.event_id
+				WHERE e.organizer_id = oa.user_id AND p.status = 'pending'
+			), 0)
+		FROM organizer_applications oa
+		LEFT JOIN user_profiles up ON up.user_id = oa.user_id
+		LEFT JOIN user_profiles vb ON vb.user_id = oa.bank_verified_by
+		WHERE COALESCE(TRIM(oa.bank_account_number), '') <> ''
+	`
+
+	args := []interface{}{}
+	argIndex := 1
+
+	switch filters.Status {
+	case bankVerificationUnverified:
+		query += " AND oa.bank_verification_status = 'unverified'"
+	case bankVerificationVerified:
+		query += " AND oa.bank_verification_status = 'verified'"
+	case "changed":
+		query += `
+			AND oa.bank_verification_status = 'verified'
+			AND oa.bank_details_updated_at IS NOT NULL
+			AND oa.bank_verified_at IS NOT NULL
+			AND oa.bank_details_updated_at > oa.bank_verified_at`
+	}
+
+	if filters.Search != "" {
+		query += fmt.Sprintf(" AND (oa.business_name ILIKE $%d OR up.full_name ILIKE $%d OR oa.bank_account_number ILIKE $%d)", argIndex, argIndex, argIndex)
+		args = append(args, "%"+filters.Search+"%")
+		argIndex++
+	}
+
+	query += fmt.Sprintf(`
+		ORDER BY
+			changed_since_verified DESC,
+			(oa.bank_verification_status = 'unverified') DESC,
+			COALESCE(oa.bank_details_updated_at, oa.submitted_at) ASC
+		LIMIT $%d OFFSET $%d`, argIndex, argIndex+1)
+	args = append(args, filters.Limit, offset)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]*BankVerificationItem, 0)
+	for rows.Next() {
+		var it BankVerificationItem
+		if err := rows.Scan(
+			&it.ApplicationID,
+			&it.OrganizerID,
+			&it.OrganizerName,
+			&it.BusinessName,
+			&it.BusinessEmail,
+			&it.ApplicationStatus,
+			&it.BankName,
+			&it.BankAccountNumber,
+			&it.BankAccountHolder,
+			&it.VerificationStatus,
+			&it.DetailsChanged,
+			&it.BankDetailsUpdated,
+			&it.VerifiedBy,
+			&it.VerifiedAt,
+			&it.PendingPayouts,
+		); err != nil {
+			return nil, err
+		}
+		list = append(list, &it)
+	}
+	return list, rows.Err()
+}
+
+// VerifyOrganizerBankAccount marks an organizer's payout account confirmed.
+//
+// Scoped to the ORGANIZER APPLICATION, not to a payout. It used to take a
+// payout id, which made the whole feature unreachable: the only UI sat inside
+// the payout detail screen, so an organizer who had never requested a payout
+// could not have their account verified at all, and no queue existed. Bank
+// details belong to the organizer, and so does their verification.
 //
 // One-way by design: an auditor can verify, and only an organizer edit resets
 // it (organizer/repository.go sets 'unverified' on any change). An auditor
@@ -2559,7 +2679,7 @@ func (r *PostgresAuditorRepository) UpdatePayoutNotes(ctx context.Context, payou
 // the transaction. Without that, an organizer editing their details between
 // page load and click would have the NEW account verified by an auditor who
 // never saw it — the exact substitution this flag exists to prevent.
-func (r *PostgresAuditorRepository) VerifyPayoutBankAccount(ctx context.Context, payoutID, actorID int, req VerifyBankAccountRequest) error {
+func (r *PostgresAuditorRepository) VerifyOrganizerBankAccount(ctx context.Context, appID, actorID int, req VerifyBankAccountRequest) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
@@ -2569,15 +2689,13 @@ func (r *PostgresAuditorRepository) VerifyPayoutBankAccount(ctx context.Context,
 	}
 	defer tx.Rollback()
 
-	var appID int
 	var onFile string
 	err = tx.QueryRowContext(ctx, `
-		SELECT oa.id, COALESCE(oa.bank_account_number, '')
-		FROM payouts p
-		JOIN events e ON e.id = p.event_id
-		JOIN organizer_applications oa ON oa.user_id = e.organizer_id
-		WHERE p.id = $1
-	`, payoutID).Scan(&appID, &onFile)
+		SELECT COALESCE(bank_account_number, '')
+		FROM organizer_applications
+		WHERE id = $1
+		FOR UPDATE
+	`, appID).Scan(&onFile)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return ErrNotFound
@@ -2594,18 +2712,18 @@ func (r *PostgresAuditorRepository) VerifyPayoutBankAccount(ctx context.Context,
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE organizer_applications
-		SET bank_verification_status = 'verified',
-		    bank_verified_by = $1,
+		SET bank_verification_status = $1,
+		    bank_verified_by = $2,
 		    bank_verified_at = now()
-		WHERE id = $2
-	`, actorID, appID); err != nil {
+		WHERE id = $3
+	`, bankVerificationVerified, actorID, appID); err != nil {
 		return err
 	}
 
-	detail := fmt.Sprintf("Verified the bank account for payout %d.", payoutID)
+	detail := fmt.Sprintf("Verified the payout bank account for organizer application %d.", appID)
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO activity_log (actor_id, action, detail, resource_type, resource_id) VALUES ($1, 'Verify Bank Account', $2, 'payout', $3)
-	`, actorID, detail, payoutID); err != nil {
+		INSERT INTO activity_log (actor_id, action, detail, resource_type, resource_id) VALUES ($1, 'Verify Bank Account', $2, 'organizer_application', $3)
+	`, actorID, detail, appID); err != nil {
 		return err
 	}
 

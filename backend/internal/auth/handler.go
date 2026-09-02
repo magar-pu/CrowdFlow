@@ -38,8 +38,19 @@ func NewHandler(service *AuthService, secure bool, accessTTL, refreshTTL time.Du
 	return &Handler{service: service, secure: secure, accessTTL: accessTTL, refreshTTL: refreshTTL}
 }
 
-func (h *Handler) RegisterRoutes(mux *http.ServeMux, authenticate func(http.Handler) http.Handler, rateLimitLogin func(http.Handler) http.Handler, rateLimitRefresh func(http.Handler) http.Handler) {
-	mux.HandleFunc("POST /auth/register", h.handleRegister)
+func (h *Handler) RegisterRoutes(
+	mux *http.ServeMux,
+	authenticate func(http.Handler) http.Handler,
+	rateLimitLogin func(http.Handler) http.Handler,
+	rateLimitRefresh func(http.Handler) http.Handler,
+	rateLimitRegister func(http.Handler) http.Handler,
+	rateLimitForgotPassword func(http.Handler) http.Handler,
+	rateLimitResetPassword func(http.Handler) http.Handler,
+	rateLimitSendOTP func(http.Handler) http.Handler,
+	rateLimitForgotPasswordByEmail func(http.Handler) http.Handler,
+	rateLimitSendOTPByEmail func(http.Handler) http.Handler,
+) {
+	mux.Handle("POST /auth/register", rateLimitRegister(http.HandlerFunc(h.handleRegister)))
 	mux.Handle("POST /auth/login", rateLimitLogin(http.HandlerFunc(h.handleLogin)))
 	mux.Handle("POST /auth/refresh", rateLimitRefresh(http.HandlerFunc(h.handleRefresh)))
 	mux.HandleFunc("GET /auth/google/login", h.handleGoogleRedirect)
@@ -48,9 +59,12 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, authenticate func(http.Hand
 	mux.Handle("POST /auth/logout-all", authenticate(http.HandlerFunc(h.handleLogoutAll)))
 	mux.Handle("GET /auth/me", authenticate(http.HandlerFunc(h.handleMe)))
 	mux.Handle("PUT /auth/me", authenticate(http.HandlerFunc(h.handleUpdateProfile)))
-	mux.HandleFunc("POST /auth/forgot-password", h.handleForgotPassword)
-	mux.HandleFunc("POST /auth/reset-password", h.handleResetPassword)
-	mux.HandleFunc("POST /auth/send-otp", h.handleSendOTP)
+	// IP-keyed AND email-keyed: the IP limit stops one caller hammering many
+	// addresses, the email limit stops a distributed mail-bomb aimed at one
+	// address that an IP-keyed limiter alone would never see as a pattern.
+	mux.Handle("POST /auth/forgot-password", rateLimitForgotPassword(rateLimitForgotPasswordByEmail(http.HandlerFunc(h.handleForgotPassword))))
+	mux.Handle("POST /auth/reset-password", rateLimitResetPassword(http.HandlerFunc(h.handleResetPassword)))
+	mux.Handle("POST /auth/send-otp", rateLimitSendOTP(rateLimitSendOTPByEmail(http.HandlerFunc(h.handleSendOTP))))
 }
 
 func generateCSRFToken() string {

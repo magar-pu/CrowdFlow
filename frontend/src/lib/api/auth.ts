@@ -52,6 +52,20 @@ export async function logoutUser(): Promise<ApiResponse<void>> {
   });
 }
 
+/**
+ * Revokes EVERY refresh-token session for the current user, on every device,
+ * including this one. The backend deletes the whole family index in Redis
+ * (SessionStore.RevokeAllForUser), so other devices do not fail lazily at the
+ * next access-token expiry — their refresh is already dead.
+ *
+ * Requires auth + CSRF; apiRequest attaches the double-submit header itself.
+ */
+export async function logoutAllDevices(): Promise<ApiResponse<{ message: string }>> {
+  return apiRequest<{ message: string }>("/api/v1/auth/logout-all", {
+    method: "POST",
+  });
+}
+
 export async function getMe(): Promise<ApiResponse<UserProfileResponse>> {
   return apiRequest<UserProfileResponse>("/api/v1/auth/me", {
     method: "GET",

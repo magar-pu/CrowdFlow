@@ -4,7 +4,7 @@ import React from 'react';
 import { AuditorView } from '../types';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store/authStore';
-import { LayoutDashboard, ClipboardCheck, Bell, Settings, ShieldCheck, ChevronLeft, ChevronRight, Users2, DollarSign, Database, LogOut } from 'lucide-react';
+import { LayoutDashboard, ClipboardCheck, Bell, Settings, ShieldCheck, ChevronLeft, ChevronRight, Users2, DollarSign, Database, Landmark, LogOut } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 interface SidebarProps {
@@ -23,6 +23,7 @@ const NAV_ITEMS: { view: AuditorView; label: string; icon: LucideIcon }[] = [
   { view: 'reviews', label: 'Reviews', icon: ClipboardCheck },
   { view: 'organizers', label: 'Organizers', icon: Users2 },
   { view: 'payouts', label: 'Payouts', icon: DollarSign },
+  { view: 'bank-verifications', label: 'Bank Accounts', icon: Landmark },
   { view: 'settings', label: 'Settings', icon: Settings },
 ];
 

@@ -1,0 +1,52 @@
+# docker-compose.override.yml
+#
+# Restores local-from-source builds. docker-compose.yml alone is pull-only
+# now (see its `image:` lines and .github/workflows/deploy-pipeline.yaml) —
+# right for the VPS, but it silently broke `docker compose up --build -d` for
+# anyone running the stack from a local checkout with nothing pushed to GHCR
+# yet: with no `build:` section anywhere, `--build` was a no-op, and compose
+# fell straight through to pulling the placeholder
+# ghcr.io/crowdflow/crowdflow-*:latest, which was never pushed.
+#
+# `docker compose` auto-merges *.override.yml with the base file with NO
+# extra flags, so plain `docker compose up --build -d` (or any other compose
+# command with no explicit `-f`) works locally again. `image:` is left in the
+# base file — with both `build:` and `image:` present on a service, compose
+# builds from the given context and tags the result with that image name,
+# which is exactly what we want here, not a conflict to resolve.
+#
+# ⚠️ THIS FILE MUST NEVER AUTO-MERGE ON THE VPS. Both production and sandbox
+# hosts currently still hold a git checkout of this repo (mid-migration to
+# the GHCR-only, checkout-free VPS layout) — if this file is sitting in that
+# checkout's directory, a bare `docker compose up -d` run there would merge
+# it too and start compiling Go/Next on the production box again, silently,
+# the exact thing this whole workstream removed. That is NOT guarded by
+# anything in this file — it's guarded by deploy-main.sh/deploy-dev.sh always
+# passing `-f docker-compose.yml` explicitly (an explicit -f list disables
+# compose's auto-merge of override files). Do not remove that flag from
+# either script on the assumption "the VPS doesn't have this file" — the
+# whole point is that the guard has to hold even when it does.
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      # BACKEND_URL is a plain (non-NEXT_PUBLIC_) build arg, unrelated to the
+      # runtime-config migration — frontend/Dockerfile still takes it the
+      # same way it always did. NOT reintroducing the NEXT_PUBLIC_* build
+      # args here: those are runtime now (docker-entrypoint.sh +
+      # src/lib/runtimeEnv.ts), and putting them back as build args would
+      # silently resurrect the one-image-per-environment problem this
+      # migration exists to remove.
+      args:
+        - BACKEND_URL=http://backend:8080
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile

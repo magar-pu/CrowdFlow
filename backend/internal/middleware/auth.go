@@ -25,7 +25,7 @@ const UserContextKey contextKey = "user"
 // it (events.organizer_id) or an active co-organizer delegation covers it.
 // scope='all' covers the owner's whole portfolio (incl. future events);
 // scope='specific' covers only the named events. See
-// docs/co-organizer-delegation-design.md §4.1.
+// docs/architecture/delegation.md ("Authorization").
 const eventAccessQuery = `
 	SELECT EXISTS (
 		SELECT 1 FROM events WHERE id = $1 AND organizer_id = $2
@@ -307,7 +307,7 @@ func (m *AuthMiddleware) RequireEventOwnership(next http.Handler) http.Handler {
 		// co-organizer delegation covering this event (scope='all' over the
 		// owner's whole portfolio incl. future events, or scope='specific' on a
 		// named event). Kept to one round trip.
-		// See docs/co-organizer-delegation-design.md §4.1.
+		// See docs/architecture/delegation.md ("Authorization").
 		var exists bool
 		err = m.db.QueryRowContext(r.Context(), eventAccessQuery, eventID, userID).Scan(&exists)
 		if err != nil {

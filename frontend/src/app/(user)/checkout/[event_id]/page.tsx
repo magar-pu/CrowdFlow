@@ -36,14 +36,17 @@ import { getHold, type HoldDetail } from "@/lib/api/booking";
 import { getEvent } from "@/lib/api/events";
 import { createOrder } from "@/lib/api/payment";
 import { useAuthStore } from "@/lib/store/authStore";
+import { canPurchase, BUYER_BLOCKED_MESSAGE } from "@/lib/buyerGate";
+import { getRuntimeEnv } from "@/lib/runtimeEnv";
 import { useHoldCountdown } from "@/lib/hooks/useHoldCountdown";
 import { storeHoldToken } from "@/lib/holdStorage";
 import type { CartItem, Event } from "@/types/ticket";
 
 /**
  * Which Midtrans environment this build talks to, and therefore which snap.js
- * to load. Both are inlined at build time from the Docker build args — see
- * frontend/Dockerfile and docker-compose.yml's frontend build.args.
+ * to load. Both now come from window.__ENV__ at runtime — see
+ * src/lib/runtimeEnv.ts — not from build-time env, so one frontend image
+ * works against every Midtrans environment.
  *
  * The URL and the client key must come from the same environment: a production
  * key against app.sandbox.midtrans.com (or the reverse) is rejected, and the
@@ -53,9 +56,19 @@ import type { CartItem, Event } from "@/types/ticket";
  *
  * The backend picks its gateway from APP_ENV the same way, so both ends follow
  * one switch — see backend/internal/payment/service.go's midtransEnvironment.
+ *
+ * Read at module scope (not inside the component) so it's resolved once,
+ * before render, matching how the old build-time constant behaved — the
+ * value itself is now the only thing that changed, not when it's read. Safe
+ * because runtimeEnv.getRuntimeEnv() only ever produces a JSX-visible
+ * difference through the deferred consumers below (Script's own client-side
+ * injection, Turnstile's effect), never through anything present in the
+ * server-rendered HTML — see docker-entrypoint.sh's comment for why that
+ * matters.
  */
-const APP_ENV = process.env.NEXT_PUBLIC_APP_ENV ?? "local";
-const MIDTRANS_CLIENT_KEY = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? "";
+const runtime_env = getRuntimeEnv();
+const APP_ENV = runtime_env.NEXT_PUBLIC_APP_ENV;
+const MIDTRANS_CLIENT_KEY = runtime_env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY;
 const SNAP_SRC =
   APP_ENV === "production"
     ? "https://app.midtrans.com/snap/snap.js"
@@ -99,6 +112,13 @@ function CheckoutContent() {
   const [is_submitting, set_is_submitting] = useState(false);
   const [attendees, set_attendees] = useState<AttendeeFormValue[]>([]);
   const [attendee_step_done, set_attendee_step_done] = useState(false);
+
+  // A hold created before a role change (or the read-only GET path, which
+  // isn't buyer-gated) can still land an ineligible account here. POST
+  // /orders would 403 either way — this just surfaces the reason instead of
+  // letting them fill in attendee details toward a payment that can't happen.
+  const user = useAuthStore((s) => s.user);
+  const purchase_blocked = !canPurchase(user);
 
   useEffect(() => {
     if (!hold_token) return;
@@ -195,7 +215,20 @@ function CheckoutContent() {
     // Expiry mid-click: the effect above is about to swap this page out, and
     // the seats are gone either way.
     if (!hold || hold_expired) return;
+    if (purchase_blocked) return;
     if (!attendeesValid(attendees)) return;
+
+    // Fail loudly rather than opening Snap with a blank client key, which
+    // Midtrans just rejects with no useful message for the buyer. This is
+    // a deployment misconfiguration (see docker-entrypoint.sh), not
+    // something a retry fixes.
+    if (!MIDTRANS_CLIENT_KEY) {
+      alert(
+        "Payment is not configured on this deployment (missing Midtrans client key). Please contact support."
+      );
+      return;
+    }
+
     set_is_submitting(true);
 
     try {
@@ -315,6 +348,11 @@ function CheckoutContent() {
       </div>
 
       <div className="mx-auto max-w-container-max px-margin-mobile pt-6 md:px-margin-desktop">
+        {purchase_blocked && (
+          <div className="mb-4 rounded-xl border border-border-subtle bg-surface-bright p-4 text-center font-body-sm text-body-sm text-text-secondary">
+            {BUYER_BLOCKED_MESSAGE}
+          </div>
+        )}
         {!attendee_step_done ? (
           <>
             <AttendeeDetailsForm
@@ -325,7 +363,7 @@ function CheckoutContent() {
             <div className="mt-4 flex justify-end">
               <button
                 type="button"
-                disabled={!attendeesValid(attendees)}
+                disabled={!attendeesValid(attendees) || purchase_blocked}
                 onClick={() => set_attendee_step_done(true)}
                 className="rounded-xl bg-primary px-6 py-3 font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -344,7 +382,7 @@ function CheckoutContent() {
         )}
       </div>
 
-      {attendee_step_done && (
+      {attendee_step_done && !purchase_blocked && (
         <CheckoutSummary
           event={event}
           cart_items={cart_items}

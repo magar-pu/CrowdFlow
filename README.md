@@ -33,14 +33,27 @@ Before running the application, make sure you have the following installed on yo
 
 ## Quick Start (Using Docker Compose)
 
-The easiest way to boot the entire stack (frontend, backend, and proxy gateway) is using Docker Compose.
+`docker-compose.yml` alone is **pull-only** — it's written to serve the real
+VPS deployments, which never build from source (see
+[docs/operations/deployment.md](docs/operations/deployment.md)). It resolves
+to `image: ghcr.io/<owner>/crowdflow-{backend,frontend,nginx}:<tag>` for all
+three services with no `build:` section at all.
+
+What makes local building work is `docker-compose.override.yml`, committed
+in this repo for exactly this purpose — Docker Compose auto-merges any
+`docker-compose.override.yml` sitting next to `docker-compose.yml` with
+**no extra flags needed**, and that file restores `build:` on all three
+services. So the quick start is still one command:
 
 1. Clone or pull the latest changes in the repository.
-2. In the root directory, build and run the services:
+2. Copy `.env.example` to `.env` (the three `NEXT_PUBLIC_*`/`APP_ENV` lines
+   in it can stay empty for a first run — see
+   [docs/onboarding/environment-configuration.md](docs/onboarding/environment-configuration.md)).
+3. In the root directory, build and run the services:
    ```bash
-   docker compose up --build
+   docker compose up --build -d
    ```
-3. Once the build finishes and the containers boot up:
+4. Once the build finishes and the containers boot up:
    * **Web App (Next.js):** Access it at [http://localhost](http://localhost) (mapped via Nginx proxy).
    * **API Health Check:** Query the endpoint at [http://localhost/api/health](http://localhost/api/health) (or check backend directly at [http://localhost:8080/api/health](http://localhost:8080/api/health)).
 
@@ -48,6 +61,22 @@ To stop the containers:
 ```bash
 docker compose down
 ```
+
+If step 3 instead fails with `error from registry: denied`, `docker-compose.override.yml`
+is missing from your checkout, or you're invoking compose with an explicit
+`-f docker-compose.yml` somewhere (that flag deliberately disables the
+override auto-merge — see the deployment doc for why). See
+[docs/operations/troubleshooting.md](docs/operations/troubleshooting.md#error-from-registry-denied-when-pulling-a-ghcr-image).
+
+**Image naming/tag scheme:** CI builds and pushes `:sha-<short>` on every
+push to `dev` (sandbox auto-deploys it); a `git tag vX.Y.Z` promotes that
+exact already-built image to `:vX.Y.Z` for production, behind a manual
+approval gate — never a separate rebuild. Full detail in
+[docs/operations/deployment.md](docs/operations/deployment.md).
+
+For the fuller day-one setup (database restore, env files, verifying it
+actually works end to end), see
+[docs/onboarding/README.md](docs/onboarding/README.md).
 
 ---
 
@@ -81,7 +110,7 @@ If you wish to run the frontend and backend services outside of Docker container
    ```
    *The client dev server runs on [http://localhost:3000](http://localhost:3000).*
 
-*Note: When running without Nginx locally, calling endpoints from the frontend to the backend will cross origins (`localhost:3000` to `localhost:8080`). You may need to temporarily enable CORS in your Go router or configure Next.js rewrites in `next.config.ts` for local non-Docker development.*
+*Note: `frontend/next.config.ts` already proxies every `/api/*` request from the Next dev server to the Go backend (`rewrites()`, defaulting to `http://localhost:8080` outside production). This is same-origin from the browser's perspective, so no CORS configuration is needed for this path — see [docs/onboarding/local-development.md](docs/onboarding/local-development.md) for the full local-dev picture, including that the backend also needs Redis reachable to boot at all.*
 
 ---
 
@@ -136,6 +165,19 @@ Both pairs live in the same R2 account/endpoint — only the bucket name differs
 
 ---
 
+## Documentation
+
+Full index: **[docs/README.md](docs/README.md)**.
+
+- **[docs/onboarding/](docs/onboarding/)** — start here if you're new: day-one setup, the two local-dev paths, and the full environment-variable reference.
+- **[docs/architecture/](docs/architecture/)** — system design, package layout, and how the pieces fit together, plus the frontend architecture and the current known-issues list.
+- **[docs/operations/](docs/operations/)** — deployment/CI-CD, the database migration runbook, and a troubleshooting log of real failures this project has hit.
+- **[docs/design/](docs/design/)** — the design system, every token in `globals.css`, and the component inventory.
+- **[docs/reference/](docs/reference/)** — route tables, the auditor/payout workflows, and a whole-system analysis.
+- **[docs/swagger.yaml](docs/swagger.yaml)** — OpenAPI 3.0.3, 163 paths.
+
+---
+
 ## Folder Structure
 
 ```text
@@ -150,6 +192,9 @@ CrowdFlow/
 │   ├── src/            # Next.js pages and app router components
 │   └── next.config.ts  # Next config outputting standalone
 ├── nginx/              # Nginx proxy routing configuration
+│   ├── Dockerfile      # Bakes nginx.conf into its own GHCR-pushed image
 │   └── nginx.conf      # Routing rules (Port 80 proxy pass config)
-└── docker-compose.yml  # Local stack orchestration setup
+├── docs/               # onboarding/, architecture/, operations/, design/, reference/ — see Documentation above
+├── docker-compose.yml           # Pull-only; what the VPS runs
+└── docker-compose.override.yml  # Restores local `--build`; auto-merged by compose
 ```
